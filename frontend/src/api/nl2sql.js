@@ -84,10 +84,11 @@ function parseSseChunk(buffer, onEvent) {
   return rest
 }
 
-function createAxiosClient(baseURL, prefix, timeout) {
+function createAxiosClient(baseURL, prefix, timeout, defaultHeaders = {}) {
   const request = axios.create({
     baseURL: buildUrl(baseURL, prefix),
-    timeout
+    timeout,
+    headers: { ...defaultHeaders }
   })
 
   request.interceptors.response.use(
@@ -105,8 +106,15 @@ function createAxiosClient(baseURL, prefix, timeout) {
 export function createNl2SqlApiClient(options = {}) {
   const baseURL = normalizeBaseUrl(options.baseURL)
   const timeout = options.timeout || DEFAULT_TIMEOUT
-  const runtimeRequest = createAxiosClient(baseURL, RUNTIME_PREFIX, timeout)
-  const adminRequest = createAxiosClient(baseURL, ADMIN_PREFIX, timeout)
+  const defaultHeaders = options.defaultHeaders || options.headers || {}
+  const runtimeRequest = createAxiosClient(baseURL, RUNTIME_PREFIX, timeout, defaultHeaders)
+  const adminRequest = createAxiosClient(baseURL, ADMIN_PREFIX, timeout, defaultHeaders)
+
+  const runtimeApi = {
+    getConfig() {
+      return runtimeRequest.get('/runtime-config')
+    }
+  }
 
   const topicApi = {
     createTopic(title = '新话题') {
@@ -151,7 +159,7 @@ export function createNl2SqlApiClient(options = {}) {
         buildUrl(baseURL, `${RUNTIME_PREFIX}/tasks/${taskId}/events/stream?after_seq=${encodeURIComponent(afterSeq)}`),
         {
           method: 'GET',
-          headers: { Accept: 'text/event-stream' },
+          headers: { Accept: 'text/event-stream', ...defaultHeaders },
           signal
         }
       )
@@ -229,6 +237,7 @@ export function createNl2SqlApiClient(options = {}) {
   }
 
   return {
+    runtimeApi,
     topicApi,
     taskApi,
     messageQueueApi,

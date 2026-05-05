@@ -210,6 +210,25 @@ class SettingsResponse(BaseModel):
     doris_database: str = ""
 
 
+class RuntimeProviderConfig(BaseModel):
+    provider_id: str
+    display_name: str
+    provider_group: str = ""
+    models: List[str] = Field(default_factory=list)
+    default_model: str = ""
+    enabled: bool = False
+    provider_enabled: bool = False
+    supports_partial_messages: bool = True
+    validation_status: str = "unverified"
+    validation_message: str = ""
+
+
+class RuntimeConfigResponse(BaseModel):
+    default_provider_id: str = ""
+    default_model: str = ""
+    providers: List[RuntimeProviderConfig] = Field(default_factory=list)
+
+
 class AdminSettingsResponse(BaseModel):
     provider_id: str
     model: str

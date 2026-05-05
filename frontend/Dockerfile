@@ -1,5 +1,5 @@
 # 前端构建镜像
-FROM node:18-alpine AS builder
+FROM node:20.19-alpine AS builder
 
 WORKDIR /app
 
@@ -12,8 +12,8 @@ RUN npm install
 # 复制源代码
 COPY . .
 
-# 构建生产版本
-RUN npm run build
+# 构建生产版本和可嵌入 widget
+RUN npm run build && npm run build:widget
 
 # 生产运行镜像 - 使用 nginx 提供静态文件
 FROM nginx:alpine

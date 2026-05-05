@@ -11,6 +11,7 @@
     "dev": "vite",
     "dev:demo": "vite --mode demo",
     "build": "vite build",
+    "build:widget": "vite build --config vite.widget.config.js",
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "test": "vitest run"

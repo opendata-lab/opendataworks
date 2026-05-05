@@ -246,6 +246,46 @@ class TopicTaskStore:
         if not self._ready:
             self.init_schema()
 
+    def _normalize_context(self, context: dict[str, Any] | None = None) -> dict[str, str]:
+        source = str((context or {}).get("source") or "portal").strip().lower()
+        if source != "widget":
+            return {
+                "source": "portal",
+                "website_id": "",
+                "external_user_id": "",
+                "visitor_id": "",
+            }
+
+        website_id = str((context or {}).get("website_id") or "").strip()
+        external_user_id = str((context or {}).get("external_user_id") or "").strip()
+        visitor_id = str((context or {}).get("visitor_id") or "").strip()
+        return {
+            "source": "widget",
+            "website_id": website_id,
+            "external_user_id": external_user_id,
+            "visitor_id": "" if external_user_id else visitor_id,
+        }
+
+    def _topic_context_predicate(self, context: dict[str, Any] | None = None, *, alias: str = "t") -> tuple[str, list[str]]:
+        if context is None:
+            return "1 = 1", []
+
+        normalized = self._normalize_context(context)
+        prefix = f"{alias}." if alias else ""
+        if normalized["source"] != "widget":
+            return f"COALESCE({prefix}source, 'portal') = %s", ["portal"]
+
+        if normalized["external_user_id"]:
+            return (
+                f"{prefix}source = %s AND {prefix}website_id = %s AND {prefix}external_user_id = %s",
+                ["widget", normalized["website_id"], normalized["external_user_id"]],
+            )
+
+        return (
+            f"{prefix}source = %s AND {prefix}website_id = %s AND {prefix}external_user_id = '' AND {prefix}visitor_id = %s",
+            ["widget", normalized["website_id"], normalized["visitor_id"]],
+        )
+
     def _next_topic_seq(self, cur, topic_id: str) -> int:
         cur.execute(
             """
@@ -275,8 +315,9 @@ class TopicTaskStore:
         row = cur.fetchone() or {}
         return int(row.get("last_event_seq") or 0)
 
-    def create_topic(self, *, title: str) -> dict[str, Any]:
+    def create_topic(self, *, title: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
         self._ensure_ready()
+        normalized_context = self._normalize_context(context)
         topic_id = _new_id("topic")
         chat_topic_id = _new_id("chat_topic")
         chat_conversation_id = _new_id("chat_conv")
@@ -287,25 +328,37 @@ class TopicTaskStore:
                     """
                     INSERT INTO da_agent_topic (
                         topic_id, title, chat_topic_id, chat_conversation_id,
-                        current_task_id, current_task_status, last_message_seq
-                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0)
+                        current_task_id, current_task_status, last_message_seq,
+                        source, website_id, external_user_id, visitor_id
+                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s)
                     """,
-                    (topic_id, title or "新话题", chat_topic_id, chat_conversation_id),
+                    (
+                        topic_id,
+                        title or "新话题",
+                        chat_topic_id,
+                        chat_conversation_id,
+                        normalized_context["source"],
+                        normalized_context["website_id"],
+                        normalized_context["external_user_id"],
+                        normalized_context["visitor_id"],
+                    ),
                 )
             conn.commit()
         finally:
             conn.close()
-        return self.get_topic(topic_id) or {}
+        return self.get_topic(topic_id, context=normalized_context) or {}
 
-    def list_topics(self, include_messages: bool = False) -> list[dict[str, Any]]:
+    def list_topics(self, include_messages: bool = False, context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self._ensure_ready()
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
-                           t.current_task_id, t.current_task_status, t.created_at, t.updated_at,
+                           t.current_task_id, t.current_task_status, t.source, t.website_id,
+                           t.external_user_id, t.visitor_id, t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
                     FROM da_agent_topic t
@@ -321,8 +374,10 @@ class TopicTaskStore:
                         WHERE show_in_ui = 1
                         GROUP BY topic_id
                     ) stats ON stats.topic_id = t.topic_id
+                    WHERE {context_sql}
                     ORDER BY t.updated_at DESC, t.created_at DESC
-                    """
+                    """,
+                    context_params,
                 )
                 rows = cur.fetchall() or []
         finally:
@@ -334,15 +389,17 @@ class TopicTaskStore:
                 item["messages"] = self.list_topic_messages(item["topic_id"])
         return result
 
-    def get_topic(self, topic_id: str) -> dict[str, Any] | None:
+    def get_topic(self, topic_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
-                           t.current_task_id, t.current_task_status, t.created_at, t.updated_at,
+                           t.current_task_id, t.current_task_status, t.source, t.website_id,
+                           t.external_user_id, t.visitor_id, t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
                     FROM da_agent_topic t
@@ -359,9 +416,10 @@ class TopicTaskStore:
                         GROUP BY topic_id
                     ) stats ON stats.topic_id = t.topic_id
                     WHERE t.topic_id = %s
+                      AND {context_sql}
                     LIMIT 1
                     """,
-                    (topic_id,),
+                    [topic_id, *context_params],
                 )
                 row = cur.fetchone()
         finally:
@@ -370,8 +428,10 @@ class TopicTaskStore:
             return None
         return self._normalize_topic_row(row, include_messages=False)
 
-    def update_topic(self, topic_id: str, *, title: str) -> dict[str, Any] | None:
+    def update_topic(self, topic_id: str, *, title: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        if not self.get_topic(topic_id, context=context):
+            return None
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
@@ -387,7 +447,7 @@ class TopicTaskStore:
             conn.commit()
         finally:
             conn.close()
-        return self.get_topic(topic_id)
+        return self.get_topic(topic_id, context=context)
 
     def update_topic_conversation_id(self, topic_id: str, *, conversation_id: str) -> dict[str, Any] | None:
         value = str(conversation_id or "").strip()
@@ -420,8 +480,10 @@ class TopicTaskStore:
             return None
         return conversation_id or None
 
-    def delete_topic(self, topic_id: str):
+    def delete_topic(self, topic_id: str, context: dict[str, Any] | None = None):
         self._ensure_ready()
+        if not self.get_topic(topic_id, context=context):
+            return
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
@@ -459,8 +521,18 @@ class TopicTaskStore:
         page: int = 1,
         page_size: int = 200,
         order: str = "asc",
+        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._ensure_ready()
+        if not self.get_topic(topic_id, context=context):
+            return {
+                "topic_id": topic_id,
+                "page": max(1, int(page or 1)),
+                "page_size": max(1, min(500, int(page_size or 200))),
+                "order": "desc" if str(order or "").strip().lower() == "desc" else "asc",
+                "total": 0,
+                "items": [],
+            }
         safe_page = max(1, int(page or 1))
         safe_page_size = max(1, min(500, int(page_size or 200)))
         sort_direction = "DESC" if str(order or "").strip().lower() == "desc" else "ASC"
@@ -721,23 +793,29 @@ class TopicTaskStore:
             conn.close()
         return self.get_task(task_id) or {}
 
-    def get_task(self, task_id: str) -> dict[str, Any] | None:
+    def get_task(self, task_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        context_sql, context_params = self._topic_context_predicate(context, alias="topic")
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT task_id, topic_id, from_task_id, source_queue_id, source_schedule_id, source_schedule_log_id,
-                           task_status, prompt, provider_id, model_name,
-                           database_hint, debug_enabled, timeout_seconds, sql_read_timeout_seconds,
-                           sql_write_timeout_seconds, last_event_seq, cancel_requested_at, started_at,
-                           heartbeat_at, finished_at, error_json, created_at, updated_at
-                    FROM da_agent_task
-                    WHERE task_id = %s
+                    f"""
+                    SELECT task.task_id, task.topic_id, task.from_task_id, task.source_queue_id,
+                           task.source_schedule_id, task.source_schedule_log_id,
+                           task.task_status, task.prompt, task.provider_id, task.model_name,
+                           task.database_hint, task.debug_enabled, task.timeout_seconds,
+                           task.sql_read_timeout_seconds, task.sql_write_timeout_seconds,
+                           task.last_event_seq, task.cancel_requested_at, task.started_at,
+                           task.heartbeat_at, task.finished_at, task.error_json,
+                           task.created_at, task.updated_at
+                    FROM da_agent_task task
+                    JOIN da_agent_topic topic ON topic.topic_id = task.topic_id
+                    WHERE task.task_id = %s
+                      AND {context_sql}
                     LIMIT 1
                     """,
-                    (task_id,),
+                    [task_id, *context_params],
                 )
                 row = cur.fetchone()
         finally:
@@ -953,8 +1031,10 @@ class TopicTaskStore:
             conn.close()
         return self.get_task(task_id)
 
-    def request_task_cancel(self, task_id: str) -> dict[str, Any] | None:
+    def request_task_cancel(self, task_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        if not self.get_task(task_id, context=context):
+            return None
         cancel_error = {"code": "task_cancelled", "message": "任务已取消"}
         cancel_error_json = json.dumps(cancel_error, ensure_ascii=False, default=_json_default)
         conn = self._connect(database=self._schema_name())
@@ -1042,7 +1122,7 @@ class TopicTaskStore:
             conn.commit()
         finally:
             conn.close()
-        return self.get_task(task_id)
+        return self.get_task(task_id, context=context)
 
     def is_task_cancel_requested(self, task_id: str) -> bool:
         task = self.get_task(task_id)
@@ -1175,8 +1255,25 @@ class TopicTaskStore:
             "metadata": metadata,
         }
 
-    def list_task_events(self, *, task_id: str, after_seq: int = 0, limit: int = 200) -> dict[str, Any]:
+    def list_task_events(
+        self,
+        *,
+        task_id: str,
+        after_seq: int = 0,
+        limit: int = 200,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         self._ensure_ready()
+        task = self.get_task(task_id, context=context)
+        if not task:
+            return {
+                "task_id": task_id,
+                "task_status": "missing",
+                "after_seq": max(0, after_seq),
+                "next_after_seq": max(0, after_seq),
+                "has_more": False,
+                "events": [],
+            }
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
@@ -1220,7 +1317,6 @@ class TopicTaskStore:
         has_more = len(merged) > max(1, limit)
         page = merged[: max(1, limit)]
         next_after_seq = int(page[-1]["seq_id"]) if page else max(0, after_seq)
-        task = self.get_task(task_id) or {}
         return {
             "task_id": task_id,
             "task_status": str(task.get("task_status") or "waiting"),
@@ -1230,21 +1326,24 @@ class TopicTaskStore:
             "events": page,
         }
 
-    def get_message_queue(self, queue_id: str) -> dict[str, Any] | None:
+    def get_message_queue(self, queue_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT queue_id, topic_id, source_schedule_id, source_schedule_log_id,
-                           message_type, message_content_json, status, last_task_id,
-                           error_message, created_at, updated_at
-                    FROM da_agent_message_queue
-                    WHERE queue_id = %s
+                    f"""
+                    SELECT q.queue_id, q.topic_id, q.source_schedule_id, q.source_schedule_log_id,
+                           q.message_type, q.message_content_json, q.status, q.last_task_id,
+                           q.error_message, q.created_at, q.updated_at
+                    FROM da_agent_message_queue q
+                    JOIN da_agent_topic t ON t.topic_id = q.topic_id
+                    WHERE q.queue_id = %s
+                      AND {context_sql}
                     LIMIT 1
                     """,
-                    (queue_id,),
+                    [queue_id, *context_params],
                 )
                 row = cur.fetchone()
         finally:
@@ -1257,30 +1356,41 @@ class TopicTaskStore:
         topic_id: str | None = None,
         page: int = 1,
         page_size: int = 50,
+        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._ensure_ready()
         safe_page = max(1, int(page or 1))
         safe_page_size = max(1, min(500, int(page_size or 50)))
         offset = (safe_page - 1) * safe_page_size
-        filters = []
-        params: list[Any] = []
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
+        filters = [context_sql]
+        params: list[Any] = [*context_params]
         if topic_id:
-            filters.append("topic_id = %s")
+            filters.append("q.topic_id = %s")
             params.append(topic_id)
-        where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
+        where_sql = f"WHERE {' AND '.join(filters)}"
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
-                cur.execute(f"SELECT COUNT(*) AS total FROM da_agent_message_queue {where_sql}", tuple(params))
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) AS total
+                    FROM da_agent_message_queue q
+                    JOIN da_agent_topic t ON t.topic_id = q.topic_id
+                    {where_sql}
+                    """,
+                    tuple(params),
+                )
                 total_row = cur.fetchone() or {}
                 cur.execute(
                     f"""
-                    SELECT queue_id, topic_id, source_schedule_id, source_schedule_log_id,
-                           message_type, message_content_json, status, last_task_id,
-                           error_message, created_at, updated_at
-                    FROM da_agent_message_queue
+                    SELECT q.queue_id, q.topic_id, q.source_schedule_id, q.source_schedule_log_id,
+                           q.message_type, q.message_content_json, q.status, q.last_task_id,
+                           q.error_message, q.created_at, q.updated_at
+                    FROM da_agent_message_queue q
+                    JOIN da_agent_topic t ON t.topic_id = q.topic_id
                     {where_sql}
-                    ORDER BY updated_at DESC, created_at DESC
+                    ORDER BY q.updated_at DESC, q.created_at DESC
                     LIMIT %s OFFSET %s
                     """,
                     tuple([*params, safe_page_size, offset]),
@@ -1426,21 +1536,24 @@ class TopicTaskStore:
             conn.close()
         return self.get_message_queue(queue_id)
 
-    def get_message_schedule(self, schedule_id: str) -> dict[str, Any] | None:
+    def get_message_schedule(self, schedule_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT schedule_id, topic_id, name, message_type, message_content_json,
-                           cron_expr, timezone, enabled, last_task_id, last_queue_id,
-                           last_run_at, next_run_at, last_error_message, created_at, updated_at
-                    FROM da_agent_message_schedule
-                    WHERE schedule_id = %s
+                    f"""
+                    SELECT s.schedule_id, s.topic_id, s.name, s.message_type, s.message_content_json,
+                           s.cron_expr, s.timezone, s.enabled, s.last_task_id, s.last_queue_id,
+                           s.last_run_at, s.next_run_at, s.last_error_message, s.created_at, s.updated_at
+                    FROM da_agent_message_schedule s
+                    JOIN da_agent_topic t ON t.topic_id = s.topic_id
+                    WHERE s.schedule_id = %s
+                      AND {context_sql}
                     LIMIT 1
                     """,
-                    (schedule_id,),
+                    [schedule_id, *context_params],
                 )
                 row = cur.fetchone()
         finally:
@@ -1453,30 +1566,41 @@ class TopicTaskStore:
         topic_id: str | None = None,
         page: int = 1,
         page_size: int = 50,
+        context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._ensure_ready()
         safe_page = max(1, int(page or 1))
         safe_page_size = max(1, min(500, int(page_size or 50)))
         offset = (safe_page - 1) * safe_page_size
-        filters = []
-        params: list[Any] = []
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
+        filters = [context_sql]
+        params: list[Any] = [*context_params]
         if topic_id:
-            filters.append("topic_id = %s")
+            filters.append("s.topic_id = %s")
             params.append(topic_id)
-        where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
+        where_sql = f"WHERE {' AND '.join(filters)}"
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
-                cur.execute(f"SELECT COUNT(*) AS total FROM da_agent_message_schedule {where_sql}", tuple(params))
+                cur.execute(
+                    f"""
+                    SELECT COUNT(*) AS total
+                    FROM da_agent_message_schedule s
+                    JOIN da_agent_topic t ON t.topic_id = s.topic_id
+                    {where_sql}
+                    """,
+                    tuple(params),
+                )
                 total_row = cur.fetchone() or {}
                 cur.execute(
                     f"""
-                    SELECT schedule_id, topic_id, name, message_type, message_content_json,
-                           cron_expr, timezone, enabled, last_task_id, last_queue_id,
-                           last_run_at, next_run_at, last_error_message, created_at, updated_at
-                    FROM da_agent_message_schedule
+                    SELECT s.schedule_id, s.topic_id, s.name, s.message_type, s.message_content_json,
+                           s.cron_expr, s.timezone, s.enabled, s.last_task_id, s.last_queue_id,
+                           s.last_run_at, s.next_run_at, s.last_error_message, s.created_at, s.updated_at
+                    FROM da_agent_message_schedule s
+                    JOIN da_agent_topic t ON t.topic_id = s.topic_id
                     {where_sql}
-                    ORDER BY updated_at DESC, created_at DESC
+                    ORDER BY s.updated_at DESC, s.created_at DESC
                     LIMIT %s OFFSET %s
                     """,
                     tuple([*params, safe_page_size, offset]),
@@ -1838,6 +1962,10 @@ class TopicTaskStore:
             "chat_conversation_id": str(row.get("chat_conversation_id") or ""),
             "current_task_id": str(row.get("current_task_id") or "") or None,
             "current_task_status": str(row.get("current_task_status") or "") or None,
+            "source": str(row.get("source") or "portal"),
+            "website_id": str(row.get("website_id") or ""),
+            "external_user_id": str(row.get("external_user_id") or ""),
+            "visitor_id": str(row.get("visitor_id") or ""),
             "message_count": int(row.get("message_count") or 0),
             "last_message_preview": str(row.get("last_message_preview") or ""),
             "created_at": _to_iso(row.get("created_at")),
