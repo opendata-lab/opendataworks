@@ -236,6 +236,77 @@ class WorkflowDeployServiceTest {
         verify(dolphinSchedulerService, never()).listTaskGroups(any());
     }
 
+    @Test
+    void deployShouldIgnoreStaleWorkflowCodeWhenWorkflowWasResetForFirstDeploy() {
+        DataWorkflow workflow = new DataWorkflow();
+        workflow.setId(1L);
+        workflow.setWorkflowName("wf_switched");
+        workflow.setProjectCode(22L);
+        workflow.setWorkflowCode(5001L);
+        workflow.setPublishStatus("never");
+        workflow.setDescription("switched workflow");
+        workflow.setGlobalParams("[]");
+
+        WorkflowTaskRelation relation = new WorkflowTaskRelation();
+        relation.setWorkflowId(1L);
+        relation.setTaskId(10L);
+        when(workflowTaskRelationMapper.selectList(any())).thenReturn(Collections.singletonList(relation));
+
+        DataTask task = new DataTask();
+        task.setId(10L);
+        task.setTaskName("task_shell");
+        task.setTaskDesc("desc");
+        task.setTaskSql("select 1");
+        task.setEngine("dolphin");
+        task.setDolphinNodeType("SHELL");
+        task.setDolphinTaskCode(1001L);
+        task.setDolphinTaskVersion(1);
+        task.setPriority(5);
+        task.setRetryTimes(1);
+        task.setRetryInterval(1);
+        task.setTimeoutSeconds(60);
+        when(dataTaskMapper.selectBatchIds(anyList())).thenReturn(Collections.singletonList(task));
+        when(tableTaskRelationMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        when(dolphinSchedulerService.buildShellScript(anyString())).thenReturn("echo ok");
+        when(dolphinSchedulerService.buildTaskDefinition(anyLong(), anyInt(), anyString(), anyString(), anyString(),
+                anyString(), anyInt(), anyInt(), anyInt(), anyString(), any(), any(), any(), any(), any()))
+                .thenReturn(Collections.singletonMap("ok", true));
+        when(dolphinSchedulerService.buildRelation(anyLong(), anyInt(), anyLong(), anyInt()))
+                .thenAnswer(invocation -> dolphinRelation(
+                        invocation.getArgument(0),
+                        invocation.getArgument(1),
+                        invocation.getArgument(2),
+                        invocation.getArgument(3)));
+        when(dolphinSchedulerService.buildLocation(anyLong(), anyInt(), anyInt()))
+                .thenAnswer(invocation -> dolphinLocation(invocation.getArgument(0)));
+        when(dolphinSchedulerService.getProjectCode(true)).thenReturn(22L);
+        when(dolphinSchedulerService.syncWorkflow(
+                anyLong(),
+                anyString(),
+                anyString(),
+                anyList(),
+                anyList(),
+                anyList(),
+                any()))
+                .thenReturn(90002L);
+
+        WorkflowDeployService.DeploymentResult result = service.deploy(workflow);
+
+        assertEquals(90002L, result.getWorkflowCode());
+        ArgumentCaptor<Long> workflowCodeCaptor = ArgumentCaptor.forClass(Long.class);
+        verify(dolphinSchedulerService).syncWorkflow(
+                workflowCodeCaptor.capture(),
+                eq("wf_switched"),
+                eq("switched workflow"),
+                anyList(),
+                anyList(),
+                anyList(),
+                eq("[]"));
+        assertEquals(Long.valueOf(0L), workflowCodeCaptor.getValue());
+        verify(dolphinSchedulerService, never()).checkWorkflowExists(anyLong());
+    }
+
     private DolphinSchedulerService.TaskRelationPayload dolphinRelation(long preCode,
             int preVersion,
             long postCode,

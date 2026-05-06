@@ -204,7 +204,8 @@ public class WorkflowPublishService {
         WorkflowPublishPreviewResponse response = new WorkflowPublishPreviewResponse();
         response.setWorkflowId(workflow.getId());
         response.setProjectCode(workflow.getProjectCode());
-        response.setWorkflowCode(workflow.getWorkflowCode());
+        boolean firstDeploy = isFirstDeploy(workflow);
+        response.setWorkflowCode(firstDeploy ? null : workflow.getWorkflowCode());
 
         RuntimeWorkflowDefinition platformDefinition = buildPlatformDefinition(workflow);
         if (CollectionUtils.isEmpty(platformDefinition.getTasks())) {
@@ -217,7 +218,7 @@ public class WorkflowPublishService {
         }
 
         RuntimeWorkflowDefinition runtimeDefinition = null;
-        if (workflow.getWorkflowCode() == null || workflow.getWorkflowCode() <= 0) {
+        if (firstDeploy) {
             RuntimeSyncIssue warning = RuntimeSyncIssue.warning(
                     PUBLISH_FIRST_DEPLOY,
                     "Dolphin 侧尚无 workflowCode，当前发布将执行首次部署");
@@ -280,7 +281,7 @@ public class WorkflowPublishService {
     private RuntimeWorkflowDefinition buildPlatformDefinition(DataWorkflow workflow) {
         RuntimeWorkflowDefinition definition = new RuntimeWorkflowDefinition();
         definition.setProjectCode(workflow.getProjectCode());
-        definition.setWorkflowCode(workflow.getWorkflowCode());
+        definition.setWorkflowCode(isFirstDeploy(workflow) ? null : workflow.getWorkflowCode());
         definition.setWorkflowName(workflow.getWorkflowName());
         definition.setDescription(workflow.getDescription());
         definition.setReleaseState(mapWorkflowReleaseState(workflow.getStatus()));
@@ -376,6 +377,13 @@ public class WorkflowPublishService {
                 workflow.getDolphinConfigId(),
                 workflow.getProjectCode(),
                 workflow.getWorkflowCode());
+    }
+
+    private boolean isFirstDeploy(DataWorkflow workflow) {
+        if (workflow == null || workflow.getWorkflowCode() == null || workflow.getWorkflowCode() <= 0) {
+            return true;
+        }
+        return "never".equalsIgnoreCase(normalizeText(workflow.getPublishStatus()));
     }
 
     private RuntimeWorkflowSchedule buildPlatformSchedule(DataWorkflow workflow) {

@@ -1,5 +1,9 @@
 package com.onedata.portal.service;
 
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.dto.workflow.WorkflowSchedulerEngineRequest;
 import com.onedata.portal.entity.DataWorkflow;
@@ -13,6 +17,7 @@ import com.onedata.portal.mapper.WorkflowInstanceCacheMapper;
 import com.onedata.portal.mapper.WorkflowPublishRecordMapper;
 import com.onedata.portal.mapper.WorkflowTaskRelationMapper;
 import com.onedata.portal.mapper.WorkflowVersionMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,11 +27,20 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class WorkflowSchedulerEngineSwitchTest {
+
+    static {
+        MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");
+        TableInfoHelper.initTableInfo(assistant, DataWorkflow.class);
+    }
 
     @Mock
     private DataWorkflowMapper dataWorkflowMapper;
@@ -78,7 +92,7 @@ class WorkflowSchedulerEngineSwitchTest {
     }
 
     @Test
-    void switchSchedulerEngineShouldResetRuntimeBindingAndKeepPlatformDefinition() {
+    void switchSchedulerEngineShouldResetRuntimeBindingAndKeepPlatformDefinition() throws Exception {
         DataWorkflow workflow = new DataWorkflow();
         workflow.setId(1L);
         workflow.setDolphinConfigId(1L);
@@ -89,7 +103,11 @@ class WorkflowSchedulerEngineSwitchTest {
         workflow.setPublishStatus("published");
         workflow.setLastPublishedVersionId(88L);
         workflow.setCurrentVersionId(99L);
-        workflow.setDefinitionJson("{\"taskDefinitionList\":[]}");
+        workflow.setDefinitionJson("{\"processDefinition\":{\"code\":5001,\"workflowCode\":5001,\"projectCode\":11,"
+                + "\"name\":\"wf_order\"},\"taskDefinitionList\":[],"
+                + "\"schedule\":{\"id\":900,\"scheduleId\":900,\"dolphinScheduleId\":900,"
+                + "\"crontab\":\"0 0 1 * * ? *\",\"scheduleState\":\"ONLINE\"},"
+                + "\"xPlatformWorkflowMeta\":{\"workflowCode\":5001,\"projectCode\":11}}");
         workflow.setDolphinScheduleId(900L);
         workflow.setScheduleState("ONLINE");
         workflow.setScheduleCron("0 0 1 * * ? *");
@@ -122,8 +140,27 @@ class WorkflowSchedulerEngineSwitchTest {
         assertEquals(Long.valueOf(99L), result.getCurrentVersionId());
         assertEquals("0 0 1 * * ? *", result.getScheduleCron());
 
-        ArgumentCaptor<DataWorkflow> captor = ArgumentCaptor.forClass(DataWorkflow.class);
-        verify(dataWorkflowMapper).updateById(captor.capture());
-        assertEquals(Long.valueOf(2L), captor.getValue().getDolphinConfigId());
+        ArgumentCaptor<LambdaUpdateWrapper<DataWorkflow>> wrapperCaptor =
+                ArgumentCaptor.forClass(LambdaUpdateWrapper.class);
+        verify(dataWorkflowMapper).update(eq(null), wrapperCaptor.capture());
+        verify(dataWorkflowMapper, never()).updateById(org.mockito.ArgumentMatchers.any());
+
+        String sqlSet = wrapperCaptor.getValue().getSqlSet();
+        assertTrue(sqlSet.contains("workflow_code"), sqlSet);
+        assertTrue(sqlSet.contains("dolphin_schedule_id"), sqlSet);
+        assertTrue(sqlSet.contains("last_published_version_id"), sqlSet);
+
+        JsonNode root = new ObjectMapper().readTree(result.getDefinitionJson());
+        JsonNode processDefinition = root.path("processDefinition");
+        assertFalse(processDefinition.has("code"));
+        assertFalse(processDefinition.has("workflowCode"));
+        assertFalse(processDefinition.has("processDefinitionCode"));
+        assertEquals(22L, processDefinition.path("projectCode").asLong());
+        assertFalse(root.path("xPlatformWorkflowMeta").has("workflowCode"));
+        assertEquals(22L, root.path("xPlatformWorkflowMeta").path("projectCode").asLong());
+        assertFalse(root.path("schedule").has("id"));
+        assertFalse(root.path("schedule").has("scheduleId"));
+        assertFalse(root.path("schedule").has("dolphinScheduleId"));
+        assertEquals("OFFLINE", root.path("schedule").path("scheduleState").asText());
     }
 }
