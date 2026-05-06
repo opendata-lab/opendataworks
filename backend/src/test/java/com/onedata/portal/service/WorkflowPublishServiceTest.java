@@ -857,6 +857,34 @@ class WorkflowPublishServiceTest {
     }
 
     @Test
+    void repairPublishMetadataShouldOverwriteStaleTaskGroupIdFromTargetCatalog() {
+        WorkflowPublishService publishService = buildPreviewServiceWithRealDiff();
+        DataWorkflow workflow = workflow(1L, null, 101L);
+        workflow.setDolphinConfigId(2L);
+        workflow.setPublishStatus("never");
+        workflow.setDefinitionJson("{\"taskDefinitionList\":[{\"taskCode\":10001,\"taskGroupId\":12,"
+                + "\"taskGroupName\":\"tg_a\",\"taskParams\":{}}]}");
+        when(dataWorkflowMapper.selectById(1L)).thenReturn(workflow);
+        when(dolphinSchedulerService.listDatasources(null, null, 2L))
+                .thenReturn(Collections.emptyList());
+
+        DolphinTaskGroupOption groupOption = new DolphinTaskGroupOption();
+        groupOption.setId(71);
+        groupOption.setName("tg_a");
+        when(dolphinSchedulerService.listTaskGroups(null, 2L))
+                .thenReturn(Collections.singletonList(groupOption));
+
+        WorkflowPublishRepairRequest request = new WorkflowPublishRepairRequest();
+        request.setOperator("tester");
+        WorkflowPublishRepairResponse response = publishService.repairPublishMetadata(1L, request);
+
+        assertTrue(Boolean.TRUE.equals(response.getRepaired()));
+        assertTrue(workflow.getDefinitionJson().contains("\"taskGroupId\":71"));
+        verify(dataWorkflowMapper, times(1)).updateById(any(DataWorkflow.class));
+        verify(workflowService, times(1)).normalizeAndPersistMetadata(1L, "tester");
+    }
+
+    @Test
     void repairPublishMetadataShouldOverwriteWrongDatasourceTypeFromCatalog() {
         WorkflowPublishService publishService = buildPreviewServiceWithRealDiff();
         DataWorkflow workflow = workflow(1L, null, 101L);
