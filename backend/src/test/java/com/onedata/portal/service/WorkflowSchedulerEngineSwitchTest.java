@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.onedata.portal.dto.DolphinTaskGroupOption;
 import com.onedata.portal.dto.workflow.WorkflowSchedulerEngineRequest;
 import com.onedata.portal.entity.DataWorkflow;
 import com.onedata.portal.entity.DolphinConfig;
@@ -24,6 +25,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -104,7 +107,9 @@ class WorkflowSchedulerEngineSwitchTest {
         workflow.setLastPublishedVersionId(88L);
         workflow.setCurrentVersionId(99L);
         workflow.setDefinitionJson("{\"processDefinition\":{\"code\":5001,\"workflowCode\":5001,\"projectCode\":11,"
-                + "\"name\":\"wf_order\"},\"taskDefinitionList\":[],"
+                + "\"name\":\"wf_order\",\"taskGroupName\":\"tg_default\"},"
+                + "\"taskDefinitionList\":[{\"taskCode\":1001,\"taskGroupId\":12,"
+                + "\"taskGroupName\":\"tg_default\",\"taskParams\":{}}],"
                 + "\"schedule\":{\"id\":900,\"scheduleId\":900,\"dolphinScheduleId\":900,"
                 + "\"crontab\":\"0 0 1 * * ? *\",\"scheduleState\":\"ONLINE\"},"
                 + "\"xPlatformWorkflowMeta\":{\"workflowCode\":5001,\"projectCode\":11}}");
@@ -126,6 +131,11 @@ class WorkflowSchedulerEngineSwitchTest {
         when(dolphinConfigService.getEnabledConfig(2L)).thenReturn(target);
         when(dolphinSchedulerService.testConnection(2L)).thenReturn(true);
         when(dolphinSchedulerService.getProjectCode(2L, true)).thenReturn(22L);
+        DolphinTaskGroupOption targetGroup = new DolphinTaskGroupOption();
+        targetGroup.setId(71);
+        targetGroup.setName("tg_default");
+        when(dolphinSchedulerService.listTaskGroups(null, 2L))
+                .thenReturn(Collections.singletonList(targetGroup));
 
         DataWorkflow result = workflowService.switchSchedulerEngine(1L, request);
 
@@ -162,5 +172,6 @@ class WorkflowSchedulerEngineSwitchTest {
         assertFalse(root.path("schedule").has("scheduleId"));
         assertFalse(root.path("schedule").has("dolphinScheduleId"));
         assertEquals("OFFLINE", root.path("schedule").path("scheduleState").asText());
+        assertEquals(71, root.path("taskDefinitionList").get(0).path("taskGroupId").asInt());
     }
 }
