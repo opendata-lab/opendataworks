@@ -191,6 +191,24 @@ class WorkflowPublishServiceTest {
     }
 
     @Test
+    void previewPublishShouldTreatNeverPublishedWorkflowAsFirstDeployEvenWithStaleWorkflowCode() {
+        DataWorkflow workflow = workflow(1L, 5001L, 101L);
+        workflow.setPublishStatus("never");
+        mockPreviewInputs(workflow);
+
+        when(dataWorkflowMapper.selectById(1L)).thenReturn(workflow);
+
+        WorkflowPublishPreviewResponse preview = service.previewPublish(1L);
+
+        assertTrue(Boolean.TRUE.equals(preview.getCanPublish()));
+        assertTrue(preview.getWarnings().stream()
+                .anyMatch(issue -> "PUBLISH_FIRST_DEPLOY".equals(issue.getCode())));
+        verify(runtimeDefinitionService, never()).loadRuntimeDefinitionFromExport(any(Long.class), any(Long.class));
+        verify(runtimeDefinitionService, never()).loadRuntimeDefinitionFromExport(
+                any(Long.class), any(Long.class), any(Long.class));
+    }
+
+    @Test
     void publishOnlineShouldUseLastPublishedVersionWhenRequestVersionAbsent() {
         DataWorkflow workflow = workflow(1L, 90001L, 101L);
         workflow.setLastPublishedVersionId(88L);

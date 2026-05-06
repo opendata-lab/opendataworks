@@ -467,6 +467,9 @@ public class WorkflowService {
             throw new IllegalStateException("目标 Dolphin 项目不可用: " + targetConfig.getProjectName());
         }
 
+        String operator = StringUtils.hasText(request.getOperator()) ? request.getOperator().trim() : "system";
+        LocalDateTime updatedAt = LocalDateTime.now();
+
         workflow.setDolphinConfigId(targetConfigId);
         workflow.setWorkflowCode(null);
         workflow.setProjectCode(targetProjectCode);
@@ -479,10 +482,29 @@ public class WorkflowService {
         workflow.setRuntimeSyncMessage(null);
         workflow.setRuntimeSyncHash(null);
         workflow.setRuntimeSyncAt(null);
-        workflow.setUpdatedBy(StringUtils.hasText(request.getOperator()) ? request.getOperator().trim() : "system");
-        workflow.setUpdatedAt(LocalDateTime.now());
-        workflow.setDefinitionJson(refreshDefinitionRuntimeIds(workflow.getDefinitionJson(), targetConfigId));
-        dataWorkflowMapper.updateById(workflow);
+        workflow.setUpdatedBy(operator);
+        workflow.setUpdatedAt(updatedAt);
+        workflow.setDefinitionJson(refreshDefinitionRuntimeIds(
+                workflow.getDefinitionJson(),
+                targetConfigId,
+                targetProjectCode));
+        dataWorkflowMapper.update(null, Wrappers.<DataWorkflow>lambdaUpdate()
+                .eq(DataWorkflow::getId, workflowId)
+                .set(DataWorkflow::getDolphinConfigId, targetConfigId)
+                .set(DataWorkflow::getWorkflowCode, null)
+                .set(DataWorkflow::getProjectCode, targetProjectCode)
+                .set(DataWorkflow::getDolphinScheduleId, null)
+                .set(DataWorkflow::getScheduleState, "OFFLINE")
+                .set(DataWorkflow::getStatus, "offline")
+                .set(DataWorkflow::getPublishStatus, "never")
+                .set(DataWorkflow::getLastPublishedVersionId, null)
+                .set(DataWorkflow::getRuntimeSyncStatus, null)
+                .set(DataWorkflow::getRuntimeSyncMessage, null)
+                .set(DataWorkflow::getRuntimeSyncHash, null)
+                .set(DataWorkflow::getRuntimeSyncAt, null)
+                .set(DataWorkflow::getDefinitionJson, workflow.getDefinitionJson())
+                .set(DataWorkflow::getUpdatedBy, operator)
+                .set(DataWorkflow::getUpdatedAt, updatedAt));
         return workflow;
     }
 
@@ -1873,7 +1895,7 @@ public class WorkflowService {
         return config != null ? config.getId() : null;
     }
 
-    private String refreshDefinitionRuntimeIds(String definitionJson, Long dolphinConfigId) {
+    private String refreshDefinitionRuntimeIds(String definitionJson, Long dolphinConfigId, Long projectCode) {
         if (!StringUtils.hasText(definitionJson)) {
             return definitionJson;
         }
@@ -1882,13 +1904,74 @@ public class WorkflowService {
             if (!(root instanceof ObjectNode)) {
                 return definitionJson;
             }
-            enrichDefinitionMetadataFromCatalog((ObjectNode) root, dolphinConfigId);
+            ObjectNode rootObject = (ObjectNode) root;
+            resetDefinitionRuntimeBinding(rootObject, projectCode);
+            enrichDefinitionMetadataFromCatalog(rootObject, dolphinConfigId);
             return objectMapper.writeValueAsString(root);
         } catch (Exception ex) {
             log.warn("Failed to refresh workflow definition metadata for Dolphin config {}: {}",
                     dolphinConfigId, ex.getMessage());
             return definitionJson;
         }
+    }
+
+    private void resetDefinitionRuntimeBinding(ObjectNode rootObject, Long projectCode) {
+        if (rootObject == null) {
+            return;
+        }
+        resetWorkflowDefinitionNode(firstPresent(rootObject, "processDefinition"), projectCode);
+        resetWorkflowDefinitionNode(firstPresent(rootObject, "workflowDefinition"), projectCode);
+        resetWorkflowDefinitionNode(firstPresent(rootObject, "workflow"), projectCode);
+
+        JsonNode metaNode = rootObject.get("xPlatformWorkflowMeta");
+        if (metaNode instanceof ObjectNode) {
+            ObjectNode metaObject = (ObjectNode) metaNode;
+            metaObject.remove("workflowCode");
+            if (projectCode != null && projectCode > 0) {
+                metaObject.put("projectCode", projectCode);
+            } else {
+                metaObject.remove("projectCode");
+            }
+        }
+
+        resetScheduleRuntimeBinding(rootObject.get("schedule"));
+        resetNestedScheduleRuntimeBinding(firstPresent(rootObject, "processDefinition"));
+        resetNestedScheduleRuntimeBinding(firstPresent(rootObject, "workflowDefinition"));
+        resetNestedScheduleRuntimeBinding(firstPresent(rootObject, "workflow"));
+    }
+
+    private void resetWorkflowDefinitionNode(JsonNode node, Long projectCode) {
+        if (!(node instanceof ObjectNode)) {
+            return;
+        }
+        ObjectNode object = (ObjectNode) node;
+        object.remove("code");
+        object.remove("workflowCode");
+        object.remove("processDefinitionCode");
+        if (projectCode != null && projectCode > 0) {
+            object.put("projectCode", projectCode);
+        } else {
+            object.remove("projectCode");
+        }
+    }
+
+    private void resetNestedScheduleRuntimeBinding(JsonNode definitionNode) {
+        if (!(definitionNode instanceof ObjectNode)) {
+            return;
+        }
+        resetScheduleRuntimeBinding(definitionNode.get("schedule"));
+    }
+
+    private void resetScheduleRuntimeBinding(JsonNode scheduleNode) {
+        if (!(scheduleNode instanceof ObjectNode)) {
+            return;
+        }
+        ObjectNode scheduleObject = (ObjectNode) scheduleNode;
+        scheduleObject.remove("id");
+        scheduleObject.remove("scheduleId");
+        scheduleObject.remove("dolphinScheduleId");
+        scheduleObject.put("scheduleState", "OFFLINE");
+        scheduleObject.put("releaseState", "OFFLINE");
     }
 
     private void attachLatestInstanceInfo(List<DataWorkflow> workflows) {

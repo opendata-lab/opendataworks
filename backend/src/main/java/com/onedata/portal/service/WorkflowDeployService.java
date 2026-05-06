@@ -214,7 +214,7 @@ public class WorkflowDeployService {
                     offsetInLevel));
         }
 
-        long workflowCode = workflow.getWorkflowCode() == null ? 0L : workflow.getWorkflowCode();
+        long workflowCode = isFirstDeploy(workflow) ? 0L : workflow.getWorkflowCode();
         boolean existingWorkflow = workflowCode > 0;
         if (existingWorkflow) {
             // Check if the workflow definition actually exists in DolphinScheduler
@@ -388,6 +388,13 @@ public class WorkflowDeployService {
             throw new IllegalStateException("检测到任务缺少 Dolphin 元数据，请先保存/修复后再发布: "
                     + String.join(", ", invalidTasks));
         }
+    }
+
+    private boolean isFirstDeploy(DataWorkflow workflow) {
+        if (workflow == null || workflow.getWorkflowCode() == null || workflow.getWorkflowCode() <= 0) {
+            return true;
+        }
+        return "never".equalsIgnoreCase(normalizeText(workflow.getPublishStatus()));
     }
 
     private List<DataTask> resolveUpstreamTasks(DataTask task,
