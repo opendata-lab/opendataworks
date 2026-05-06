@@ -1052,7 +1052,7 @@ public class WorkflowPublishService {
             }
             Integer taskGroupId = readInt(taskObject, "taskGroupId");
             String taskGroupName = readText(taskObject, "taskGroupName");
-            if ((taskGroupId == null || taskGroupId <= 0) && StringUtils.hasText(taskGroupName)) {
+            if (shouldResolveTaskGroupByName(workflow, taskGroupId, taskGroupName)) {
                 needTaskGroupResolve = true;
             }
         }
@@ -1130,10 +1130,12 @@ public class WorkflowPublishService {
             }
             Integer taskGroupId = readInt(taskObject, "taskGroupId");
             String taskGroupName = readText(taskObject, "taskGroupName");
-            if ((taskGroupId == null || taskGroupId <= 0) && StringUtils.hasText(taskGroupName)) {
+            if (shouldResolveTaskGroupByName(workflow, taskGroupId, taskGroupName)) {
                 DolphinTaskGroupOption groupOption = taskGroupByName.get(taskGroupName.trim());
                 if (groupOption != null && groupOption.getId() != null && groupOption.getId() > 0) {
                     changed |= putInt(taskObject, "taskGroupId", groupOption.getId());
+                } else if (isFirstDeploy(workflow)) {
+                    changed |= removeField(taskObject, "taskGroupId");
                 }
             }
         }
@@ -1188,6 +1190,13 @@ public class WorkflowPublishService {
         return "task.datasourceId".equals(field) || "task.taskGroupId".equals(field);
     }
 
+    private boolean shouldResolveTaskGroupByName(DataWorkflow workflow, Integer taskGroupId, String taskGroupName) {
+        if (!StringUtils.hasText(taskGroupName)) {
+            return false;
+        }
+        return taskGroupId == null || taskGroupId <= 0 || isFirstDeploy(workflow);
+    }
+
     private ObjectNode ensureObject(ObjectNode root, String field) {
         if (root == null || !StringUtils.hasText(field)) {
             return objectMapper.createObjectNode();
@@ -1222,6 +1231,14 @@ public class WorkflowPublishService {
             return false;
         }
         node.put(field, value);
+        return true;
+    }
+
+    private boolean removeField(ObjectNode node, String field) {
+        if (node == null || !StringUtils.hasText(field) || !node.has(field)) {
+            return false;
+        }
+        node.remove(field);
         return true;
     }
 

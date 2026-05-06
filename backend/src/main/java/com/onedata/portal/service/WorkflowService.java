@@ -1938,6 +1938,7 @@ public class WorkflowService {
         resetNestedScheduleRuntimeBinding(firstPresent(rootObject, "processDefinition"));
         resetNestedScheduleRuntimeBinding(firstPresent(rootObject, "workflowDefinition"));
         resetNestedScheduleRuntimeBinding(firstPresent(rootObject, "workflow"));
+        resetTaskGroupRuntimeBinding(rootObject.get("taskDefinitionList"));
     }
 
     private void resetWorkflowDefinitionNode(JsonNode node, Long projectCode) {
@@ -1972,6 +1973,17 @@ public class WorkflowService {
         scheduleObject.remove("dolphinScheduleId");
         scheduleObject.put("scheduleState", "OFFLINE");
         scheduleObject.put("releaseState", "OFFLINE");
+    }
+
+    private void resetTaskGroupRuntimeBinding(JsonNode taskListNode) {
+        if (!(taskListNode instanceof ArrayNode)) {
+            return;
+        }
+        for (JsonNode taskNode : (ArrayNode) taskListNode) {
+            if (taskNode instanceof ObjectNode) {
+                ((ObjectNode) taskNode).remove("taskGroupId");
+            }
+        }
     }
 
     private void attachLatestInstanceInfo(List<DataWorkflow> workflows) {
