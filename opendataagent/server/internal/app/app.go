@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -417,6 +418,8 @@ func (a *App) runTask(taskID string) {
 	a.mu.Unlock()
 	defer a.clearTaskCancel(taskID)
 
+	log.Printf("agent task started task_id=%s topic_id=%s provider=%s model=%s", task.TaskID, task.TopicID, task.ProviderID, task.ModelName)
+
 	modelFactory, _, err := agentcfg.CreateModelFactoryFromSettings(
 		settings,
 		task.ProviderID,
@@ -424,6 +427,7 @@ func (a *App) runTask(taskID string) {
 		runtime.NewMockModelFactory(activeSkills, activeMcps),
 	)
 	if err != nil {
+		log.Printf("agent task model setup failed task_id=%s provider=%s model=%s error=%v", task.TaskID, task.ProviderID, task.ModelName, err)
 		a.finishTaskError(taskID, err, runtime.TaskResult{})
 		return
 	}
@@ -440,16 +444,20 @@ func (a *App) runTask(taskID string) {
 	})
 	if err != nil {
 		if errors.Is(err, context.Canceled) || a.isTaskCancelled(taskID) {
+			log.Printf("agent task cancelled task_id=%s provider=%s model=%s", task.TaskID, task.ProviderID, task.ModelName)
 			a.finishTaskAsCancelled(taskID)
 			return
 		}
+		log.Printf("agent task failed task_id=%s provider=%s model=%s error=%v", task.TaskID, task.ProviderID, task.ModelName, err)
 		a.finishTaskError(taskID, err, result)
 		return
 	}
 	if a.isTaskCancelled(taskID) {
+		log.Printf("agent task cancelled task_id=%s provider=%s model=%s", task.TaskID, task.ProviderID, task.ModelName)
 		a.finishTaskAsCancelled(taskID)
 		return
 	}
+	log.Printf("agent task finished task_id=%s provider=%s model=%s final_len=%d blocks=%d", task.TaskID, task.ProviderID, task.ModelName, len(result.Final), len(result.Blocks))
 	a.finishTaskSuccess(taskID, result)
 }
 
@@ -547,12 +555,25 @@ func (a *App) finishTaskError(taskID string, runErr error, result runtime.TaskRe
 			}
 		}
 	}
+	if !a.hasErrorEventLocked(taskID) {
+		a.appendTaskEventLocked(taskID, models.TaskEvent{
+			Type: "error",
+			Payload: map[string]interface{}{
+				"message": runErr.Error(),
+			},
+		})
+	}
 	_ = a.saveLocked()
 }
 
 func (a *App) appendTaskEvent(taskID string, event models.TaskEvent) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.appendTaskEventLocked(taskID, event)
+	_ = a.saveLocked()
+}
+
+func (a *App) appendTaskEventLocked(taskID string, event models.TaskEvent) {
 	task, ok := a.state.Tasks[taskID]
 	if !ok {
 		return
@@ -564,8 +585,16 @@ func (a *App) appendTaskEvent(taskID string, event models.TaskEvent) {
 	event.MessageID = task.AssistantMessageID
 	event.CreatedAt = util.Now()
 	a.state.TaskEvents[taskID] = append(a.state.TaskEvents[taskID], event)
-	_ = a.saveLocked()
 	a.broadcastLocked(taskID, event)
+}
+
+func (a *App) hasErrorEventLocked(taskID string) bool {
+	for _, event := range a.state.TaskEvents[taskID] {
+		if event.Type == "error" {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *App) GetTask(taskID string) (models.Task, error) {

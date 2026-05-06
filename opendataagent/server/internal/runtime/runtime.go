@@ -72,12 +72,38 @@ func Run(ctx context.Context, input RunInput, emit EventEmitter) (TaskResult, er
 		return TaskResult{}, err
 	}
 
+	var streamErr error
 	for streamEvent := range stream {
+		if streamEvent.Type == sdkapi.EventError && streamErr == nil {
+			streamErr = errors.New(defaultString(fmt.Sprint(streamEvent.Output), "runtime error"))
+		}
 		for _, taskEvent := range convertStreamEvent(streamEvent) {
 			emitEvent(taskEvent)
 		}
 	}
-	return collector.Result(), nil
+	result := collector.Result()
+	if streamErr != nil {
+		return result, streamErr
+	}
+	if isEmptyTaskResult(result) {
+		return result, errors.New("model returned empty response")
+	}
+	return result, nil
+}
+
+func isEmptyTaskResult(result TaskResult) bool {
+	if strings.TrimSpace(result.Final) != "" {
+		return false
+	}
+	for _, block := range result.Blocks {
+		if strings.TrimSpace(block.Text) != "" {
+			return false
+		}
+		if block.Tool != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func buildOptions(input RunInput) sdkapi.Options {
@@ -548,14 +574,14 @@ func sanitizeSkillName(value string) string {
 }
 
 type collector struct {
-	blocks     []*models.MessageBlock
-	blockIndex map[string]*models.MessageBlock
-	toolInput  map[string]string
-	toolBlocks map[string]string
+	blocks      []*models.MessageBlock
+	blockIndex  map[string]*models.MessageBlock
+	toolInput   map[string]string
+	toolBlocks  map[string]string
 	textParsers map[string]*textStreamParser
-	usage      map[string]interface{}
-	mainText   strings.Builder
-	messageSeq int
+	usage       map[string]interface{}
+	mainText    strings.Builder
+	messageSeq  int
 }
 
 type textStreamParser struct {
@@ -566,11 +592,11 @@ type textStreamParser struct {
 
 func newCollector() *collector {
 	return &collector{
-		blockIndex: map[string]*models.MessageBlock{},
-		toolInput:  map[string]string{},
-		toolBlocks: map[string]string{},
+		blockIndex:  map[string]*models.MessageBlock{},
+		toolInput:   map[string]string{},
+		toolBlocks:  map[string]string{},
 		textParsers: map[string]*textStreamParser{},
-		usage:      map[string]interface{}{},
+		usage:       map[string]interface{}{},
 	}
 }
 

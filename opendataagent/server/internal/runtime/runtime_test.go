@@ -1,9 +1,13 @@
 package runtime
 
 import (
+	"context"
+	"errors"
+	"strings"
 	"testing"
 
 	sdkapi "github.com/stellarlinkco/agentsdk-go/pkg/api"
+	sdkmodel "github.com/stellarlinkco/agentsdk-go/pkg/model"
 
 	"opendataagent/server/internal/agent"
 	"opendataagent/server/internal/models"
@@ -11,6 +15,67 @@ import (
 
 func intPtr(value int) *int {
 	return &value
+}
+
+type failingStreamModel struct {
+	err error
+}
+
+func (m failingStreamModel) Complete(context.Context, sdkmodel.Request) (*sdkmodel.Response, error) {
+	return nil, m.err
+}
+
+func (m failingStreamModel) CompleteStream(context.Context, sdkmodel.Request, sdkmodel.StreamHandler) error {
+	return m.err
+}
+
+type emptyStreamModel struct{}
+
+func (m emptyStreamModel) Complete(context.Context, sdkmodel.Request) (*sdkmodel.Response, error) {
+	return &sdkmodel.Response{Message: sdkmodel.Message{Role: "assistant"}}, nil
+}
+
+func (m emptyStreamModel) CompleteStream(_ context.Context, _ sdkmodel.Request, cb sdkmodel.StreamHandler) error {
+	return cb(sdkmodel.StreamResult{
+		Final: true,
+		Response: &sdkmodel.Response{
+			Message: sdkmodel.Message{Role: "assistant"},
+		},
+	})
+}
+
+func TestRunReturnsErrorWhenStreamReportsModelError(t *testing.T) {
+	t.Setenv("ODA_DISABLE_AGENT_TOOLS", "1")
+
+	result, err := Run(context.Background(), RunInput{
+		Prompt:      "hello",
+		SessionID:   "stream-error",
+		ProjectRoot: t.TempDir(),
+		ModelFactory: sdkapi.ModelFactoryFunc(func(context.Context) (sdkmodel.Model, error) {
+			return failingStreamModel{err: errors.New("gateway stream failed")}, nil
+		}),
+	}, nil)
+
+	if err == nil || !strings.Contains(err.Error(), "gateway stream failed") {
+		t.Fatalf("expected stream error, got result=%#v err=%v", result, err)
+	}
+}
+
+func TestRunReturnsErrorWhenModelProducesNoContent(t *testing.T) {
+	t.Setenv("ODA_DISABLE_AGENT_TOOLS", "1")
+
+	result, err := Run(context.Background(), RunInput{
+		Prompt:      "hello",
+		SessionID:   "empty-response",
+		ProjectRoot: t.TempDir(),
+		ModelFactory: sdkapi.ModelFactoryFunc(func(context.Context) (sdkmodel.Model, error) {
+			return emptyStreamModel{}, nil
+		}),
+	}, nil)
+
+	if err == nil || !strings.Contains(err.Error(), "model returned empty response") {
+		t.Fatalf("expected empty response error, got result=%#v err=%v", result, err)
+	}
 }
 
 func TestCollectorPreservesMarkdownLineBreaksInTextDeltas(t *testing.T) {
