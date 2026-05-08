@@ -4,7 +4,7 @@
 
 The admin UI now models Skills as list and detail pages, but the runtime state still came from a single `skills_output_dir`. That made `enabled` mean “the one current skill”, not “this skill is available to runtime”.
 
-`opendataagent` keeps a runtime enabled map per Skill and injects all enabled Skills into execution. OpenDataWorks should follow that model while keeping its existing `skills_output_dir` compatibility contract for the DataAgent semantic layer and scripts.
+`opendataagent` keeps a runtime enabled map per Skill and injects all enabled Skills into execution. OpenDataWorks should follow that model while keeping its existing `skills_output_dir` compatibility contract for primary Skill script paths.
 
 ## Problem
 
@@ -90,6 +90,6 @@ Failure:
 
 ## Tradeoffs
 
-The semantic layer still reads the primary Skill from `skills_output_dir`. Multi-Skill activation controls Claude Skill discovery for execution, while existing script compatibility stays anchored on the primary Skill until the semantic layer is made fully multi-Skill-aware.
+DataAgent no longer parses Skill assets into a backend semantic layer. Multi-Skill activation controls Claude Skill discovery for execution, while existing script compatibility stays anchored on the primary Skill through `DATAAGENT_SKILL_ROOT`.
 
 The runtime helper extraction keeps prompt/env/provider assembly shared without keeping a second agent execution path alive.

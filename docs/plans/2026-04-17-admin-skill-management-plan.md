@@ -40,6 +40,6 @@ Upgrade Skill management from a single-active Skill model to multi-active Skill 
 
 - No new database table in this iteration.
 - At least one Skill must remain enabled.
-- Multi-active means Claude Skill discovery sees all enabled Skills; the existing semantic layer still uses the primary `skills_output_dir`.
+- Multi-active means Claude Skill discovery sees all enabled Skills; primary `skills_output_dir` remains only as the script compatibility root for `DATAAGENT_SKILL_ROOT`.
 - Only browser ZIP upload is supported for import; server paths, Git URLs, and marketplace discovery remain out of scope.
 - Imported Skills default to disabled and are the only Skills that can be uninstalled.

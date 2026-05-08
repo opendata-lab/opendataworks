@@ -11,6 +11,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 import anyio
 
 from config import get_settings
+from core.claude_cli import resolve_claude_cli_path
 from core.agent_runtime import (
     _append_delta,
     _build_allowed_tools,
@@ -851,6 +852,9 @@ async def execute_task_stream(
         options_kwargs["resume"] = params.resume_session_id
     if permission_mode:
         options_kwargs["permission_mode"] = permission_mode
+    cli_path = resolve_claude_cli_path(cfg)
+    if cli_path:
+        options_kwargs["cli_path"] = cli_path
     options = ClaudeAgentOptions(**options_kwargs)
     timeout_seconds = max(10, int(params.timeout_seconds or cfg.agent_timeout_seconds))
 

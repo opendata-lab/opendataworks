@@ -8,8 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   uninstallSkill: vi.fn(),
   updateSkillDocument: vi.fn(),
   compareSkillDocument: vi.fn(),
-  rollbackSkillDocument: vi.fn(),
-  syncSkills: vi.fn()
+  rollbackSkillDocument: vi.fn()
 }))
 
 const routerPush = vi.hoisted(() => vi.fn())
@@ -148,7 +147,6 @@ describe('SkillDetailView', () => {
     apiMocks.updateSkillDocument.mockReset()
     apiMocks.compareSkillDocument.mockReset()
     apiMocks.rollbackSkillDocument.mockReset()
-    apiMocks.syncSkills.mockReset()
     messageMocks.success.mockReset()
     messageMocks.warning.mockReset()
     messageMocks.error.mockReset()

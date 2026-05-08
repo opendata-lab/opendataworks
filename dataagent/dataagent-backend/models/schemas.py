@@ -359,16 +359,6 @@ class SkillDocumentCompareResponse(BaseModel):
     changed_lines: int = 0
 
 
-class SkillSyncResponse(BaseModel):
-    skills_root_dir: str
-    metadata_schema: str
-    knowledge_schema: str
-    stats: Dict[str, int] = Field(default_factory=dict)
-    changed_documents: List[SkillDocumentSummary] = Field(default_factory=list)
-    imported_documents: List[SkillDocumentSummary] = Field(default_factory=list)
-    document_count: int = 0
-
-
 class TopicMessage(BaseModel):
     message_id: str
     topic_id: str

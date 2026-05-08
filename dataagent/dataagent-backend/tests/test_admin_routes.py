@@ -251,26 +251,6 @@ def test_skill_document_routes_contract(monkeypatch):
             "document_count": 1,
         },
     )
-    monkeypatch.setattr(
-        admin_routes,
-        "sync_from_opendataworks",
-        lambda: {
-            "skills_root_dir": "/tmp/.claude/skills/dataagent-nl2sql",
-            "metadata_schema": "opendataworks",
-            "knowledge_schema": "dataagent",
-            "stats": {
-                "metadata_tables": 1,
-                "lineage_edges": 0,
-                "semantic_mappings": 0,
-                "few_shots": 0,
-                "business_rules": 0,
-            },
-            "changed_documents": [summary],
-            "imported_documents": [],
-            "document_count": 1,
-        },
-    )
-
     client = TestClient(app)
 
     list_response = client.get("/api/v1/dataagent/skills/documents")
@@ -328,8 +308,7 @@ def test_skill_document_routes_contract(monkeypatch):
     assert uninstall_response.json()["removed_documents"][0]["folder"] == "marketing-insights"
 
     sync_response = client.post("/api/v1/dataagent/skills/sync")
-    assert sync_response.status_code == 200
-    assert sync_response.json()["document_count"] == 1
+    assert sync_response.status_code == 405
 
 
 def test_skill_uninstall_route_rejects_service_errors(monkeypatch):

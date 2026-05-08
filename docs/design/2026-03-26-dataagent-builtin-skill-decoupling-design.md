@@ -117,8 +117,8 @@
 
 - `GET /api/v1/nl2sql-admin/settings`
   - 字段不变，但 `skills_root_dir` 的语义明确指向内置 skill 根目录
-- `POST /api/v1/dataagent/skills/sync`
-  - 继续只扫描和刷新当前内置 skill
+- Skill document list APIs
+  - 通过文件列表读取自动刷新管理索引
 - DataAgent 运行时：
   - 仍只消费 `dataagent/.claude/skills/dataagent-nl2sql`
   - 不发现根目录 `.claude/skills/architecture-assistant`
@@ -133,7 +133,7 @@
 
 - 后端单测：
   - builtin skill 静态快照不再包含被移除的业务词汇
-  - loader / semantic layer / prompt helper 仍可工作
+  - skill discovery / prompt helper 仍可工作
 - 前端单测：
   - 通用 skill 标识识别不依赖 `dataagent-nl2sql`
 - 本地 smoke 环境可用时：

@@ -21,31 +21,8 @@
         >
           <el-button type="primary" :loading="importLoading">导入 Skill</el-button>
         </el-upload>
-        <el-tooltip content="刷新目录" placement="top">
-          <el-button
-            class="skill-studio__sync-button"
-            :icon="Refresh"
-            :loading="syncLoading"
-            circle
-            aria-label="刷新目录"
-            @click="triggerSync"
-          />
-        </el-tooltip>
       </div>
     </div>
-
-    <el-alert
-      v-if="syncResult"
-      type="success"
-      :closable="true"
-      show-icon
-      class="skill-studio__alert"
-      @close="syncResult = null"
-    >
-      <template #title>
-        Skill 目录已刷新：共处理 {{ syncResult.document_count }} 个文件，更新 {{ syncResult.changed_documents?.length || 0 }} 个。
-      </template>
-    </el-alert>
 
     <div v-loading="listLoading" class="skill-grid">
       <div
@@ -104,18 +81,15 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh } from '@element-plus/icons-vue'
 import { dataagentApi } from '@/api/dataagent'
 import { buildSkillItems, sourceLabel } from './skillAdminShared'
 
 const router = useRouter()
 
 const listLoading = ref(false)
-const syncLoading = ref(false)
 const importLoading = ref(false)
 const searchKeyword = ref('')
 const documents = ref([])
-const syncResult = ref(null)
 const runtimeUpdatingFolder = ref('')
 
 const skillItems = computed(() => buildSkillItems(documents.value))
@@ -244,33 +218,6 @@ const confirmUninstallSkill = async (skill) => {
   }
 }
 
-const triggerSync = async () => {
-  try {
-    await ElMessageBox.confirm(
-      '确认重新扫描 Skill 目录并刷新 DataAgent 运行时吗？',
-      '刷新 Skill 目录',
-      {
-        type: 'warning',
-        confirmButtonText: '开始刷新',
-        cancelButtonText: '取消'
-      }
-    )
-  } catch {
-    return
-  }
-
-  syncLoading.value = true
-  try {
-    syncResult.value = await dataagentApi.syncSkills()
-    await loadDocuments()
-    ElMessage.success('Skill 目录刷新完成')
-  } catch (error) {
-    notifyError(error, '刷新 Skill 目录失败')
-  } finally {
-    syncLoading.value = false
-  }
-}
-
 onMounted(async () => {
   await loadDocuments()
 })
@@ -315,17 +262,6 @@ onMounted(async () => {
 
 .skill-studio__search {
   width: 280px;
-}
-
-.skill-studio__sync-button {
-  flex: 0 0 auto;
-  width: 32px;
-  height: 32px;
-  padding: 0;
-}
-
-.skill-studio__alert {
-  margin-top: -4px;
 }
 
 .skill-grid {
@@ -414,10 +350,6 @@ onMounted(async () => {
   .skill-studio__actions :deep(.el-upload),
   .skill-studio__actions :deep(.el-upload .el-button) {
     width: 100%;
-  }
-
-  .skill-studio__sync-button {
-    align-self: flex-start;
   }
 
   .skill-card__switch {

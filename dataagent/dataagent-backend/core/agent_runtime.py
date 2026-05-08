@@ -14,7 +14,7 @@ from urllib.parse import urlparse
 from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import normalize_provider_id as _normalize_provider_id
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
-from core.skills_loader import prepare_enabled_skills_project_cwd, resolve_builtin_skill_root_dir
+from core.skill_discovery import prepare_enabled_skills_project_cwd, resolve_builtin_skill_root_dir
 
 SAFE_AUTO_ALLOWED_TOOLS = ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
 PORTAL_MCP_SERVER_NAME = "portal"

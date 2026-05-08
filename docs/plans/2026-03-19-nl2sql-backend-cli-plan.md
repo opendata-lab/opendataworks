@@ -29,7 +29,7 @@
   - `test_odw_cli.py`
   - `test_nl2sql_agent_runtime_env.py`
   - `test_task_executor.py`
-  - `test_skills_sync_templates.py`
+  - metadata CLI bridge and builtin skill content tests
   - `test_builtin_skill_content.py`
 - Build:
   - reactor 下 backend 编译

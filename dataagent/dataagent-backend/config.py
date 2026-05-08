@@ -47,6 +47,7 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_auth_token: str = ""
     anthropic_base_url: str = ""
+    claude_cli_path: str = ""
 
     # ---- MySQL（会话存储 + MySQL 查询工具）----
     mysql_host: str = "localhost"
