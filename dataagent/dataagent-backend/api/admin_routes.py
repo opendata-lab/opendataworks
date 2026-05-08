@@ -13,11 +13,10 @@ from core.skill_admin_service import (
     persist_admin_settings,
     rollback_document,
     save_document_content,
-    sync_from_opendataworks,
     uninstall_skill,
     update_skill_runtime,
 )
-from core.skills_loader import resolve_skills_root_dir
+from core.skill_discovery import resolve_skills_root_dir
 from models.schemas import (
     AdminSettingsResponse,
     AdminSettingsUpdateRequest,
@@ -32,7 +31,6 @@ from models.schemas import (
     SkillImportResponse,
     SkillRuntimeConfig,
     SkillRuntimeUpdateRequest,
-    SkillSyncResponse,
     SkillUninstallResponse,
 )
 
@@ -174,15 +172,6 @@ async def rollback_skill_document(document_id: int, version_id: int):
         status_code = 404 if "not found" in message else 400
         raise HTTPException(status_code=status_code, detail=message) from exc
     return SkillDocumentDetail.model_validate(document)
-
-
-@skills_router.post("/skills/sync", response_model=SkillSyncResponse)
-async def sync_skill_documents():
-    try:
-        result = sync_from_opendataworks()
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SkillSyncResponse.model_validate(result)
 
 
 router.include_router(settings_router)

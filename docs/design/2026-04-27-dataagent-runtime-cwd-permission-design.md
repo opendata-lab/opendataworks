@@ -53,6 +53,6 @@ Cons:
 
 ## Affected Stacks
 
-- DataAgent backend: `core/skills_loader.py`, `config.py`
+- DataAgent backend: `core/skill_discovery.py`, `config.py`
 - Deployment: `Dockerfile`, `deploy/docker-compose.dev.yml`, `deploy/docker-compose.prod.yml`, `deploy/.env.example`, `deploy/README.md`
-- Tests: `dataagent/dataagent-backend/tests/test_skills_loader.py`
+- Tests: `dataagent/dataagent-backend/tests/test_skill_discovery.py`

@@ -24,9 +24,8 @@
 
 **Files**
 
-- `dataagent/dataagent-backend/core/skills_loader.py`
+- `dataagent/dataagent-backend/core/skill_discovery.py`
 - `dataagent/dataagent-backend/core/nl2sql_agent.py`
-- `dataagent/dataagent-backend/core/skills_sync.py`
 - `frontend/src/views/intelligence/toolPresentation.js`
 - `frontend/src/views/settings/DataAgentConfig.vue`
 - `frontend/src/views/settings/SkillStudio.vue`
@@ -73,7 +72,7 @@
 ## Verification
 
 - 后端：
-  - `pytest dataagent/dataagent-backend/tests/test_builtin_skill_content.py dataagent/dataagent-backend/tests/test_skills_loader.py dataagent/dataagent-backend/tests/test_admin_routes.py dataagent/dataagent-backend/tests/test_task_executor.py`
+  - `pytest dataagent/dataagent-backend/tests/test_builtin_skill_content.py dataagent/dataagent-backend/tests/test_skill_discovery.py dataagent/dataagent-backend/tests/test_admin_routes.py dataagent/dataagent-backend/tests/test_task_executor.py`
 - 前端：
   - 先执行 `export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use`
   - 再跑 `vitest` 的相关测试文件

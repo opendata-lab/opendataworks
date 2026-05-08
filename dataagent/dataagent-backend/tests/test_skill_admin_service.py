@@ -91,7 +91,6 @@ def configure_skill_filesystem(monkeypatch, tmp_path, store=None, *, settings=No
     fake_store = store or FakeSkillStore()
     persisted = {}
 
-    monkeypatch.setattr(skill_admin_service, "ensure_static_skills_bundle", lambda: {})
     monkeypatch.setattr(skill_admin_service, "resolve_skill_discovery_root_dir", lambda: discovery_root)
     monkeypatch.setattr(skill_admin_service, "resolve_skills_root_dir", lambda: discovery_root / "dataagent-nl2sql")
     monkeypatch.setattr(skill_admin_service, "get_skill_admin_store", lambda: fake_store)
@@ -105,7 +104,6 @@ def configure_skill_filesystem(monkeypatch, tmp_path, store=None, *, settings=No
         },
     )
     monkeypatch.setattr(skill_admin_service, "persist_admin_settings", lambda payload: persisted.update(payload) or payload)
-    monkeypatch.setattr(skill_admin_service, "refresh_skill_runtime", lambda: None)
     return discovery_root, fake_store, persisted
 
 
@@ -422,7 +420,7 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
                 }
             ]
 
-    monkeypatch.setattr(skill_admin_service, "sync_documents_from_disk", lambda *args, **kwargs: [])
+    monkeypatch.setattr(skill_admin_service, "reindex_documents_from_disk", lambda *args, **kwargs: [])
     monkeypatch.setattr(skill_admin_service, "get_skill_admin_store", lambda: FakeStore())
     monkeypatch.setattr(
         skill_admin_service,
@@ -464,8 +462,6 @@ def test_update_skill_runtime_enables_second_skill_without_changing_primary(monk
         "persist_admin_settings",
         lambda payload: captured.setdefault("payload", payload) or payload,
     )
-    monkeypatch.setattr(skill_admin_service, "refresh_skill_runtime", lambda: None)
-
     result = skill_admin_service.update_skill_runtime("marketing-insights", True)
 
     assert "skills_output_dir" not in captured["payload"]
@@ -521,8 +517,6 @@ def test_update_skill_runtime_moves_primary_when_disabling_current(monkeypatch):
         "persist_admin_settings",
         lambda payload: captured.setdefault("payload", payload) or payload,
     )
-    monkeypatch.setattr(skill_admin_service, "refresh_skill_runtime", lambda: None)
-
     result = skill_admin_service.update_skill_runtime("dataagent-nl2sql", False)
 
     assert captured["payload"]["skills_output_dir"] == "../.claude/skills/marketing-insights"
@@ -620,7 +614,7 @@ def test_uninstall_skill_removes_managed_folder_and_runtime(monkeypatch, tmp_pat
         content="# Marketing\n",
         change_source="upload",
     )
-    monkeypatch.setattr(skill_admin_service, "sync_documents_from_disk", lambda *args, **kwargs: [])
+    monkeypatch.setattr(skill_admin_service, "reindex_documents_from_disk", lambda *args, **kwargs: [])
     monkeypatch.setattr(skill_admin_service, "_settings_path_for_skill_folder", lambda folder: f"../.claude/skills/{folder}")
 
     result = skill_admin_service.uninstall_skill("marketing-insights")
@@ -656,7 +650,7 @@ def test_uninstall_skill_rejects_last_enabled(monkeypatch, tmp_path):
         content="# Marketing\n",
         change_source="upload",
     )
-    monkeypatch.setattr(skill_admin_service, "sync_documents_from_disk", lambda *args, **kwargs: [])
+    monkeypatch.setattr(skill_admin_service, "reindex_documents_from_disk", lambda *args, **kwargs: [])
 
     with pytest.raises(ValueError, match="至少需要保留一个启用 Skill"):
         skill_admin_service.uninstall_skill("marketing-insights")

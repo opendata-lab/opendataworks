@@ -10,12 +10,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.admin_routes import router as admin_router
 from api.routes import router
 from config import get_settings
-from core.skill_admin_service import bootstrap_admin_settings, sync_documents_from_disk
+from core.skill_admin_service import bootstrap_admin_settings, reindex_documents_from_disk
 from core.skill_admin_store import get_skill_admin_store
+from core.skill_discovery import resolve_agent_project_cwd, resolve_skills_root_dir
 from core.task_coordinator import get_task_coordinator
 from core.topic_task_store import get_topic_task_store
-from core.skills_loader import resolve_agent_project_cwd, resolve_skills_root_dir, validate_skills_bundle
-from core.skills_sync import ensure_static_skills_bundle
 
 # 配置日志
 logging.basicConfig(
@@ -56,7 +55,7 @@ async def root():
 
 @app.on_event("startup")
 async def startup():
-    """启动检查：skills 路径、语义加载、topic/task schema 与 Redis coordinator"""
+    """启动检查：skills 路径、topic/task schema 与 Redis coordinator"""
     try:
         get_skill_admin_store().init_schema()
         bootstrap_admin_settings()
@@ -74,19 +73,10 @@ async def startup():
     )
 
     try:
-        ensure_static_skills_bundle()
         skills_root = resolve_skills_root_dir()
         agent_cwd = resolve_agent_project_cwd()
-        skills_state = validate_skills_bundle(force_reload=True)
-        logger.info(
-            "Skills ready root=%s agent_cwd=%s tables=%s rules=%s few_shots=%s",
-            skills_root,
-            agent_cwd,
-            skills_state.get("metadata_tables"),
-            skills_state.get("business_rules"),
-            skills_state.get("few_shots"),
-        )
-        changed = sync_documents_from_disk()
+        logger.info("Skills discovery ready root=%s agent_cwd=%s", skills_root, agent_cwd)
+        changed = reindex_documents_from_disk()
         logger.info("Skill documents indexed changed=%s", len(changed))
     except Exception as e:
         logger.exception("Skills bootstrap failed: %s", e)

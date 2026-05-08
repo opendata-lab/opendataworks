@@ -18,16 +18,14 @@ from typing import Any
 import anyio
 
 from config import get_settings, update_settings
+from core.claude_cli import resolve_claude_cli_path
 from core.provider_runtime import build_provider_env, normalize_provider_id as normalize_runtime_provider_id
-from core.semantic_layer import get_semantic_layer
 from core.skill_admin_store import get_skill_admin_store
-from core.skills_loader import (
+from core.skill_discovery import (
     resolve_agent_project_cwd,
     resolve_skill_discovery_root_dir,
     resolve_skills_root_dir,
-    validate_skills_bundle,
 )
-from core.skills_sync import ensure_static_skills_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -598,7 +596,7 @@ async def _run_model_detection(
     )
     runtime_env = dict(os.environ)
     runtime_env.update(provider_env)
-    options = ClaudeAgentOptions(
+    options_kwargs = dict(
         system_prompt="你是模型服务连通性检测程序。只需用最短文本回答检测请求。",
         model=model,
         cwd=str(resolve_agent_project_cwd()),
@@ -615,6 +613,10 @@ async def _run_model_detection(
             str(line or "").rstrip(),
         ),
     )
+    cli_path = resolve_claude_cli_path(get_settings())
+    if cli_path:
+        options_kwargs["cli_path"] = cli_path
+    options = ClaudeAgentOptions(**options_kwargs)
 
     try:
         with anyio.fail_after(MODEL_DETECTION_TIMEOUT_SECONDS):
@@ -805,7 +807,6 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
 
 
 def managed_skill_files() -> list[str]:
-    ensure_static_skills_bundle()
     root = resolve_skill_discovery_root_dir()
     files: list[str] = []
     for path in root.rglob("*"):
@@ -917,7 +918,7 @@ def _migrate_document_paths_to_discovery_root(store) -> None:
         store.rename_document_path(relative_path, next_path)
 
 
-def sync_documents_from_disk(*, change_source: str = "import", change_summary: str = "发现磁盘文件") -> list[dict[str, Any]]:
+def reindex_documents_from_disk(*, change_source: str = "import", change_summary: str = "发现磁盘文件") -> list[dict[str, Any]]:
     store = get_skill_admin_store()
     root = resolve_skill_discovery_root_dir()
     _migrate_document_paths_to_discovery_root(store)
@@ -949,14 +950,14 @@ def sync_documents_from_disk(*, change_source: str = "import", change_summary: s
 
 
 def list_documents() -> list[dict[str, Any]]:
-    sync_documents_from_disk()
+    reindex_documents_from_disk()
     documents = [_document_api_payload(item) for item in get_skill_admin_store().list_documents()]
     documents.sort(key=lambda item: (str(item.get("folder") or ""), str(item.get("category") or ""), str(item.get("relative_path") or "")))
     return documents
 
 
 def get_document_detail(document_id: int) -> dict[str, Any] | None:
-    sync_documents_from_disk()
+    reindex_documents_from_disk()
     store = get_skill_admin_store()
     document = store.get_document(document_id)
     if not document:
@@ -985,14 +986,6 @@ def write_skill_file(relative_path: str, content: str):
     path.write_text(content, encoding="utf-8")
 
 
-def refresh_skill_runtime():
-    try:
-        validate_skills_bundle(force_reload=True)
-        get_semantic_layer().reload()
-    except Exception as exc:
-        logger.warning("Skill runtime refresh failed: %s", exc)
-
-
 def save_document_content(document_id: int, content: str, change_summary: str | None = None) -> dict[str, Any]:
     store = get_skill_admin_store()
     document = store.get_document(document_id)
@@ -1007,7 +1000,6 @@ def save_document_content(document_id: int, content: str, change_summary: str | 
         change_summary=change_summary or "前端保存",
         actor="ui",
     )
-    refresh_skill_runtime()
     return get_document_detail(int(saved["id"])) or {}
 
 
@@ -1028,7 +1020,6 @@ def rollback_document(document_id: int, version_id: int) -> dict[str, Any]:
         actor="ui",
         parent_version_id=version_id,
     )
-    refresh_skill_runtime()
     return get_document_detail(int(saved["id"])) or {}
 
 
@@ -1147,7 +1138,6 @@ def _raw_documents_for_skill(folder: str) -> list[dict[str, Any]]:
 
 
 def import_skill_from_zip(file_name: str, content: bytes) -> dict[str, Any]:
-    ensure_static_skills_bundle()
     with tempfile.TemporaryDirectory(prefix="odw-skill-import-") as tmp_dir:
         extract_root = Path(tmp_dir) / "extracted"
         extract_root.mkdir(parents=True, exist_ok=True)
@@ -1166,7 +1156,7 @@ def import_skill_from_zip(file_name: str, content: bytes) -> dict[str, Any]:
     skill_runtime[folder] = {"enabled": False}
     persist_admin_settings({"skill_runtime": skill_runtime})
 
-    imported = sync_documents_from_disk(change_source="upload", change_summary=f"导入 Skill {folder}")
+    imported = reindex_documents_from_disk(change_source="upload", change_summary=f"导入 Skill {folder}")
     imported_documents = [item for item in imported if item.get("folder") == folder]
     if not imported_documents:
         imported_documents = [_document_api_payload(item) for item in _raw_documents_for_skill(folder)]
@@ -1185,7 +1175,7 @@ def uninstall_skill(folder: str) -> dict[str, Any]:
     if _is_builtin_skill_folder(target_folder):
         raise ValueError("内置 Skill 不支持卸载")
 
-    sync_documents_from_disk()
+    reindex_documents_from_disk()
     available_folders = _discovered_skill_folders()
     if target_folder not in available_folders:
         raise ValueError("skill folder not found")
@@ -1219,8 +1209,6 @@ def uninstall_skill(folder: str) -> dict[str, Any]:
     if primary_folder == target_folder and enabled_folders:
         payload["skills_output_dir"] = _settings_path_for_skill_folder(enabled_folders[0])
     persist_admin_settings(payload)
-    refresh_skill_runtime()
-
     return {
         "skill_id": target_folder,
         "removed_documents": removed_documents,
@@ -1249,7 +1237,6 @@ def update_skill_runtime(folder: str, enabled: bool) -> dict[str, Any]:
         payload["skills_output_dir"] = _settings_path_for_skill_folder(next_primary_folder)
 
     persist_admin_settings(payload)
-    refresh_skill_runtime()
     return {
         "skill_id": target_folder,
         "enabled": bool(skill_runtime.get(target_folder, {}).get("enabled")),
@@ -1325,31 +1312,4 @@ def compare_document_versions(
         "added_lines": added_lines,
         "removed_lines": removed_lines,
         "changed_lines": added_lines + removed_lines,
-    }
-
-
-def sync_from_opendataworks() -> dict[str, Any]:
-    ensure_static_skills_bundle()
-    store = get_skill_admin_store()
-    cfg = get_settings()
-    metadata_schema = cfg.mysql_database or "opendataworks"
-    knowledge_schema = cfg.session_mysql_database or "dataagent"
-    imported = sync_documents_from_disk(change_source="refresh", change_summary="刷新技能文件索引")
-    refresh_skill_runtime()
-    runtime_stats = validate_skills_bundle(force_reload=True)
-
-    return {
-        "skills_root_dir": str(resolve_skills_root_dir()),
-        "metadata_schema": metadata_schema,
-        "knowledge_schema": knowledge_schema,
-        "stats": {
-            "metadata_tables": int(runtime_stats.get("metadata_tables") or 0),
-            "business_rules": int(runtime_stats.get("business_rules") or 0),
-            "semantic_mappings": int(runtime_stats.get("semantic_mappings") or 0),
-            "few_shots": int(runtime_stats.get("few_shots") or 0),
-            "lineage_edges": int(runtime_stats.get("lineage_edges") or 0),
-        },
-        "changed_documents": [],
-        "imported_documents": imported,
-        "document_count": len(store.list_documents()),
     }

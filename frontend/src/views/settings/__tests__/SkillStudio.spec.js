@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   listSkillDocuments: vi.fn(),
-  syncSkills: vi.fn(),
   updateSkillRuntime: vi.fn(),
   importSkill: vi.fn(),
   uninstallSkill: vi.fn()
@@ -114,7 +113,6 @@ const mountView = () => shallowMount(SkillStudio, {
 describe('SkillStudio', () => {
   beforeEach(() => {
     apiMocks.listSkillDocuments.mockReset()
-    apiMocks.syncSkills.mockReset()
     apiMocks.updateSkillRuntime.mockReset()
     apiMocks.importSkill.mockReset()
     apiMocks.uninstallSkill.mockReset()
@@ -162,10 +160,8 @@ describe('SkillStudio', () => {
     expect(wrapper.text()).not.toContain('2026-04-17')
     expect(wrapper.find('.skill-card__stats').exists()).toBe(false)
 
-    const syncButton = wrapper.find('.skill-studio__sync-button')
-    expect(syncButton.exists()).toBe(true)
-    expect(syncButton.attributes('aria-label')).toBe('刷新目录')
-    expect(syncButton.text()).toBe('')
+    expect(wrapper.find('.skill-studio__sync-button').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('刷新目录')
 
     wrapper.vm.openSkillDetail('marketing-insights')
     expect(routerPush).toHaveBeenCalledWith({

@@ -63,9 +63,5 @@ export const dataagentApi = {
 
   rollbackSkillDocument(documentId, versionId) {
     return dataagentRequest.post(`/v1/dataagent/skills/documents/${documentId}/versions/${versionId}/rollback`)
-  },
-
-  syncSkills() {
-    return dataagentRequest.post('/v1/dataagent/skills/sync')
   }
 }

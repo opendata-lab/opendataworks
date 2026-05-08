@@ -62,7 +62,7 @@ class _FakeStore:
         self._schedule_log_seq += 1
         return f"schedule_log_{self._schedule_log_seq}"
 
-    def create_topic(self, *, title: str):
+    def create_topic(self, *, title: str, context=None):
         topic_id = self._new_topic()
         self.topics[topic_id] = {
             "topic_id": topic_id,
@@ -79,14 +79,14 @@ class _FakeStore:
         self.topic_messages[topic_id] = []
         return self.get_topic(topic_id)
 
-    def list_topics(self, include_messages: bool = False):
+    def list_topics(self, include_messages: bool = False, context=None):
         rows = [dict(self.get_topic(topic_id) or {}) for topic_id in self.topics]
         if include_messages:
             for row in rows:
                 row["messages"] = self.list_topic_messages(row["topic_id"])
         return rows
 
-    def get_topic(self, topic_id: str):
+    def get_topic(self, topic_id: str, context=None):
         topic = self.topics.get(topic_id)
         if not topic:
             return None
@@ -95,21 +95,21 @@ class _FakeStore:
         row["last_message_preview"] = self.topic_messages.get(topic_id, [{}])[-1].get("content", "")[:120] if self.topic_messages.get(topic_id) else ""
         return row
 
-    def update_topic(self, topic_id: str, *, title: str):
+    def update_topic(self, topic_id: str, *, title: str, context=None):
         if topic_id not in self.topics:
             return None
         self.topics[topic_id]["title"] = title
         self.topics[topic_id]["updated_at"] = _now()
         return self.get_topic(topic_id)
 
-    def delete_topic(self, topic_id: str):
+    def delete_topic(self, topic_id: str, context=None):
         self.topics.pop(topic_id, None)
         self.topic_messages.pop(topic_id, None)
 
     def list_topic_messages(self, topic_id: str):
         return list(self.topic_messages.get(topic_id, []))
 
-    def list_topic_messages_page(self, *, topic_id: str, page: int = 1, page_size: int = 200, order: str = "asc"):
+    def list_topic_messages_page(self, *, topic_id: str, page: int = 1, page_size: int = 200, order: str = "asc", context=None):
         items = list(self.topic_messages.get(topic_id, []))
         if str(order).lower() == "desc":
             items = list(reversed(items))
@@ -242,11 +242,11 @@ class _FakeStore:
                     return message
         return None
 
-    def get_task(self, task_id: str):
+    def get_task(self, task_id: str, context=None):
         task = self.tasks.get(task_id)
         return dict(task) if task else None
 
-    def list_task_events(self, *, task_id: str, after_seq: int = 0, limit: int = 200):
+    def list_task_events(self, *, task_id: str, after_seq: int = 0, limit: int = 200, context=None):
         rows = [row for row in self.task_events.get(task_id, []) if int(row["seq_id"]) > after_seq]
         rows.sort(key=lambda row: int(row["seq_id"]))
         page = rows[:limit]
@@ -260,7 +260,7 @@ class _FakeStore:
             "events": page,
         }
 
-    def request_task_cancel(self, task_id: str):
+    def request_task_cancel(self, task_id: str, context=None):
         task = self.tasks.get(task_id)
         if not task:
             return None
@@ -287,11 +287,11 @@ class _FakeStore:
                     item["finished_at"] = _now()
         return dict(task)
 
-    def get_message_queue(self, queue_id: str):
+    def get_message_queue(self, queue_id: str, context=None):
         queue = self.queues.get(queue_id)
         return dict(queue) if queue else None
 
-    def query_message_queues(self, *, topic_id: str | None = None, page: int = 1, page_size: int = 50):
+    def query_message_queues(self, *, topic_id: str | None = None, page: int = 1, page_size: int = 50, context=None):
         items = list(self.queues.values())
         if topic_id:
             items = [item for item in items if item["topic_id"] == topic_id]
@@ -353,11 +353,11 @@ class _FakeStore:
         queue["updated_at"] = _now()
         return dict(queue)
 
-    def get_message_schedule(self, schedule_id: str):
+    def get_message_schedule(self, schedule_id: str, context=None):
         schedule = self.schedules.get(schedule_id)
         return dict(schedule) if schedule else None
 
-    def query_message_schedules(self, *, topic_id: str | None = None, page: int = 1, page_size: int = 50):
+    def query_message_schedules(self, *, topic_id: str | None = None, page: int = 1, page_size: int = 50, context=None):
         items = list(self.schedules.values())
         if topic_id:
             items = [item for item in items if item["topic_id"] == topic_id]
@@ -502,9 +502,7 @@ def _build_client(monkeypatch):
     monkeypatch.setattr(main, "get_task_coordinator", lambda: coordinator)
     monkeypatch.setattr(main, "get_skill_admin_store", lambda: SimpleNamespace(init_schema=lambda: None))
     monkeypatch.setattr(main, "bootstrap_admin_settings", lambda: None)
-    monkeypatch.setattr(main, "ensure_static_skills_bundle", lambda: None)
-    monkeypatch.setattr(main, "validate_skills_bundle", lambda **kwargs: {})
-    monkeypatch.setattr(main, "sync_documents_from_disk", lambda: [])
+    monkeypatch.setattr(main, "reindex_documents_from_disk", lambda: [])
 
     return TestClient(main.app), store, coordinator, submit_calls
 

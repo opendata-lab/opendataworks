@@ -138,6 +138,7 @@ def _patch_skill_runtime(monkeypatch, tmp_path: Path) -> dict[str, list[str]]:
 
 
 def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("DATAAGENT_CLAUDE_CLI_PATH", "/tmp/claude-cli")
     _install_fake_sdk(
         monkeypatch,
         [
@@ -203,6 +204,7 @@ def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch
     assert result.session_id == "sdk-session-1"
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is True
     assert ClaudeAgentOptions.last_kwargs["cwd"] == str(tmp_path)
+    assert ClaudeAgentOptions.last_kwargs["cli_path"] == "/tmp/claude-cli"
     assert runtime["folders"] == ["dataagent-nl2sql", "marketing-insights"]
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
 

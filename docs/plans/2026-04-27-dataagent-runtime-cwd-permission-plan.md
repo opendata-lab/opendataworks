@@ -20,7 +20,7 @@ Stop intelligent-query runs from writing runtime-only SDK project files under `/
    - Document that `dataagent-home` now stores both SDK session files and the filtered runtime cwd
 
 4. Verify.
-   - Run targeted `tests/test_skills_loader.py`
+   - Run targeted `tests/test_skill_discovery.py`
    - Confirm no untracked `.runtime` directory remains under `dataagent-backend`
 
 ## Backout

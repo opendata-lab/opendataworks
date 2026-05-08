@@ -9,6 +9,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from core import agent_runtime
+from core.claude_cli import resolve_claude_cli_path
 
 
 def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeypatch):
@@ -49,6 +50,19 @@ def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeyp
     assert "ODW_MYSQL_PASSWORD" not in runtime_env
     assert "ODW_MYSQL_DATABASE" not in runtime_env
     assert "DATAAGENT_SQL_WRITE_TIMEOUT_SECONDS" not in runtime_env
+
+
+def test_resolve_claude_cli_path_prefers_configured_value(monkeypatch):
+    monkeypatch.setenv("DATAAGENT_CLAUDE_CLI_PATH", "/tmp/from-env")
+
+    assert resolve_claude_cli_path(SimpleNamespace(claude_cli_path="/tmp/from-config")) == "/tmp/from-config"
+
+
+def test_resolve_claude_cli_path_supports_env_alias(monkeypatch):
+    monkeypatch.delenv("DATAAGENT_CLAUDE_CLI_PATH", raising=False)
+    monkeypatch.setenv("CLAUDE_CLI_PATH", "/tmp/from-alias")
+
+    assert resolve_claude_cli_path(SimpleNamespace(claude_cli_path="")) == "/tmp/from-alias"
 
 
 def test_build_portal_mcp_servers_returns_http_config():
