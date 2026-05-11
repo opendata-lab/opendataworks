@@ -46,7 +46,7 @@ services:
 
   # 后端服务
   backend:
-    image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.1.1}
+    image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.2.0}
     container_name: opendataworks-backend
     restart: always
     env_file:
@@ -73,7 +73,7 @@ services:
 
   # 前端服务
   frontend:
-    image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:1.1.1}
+    image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:1.2.0}
     container_name: opendataworks-frontend
     restart: always
     env_file:
@@ -95,7 +95,7 @@ services:
 
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.1.1}
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.2.0}
     container_name: opendataworks-dataagent-backend
     restart: always
     user: "${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}"
@@ -153,7 +153,7 @@ services:
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
 
   portal-mcp:
-    image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:1.1.1}
+    image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:1.2.0}
     container_name: opendataworks-portal-mcp
     restart: always
     env_file:

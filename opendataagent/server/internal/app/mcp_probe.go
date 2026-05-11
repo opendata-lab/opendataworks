@@ -41,7 +41,7 @@ func probeProcessMCP(server models.MCPServer) (models.MCPSmokeResult, error) {
 	cmd.Env = append(os.Environ(), flattenProcessEnv(server.Env)...)
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "opendataagent-mcp-probe",
-		Version: "1.1.1",
+		Version: "1.2.0",
 	}, nil)
 	session, err := client.Connect(ctx, &mcp.CommandTransport{
 		Command:           cmd,
@@ -70,7 +70,7 @@ func probeRemoteMCP(server models.MCPServer) (models.MCPSmokeResult, error) {
 
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "opendataagent-mcp-probe",
-		Version: "1.1.1",
+		Version: "1.2.0",
 	}, nil)
 	httpClient := &http.Client{
 		Timeout: 5 * time.Second,

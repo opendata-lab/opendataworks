@@ -37,7 +37,7 @@ func main() {
 func newServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    "oda-smoke-mcp",
-		Version: "1.1.1",
+		Version: "1.2.0",
 	}, nil)
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "echo",

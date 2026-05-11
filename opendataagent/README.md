@@ -85,7 +85,7 @@ docker compose --project-name opendataagent --env-file .env up -d --build
 示例：
 
 ```bash
-./opendataagent/scripts/build-release.sh --version 1.1.1
+./opendataagent/scripts/build-release.sh --version 1.2.0
 ```
 
 ## 离线部署包
@@ -122,5 +122,5 @@ docker compose --project-name opendataagent --env-file .env up -d --build
 示例：
 
 ```bash
-./opendataagent/scripts/docker-build.sh --version 1.1.1 --tag 1.1.1
+./opendataagent/scripts/docker-build.sh --version 1.2.0 --tag 1.2.0
 ```

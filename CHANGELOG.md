@@ -9,6 +9,21 @@
 ### Changed
 - 待补充。
 
+## [1.2.0] - 2026-05-11
+
+### Added
+- 新增 DolphinScheduler 引擎切换能力，支持 Dolphin 配置作用域隔离与发布链路适配。
+- 新增主前端智能问数 Widget，并重组智能问数导航入口。
+
+### Changed
+- 简化 DataAgent Skill 运行时，统一 agent 查询限制与系统提示词方法论。
+- 优化 `opendataagent` 导航、业务蓝配色、Skill 卡片密度与提供商配置交互。
+
+### Fixed
+- 修复 Dolphin 引擎切换后的发布导出、配置作用域与任务组 ID 失效问题。
+- 修复只读聚合 SQL 校验、CSV 导出编码、DataAgent 运行目录权限与模型检测可选化相关问题。
+- 修复 `opendataagent` 模型流错误暴露、管理员 token 代理、Compose 项目隔离与提供商弹窗操作可见性问题。
+
 ## [1.1.1] - 2026-04-24
 
 ### Fixed
@@ -138,7 +153,8 @@
 
 以上早期版本请参考 GitHub Releases 与 Git tags 历史记录。
 
-[Unreleased]: https://github.com/MingkeVan/opendataworks/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/MingkeVan/opendataworks/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/MingkeVan/opendataworks/releases/tag/v1.2.0
 [1.1.1]: https://github.com/MingkeVan/opendataworks/releases/tag/v1.1.1
 [1.1.0]: https://github.com/MingkeVan/opendataworks/releases/tag/v1.1.0
 [1.0.0]: https://github.com/MingkeVan/opendataworks/releases/tag/v1.0.0
