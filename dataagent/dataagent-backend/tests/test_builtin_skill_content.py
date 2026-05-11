@@ -62,3 +62,16 @@ def test_builtin_skill_keeps_generic_df_di_rules_without_business_defaults():
     ]
     for token in required_tokens:
         assert token in snapshot
+
+
+def test_builtin_skill_documents_data_quality_gate():
+    snapshot = _skill_text_snapshot()
+
+    required_tokens = [
+        "数据问数质量门禁",
+        "执行 SQL 前必须确认目标、库/引擎/schema、表、使用字段、指标公式、过滤条件、时间范围、维度/粒度",
+        "涉及 JOIN、去重、明细定位、血缘映射时，必须确认主键、唯一键或关联键",
+        "主键、唯一键或关联键不是所有简单聚合的硬门槛",
+    ]
+    for token in required_tokens:
+        assert token in snapshot

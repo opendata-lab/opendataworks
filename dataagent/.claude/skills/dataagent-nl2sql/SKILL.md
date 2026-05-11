@@ -37,6 +37,13 @@ Convert Chinese natural-language data questions into read-only SQL, execute agai
 12. **ALWAYS** do a small synonym or related-term expansion when the first metadata search is too sparse, but keep the expansion limited and grounded in the user’s wording.
 13. **ALWAYS** treat upstream/downstream/lineage questions as lineage-tool-first. For these questions, `run_sql.py` now hard-blocks first-pass `data_lineage` SQL unless `DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1` is explicitly set for a clearly scoped supplemental query.
 
+## 数据问数质量门禁
+
+- 执行 SQL 前必须确认目标、库/引擎/schema、表、使用字段、指标公式、过滤条件、时间范围、维度/粒度。
+- 涉及 JOIN、去重、明细定位、血缘映射时，必须确认主键、唯一键或关联键。
+- 主键、唯一键或关联键不是所有简单聚合的硬门槛；简单 COUNT、趋势、占比或明细预览可在表、字段、口径和时间范围已确认后执行。
+- 如果 metadata、DDL、reference 或用户输入不能确认上述门禁，先做最小追问，不要用猜测补齐字段、关联关系或业务口径。
+
 ## Anti-Patterns
 
 | Anti-Pattern | Why It Fails | Correct Approach |

@@ -126,3 +126,27 @@ def test_build_system_prompt_prefers_lineage_and_ddl_tools():
     assert "DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1" in prompt
     assert "mcp__portal__portal_get_table_ddl" in prompt
     assert "get_table_ddl.py" in prompt
+
+
+def test_build_system_prompt_includes_methodology_and_non_negotiables():
+    prompt = agent_runtime._build_system_prompt(None, {"enabled_folders": ["dataagent-nl2sql"]})
+
+    required_fragments = [
+        "内部工作循环",
+        "先判定用户意图与信息缺口",
+        "获取必要上下文",
+        "制定最小执行路径",
+        "基于真实工具结果执行和收口",
+        "不要向用户暴露隐藏推理",
+        "不得臆造表、字段、指标口径或业务默认值",
+        "不得绕过已启用 Skills 或 portal-mcp 优先级",
+        "不得重复试探等价 SQL",
+        "工具结果不足以支撑结论时，必须最小追问或说明缺口",
+        "只允许只读执行",
+    ]
+    for fragment in required_fragments:
+        assert fragment in prompt
+
+
+def test_legacy_lf_system_prompt_template_is_removed():
+    assert not (BACKEND_ROOT / "prompts" / "system_prompt.py").exists()
