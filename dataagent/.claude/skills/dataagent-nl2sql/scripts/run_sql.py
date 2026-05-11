@@ -61,13 +61,13 @@ def main():
     parser.add_argument("--database", required=True)
     parser.add_argument("--engine", default="")
     parser.add_argument("--sql", required=True)
-    parser.add_argument("--limit", type=int, default=env_int("DATAAGENT_QUERY_LIMIT", 100))
+    parser.add_argument("--limit", type=int, default=env_int("DATAAGENT_QUERY_LIMIT", 1000))
     args = parser.parse_args()
 
     database = str(args.database or "").strip()
     preferred_engine = str(args.engine or "").strip().lower() or None
     sql = str(args.sql or "").strip()
-    limit = max(1, int(args.limit or 100))
+    limit = max(1, int(args.limit if args.limit is not None else 1000))
 
     try:
         ensure_read_only(sql)

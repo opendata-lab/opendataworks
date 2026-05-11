@@ -204,8 +204,8 @@ def _build_runtime_env(
     original_question = str(getattr(params, "question", "") or "").strip()
     runtime_env.update(
         {
-            "DATAAGENT_QUERY_LIMIT": str(int(cfg.query_result_limit or 100)),
-            "DATAAGENT_RESULT_PREVIEW_ROWS": str(min(20, int(cfg.query_result_limit or 100))),
+            "DATAAGENT_QUERY_LIMIT": str(int(cfg.query_result_limit or 1000)),
+            "DATAAGENT_RESULT_PREVIEW_ROWS": str(min(20, int(cfg.query_result_limit or 1000))),
             "DATAAGENT_SQL_READ_TIMEOUT_SECONDS": str(sql_read_timeout),
             "DATAAGENT_ORIGINAL_QUESTION": original_question,
             "DATAAGENT_PYTHON_BIN": str(python_bin),

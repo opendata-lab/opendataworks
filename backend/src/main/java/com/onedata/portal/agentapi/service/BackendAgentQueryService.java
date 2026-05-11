@@ -23,11 +23,18 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class BackendAgentQueryService implements AgentQueryService {
 
-    private static final int DEFAULT_LIMIT = 200;
-    private static final int MAX_LIMIT = 1000;
+    private static final int DEFAULT_LIMIT = 1000;
+    private static final int MAX_LIMIT = 10000;
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
     private static final int MAX_TIMEOUT_SECONDS = 120;
     private static final Pattern LEADING_KEYWORD_PATTERN = Pattern.compile("^\\s*([a-zA-Z]+)");
+    private static final Pattern MUTATING_FALLBACK_KEYWORD_PATTERN = Pattern.compile(
+            "(^|[^a-zA-Z0-9_])(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|REPLACE|MERGE|CALL|GRANT|REVOKE)([^a-zA-Z0-9_]|$)",
+            Pattern.CASE_INSENSITIVE
+    );
+    private static final Set<String> READ_ONLY_PARSE_FALLBACK_KEYWORDS = new LinkedHashSet<>(
+            Arrays.asList("SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN")
+    );
     private static final Set<String> READ_ONLY_FALLBACK_KEYWORDS = new LinkedHashSet<>(
             Arrays.asList("SHOW", "DESC", "DESCRIBE", "EXPLAIN")
     );
@@ -76,7 +83,8 @@ public class BackendAgentQueryService implements AgentQueryService {
         try {
             statements = CCJSqlParserUtil.parseStatements(sql);
         } catch (JSQLParserException e) {
-            throw new IllegalArgumentException("SQL 解析失败，仅支持单条只读 SQL");
+            validateReadOnlySqlWithLexicalFallback(sql);
+            return;
         }
         if (statements == null || statements.getStatements() == null || statements.getStatements().isEmpty()) {
             throw new IllegalArgumentException("SQL 不能为空");
@@ -104,6 +112,138 @@ public class BackendAgentQueryService implements AgentQueryService {
         }
 
         return READ_ONLY_FALLBACK_KEYWORDS.contains(detectLeadingKeyword(sql));
+    }
+
+    private void validateReadOnlySqlWithLexicalFallback(String sql) {
+        String normalizedSql = maskCommentsAndQuotedText(sql);
+        if (!isSingleStatement(normalizedSql)) {
+            throw new IllegalArgumentException("仅支持单条只读 SQL");
+        }
+        if (!READ_ONLY_PARSE_FALLBACK_KEYWORDS.contains(detectLeadingKeyword(normalizedSql))) {
+            throw new IllegalArgumentException("仅支持只读 SQL");
+        }
+        if (MUTATING_FALLBACK_KEYWORD_PATTERN.matcher(normalizedSql).find()) {
+            throw new IllegalArgumentException("仅支持只读 SQL");
+        }
+    }
+
+    private boolean isSingleStatement(String normalizedSql) {
+        boolean seenTerminator = false;
+        for (int i = 0; i < normalizedSql.length(); i++) {
+            char current = normalizedSql.charAt(i);
+            if (current == ';') {
+                if (seenTerminator) {
+                    return false;
+                }
+                seenTerminator = true;
+                continue;
+            }
+            if (seenTerminator && !Character.isWhitespace(current)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private String maskCommentsAndQuotedText(String sql) {
+        StringBuilder result = new StringBuilder(sql.length());
+        boolean inSingleQuote = false;
+        boolean inDoubleQuote = false;
+        boolean inBacktick = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+
+        for (int i = 0; i < sql.length(); i++) {
+            char current = sql.charAt(i);
+            char next = i + 1 < sql.length() ? sql.charAt(i + 1) : '\0';
+
+            if (inLineComment) {
+                result.append(isLineBreak(current) ? current : ' ');
+                if (isLineBreak(current)) {
+                    inLineComment = false;
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (current == '*' && next == '/') {
+                    result.append(' ');
+                    result.append(' ');
+                    i++;
+                    inBlockComment = false;
+                } else {
+                    result.append(isLineBreak(current) ? current : ' ');
+                }
+                continue;
+            }
+            if (inSingleQuote) {
+                result.append(isLineBreak(current) ? current : ' ');
+                if (current == '\\' && next != '\0') {
+                    result.append(isLineBreak(next) ? next : ' ');
+                    i++;
+                } else if (current == '\'' && next == '\'') {
+                    result.append(' ');
+                    i++;
+                } else if (current == '\'') {
+                    inSingleQuote = false;
+                }
+                continue;
+            }
+            if (inDoubleQuote) {
+                result.append(isLineBreak(current) ? current : ' ');
+                if (current == '\\' && next != '\0') {
+                    result.append(isLineBreak(next) ? next : ' ');
+                    i++;
+                } else if (current == '"' && next == '"') {
+                    result.append(' ');
+                    i++;
+                } else if (current == '"') {
+                    inDoubleQuote = false;
+                }
+                continue;
+            }
+            if (inBacktick) {
+                result.append(isLineBreak(current) ? current : ' ');
+                if (current == '`' && next == '`') {
+                    result.append(' ');
+                    i++;
+                } else if (current == '`') {
+                    inBacktick = false;
+                }
+                continue;
+            }
+
+            if (current == '-' && next == '-') {
+                result.append(' ');
+                result.append(' ');
+                i++;
+                inLineComment = true;
+            } else if (current == '#') {
+                result.append(' ');
+                inLineComment = true;
+            } else if (current == '/' && next == '*') {
+                result.append(' ');
+                result.append(' ');
+                i++;
+                inBlockComment = true;
+            } else if (current == '\'') {
+                result.append(' ');
+                inSingleQuote = true;
+            } else if (current == '"') {
+                result.append(' ');
+                inDoubleQuote = true;
+            } else if (current == '`') {
+                result.append(' ');
+                inBacktick = true;
+            } else {
+                result.append(current);
+            }
+        }
+
+        return result.toString();
+    }
+
+    private boolean isLineBreak(char value) {
+        return value == '\n' || value == '\r';
     }
 
     private String detectLeadingKeyword(String sql) {

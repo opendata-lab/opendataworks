@@ -196,7 +196,7 @@ async def test_mcp_tools_are_exposed_and_parameter_mapping_is_preserved():
             "database": "dw",
             "sql": "SELECT 1",
             "preferred_engine": "doris",
-            "limit": 50,
+            "limit": 5000,
             "timeout_seconds": 15,
         },
     )
@@ -206,8 +206,33 @@ async def test_mcp_tools_are_exposed_and_parameter_mapping_is_preserved():
             "database": "dw",
             "sql": "SELECT 1",
             "preferredEngine": "doris",
-            "limit": 50,
+            "limit": 5000,
             "timeoutSeconds": 15,
+        },
+    )
+    assert result.structuredContent["kind"] == "query_result"
+
+
+@pytest.mark.anyio
+async def test_query_readonly_forwards_default_limit():
+    backend = FakeBackendClient()
+
+    result, _ = await _call_mcp_tool(
+        create_app(settings=_settings(), backend_client=backend),
+        tool_name="portal_query_readonly",
+        arguments={
+            "database": "dw",
+            "sql": "SELECT 1",
+        },
+    )
+
+    assert backend.calls[-1] == (
+        "query_readonly",
+        {
+            "database": "dw",
+            "sql": "SELECT 1",
+            "limit": 1000,
+            "timeoutSeconds": 30,
         },
     )
     assert result.structuredContent["kind"] == "query_result"

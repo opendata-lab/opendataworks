@@ -10,6 +10,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 from core import agent_runtime
 from core.claude_cli import resolve_claude_cli_path
+from config import Settings
 
 
 def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeypatch):
@@ -50,6 +51,25 @@ def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeyp
     assert "ODW_MYSQL_PASSWORD" not in runtime_env
     assert "ODW_MYSQL_DATABASE" not in runtime_env
     assert "DATAAGENT_SQL_WRITE_TIMEOUT_SECONDS" not in runtime_env
+
+
+def test_build_runtime_env_defaults_query_limit_to_backend_max(monkeypatch):
+    monkeypatch.setattr(agent_runtime, "resolve_builtin_skill_root_dir", lambda: Path("/tmp/skill-root"))
+
+    runtime_env = agent_runtime._build_runtime_env(
+        SimpleNamespace(query_result_limit=0),
+        {},
+        SimpleNamespace(question="", sql_read_timeout_seconds=0),
+    )
+
+    assert runtime_env["DATAAGENT_QUERY_LIMIT"] == "1000"
+    assert runtime_env["DATAAGENT_RESULT_PREVIEW_ROWS"] == "20"
+
+
+def test_settings_defaults_query_result_limit_to_backend_max(monkeypatch):
+    monkeypatch.delenv("QUERY_RESULT_LIMIT", raising=False)
+
+    assert Settings(_env_file=None).query_result_limit == 1000
 
 
 def test_resolve_claude_cli_path_prefers_configured_value(monkeypatch):

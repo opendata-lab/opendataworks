@@ -85,7 +85,7 @@ class Settings(BaseSettings):
     max_few_shot_examples: int = 5
     max_schema_tables: int = 10
     max_business_rules: int = 5
-    query_result_limit: int = 100
+    query_result_limit: int = 1000
 
     class Config:
         env_file = ".env"

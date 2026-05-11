@@ -99,6 +99,66 @@ class BackendAgentQueryServiceTest {
     }
 
     @Test
+    void readQueryAcceptsDorisSelectWithNestedNotInAndChineseAliases() {
+        String sql = "SELECT\n"
+                + "  c.cmp_name AS 组件英文名,\n"
+                + "  c.cn_cmp_name AS 组件中文名,\n"
+                + "  c.env_name AS 环境,\n"
+                + "  c.system_level AS 分级保障,\n"
+                + "  c.component_type AS 组件类型\n"
+                + "FROM public.dim_tech_public_env_cmp_df c\n"
+                + "WHERE c.ds = (\n"
+                + "  SELECT MAX(ds)\n"
+                + "  FROM public.dim_tech_public_env_cmp_df\n"
+                + "  WHERE ds <= '2026-05-08'\n"
+                + ")\n"
+                + "AND c.component_type != 'DB'\n"
+                + "AND c.env_name = 'PROD'\n"
+                + "AND c.cmp_name NOT IN (\n"
+                + "  SELECT DISTINCT cmp_name\n"
+                + "  FROM public.dim_tech_public_env_cmp_df\n"
+                + "  WHERE ds = (\n"
+                + "    SELECT MAX(ds)\n"
+                + "    FROM public.dim_tech_public_env_cmp_df\n"
+                + "    WHERE ds <= '2026-04-08'\n"
+                + "  )\n"
+                + "  AND component_type != 'DB'\n"
+                + "  AND env_name = 'PROD'\n"
+                + ")\n"
+                + "ORDER BY c.cmp_name\n"
+                + "LIMIT 500;";
+
+        assertReadQueryAccepted(sql);
+    }
+
+    @Test
+    void readQueryAcceptsDorisSelectWithChineseAliasAndMutatingWordsInMaskedText() {
+        String sql = "/* example only: update demo set name = 'x'; delete from demo; */\n"
+                + "SELECT c.cmp_name AS 组件英文名\n"
+                + "FROM public.dim_tech_public_env_cmp_df c\n"
+                + "WHERE c.remark = 'drop table demo; update demo set name = ''x'''\n"
+                + "LIMIT 10;";
+
+        assertReadQueryAccepted(sql);
+    }
+
+    @Test
+    void readQueryRejectsMultipleStatementsWhenParserFallbackHandlesDorisAlias() {
+        assertReadQueryRejected(
+                "SELECT c.cmp_name AS 组件英文名 FROM public.dim_tech_public_env_cmp_df c; SELECT 2",
+                "仅支持单条只读 SQL"
+        );
+    }
+
+    @Test
+    void readQueryRejectsMutatingSqlWhenParserFallbackHandlesDorisAlias() {
+        assertReadQueryRejected(
+                "SELECT c.cmp_name AS 组件英文名 FROM public.dim_tech_public_env_cmp_df c DELETE FROM demo",
+                "仅支持只读 SQL"
+        );
+    }
+
+    @Test
     void readQueryAcceptsShowSql() {
         assertReadQueryAccepted("SHOW TABLES");
     }
@@ -142,19 +202,19 @@ class BackendAgentQueryServiceTest {
         AgentReadQueryRequest request = new AgentReadQueryRequest();
         request.setDatabase("opendataworks");
         request.setSql("SELECT 1");
-        request.setLimit(5000);
+        request.setLimit(20000);
         request.setTimeoutSeconds(500);
 
         AgentDatasourceResolution datasource = new AgentDatasourceResolution();
         datasource.setDatabase("opendataworks");
         datasource.setEngine("mysql");
         when(agentMetadataService.resolveDatasource("opendataworks", null)).thenReturn(datasource);
-        when(agentJdbcExecutor.executeReadOnlyQuery(any(), eq("SELECT 1"), eq(1000), eq(120)))
+        when(agentJdbcExecutor.executeReadOnlyQuery(any(), eq("SELECT 1"), eq(10000), eq(120)))
                 .thenReturn(new AgentJdbcExecutor.QueryExecutionResult());
 
         backendAgentQueryService.readQuery(request);
 
-        verify(agentJdbcExecutor).executeReadOnlyQuery(datasource, "SELECT 1", 1000, 120);
+        verify(agentJdbcExecutor).executeReadOnlyQuery(datasource, "SELECT 1", 10000, 120);
     }
 
     private void assertReadQueryAccepted(String sql) {
@@ -166,12 +226,12 @@ class BackendAgentQueryServiceTest {
         datasource.setDatabase("opendataworks");
         datasource.setEngine("mysql");
         when(agentMetadataService.resolveDatasource("opendataworks", null)).thenReturn(datasource);
-        when(agentJdbcExecutor.executeReadOnlyQuery(any(), eq(sql), eq(200), eq(30)))
+        when(agentJdbcExecutor.executeReadOnlyQuery(any(), eq(sql), eq(1000), eq(30)))
                 .thenReturn(new AgentJdbcExecutor.QueryExecutionResult());
 
         backendAgentQueryService.readQuery(request);
 
-        verify(agentJdbcExecutor).executeReadOnlyQuery(datasource, sql, 200, 30);
+        verify(agentJdbcExecutor).executeReadOnlyQuery(datasource, sql, 1000, 30);
     }
 
     private void assertReadQueryRejected(String sql, String expectedMessage) {
