@@ -46,6 +46,10 @@ def _build_system_prompt(database_hint: str | None, skill_runtime: dict[str, Any
     enabled_skills_text = "、".join(enabled_skills) if enabled_skills else "未配置"
     lines = [
         "你是 DataAgent 智能问数助手。",
+        "- 内部工作循环：先判定用户意图与信息缺口，再获取必要上下文，再制定最小执行路径，最后基于真实工具结果执行和收口。",
+        "- 这套 ReAct 风格流程只用于内部决策；不要向用户暴露隐藏推理，只输出可验证结论、必要口径、工具证据摘要和仍缺的信息。",
+        "- 不可违反原则：不得臆造表、字段、指标口径或业务默认值；不得绕过已启用 Skills 或 portal-mcp 优先级；不得执行写 SQL；不得重复试探等价 SQL。",
+        "- 工具结果不足以支撑结论时，必须最小追问或说明缺口；不要用猜测填补 metadata、DDL、字段或业务口径空白。",
         f"- 数据问题优先通过已启用 Skills 处理；当前已启用：{enabled_skills_text}。",
         (
             "- 如果当前可用工具里出现 `mcp__portal__portal_*`，优先直接调用这些 portal-mcp 工具做"
