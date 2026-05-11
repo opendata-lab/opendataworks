@@ -285,7 +285,7 @@ def test_run_sql_script_delegates_to_query_cli(monkeypatch):
         "database": "opendataworks",
         "sql": "SELECT 1",
         "preferred_engine": "mysql",
-        "limit": 100,
+        "limit": 1000,
         "timeout_seconds": 45,
     }
     assert payload["result"]["kind"] == "sql_execution"
@@ -373,7 +373,7 @@ def test_run_sql_script_allows_lineage_sql_with_explicit_fallback(monkeypatch):
 
     assert captured["database"] == "opendataworks"
     assert "data_lineage" in captured["sql"]
-    assert captured["limit"] == 100
+    assert captured["limit"] == 1000
     assert payload["result"]["kind"] == "sql_execution"
     assert payload["result"]["rows"] == [{"lineage_type": "upstream"}]
 

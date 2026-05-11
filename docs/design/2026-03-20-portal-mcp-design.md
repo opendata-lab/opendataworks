@@ -59,7 +59,7 @@
 - `database` 必填
 - `sql` 必填
 - `preferredEngine` 可选
-- `limit` 可选，默认 `200`，最大 `1000`
+- `limit` 可选，默认 `1000`，最大 `10000`
 - `timeoutSeconds` 可选，默认 `30`，最大 `120`
 
 服务端约束：
