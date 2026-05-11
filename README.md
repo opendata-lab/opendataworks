@@ -1,9 +1,9 @@
-# opendataworks
+# OpenDataWorks
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="frontend/public/opendataworks-icon-dark.svg">
-    <img src="frontend/public/opendataworks-icon-light.svg" alt="OpenDataWorks 图标" width="180">
+    <img src="frontend/public/opendataworks-icon-light.svg" alt="OpenDataWorks icon" width="180">
   </picture>
 </p>
 
@@ -17,105 +17,116 @@
   <a href="https://github.com/MingkeVan/opendataworks/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MingkeVan/opendataworks" alt="License Badge"/></a>
   <a href="https://github.com/MingkeVan/opendataworks/releases"><img src="https://img.shields.io/github/downloads/MingkeVan/opendataworks/total" alt="Downloads"></a>
   <a href="https://deepwiki.com/MingkeVan/opendataworks"><img src="https://deepwiki.com/badge.svg" alt="Ask DeepWiki"></a>
+  <a href="https://opendataworkshq.slack.com/"><img src="https://img.shields.io/badge/Slack-OpenDataWorks-4A154B?logo=slack&logoColor=white" alt="Slack Community"></a>
 </p>
 
-**一站式数据任务管理、智能问数与数据血缘可视化平台**
+**A unified data portal for workflow orchestration, intelligent query, and data lineage visualization.**
 
-[🌐 项目主页](https://mingkevan.github.io/opendataworks/) | [English](README_EN.md) | 简体中文
+English | [简体中文](README_zh-CN.md)
 
-[快速开始](docs/guide/start/quick-start.md) · [功能特性](docs/guide/manual/features.md) · [架构设计](docs/guide/architecture/design.md) · [开发文档](docs/guide/configuration/index.md) · [贡献指南](docs/guide/contribution/guide.md)
+[Website](https://mingkevan.github.io/opendataworks/) · [Quick Start](docs/guide/start/quick-start.md) · [Features](docs/guide/manual/features.md) · [Architecture](docs/guide/architecture/design.md) · [Configuration](docs/guide/configuration/index.md) · [Contributing](docs/guide/contribution/guide.md) · [Slack](https://opendataworkshq.slack.com/)
 
 </div>
 
 ---
 
-## 📖 项目简介
+## Overview
 
-opendataworks 是一个面向大数据平台的统一数据门户系统,旨在为企业提供一站式的数据资产管理、任务调度编排和血缘关系追踪解决方案。
+OpenDataWorks is an open-source data platform portal for teams that need one place to manage metadata, orchestrate data workflows, analyze lineage, and ask data questions with natural language.
 
-## 🎯 核心价值
+It brings the core pieces of a modern data platform into a deployable full-stack application: a Java backend, a Vue frontend, a Python DataAgent service for intelligent query, and Docker Compose assets for local and production environments.
 
-- **统一管理**: 集中管理数据表元信息、数据域、业务域等数据资产
-- **任务编排**: 可视化配置批处理和流处理任务,支持 DolphinScheduler 深度集成
-- **血缘追踪**: 自动生成数据血缘关系图,实现数据链路全链路可视化
-- **开箱即用**: 提供完整的前后端实现,快速部署即可使用
+## Why OpenDataWorks
 
-## ✨ 功能概览
+- **Unified data asset management**: organize table metadata, data domains, business domains, and layered data models.
+- **Workflow orchestration**: configure batch and streaming jobs visually, with deep DolphinScheduler integration.
+- **Lineage analysis**: parse SQL lineage automatically and explore upstream/downstream relationships in an interactive graph.
+- **Intelligent query**: use natural language to generate SQL, execute analysis, and review results from the main portal.
+- **Ready to deploy**: run the frontend, backend, DataAgent backend, Redis, MySQL, and Portal MCP from the provided Docker Compose setup.
 
-- 📊 **数据资产管理**: 元数据管理、分层管理 (ODS/DWD/DIM/DWS/ADS)
-- 🔄 **任务调度**: 批处理任务、SQL/Shell 支持、DolphinScheduler 集成
-- 🔗 **血缘可视化**: 自动解析血缘、ECharts 可视化、链路追踪
-- 🤖 **智能问数**: 主前端内置自然语言转 SQL 与结果执行能力
-- 📈 **执行监控**: 实时状态、历史日志、统计分析
+## Feature Highlights
 
-## 🌐 项目演示地址
+- Metadata management for ODS, DWD, DIM, DWS, and ADS layers
+- Workflow authoring, publishing, scheduling, and execution monitoring
+- SQL and Shell task support
+- Data lineage visualization with ECharts
+- Data Studio with catalog browsing, SQL editing, and table-level metadata context
+- Built-in NL2SQL intelligent-query entrypoint
+- Runtime logs, execution history, and operational statistics
+
+## Demo
 
 [https://opendataworks-demo.vercel.app](https://opendataworks-demo.vercel.app)
 
-## 🖼️ 界面预览
+## Screenshots
 
-### 任务调度
+### Workflow Orchestration
 
-![OpenDataWorks 任务调度界面](docs/assets/screenshots/readme-workflows.png)
+![OpenDataWorks workflow orchestration screen](docs/assets/screenshots/readme-workflows.png)
 
-工作流列表、发布状态与常用操作入口。
+Manage workflow lists, publishing status, and common workflow actions.
 
-### 数据血缘
+### Data Lineage
 
-![OpenDataWorks 数据血缘界面](docs/assets/screenshots/readme-lineage.png)
+![OpenDataWorks data lineage screen](docs/assets/screenshots/readme-lineage.png)
 
-围绕中心表查看上下游链路与层级关系。
+Explore upstream and downstream table relationships around a selected table.
 
 ### Data Studio
 
-![OpenDataWorks Data Studio 界面](docs/assets/screenshots/readme-datastudio.png)
+![OpenDataWorks Data Studio screen](docs/assets/screenshots/readme-datastudio.png)
 
-目录浏览、SQL 编辑与表级元数据联动分析。
+Browse catalogs, write SQL, and inspect table metadata in one workspace.
 
-### Docker 部署
+## Docker Deployment
 
-#### 开发环境快速启动
+### Start the Development Environment
 
-如果希望一次性在本机拉起完整环境（前端 + 后端 + DataAgent Backend + Redis + MySQL + Portal MCP），可使用开发环境 Compose：
+Use the development Docker Compose profile to start the frontend, backend, DataAgent backend, Redis, MySQL, and Portal MCP together:
 
 ```bash
-# 1. 准备配置
+# 1. Prepare configuration
 cp deploy/.env.example deploy/.env
 
-# 2. 拉取最新镜像
+# 2. Pull the latest images
 docker compose -f deploy/docker-compose.dev.yml pull
 
-# 3. 启动服务
+# 3. Start services
 docker compose -f deploy/docker-compose.dev.yml up -d
 
-# 访问
-# 前端: http://localhost:8081
-# 后端: http://localhost:8080/api
+# Access points
+# Frontend: http://localhost:8081
+# Backend: http://localhost:8080/api
 # DataAgent Backend: http://localhost:8900
 # Portal MCP: http://localhost:8801/mcp
 ```
 
-#### 生产环境/离线部署
+### Production and Offline Deployment
 
-请参考 [部署文档](deploy/README.md) 获取详细的生产环境部署和离线包制作指南。
+See the [deployment guide](deploy/README.md) for production deployment and offline package instructions.
 
-## 🚀 快速开始
+## Quick Start
 
-请参考 [快速开始指南](docs/guide/start/quick-start.md) 进行部署和启动。
+Follow the [quick start guide](docs/guide/start/quick-start.md) to deploy and run OpenDataWorks locally.
 
-## 📚 文档
+## Documentation
 
-详细文档请查看 [docs/](docs/) 目录：
+Project documentation lives under [docs/](docs/):
 
-- **[快速开始](docs/guide/start/quick-start.md)**
-- **[架构设计](docs/guide/architecture/design.md)**
-- **[配置说明](docs/guide/configuration/index.md)**
-- **[常见问题](docs/guide/faq/faq.md)**
+- [Quick Start](docs/guide/start/quick-start.md)
+- [Architecture](docs/guide/architecture/design.md)
+- [Configuration](docs/guide/configuration/index.md)
+- [FAQ](docs/guide/faq/faq.md)
 
-## 🤝 贡献
+## Community
 
-欢迎提交 PR 或 Issue！详见 [贡献指南](docs/guide/contribution/guide.md)。
+- Join the [OpenDataWorks Slack community](https://opendataworkshq.slack.com/) to discuss usage, deployment, roadmap ideas, and contributions.
+- Open a [GitHub Issue](https://github.com/MingkeVan/opendataworks/issues) for bugs, feature requests, or documentation feedback.
 
-## 📄 许可证
+## Contributing
 
-本项目采用 [GNU General Public License v3.0 only](LICENSE) 开源协议。
+Contributions are welcome. Please read the [contribution guide](docs/guide/contribution/guide.md) before opening a pull request.
+
+## License
+
+OpenDataWorks is licensed under the [GNU General Public License v3.0 only](LICENSE).
