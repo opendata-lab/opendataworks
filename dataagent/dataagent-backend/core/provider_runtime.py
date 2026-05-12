@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse, urlunparse
+
 
 def normalize_provider_id(raw: str | None, base_url: str | None = None) -> str:
     value = str(raw or "").strip().lower()
@@ -13,6 +15,25 @@ def normalize_provider_id(raw: str | None, base_url: str | None = None) -> str:
     if base:
         return "anthropic_compatible"
     return "anthropic"
+
+
+def safe_base_url_for_log(raw_url: str | None) -> str:
+    text = str(raw_url or "").strip()
+    if not text:
+        return ""
+    try:
+        parsed = urlparse(text)
+        if parsed.scheme and parsed.netloc:
+            host = parsed.hostname or ""
+            if ":" in host and not host.startswith("["):
+                host = f"[{host}]"
+            netloc = host
+            if parsed.port is not None:
+                netloc = f"{netloc}:{parsed.port}"
+            return urlunparse((parsed.scheme, netloc, parsed.path or "", "", "", ""))
+    except Exception:
+        pass
+    return text.split("?", 1)[0].split("#", 1)[0][:200]
 
 
 def build_provider_env(provider_id: str, *, api_key: str, auth_token: str, base_url: str) -> dict[str, str]:

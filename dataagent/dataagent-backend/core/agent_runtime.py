@@ -9,10 +9,10 @@ import os
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import normalize_provider_id as _normalize_provider_id
+from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import prepare_enabled_skills_project_cwd, resolve_builtin_skill_root_dir
 
@@ -413,13 +413,4 @@ def _clip_text(text: str, max_chars: int) -> str:
 
 
 def _safe_base_url(raw_url: str | None) -> str:
-    text = str(raw_url or "").strip()
-    if not text:
-        return ""
-    try:
-        parsed = urlparse(text)
-        if parsed.scheme and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}"
-    except Exception:
-        pass
-    return text[:200]
+    return _safe_base_url_for_log(raw_url)

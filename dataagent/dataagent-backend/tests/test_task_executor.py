@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -229,6 +230,42 @@ def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch
         ("content", "END"),
     ]
     assert chunks[-1]["content"] == "最终回答"
+
+
+def test_execute_task_stream_logs_safe_runtime_base_url_and_preserves_env(monkeypatch, tmp_path: Path, caplog):
+    base_url = "http://relay.example.internal/maas"
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            ResultMessage("success", session_id="sdk-session-log"),
+        ],
+    )
+    monkeypatch.setattr(
+        task_executor,
+        "resolve_runtime_provider_selection",
+        lambda provider_id, model: {
+            "provider_id": "anthropic_compatible",
+            "model": model,
+            "api_key": "",
+            "auth_token": "relay-token",
+            "base_url": base_url,
+            "supports_partial_messages": False,
+        },
+    )
+    _patch_skill_runtime(monkeypatch, tmp_path)
+    caplog.set_level(logging.INFO, logger="core.task_executor")
+
+    async def _run():
+        return await task_executor.execute_task_stream(_build_input(), emit=lambda record: None)
+
+    result = asyncio.run(_run())
+
+    assert result.task_status == "finished"
+    assert ClaudeAgentOptions.last_kwargs["env"]["ANTHROPIC_BASE_URL"] == base_url
+    assert "base_url=http://relay.example.internal/maas" in caplog.text
+    assert "env_base_url=http://relay.example.internal/maas" in caplog.text
+    assert "auth_token_set=True" in caplog.text
+    assert "api_key_set=False" in caplog.text
 
 
 def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tmp_path: Path):

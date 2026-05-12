@@ -66,6 +66,18 @@ def test_build_runtime_env_defaults_query_limit_to_backend_max(monkeypatch):
     assert runtime_env["DATAAGENT_RESULT_PREVIEW_ROWS"] == "20"
 
 
+def test_safe_base_url_preserves_path_without_query_or_fragment():
+    actual = agent_runtime._safe_base_url("http://relay.example.internal/maas?token=secret#frag")
+
+    assert actual == "http://relay.example.internal/maas"
+
+
+def test_safe_base_url_drops_userinfo_from_log_value():
+    actual = agent_runtime._safe_base_url("https://user:pass@relay.example.internal/maas/v1/messages")
+
+    assert actual == "https://relay.example.internal/maas/v1/messages"
+
+
 def test_settings_defaults_query_result_limit_to_backend_max(monkeypatch):
     monkeypatch.delenv("QUERY_RESULT_LIMIT", raising=False)
 
