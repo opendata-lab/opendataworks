@@ -859,7 +859,7 @@ async def execute_task_stream(
     timeout_seconds = max(10, int(params.timeout_seconds or cfg.agent_timeout_seconds))
 
     logger.info(
-        "task.start task_id=%s topic_id=%s provider=%s model=%s cwd=%s setting_sources=%s allowed_tools=%s mcp_servers=%s max_turns=%s partial=%s base_url=%s",
+        "task.start task_id=%s topic_id=%s provider=%s model=%s cwd=%s setting_sources=%s allowed_tools=%s mcp_servers=%s max_turns=%s partial=%s base_url=%s env_base_url=%s auth_token_set=%s api_key_set=%s",
         params.task_id,
         params.topic_id,
         provider_id,
@@ -870,7 +870,10 @@ async def execute_task_stream(
         ",".join(sorted(mcp_servers.keys())) if mcp_servers else "(none)",
         max_turns,
         supports_partial_messages,
+        _safe_base_url(runtime_target.get("base_url")),
         _safe_base_url(env_payload.get("ANTHROPIC_BASE_URL")),
+        bool(str(runtime_target.get("auth_token") or "").strip()),
+        bool(str(runtime_target.get("api_key") or "").strip()),
     )
 
     async def _cancelled() -> bool:

@@ -19,7 +19,11 @@ import anyio
 
 from config import get_settings, update_settings
 from core.claude_cli import resolve_claude_cli_path
-from core.provider_runtime import build_provider_env, normalize_provider_id as normalize_runtime_provider_id
+from core.provider_runtime import (
+    build_provider_env,
+    normalize_provider_id as normalize_runtime_provider_id,
+    safe_base_url_for_log,
+)
 from core.skill_admin_store import get_skill_admin_store
 from core.skill_discovery import (
     resolve_agent_project_cwd,
@@ -596,6 +600,17 @@ async def _run_model_detection(
     )
     runtime_env = dict(os.environ)
     runtime_env.update(provider_env)
+    cli_path = resolve_claude_cli_path(get_settings())
+    logger.info(
+        "model_detection.start provider=%s model=%s base_url=%s supports_partial_messages=%s auth_token_set=%s api_key_set=%s cli_path_set=%s",
+        provider_id,
+        model,
+        safe_base_url_for_log(base_url),
+        supports_partial_messages,
+        bool(str(auth_token or "").strip()),
+        bool(str(api_key or "").strip()),
+        bool(cli_path),
+    )
     options_kwargs = dict(
         system_prompt="你是模型服务连通性检测程序。只需用最短文本回答检测请求。",
         model=model,
@@ -613,7 +628,6 @@ async def _run_model_detection(
             str(line or "").rstrip(),
         ),
     )
-    cli_path = resolve_claude_cli_path(get_settings())
     if cli_path:
         options_kwargs["cli_path"] = cli_path
     options = ClaudeAgentOptions(**options_kwargs)
