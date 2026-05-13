@@ -58,6 +58,16 @@ jobs:
             context: ./opendataagent/web
             dockerfile: ./opendataagent/web/Dockerfile
             build_args: ""
+          - name: dataagent-evals-builtin
+            image: opendataworks-dataagent-evals-builtin
+            context: .
+            dockerfile: ./evals/dataagent-arch-governance-builtin/Dockerfile
+            build_args: ""
+          - name: dataagent-evals-deepeval
+            image: opendataworks-dataagent-evals-deepeval
+            context: .
+            dockerfile: ./evals/dataagent-arch-governance-deepeval/Dockerfile
+            build_args: ""
 
 
     steps:
@@ -172,6 +182,8 @@ jobs:
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${VERSION})"
             echo "- [DataAgent Backend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-backend/tags?name=${VERSION})"
             echo "- [Portal MCP](https://hub.docker.com/r/${NS}/opendataworks-portal-mcp/tags?name=${VERSION})"
+            echo "- [DataAgent Evals Builtin](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-builtin/tags?name=${VERSION})"
+            echo "- [DataAgent Evals DeepEval](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-deepeval/tags?name=${VERSION})"
             echo "- [Opendataagent Server](https://hub.docker.com/r/${NS}/opendataagent-server/tags?name=${VERSION})"
             echo "- [Opendataagent Web](https://hub.docker.com/r/${NS}/opendataagent-web/tags?name=${VERSION})"
             echo ""
@@ -180,6 +192,8 @@ jobs:
             echo "docker pull ${NS}/opendataworks-backend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-dataagent-backend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-portal-mcp:${VERSION}"
+            echo "docker pull ${NS}/opendataworks-dataagent-evals-builtin:${VERSION}"
+            echo "docker pull ${NS}/opendataworks-dataagent-evals-deepeval:${VERSION}"
             echo "docker pull ${NS}/opendataagent-server:${VERSION}"
             echo "docker pull ${NS}/opendataagent-web:${VERSION}"
             echo '```'
@@ -263,6 +277,8 @@ jobs:
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${IMAGE_TAG})"
             echo "- [DataAgent Backend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-backend/tags?name=${IMAGE_TAG})"
             echo "- [Portal MCP](https://hub.docker.com/r/${NS}/opendataworks-portal-mcp/tags?name=${IMAGE_TAG})"
+            echo "- [DataAgent Evals Builtin](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-builtin/tags?name=${IMAGE_TAG})"
+            echo "- [DataAgent Evals DeepEval](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-deepeval/tags?name=${IMAGE_TAG})"
             echo "- [Opendataagent Server](https://hub.docker.com/r/${NS}/opendataagent-server/tags?name=${IMAGE_TAG})"
             echo "- [Opendataagent Web](https://hub.docker.com/r/${NS}/opendataagent-web/tags?name=${IMAGE_TAG})"
             echo ""
@@ -271,6 +287,8 @@ jobs:
             echo "docker pull ${NS}/opendataworks-backend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-dataagent-backend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-portal-mcp:${IMAGE_TAG}"
+            echo "docker pull ${NS}/opendataworks-dataagent-evals-builtin:${IMAGE_TAG}"
+            echo "docker pull ${NS}/opendataworks-dataagent-evals-deepeval:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataagent-server:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataagent-web:${IMAGE_TAG}"
             echo '```'
@@ -317,6 +335,8 @@ jobs:
           echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-backend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-backend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-portal-mcp\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-builtin\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-deepeval\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataagent-server\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataagent-web\`" >> $GITHUB_STEP_SUMMARY
 
@@ -331,6 +351,8 @@ jobs:
           echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-backend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-backend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-portal-mcp:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-builtin:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-deepeval:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataagent-server:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataagent-web:latest" >> $GITHUB_STEP_SUMMARY
 
