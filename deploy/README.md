@@ -157,6 +157,63 @@ Use this method for isolated environments without internet access. You will use 
 
 ---
 
+## 3. DataAgent Online Evaluation
+
+离线包内置架构治理 50 条核心用例，部署完成并配置可用模型后，可手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于离线包根目录 `evals/`，且均独立于 DataAgent runtime。
+
+```bash
+DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \
+DATAAGENT_EVAL_JUDGE_TOKEN=... \
+DATAAGENT_EVAL_JUDGE_MODEL=claude-opus-4-6 \
+bash scripts/run-dataagent-evals.sh --base-url http://127.0.0.1:8900
+```
+
+默认评测集路径为 `evals/dataagent-arch-governance/arch-governance-core.jsonl`。评测集和评测脚本位于离线包根目录，不放入 `deploy/dataagent-runtime/`。
+
+builtin 评测镜像为 `opendataworks-dataagent-evals-builtin:<tag>`，由 `scripts/run-dataagent-evals.sh` 默认调用。若只做本地 dry-run，可设置 `DATAAGENT_BUILTIN_RUN_LOCAL=1`。
+
+常用参数：
+
+```bash
+# 只校验评测集与报告目录，不调用服务
+DATAAGENT_BUILTIN_RUN_LOCAL=1 bash scripts/run-dataagent-evals.sh --dry-run
+
+# 只跑指定用例
+bash scripts/run-dataagent-evals.sh --case ARCH_ASSET_001 --case ARCH_EDGE_006
+
+# 覆盖 DataAgent 执行模型，并独立配置 judge 模型
+DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \
+DATAAGENT_EVAL_JUDGE_TOKEN=... \
+DATAAGENT_EVAL_JUDGE_MODEL=claude-opus-4-6 \
+bash scripts/run-dataagent-evals.sh --provider-id openrouter --model anthropic/claude-sonnet-4.5
+```
+
+输出目录默认为 `reports/dataagent-evals/<timestamp>/`，包含：
+
+- `cases.jsonl`: 每条用例的执行、证据抽取和裁判结果
+- `summary.json`: 准入指标、阈值和上线建议
+- `report.md`: Markdown 评测报告
+- `raw/<case_id>.json`: 单用例原始明细
+
+评测脚本通过真实 DataAgent HTTP 任务链路执行问题，并调用独立配置的 judge 模型完成 10 分制打分。DataAgent backend 不暴露评测路由，也不承载评测裁判逻辑；judge token 仅通过运行时参数或环境变量传入，不写入镜像和离线包。
+
+### DeepEval Parallel Evaluation
+
+离线包也包含 DeepEval 并行评测镜像 `opendataworks-dataagent-evals-deepeval:<tag>`，用于和 builtin 评测结果横向比对。两个评测镜像都只包含评测工具和评测集，不包含 DataAgent backend，也不会随 `load-package-and-start.sh` 默认启动。
+
+运行示例：
+
+```bash
+DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \
+DATAAGENT_EVAL_JUDGE_TOKEN=... \
+DATAAGENT_EVAL_JUDGE_MODEL=claude-opus-4-6 \
+bash scripts/run-dataagent-deepeval-evals.sh --base-url http://127.0.0.1:8900
+```
+
+DeepEval 评测默认读取 `evals/dataagent-arch-governance/arch-governance-core.jsonl`，输出同样包含 `cases.jsonl`、`summary.json`、`report.md` 和 `raw/<case_id>.json`。
+
+---
+
 ## Common Operations
 
 ### Stop Services
