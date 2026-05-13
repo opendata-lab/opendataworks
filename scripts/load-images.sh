@@ -43,6 +43,8 @@ REQUIRED_IMAGES=(
     "opendataworks-frontend.tar"
     "opendataworks-backend.tar"
     "opendataworks-dataagent-backend.tar"
+    "opendataworks-dataagent-evals-builtin.tar"
+    "opendataworks-dataagent-evals-deepeval.tar"
     "opendataworks-portal-mcp.tar"
     "mysql-8.0.tar"
     "redis-7.2-alpine.tar"
@@ -62,37 +64,49 @@ echo "📦 开始加载镜像..."
 echo ""
 
 # 加载前端镜像
-echo "📦 [1/6] 加载前端镜像..."
+echo "📦 [1/8] 加载前端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-frontend.tar"
 echo "✅ 前端镜像加载完成"
 echo ""
 
 # 加载后端镜像
-echo "📦 [2/6] 加载后端镜像..."
+echo "📦 [2/8] 加载后端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-backend.tar"
 echo "✅ 后端镜像加载完成"
 echo ""
 
 # 加载 DataAgent 后端镜像
-echo "📦 [3/6] 加载 DataAgent 后端镜像..."
+echo "📦 [3/8] 加载 DataAgent 后端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-backend.tar"
 echo "✅ DataAgent 后端镜像加载完成"
 echo ""
 
+# 加载 builtin 评测镜像
+echo "📦 [4/8] 加载 builtin 评测镜像..."
+$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-evals-builtin.tar"
+echo "✅ builtin 评测镜像加载完成"
+echo ""
+
+# 加载 DeepEval 评测镜像
+echo "📦 [5/8] 加载 DeepEval 评测镜像..."
+$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-evals-deepeval.tar"
+echo "✅ DeepEval 评测镜像加载完成"
+echo ""
+
 # 加载 Portal MCP 镜像
-echo "📦 [4/6] 加载 Portal MCP 镜像..."
+echo "📦 [6/8] 加载 Portal MCP 镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-portal-mcp.tar"
 echo "✅ Portal MCP 镜像加载完成"
 echo ""
 
 # 加载 MySQL 镜像
-echo "📦 [5/6] 加载 MySQL 镜像..."
+echo "📦 [7/8] 加载 MySQL 镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/mysql-8.0.tar"
 echo "✅ MySQL 镜像加载完成"
 echo ""
 
 # 加载 Redis 镜像
-echo "📦 [6/6] 加载 Redis 镜像..."
+echo "📦 [8/8] 加载 Redis 镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/redis-7.2-alpine.tar"
 echo "✅ Redis 镜像加载完成"
 echo ""
@@ -117,10 +131,14 @@ IMAGES=(
     "opendataworks-frontend:${IMAGE_TAG}"
     "opendataworks-backend:${IMAGE_TAG}"
     "opendataworks-dataagent-backend:${IMAGE_TAG}"
+    "opendataworks-dataagent-evals-builtin:${IMAGE_TAG}"
+    "opendataworks-dataagent-evals-deepeval:${IMAGE_TAG}"
     "opendataworks-portal-mcp:${IMAGE_TAG}"
     "opendataworks-frontend:latest"
     "opendataworks-backend:latest"
     "opendataworks-dataagent-backend:latest"
+    "opendataworks-dataagent-evals-builtin:latest"
+    "opendataworks-dataagent-evals-deepeval:latest"
     "opendataworks-portal-mcp:latest"
     "mysql:8.0"
     "redis:7.2-alpine"

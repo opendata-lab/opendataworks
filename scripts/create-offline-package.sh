@@ -112,11 +112,13 @@ mkdir -p "$PACKAGE_ROOT"
 PACKAGED_DEPLOY_DIR="$PACKAGE_ROOT/deploy"
 PACKAGED_SCRIPTS_DIR="$PACKAGE_ROOT/scripts"
 PACKAGED_DATAAGENT_RUNTIME_DIR="$PACKAGED_DEPLOY_DIR/dataagent-runtime"
+PACKAGED_EVALS_DIR="$PACKAGE_ROOT/evals"
 DEPLOY_IMAGE_DIR="$PACKAGED_DEPLOY_DIR/docker-images"
 
 mkdir -p "$PACKAGED_DEPLOY_DIR"
 mkdir -p "$PACKAGED_SCRIPTS_DIR"
 mkdir -p "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills"
+mkdir -p "$PACKAGED_EVALS_DIR"
 mkdir -p "$DEPLOY_IMAGE_DIR"
 
 # 1. 复制 deploy/ 下的内容
@@ -126,6 +128,12 @@ tar -C "$REPO_ROOT/deploy" --exclude='docker-images/*.tar' -cf - . | tar -C "$PA
 # 2. 复制 scripts/ 下的内容 (excluding build/ which is for dev)
 log "Copying scripts/ content to package scripts/"
 tar -C "$REPO_ROOT/scripts" --exclude='build' -cf - . | tar -C "$PACKAGED_SCRIPTS_DIR" -xf -
+
+# 2.1 复制评测模块。评测工具独立于 DataAgent runtime，离线包中手动触发。
+if [[ -d "$REPO_ROOT/evals" ]]; then
+    log "Copying eval modules"
+    tar -C "$REPO_ROOT/evals" -cf - . | tar -C "$PACKAGED_EVALS_DIR" -xf -
+fi
 
 # 3. 复制 DataAgent 运行时配置（不打包整个 dataagent 源码目录）
 if [[ -f "$REPO_ROOT/dataagent/.claude/settings.json" ]]; then
@@ -211,6 +219,10 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
+        -e "s|^# *OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}|" \
+        -e "s|^# *OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
         -e "s|^DATAAGENT_LLM_JSON_FILE=.*|DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json|" \
@@ -223,6 +235,10 @@ rewrite_offline_env_file() {
         echo "OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}" >> "$env_file"
+    grep -q '^OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=' "$env_file" 2>/dev/null || \
+        echo "OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}" >> "$env_file"
+    grep -q '^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=' "$env_file" 2>/dev/null || \
+        echo "OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_PORTAL_MCP_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}" >> "$env_file"
     grep -q '^DATAAGENT_LLM_JSON_FILE=' "$env_file" 2>/dev/null || \
@@ -280,6 +296,8 @@ MAIN_IMAGES=(
     "opendataworks-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-frontend:${OP_TAG}|opendataworks-frontend:${OP_TAG}"
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
     "opendataworks-dataagent-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-backend:${OP_TAG}|opendataworks-dataagent-backend:${OP_TAG}"
+    "opendataworks-dataagent-evals-builtin.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-evals-builtin:${OP_TAG}|opendataworks-dataagent-evals-builtin:${OP_TAG}"
+    "opendataworks-dataagent-evals-deepeval.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-evals-deepeval:${OP_TAG}|opendataworks-dataagent-evals-deepeval:${OP_TAG}"
     "opendataworks-portal-mcp.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-portal-mcp:${OP_TAG}|opendataworks-portal-mcp:${OP_TAG}"
 )
 
