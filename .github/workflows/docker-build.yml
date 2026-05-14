@@ -61,12 +61,12 @@ jobs:
           - name: dataagent-evals-builtin
             image: opendataworks-dataagent-evals-builtin
             context: .
-            dockerfile: ./evals/dataagent-arch-governance-builtin/Dockerfile
+            dockerfile: ./tools/dataagent-evals/builtin/Dockerfile
             build_args: ""
           - name: dataagent-evals-deepeval
             image: opendataworks-dataagent-evals-deepeval
             context: .
-            dockerfile: ./evals/dataagent-arch-governance-deepeval/Dockerfile
+            dockerfile: ./tools/dataagent-evals/deepeval/Dockerfile
             build_args: ""
 
 

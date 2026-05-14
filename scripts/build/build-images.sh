@@ -66,7 +66,7 @@ echo ""
 echo "📦 步骤 4/6: 构建 DataAgent builtin 评测镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_BUILTIN_IMAGE \
-  -f evals/dataagent-arch-governance-builtin/Dockerfile \
+  -f tools/dataagent-evals/builtin/Dockerfile \
   .
 echo "✅ DataAgent builtin 评测镜像构建完成"
 echo ""
@@ -74,7 +74,7 @@ echo ""
 echo "📦 步骤 5/6: 构建 DataAgent DeepEval 评测镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE \
-  -f evals/dataagent-arch-governance-deepeval/Dockerfile \
+  -f tools/dataagent-evals/deepeval/Dockerfile \
   .
 echo "✅ DataAgent DeepEval 评测镜像构建完成"
 echo ""

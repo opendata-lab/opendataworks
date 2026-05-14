@@ -11,8 +11,24 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+try:
+    from deepeval import evaluate as deepeval_evaluate
+except Exception:  # pragma: no cover - exercised in environments without deepeval
+    deepeval_evaluate = None
+
+try:
+    from deepeval.metrics import BaseMetric
+except Exception:  # pragma: no cover
+    BaseMetric = object  # type: ignore[assignment]
+
+try:
+    from deepeval.test_case import LLMTestCase
+except Exception:  # pragma: no cover
+    LLMTestCase = None  # type: ignore[assignment]
 
 
 REQUIRED_CASE_FIELDS = {
@@ -57,24 +73,28 @@ class EvalRunnerError(Exception):
         self.exit_code = exit_code
 
 
+@dataclass(frozen=True)
 class JudgeConfig:
-    def __init__(self, *, base_url: str, token: str, model: str, timeout_seconds: int = 120, max_tokens: int = 4096):
-        self.base_url = base_url
-        self.token = token
-        self.model = model
-        self.timeout_seconds = timeout_seconds
-        self.max_tokens = max_tokens
+    base_url: str
+    token: str
+    model: str
+    timeout_seconds: int = 120
+    max_tokens: int = 4096
 
 
-def _is_eval_root(path: Path) -> bool:
-    return (path / "evals" / "dataagent-arch-governance" / "arch-governance-core.jsonl").is_file()
+def _is_workspace_root(path: Path) -> bool:
+    return (
+        (path / "scripts").is_dir()
+        or (path / "deploy").is_dir()
+        or (path / "tools" / "dataagent-evals").is_dir()
+    )
 
 
 def _repo_or_package_root() -> Path:
-    file_root = Path(__file__).resolve().parents[2]
+    file_root = Path(__file__).resolve().parents[3]
     cwd = Path.cwd().resolve()
     for candidate in (cwd, *cwd.parents, file_root):
-        if _is_eval_root(candidate):
+        if _is_workspace_root(candidate):
             return candidate
     return file_root
 
@@ -83,19 +103,19 @@ def _timestamp() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def default_dataset_path(root: Path) -> Path:
-    return root / "evals" / "dataagent-arch-governance" / "arch-governance-core.jsonl"
-
-
 def default_output_dir(root: Path) -> Path:
-    return root / "reports" / "dataagent-evals" / _timestamp()
+    return root / "reports" / "dataagent-evals" / f"deepeval-{_timestamp()}"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     root = _repo_or_package_root()
-    parser = argparse.ArgumentParser(description="Run DataAgent online architecture-governance evaluations.")
+    parser = argparse.ArgumentParser(description="Run DataAgent architecture-governance evaluations with DeepEval.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8900", help="DataAgent backend base URL.")
-    parser.add_argument("--dataset", default=str(default_dataset_path(root)), help="Evaluation JSONL dataset path.")
+    parser.add_argument(
+        "--dataset",
+        default=os.environ.get("DATAAGENT_EVAL_DATASET", ""),
+        help="Required external private evaluation JSONL dataset path.",
+    )
     parser.add_argument("--output-dir", default=str(default_output_dir(root)), help="Report output directory.")
     parser.add_argument("--case", action="append", dest="case_ids", default=[], help="Case ID to run. Can be repeated.")
     parser.add_argument("--provider-id", default="", help="Override DataAgent execution provider for evaluated tasks.")
@@ -105,18 +125,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--judge-base-url", default=os.environ.get("DATAAGENT_EVAL_JUDGE_BASE_URL", ""), help="Anthropic-compatible judge base URL.")
     parser.add_argument("--judge-token", default=os.environ.get("DATAAGENT_EVAL_JUDGE_TOKEN", ""), help="Judge model API token.")
     parser.add_argument("--judge-model", default=os.environ.get("DATAAGENT_EVAL_JUDGE_MODEL", ""), help="Judge model name.")
-    parser.add_argument(
-        "--judge-timeout-seconds",
-        type=int,
-        default=int(os.environ.get("DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS", "120")),
-        help="Judge request timeout.",
-    )
-    parser.add_argument(
-        "--judge-max-tokens",
-        type=int,
-        default=int(os.environ.get("DATAAGENT_EVAL_JUDGE_MAX_TOKENS", "4096")),
-        help="Judge response max tokens.",
-    )
+    parser.add_argument("--judge-timeout-seconds", type=int, default=int(os.environ.get("DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS", "120")), help="Judge request timeout.")
+    parser.add_argument("--judge-max-tokens", type=int, default=int(os.environ.get("DATAAGENT_EVAL_JUDGE_MAX_TOKENS", "4096")), help="Judge response max tokens.")
     parser.add_argument("--dry-run", action="store_true", help="Validate dataset and output directory without service calls.")
     return parser.parse_args(argv)
 
@@ -187,6 +197,7 @@ def load_dataset(path: Path, case_ids: list[str] | None = None) -> tuple[list[di
             raise EvalRunnerError(f"requested case id not found: {', '.join(missing_requested)}")
 
     stats = {
+        "engine": "deepeval",
         "dataset_path": str(path),
         "total_cases": len(cases),
         "dataset_valid": not missing_fields and not duplicate_ids and not invalid_scoring,
@@ -201,14 +212,7 @@ def load_dataset(path: Path, case_ids: list[str] | None = None) -> tuple[list[di
     return cases, stats
 
 
-def http_json(
-    method: str,
-    url: str,
-    payload: dict[str, Any] | None = None,
-    *,
-    timeout: int = 30,
-    headers: dict[str, str] | None = None,
-) -> dict[str, Any]:
+def http_json(method: str, url: str, payload: dict[str, Any] | None = None, *, timeout: int = 30, headers: dict[str, str] | None = None) -> dict[str, Any]:
     data = None
     request_headers = {"Accept": "application/json"}
     if headers:
@@ -312,6 +316,44 @@ def _collect_usage(task: dict[str, Any], messages: dict[str, Any], events: list[
     return usage
 
 
+def _dedupe(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
+
+
+def _auto_failure_attribution(
+    combined: str,
+    *,
+    missing_sql_fragments: list[str],
+    forbidden_hits: list[str],
+    missing_tool_names: list[str],
+) -> list[str]:
+    failures: list[str] = []
+    if re.search(r"请.*执行.*SQL|供.*执行|无法直接执行|未注入.*SQL|没有\s*SQL\s*执行|SQL.*尚未执行", combined, re.I | re.S):
+        failures.append("sql_only")
+    if re.search(r"OpenDataWorks\s*平台元数据|托管元数据|data_table|data_lineage|data_task|data_workflow|inspect_metadata\.py|get_lineage\.py", combined, re.I):
+        failures.append("wrong_domain")
+    if re.search(r"\{(?:target_date|TARGET_DATE|env_name|ENV_NAME|start_date|START_DATE|end_date|END_DATE|component_name|COMPONENT_NAME|database_name|DATABASE_NAME|database_schema|DATABASE_SCHEMA|table_name|TABLE_NAME|period|PERIOD|timeDim|RULE_KEY)\}|占位符|TODO", combined):
+        failures.append("placeholder_leak")
+    if re.search(r"超时|timeout", combined, re.I):
+        failures.append("tool_timeout")
+    if re.search(r"未找到|没有找到|不存在|无匹配|空结果集|返回空", combined):
+        failures.append("empty_result")
+    if missing_sql_fragments:
+        failures.append("missing_sql_fragment")
+    if missing_tool_names:
+        failures.append("missing_tool")
+    if forbidden_hits:
+        failures.append("forbidden_sql")
+    return _dedupe(failures)
+
+
 def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
     combined = "\n".join(_flatten_strings(events) + sql_outputs + [final_answer])
     missing_sql_fragments = [
@@ -335,12 +377,19 @@ def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dic
     triggered_veto_rules: list[str] = []
     if forbidden_hits:
         triggered_veto_rules.append("SQL 不带 schema 前缀、使用 SELECT * 或明显违反当前 skill SQL 硬规则。")
+    failure_attribution = _auto_failure_attribution(
+        combined,
+        missing_sql_fragments=missing_sql_fragments,
+        forbidden_hits=forbidden_hits,
+        missing_tool_names=missing_tool_names,
+    )
     return {
         "passed": not forbidden_hits,
         "missing_sql_fragments": missing_sql_fragments,
         "forbidden_sql_patterns": forbidden_hits,
         "missing_tool_names": missing_tool_names,
         "triggered_veto_rules": triggered_veto_rules,
+        "failure_attribution": failure_attribution,
     }
 
 
@@ -362,7 +411,7 @@ def _final_assistant_answer(messages: dict[str, Any], task_id: str) -> str:
 
 
 def _create_topic(base_url: str, case: dict[str, Any]) -> str:
-    topic = http_json("POST", f"{base_url}/api/v1/nl2sql/topics", {"title": f"Eval {case['case_id']}"})
+    topic = http_json("POST", f"{base_url}/api/v1/nl2sql/topics", {"title": f"DeepEval {case['case_id']}"})
     topic_id = str(topic.get("topic_id") or "").strip()
     if not topic_id:
         raise EvalRunnerError("topic creation response did not include topic_id")
@@ -421,12 +470,90 @@ def _poll_task(base_url: str, task_id: str, timeout_seconds: int) -> tuple[dict[
     errors.append({"code": "timeout", "message": f"task did not finish within {timeout_seconds}s"})
     if last_poll_error:
         errors.append({"code": "poll_error", "message": last_poll_error})
-    if not last_task:
-        last_task = {"task_id": task_id, "task_status": "timeout"}
-    else:
-        last_task = dict(last_task)
-        last_task["task_status"] = str(last_task.get("task_status") or "timeout")
+    last_task = dict(last_task or {"task_id": task_id})
+    last_task["task_status"] = str(last_task.get("task_status") or "timeout")
     return last_task, all_events, errors
+
+
+def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    started = time.time()
+    errors: list[dict[str, Any]] = []
+    topic_id = ""
+    task_id = ""
+    task: dict[str, Any] = {}
+    events: list[dict[str, Any]] = []
+    messages: dict[str, Any] = {}
+    final_answer = ""
+    try:
+        topic_id = _create_topic(base_url, case)
+        task_id = _submit_task(base_url, topic_id, case, args)
+        case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
+        task, events, poll_errors = _poll_task(base_url, task_id, case_timeout)
+        errors.extend(poll_errors)
+        messages = http_json(
+            "GET",
+            f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
+            timeout=30,
+        )
+        final_answer = _final_assistant_answer(messages, task_id)
+        status = str(task.get("task_status") or "").lower()
+        if status and status not in SUCCESS_STATUSES:
+            errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
+    except EvalRunnerError as exc:
+        errors.append({"code": "runner_error", "message": str(exc)})
+
+    tool_names = _collect_tool_names(events)
+    sql_outputs = _extract_sql_outputs(events, final_answer)
+    chart_outputs = _extract_chart_outputs(events)
+    usage = _collect_usage(task, messages, events)
+    rule_check = auto_rule_check(case, final_answer=final_answer, events=events, sql_outputs=sql_outputs, tool_names=tool_names)
+    return {
+        "case_id": case.get("case_id"),
+        "category": case.get("category"),
+        "question": case.get("question"),
+        "topic_id": topic_id,
+        "task_id": task_id,
+        "task_status": str(task.get("task_status") or ""),
+        "final_answer": final_answer,
+        "tool_names": tool_names,
+        "sql_outputs": sql_outputs,
+        "chart_outputs": chart_outputs,
+        "usage": usage,
+        "duration_seconds": round(time.time() - started, 3),
+        "auto_rule_check": rule_check,
+        "judge": {},
+        "veto_rules_triggered": list(rule_check.get("triggered_veto_rules") or []),
+        "case_passed": False,
+        "errors": errors,
+    }
+
+
+def _ensure_deepeval_available() -> None:
+    if deepeval_evaluate is None or LLMTestCase is None:
+        raise EvalRunnerError("deepeval is not installed; run through the DeepEval eval Docker image or install requirements.txt")
+
+
+def to_deepeval_test_case(case: dict[str, Any], case_result: dict[str, Any]) -> Any:
+    _ensure_deepeval_available()
+    expected_payload = {
+        "case_id": case.get("case_id"),
+        "category": case.get("category"),
+        "expected_intent": case.get("expected_intent"),
+        "expected_ontology_objects": case.get("expected_ontology_objects") or [],
+        "expected_relations": case.get("expected_relations") or [],
+        "expected_sql_or_tool_behavior": case.get("expected_sql_or_tool_behavior") or [],
+        "expected_answer_points": case.get("expected_answer_points") or [],
+        "scoring": case.get("scoring") or {},
+        "veto_rules": case.get("veto_rules") or [],
+        "judge_guidance": case.get("judge_guidance") or "",
+    }
+    context_payload = {"case": case, "case_result": case_result}
+    return LLMTestCase(
+        input=str(case.get("question") or ""),
+        actual_output=str(case_result.get("final_answer") or ""),
+        expected_output=json.dumps(expected_payload, ensure_ascii=False, sort_keys=True),
+        context=[json.dumps(context_payload, ensure_ascii=False, sort_keys=True)],
+    )
 
 
 def _json_object_text(raw: str) -> str:
@@ -440,7 +567,6 @@ def _json_object_text(raw: str) -> str:
         if lines and lines[-1].startswith("```"):
             lines = lines[:-1]
         text = "\n".join(lines).strip()
-
     decoder = json.JSONDecoder()
     for index, char in enumerate(text):
         if char != "{":
@@ -452,7 +578,6 @@ def _json_object_text(raw: str) -> str:
             continue
         if isinstance(parsed, dict):
             return candidate[:end]
-
     start = text.find("{")
     end = text.rfind("}")
     if start >= 0 and end > start:
@@ -500,7 +625,7 @@ def _string_list(value: Any) -> list[str]:
     return result
 
 
-def _normalize_judge_payload(data: dict[str, Any], *, raw_output: str = "") -> dict[str, Any]:
+def normalize_judge_payload(data: dict[str, Any], *, raw_output: str = "") -> dict[str, Any]:
     dimensions: dict[str, float] = {}
     raw_dimensions = data.get("dimension_scores")
     if isinstance(raw_dimensions, dict):
@@ -513,12 +638,12 @@ def _normalize_judge_payload(data: dict[str, Any], *, raw_output: str = "") -> d
         "veto_rules_triggered": _string_list(data.get("veto_rules_triggered")),
         "failure_attribution": _string_list(data.get("failure_attribution")),
         "comment": str(data.get("comment") or "").strip(),
-        "judge_failed": _normalize_bool(data.get("judge_failed")),
+        "judge_failed": False,
         "raw_output": raw_output,
     }
 
 
-def _failed_judge(reason: str, *, raw_output: str = "", attribution: list[str] | None = None) -> dict[str, Any]:
+def failed_judge(reason: str, *, raw_output: str = "", attribution: list[str] | None = None) -> dict[str, Any]:
     return {
         "score": 0,
         "dimension_scores": {},
@@ -529,6 +654,14 @@ def _failed_judge(reason: str, *, raw_output: str = "", attribution: list[str] |
         "judge_failed": True,
         "raw_output": raw_output,
     }
+
+
+def _merge_auto_failure_attribution(judge: dict[str, Any], rule_check: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(judge)
+    merged["failure_attribution"] = _dedupe(
+        list(rule_check.get("failure_attribution") or []) + list(judge.get("failure_attribution") or [])
+    )
+    return merged
 
 
 def _judge_system_prompt() -> str:
@@ -601,101 +734,103 @@ def call_judge_model(config: JudgeConfig, payload: dict[str, Any]) -> dict[str, 
             parsed = json.loads(_json_object_text(raw_output))
             if not isinstance(parsed, dict):
                 raise ValueError("judge output is not a JSON object")
-            return _normalize_judge_payload(parsed, raw_output=raw_output)
-        except EvalRunnerError as exc:
-            return _failed_judge(str(exc), raw_output=raw_output, attribution=["judge_failed", "judge_http_error"])
+            return normalize_judge_payload(parsed, raw_output=raw_output)
         except Exception as exc:
             if attempt == 1:
-                return _failed_judge(f"裁判模型未返回合法 JSON: {exc}", raw_output=raw_output)
-    return _failed_judge("裁判模型未返回合法 JSON", raw_output=raw_output)
+                return failed_judge(f"裁判模型未返回合法 JSON: {exc}", raw_output=raw_output)
+    return failed_judge("裁判模型未返回合法 JSON", raw_output=raw_output)
 
 
-def _judge_case(judge_config: JudgeConfig, case: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
-    judge = call_judge_model(judge_config, payload)
-    judge["case_id"] = case.get("case_id")
-    return judge
+class DataAgentArchitectureMetric(BaseMetric):  # type: ignore[misc, valid-type]
+    shared_case_judges: dict[str, dict[str, Any]] = {}
 
+    def __init__(self, judge_config: JudgeConfig, threshold: float = 0.8):
+        self.judge_config = judge_config
+        self.threshold = threshold
+        self.score = 0.0
+        self.reason = ""
+        self.success = False
+        self.case_judges: dict[str, dict[str, Any]] = {}
 
-def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judge_config: JudgeConfig) -> dict[str, Any]:
-    started = time.time()
-    errors: list[dict[str, Any]] = []
-    topic_id = ""
-    task_id = ""
-    task: dict[str, Any] = {}
-    events: list[dict[str, Any]] = []
-    messages: dict[str, Any] = {}
-    final_answer = ""
-    try:
-        topic_id = _create_topic(base_url, case)
-        task_id = _submit_task(base_url, topic_id, case, args)
-        case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, events, poll_errors = _poll_task(base_url, task_id, case_timeout)
-        errors.extend(poll_errors)
-        messages = http_json(
-            "GET",
-            f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
-            timeout=30,
+    def measure(self, test_case: Any) -> float:
+        payload = self._payload_from_test_case(test_case)
+        case_id = str(payload.get("case", {}).get("case_id") or "")
+        judge = call_judge_model(self.judge_config, payload)
+        if not bool(judge.get("judge_failed")):
+            judge = normalize_judge_payload(judge, raw_output=str(judge.get("raw_output") or ""))
+        self.case_judges[case_id] = judge
+        self.__class__.shared_case_judges[case_id] = judge
+        self.score = min(1.0, max(0.0, float(judge.get("score") or 0) / 10.0))
+        self.reason = str(judge.get("comment") or "")
+        self.success = (
+            self.score >= self.threshold
+            and not bool(judge.get("judge_failed"))
+            and not bool(judge.get("hallucination"))
+            and not (judge.get("veto_rules_triggered") or [])
         )
-        final_answer = _final_assistant_answer(messages, task_id)
-        status = str(task.get("task_status") or "").lower()
-        if status and status not in SUCCESS_STATUSES:
-            errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
-    except EvalRunnerError as exc:
-        errors.append({"code": "runner_error", "message": str(exc)})
+        return self.score
 
-    tool_names = _collect_tool_names(events)
-    sql_outputs = _extract_sql_outputs(events, final_answer)
-    chart_outputs = _extract_chart_outputs(events)
-    usage = _collect_usage(task, messages, events)
-    rule_check = auto_rule_check(case, final_answer=final_answer, events=events, sql_outputs=sql_outputs, tool_names=tool_names)
-    judge_payload = {
-        "case": case,
-        "user_question": str(case.get("question") or ""),
-        "final_answer": final_answer,
-        "task_status": str(task.get("task_status") or ""),
-        "task_error": task.get("error") if isinstance(task.get("error"), dict) else None,
-        "tool_events": events,
-        "sql_outputs": sql_outputs,
-        "chart_outputs": chart_outputs,
-        "auto_rule_check": rule_check,
-    }
-    judge = _judge_case(judge_config, case, judge_payload) if task_id else {
-        "score": 0,
-        "dimension_scores": {},
-        "hallucination": False,
-        "veto_rules_triggered": [],
-        "failure_attribution": ["task_not_submitted"],
-        "comment": "task was not submitted",
-        "judge_failed": True,
-}
-    veto_rules = list(rule_check.get("triggered_veto_rules") or []) + list(judge.get("veto_rules_triggered") or [])
-    case_passed = (
-        not errors
-        and str(task.get("task_status") or "").lower() in SUCCESS_STATUSES
-        and float(judge.get("score") or 0) >= 8
-        and not bool(judge.get("judge_failed"))
-        and not bool(judge.get("hallucination"))
-        and not veto_rules
-    )
-    return {
-        "case_id": case.get("case_id"),
-        "category": case.get("category"),
-        "question": case.get("question"),
-        "topic_id": topic_id,
-        "task_id": task_id,
-        "task_status": str(task.get("task_status") or ""),
-        "final_answer": final_answer,
-        "tool_names": tool_names,
-        "sql_outputs": sql_outputs,
-        "chart_outputs": chart_outputs,
-        "usage": usage,
-        "duration_seconds": round(time.time() - started, 3),
-        "auto_rule_check": rule_check,
-        "judge": judge,
-        "veto_rules_triggered": veto_rules,
-        "case_passed": case_passed,
-        "errors": errors,
-    }
+    async def a_measure(self, test_case: Any) -> float:
+        return self.measure(test_case)
+
+    def is_successful(self) -> bool:
+        return bool(self.success)
+
+    @property
+    def __name__(self) -> str:
+        return "DataAgentArchitectureMetric"
+
+    @staticmethod
+    def _payload_from_test_case(test_case: Any) -> dict[str, Any]:
+        context = getattr(test_case, "context", None) or []
+        if not context:
+            raise EvalRunnerError("DeepEval test case context is missing")
+        context_payload = json.loads(str(context[0]))
+        case = context_payload.get("case") or {}
+        case_result = context_payload.get("case_result") or {}
+        return {
+            "case": case,
+            "user_question": str(case.get("question") or getattr(test_case, "input", "") or ""),
+            "final_answer": str(case_result.get("final_answer") or getattr(test_case, "actual_output", "") or ""),
+            "task_status": str(case_result.get("task_status") or ""),
+            "task_error": None,
+            "tool_events": case_result.get("tool_events") or [],
+            "sql_outputs": case_result.get("sql_outputs") or [],
+            "chart_outputs": case_result.get("chart_outputs") or [],
+            "auto_rule_check": case_result.get("auto_rule_check") or {},
+        }
+
+
+def run_deepeval(test_cases: list[Any], metric: DataAgentArchitectureMetric) -> None:
+    _ensure_deepeval_available()
+    DataAgentArchitectureMetric.shared_case_judges = {}
+    try:
+        deepeval_evaluate(test_cases=test_cases, metrics=[metric], print_results=False)
+    except TypeError:
+        deepeval_evaluate(test_cases=test_cases, metrics=[metric])
+
+
+def _apply_judges(results: list[dict[str, Any]], metric: DataAgentArchitectureMetric) -> list[dict[str, Any]]:
+    for item in results:
+        case_id = str(item.get("case_id") or "")
+        judge = (
+            metric.case_judges.get(case_id)
+            or DataAgentArchitectureMetric.shared_case_judges.get(case_id)
+            or failed_judge("DeepEval metric did not return a judge result")
+        )
+        judge = _merge_auto_failure_attribution(judge, item.get("auto_rule_check") or {})
+        veto_rules = list(item.get("auto_rule_check", {}).get("triggered_veto_rules") or []) + list(judge.get("veto_rules_triggered") or [])
+        item["judge"] = judge
+        item["veto_rules_triggered"] = veto_rules
+        item["case_passed"] = (
+            not item.get("errors")
+            and str(item.get("task_status") or "").lower() in SUCCESS_STATUSES
+            and float(judge.get("score") or 0) >= 8
+            and not bool(judge.get("judge_failed"))
+            and not bool(judge.get("hallucination"))
+            and not veto_rules
+        )
+    return results
 
 
 def _avg(values: list[float]) -> float:
@@ -710,7 +845,6 @@ def build_summary(results: list[dict[str, Any]], dataset_stats: dict[str, Any], 
             "passed": True,
             "recommendation": "dry-run",
         }
-    total = len(results)
     scores = [float((item.get("judge") or {}).get("score") or 0) for item in results]
     dimensions = [item.get("judge", {}).get("dimension_scores") or {} for item in results]
     intent_accuracy = _avg([1.0 if float(dim.get("intent") or 0) >= 1 else 0.0 for dim in dimensions])
@@ -747,7 +881,7 @@ def build_summary(results: list[dict[str, Any]], dataset_stats: dict[str, Any], 
     return {
         **dataset_stats,
         "dry_run": False,
-        "total_cases": total,
+        "total_cases": len(results),
         "passed_cases": sum(1 for item in results if bool(item.get("case_passed"))),
         "failed_cases": sum(1 for item in results if not bool(item.get("case_passed"))),
         "veto_count": veto_count,
@@ -759,41 +893,11 @@ def build_summary(results: list[dict[str, Any]], dataset_stats: dict[str, Any], 
     }
 
 
-def write_outputs(output_dir: Path, results: list[dict[str, Any]], summary: dict[str, Any]) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    raw_dir = output_dir / "raw"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    if results:
-        with (output_dir / "cases.jsonl").open("w", encoding="utf-8") as handle:
-            for item in results:
-                handle.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
-                (raw_dir / f"{item.get('case_id')}.json").write_text(
-                    json.dumps(item, ensure_ascii=False, indent=2, sort_keys=True),
-                    encoding="utf-8",
-                )
-    (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
-    (output_dir / "report.md").write_text(render_report(summary, results), encoding="utf-8")
-
-
-def _judge_config_from_args(args: argparse.Namespace) -> JudgeConfig:
-    base_url = str(args.judge_base_url or "").strip()
-    token = str(args.judge_token or "").strip()
-    model = str(args.judge_model or "").strip()
-    if not base_url or not token or not model:
-        raise EvalRunnerError("judge config is required: --judge-base-url, --judge-token, --judge-model", exit_code=2)
-    return JudgeConfig(
-        base_url=base_url,
-        token=token,
-        model=model,
-        timeout_seconds=max(1, int(args.judge_timeout_seconds or 120)),
-        max_tokens=max(1, int(args.judge_max_tokens or 4096)),
-    )
-
-
 def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str:
     lines = [
-        "# DataAgent 架构治理在线评测报告",
+        "# DataAgent 架构治理 DeepEval 评测报告",
         "",
+        f"- 引擎: `{summary.get('engine', 'deepeval')}`",
         f"- 数据集: `{summary.get('dataset_path', '')}`",
         f"- 用例数: {summary.get('total_cases', 0)}",
         f"- 结论: {summary.get('recommendation', '')}",
@@ -846,10 +950,44 @@ def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str
     return "\n".join(lines)
 
 
+def write_outputs(output_dir: Path, results: list[dict[str, Any]], summary: dict[str, Any]) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    raw_dir = output_dir / "raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    if results:
+        with (output_dir / "cases.jsonl").open("w", encoding="utf-8") as handle:
+            for item in results:
+                handle.write(json.dumps(item, ensure_ascii=False, sort_keys=True) + "\n")
+                (raw_dir / f"{item.get('case_id')}.json").write_text(
+                    json.dumps(item, ensure_ascii=False, indent=2, sort_keys=True),
+                    encoding="utf-8",
+                )
+    (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    (output_dir / "report.md").write_text(render_report(summary, results), encoding="utf-8")
+
+
+def _judge_config_from_args(args: argparse.Namespace) -> JudgeConfig:
+    base_url = str(args.judge_base_url or "").strip()
+    token = str(args.judge_token or "").strip()
+    model = str(args.judge_model or "").strip()
+    if not base_url or not token or not model:
+        raise EvalRunnerError("judge config is required: --judge-base-url, --judge-token, --judge-model", exit_code=2)
+    return JudgeConfig(
+        base_url=base_url,
+        token=token,
+        model=model,
+        timeout_seconds=max(1, int(args.judge_timeout_seconds or 120)),
+        max_tokens=max(1, int(args.judge_max_tokens or 4096)),
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.concurrency < 1:
         print("--concurrency must be >= 1", file=sys.stderr)
+        return 2
+    if not str(args.dataset or "").strip():
+        print("--dataset is required and must point to the private evaluation JSONL file", file=sys.stderr)
         return 2
     root = _repo_or_package_root()
     dataset_path = Path(args.dataset)
@@ -867,11 +1005,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"eval outputs written to: {output_dir}")
             return 0
 
-        base_url = str(args.base_url or "").rstrip("/")
+        _ensure_deepeval_available()
         judge_config = _judge_config_from_args(args)
+        base_url = str(args.base_url or "").rstrip("/")
         preflight_payload = preflight(base_url)
         dataset_stats["preflight"] = preflight_payload
-        results = [run_case(base_url, case, args, judge_config) for case in cases]
+        results = [run_case(base_url, case, args) for case in cases]
+        metric = DataAgentArchitectureMetric(judge_config)
+        test_cases = [to_deepeval_test_case(case, result) for case, result in zip(cases, results)]
+        run_deepeval(test_cases, metric)
+        _apply_judges(results, metric)
         summary = build_summary(results, dataset_stats)
         write_outputs(output_dir, results, summary)
         print(f"eval outputs written to: {output_dir}")

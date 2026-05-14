@@ -2,7 +2,7 @@
 
 ## Current State
 
-The repository has a builtin DataAgent architecture-governance evaluation module under `evals/dataagent-arch-governance-builtin/`. It drives the real `/api/v1/nl2sql/*` task chain and writes JSONL, JSON, and Markdown reports through image `opendataworks-dataagent-evals-builtin:<tag>`.
+The repository has a builtin DataAgent architecture-governance evaluation module under `tools/dataagent-evals/builtin/`. It drives the real `/api/v1/nl2sql/*` task chain and writes JSONL, JSON, and Markdown reports through image `opendataworks-dataagent-evals-builtin:<tag>`. Private case datasets are supplied at runtime and are not committed to GitHub.
 
 The requested addition is a parallel DeepEval-based module for comparing evaluation ergonomics without changing DataAgent runtime behavior.
 
@@ -12,8 +12,8 @@ DeepEval should be available as a separate evaluation engine, but its Python dep
 
 ## Solution
 
-- Add `evals/dataagent-arch-governance-deepeval/` as a standalone DeepEval runner module.
-- Keep the shared architecture-governance dataset in `evals/dataagent-arch-governance/arch-governance-core.jsonl`.
+- Add `tools/dataagent-evals/deepeval/` as a standalone DeepEval runner module.
+- Keep architecture-governance datasets external and require `--dataset` or `DATAAGENT_EVAL_DATASET`.
 - Run DataAgent cases through the existing HTTP task chain and convert final answers plus evidence into DeepEval `LLMTestCase` instances.
 - Use a custom DeepEval metric to call an independently configured Anthropic-compatible judge endpoint and preserve the existing 10-point rubric, veto rules, and failure attribution.
 - Package DeepEval dependencies only in `opendataworks-dataagent-evals-deepeval:<tag>`.
@@ -23,7 +23,7 @@ DeepEval should be available as a separate evaluation engine, but its Python dep
 Manual entrypoint:
 
 ```bash
-bash scripts/run-dataagent-deepeval-evals.sh --base-url http://127.0.0.1:8900
+bash scripts/run-dataagent-deepeval-evals.sh --base-url http://127.0.0.1:8900 --dataset /path/to/private-cases.jsonl
 ```
 
 Judge configuration:

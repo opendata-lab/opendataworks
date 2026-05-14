@@ -15,7 +15,7 @@ Runs the DeepEval-based DataAgent architecture-governance evaluation module.
 
 Common options are passed through to the container:
   --base-url <url>
-  --dataset <path>
+  --dataset <path>       Required private JSONL dataset path
   --output-dir <path>
   --case <case_id>
   --provider-id <provider_id>
@@ -35,6 +35,7 @@ Environment:
   DATAAGENT_EVAL_JUDGE_TOKEN
   DATAAGENT_EVAL_JUDGE_MODEL
   DATAAGENT_EVAL_JUDGE_MAX_TOKENS
+  DATAAGENT_EVAL_DATASET
   DATAAGENT_DEEPEVAL_RUN_LOCAL=1  Run local Python instead of Docker/Podman.
 EOF
 }
@@ -45,7 +46,7 @@ if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 fi
 
 if [[ "${DATAAGENT_DEEPEVAL_RUN_LOCAL:-}" == "1" ]]; then
-    exec python3 "$REPO_ROOT/evals/dataagent-arch-governance-deepeval/run.py" "$@"
+    exec python3 "$REPO_ROOT/tools/dataagent-evals/deepeval/run.py" "$@"
 fi
 
 if command -v docker >/dev/null 2>&1; then
@@ -57,6 +58,22 @@ else
     exit 2
 fi
 
+DATASET_PATH="${DATAAGENT_EVAL_DATASET:-}"
+ARGS=("$@")
+for ((i = 0; i < ${#ARGS[@]}; i++)); do
+    if [[ "${ARGS[$i]}" == "--dataset" && $((i + 1)) -lt ${#ARGS[@]} ]]; then
+        DATASET_PATH="${ARGS[$((i + 1))]}"
+    elif [[ "${ARGS[$i]}" == --dataset=* ]]; then
+        DATASET_PATH="${ARGS[$i]#--dataset=}"
+    fi
+done
+
+EXTRA_VOLUMES=()
+if [[ -n "$DATASET_PATH" && "$DATASET_PATH" = /* ]]; then
+    DATASET_DIR="$(cd "$(dirname "$DATASET_PATH")" && pwd)"
+    EXTRA_VOLUMES+=(-v "$DATASET_DIR:$DATASET_DIR:ro")
+fi
+
 exec "$CONTAINER_CMD" run --rm \
     --network host \
     -e DATAAGENT_EVAL_JUDGE_BASE_URL="${DATAAGENT_EVAL_JUDGE_BASE_URL:-}" \
@@ -64,6 +81,8 @@ exec "$CONTAINER_CMD" run --rm \
     -e DATAAGENT_EVAL_JUDGE_MODEL="${DATAAGENT_EVAL_JUDGE_MODEL:-}" \
     -e DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS="${DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS:-120}" \
     -e DATAAGENT_EVAL_JUDGE_MAX_TOKENS="${DATAAGENT_EVAL_JUDGE_MAX_TOKENS:-4096}" \
+    -e DATAAGENT_EVAL_DATASET="${DATAAGENT_EVAL_DATASET:-}" \
     -v "$REPO_ROOT:/workspace" \
+    "${EXTRA_VOLUMES[@]}" \
     -w /workspace \
     "$IMAGE" "$@"

@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-RUNNER_PATH = REPO_ROOT / "evals" / "dataagent-arch-governance-deepeval" / "run.py"
+RUNNER_PATH = REPO_ROOT / "tools" / "dataagent-evals" / "deepeval" / "run.py"
 
 
 def _load_runner():
@@ -51,8 +51,8 @@ def _install_fake_deepeval(monkeypatch):
 
 def _sample_case():
     return {
-        "case_id": "ARCH_ASSET_001",
-        "category": "架构资产与口径查询",
+        "case_id": "ARCH_SAMPLE_001",
+        "category": "架构治理通用样例",
         "question": "什么是分级保障组件？",
         "expected_intent": "咨询",
         "expected_ontology_objects": ["graded_assurance_component"],
@@ -97,7 +97,7 @@ def test_deepeval_case_conversion_uses_expected_fields(monkeypatch):
     assert test_case.input == case["question"]
     assert test_case.actual_output == case_result["final_answer"]
     expected = json.loads(test_case.expected_output)
-    assert expected["case_id"] == "ARCH_ASSET_001"
+    assert expected["case_id"] == "ARCH_SAMPLE_001"
     assert expected["expected_ontology_objects"] == ["graded_assurance_component"]
     context = json.loads(test_case.context[0])
     assert context["case_result"]["tool_names"] == ["run_sql"]
@@ -135,17 +135,17 @@ def test_deepeval_metric_calls_independent_judge_and_normalizes_result(monkeypat
 
     assert score == 0.8
     assert metric.is_successful() is True
-    assert metric.case_judges["ARCH_ASSET_001"]["score"] == 8.0
-    assert metric.case_judges["ARCH_ASSET_001"]["hallucination"] is False
-    assert metric.case_judges["ARCH_ASSET_001"]["failure_attribution"] == ["minor_tool_gap"]
-    assert calls[0]["case"]["case_id"] == "ARCH_ASSET_001"
+    assert metric.case_judges["ARCH_SAMPLE_001"]["score"] == 8.0
+    assert metric.case_judges["ARCH_SAMPLE_001"]["hallucination"] is False
+    assert metric.case_judges["ARCH_SAMPLE_001"]["failure_attribution"] == ["minor_tool_gap"]
+    assert calls[0]["case"]["case_id"] == "ARCH_SAMPLE_001"
 
 
 def test_deepeval_apply_judges_uses_shared_results_when_metric_is_copied(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
     runner.DataAgentArchitectureMetric.shared_case_judges = {
-        "ARCH_ASSET_001": {
+        "ARCH_SAMPLE_001": {
             "score": 8,
             "dimension_scores": {"intent": 1},
             "hallucination": False,
@@ -157,7 +157,7 @@ def test_deepeval_apply_judges_uses_shared_results_when_metric_is_copied(monkeyp
     }
     metric = runner.DataAgentArchitectureMetric(runner.JudgeConfig(base_url="http://judge", token="t", model="m"))
     result = {
-        "case_id": "ARCH_ASSET_001",
+        "case_id": "ARCH_SAMPLE_001",
         "task_status": "finished",
         "errors": [],
         "auto_rule_check": {"triggered_veto_rules": []},
@@ -190,7 +190,7 @@ def test_deepeval_judge_request_embeds_system_prompt_in_user_content(monkeypatch
 
     result = runner.call_judge_model(
         runner.JudgeConfig(base_url="https://judge.example", token="token", model="model", max_tokens=2222),
-        {"case": {"case_id": "ARCH_ASSET_001"}, "final_answer": "answer"},
+        {"case": {"case_id": "ARCH_SAMPLE_001"}, "final_answer": "answer"},
     )
 
     body = calls[0]["payload"]
@@ -228,6 +228,23 @@ def test_deepeval_poll_task_retries_transient_event_error(monkeypatch):
     assert errors == []
 
 
+def test_deepeval_auto_rule_check_adds_generic_failure_attribution(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+
+    result = runner.auto_rule_check(
+        _sample_case(),
+        final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在架构治理数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
+        events=[{"data": {"output": {"row_count": 0}}}],
+        sql_outputs=["SELECT count(1) FROM tech.some_table WHERE ds = '{target_date}'"],
+        tool_names=[],
+    )
+
+    assert {"sql_only", "wrong_domain", "placeholder_leak", "empty_result"}.issubset(
+        set(result["failure_attribution"])
+    )
+
+
 def test_deepeval_dry_run_writes_unified_report(tmp_path, monkeypatch):
     calls = _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
@@ -246,13 +263,22 @@ def test_deepeval_dry_run_writes_unified_report(tmp_path, monkeypatch):
     assert calls["test_cases"] == []
 
 
+def test_deepeval_missing_dataset_argument_returns_exit_2(tmp_path, capsys, monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+
+    code = runner.main(["--dry-run", "--output-dir", str(tmp_path)])
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "--dataset" in captured.err
+
+
 def test_deepeval_default_output_root_prefers_mounted_workspace(tmp_path, monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
     workspace = tmp_path / "workspace"
-    dataset_dir = workspace / "evals" / "dataagent-arch-governance"
-    dataset_dir.mkdir(parents=True)
-    (dataset_dir / "arch-governance-core.jsonl").write_text("", encoding="utf-8")
+    (workspace / "scripts").mkdir(parents=True)
     monkeypatch.chdir(workspace)
 
     root = runner._repo_or_package_root()

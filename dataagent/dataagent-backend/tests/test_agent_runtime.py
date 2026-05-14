@@ -180,5 +180,23 @@ def test_build_system_prompt_includes_methodology_and_non_negotiables():
         assert fragment in prompt
 
 
+def test_build_system_prompt_requires_domain_skill_execution_and_stop_rules():
+    prompt = agent_runtime._build_system_prompt(
+        None,
+        {"enabled_folders": ["dataagent-nl2sql", "domain-governance"]},
+    )
+
+    required_fragments = [
+        "领域型 Skill",
+        "不要先退回 OpenDataWorks 通用元数据",
+        "能执行真实只读查询时，不要只返回待执行 SQL",
+        "空结果、权限不足、工具超时或接口失败",
+        "不要继续换表、换字段、换路径或重复试探",
+        "首次有效结果后结束当前查询链路",
+    ]
+    for fragment in required_fragments:
+        assert fragment in prompt
+
+
 def test_legacy_lf_system_prompt_template_is_removed():
     assert not (BACKEND_ROOT / "prompts" / "system_prompt.py").exists()
