@@ -1064,6 +1064,49 @@ public class DataTableController {
     }
 
     /**
+     * 手动按库表名同步指定表的元数据，用于平台尚未有 tableId 的 Doris 表。
+     */
+    @PostMapping("/sync-metadata/database/{database}/table/{tableName}")
+    public Result<Map<String, Object>> syncTableMetadataByName(
+            @PathVariable String database,
+            @PathVariable String tableName,
+            @RequestParam(required = false) Long clusterId) {
+        if (clusterId == null) {
+            return Result.fail("请指定数据源");
+        }
+        DorisCluster cluster = dorisClusterService.getById(clusterId);
+        if (cluster == null) {
+            return Result.fail("未找到指定数据源: " + clusterId);
+        }
+
+        LocalDateTime startedAt = LocalDateTime.now();
+        DorisMetadataSyncService.SyncResult result;
+        try {
+            result = dorisMetadataSyncService.syncTable(clusterId, database, tableName);
+        } catch (Exception e) {
+            result = new DorisMetadataSyncService.SyncResult();
+            result.addError("表元数据同步失败: " + e.getMessage());
+        }
+
+        String scopeTarget = database + "." + tableName;
+        MetadataSyncHistory history = metadataSyncHistoryService.record(cluster, "manual", "table", scopeTarget, startedAt,
+                result);
+        Map<String, Object> response = buildSyncResponse(result, history);
+        DataTable syncedTable = dataTableService.getByDbAndTableName(clusterId, database, tableName);
+        response.put("database", database);
+        response.put("tableName", tableName);
+        response.put("tableId", syncedTable != null ? syncedTable.getId() : null);
+
+        if ("SUCCESS".equals(result.getStatus())) {
+            return Result.success(response, "表元数据同步成功");
+        }
+        if ("PARTIAL".equals(result.getStatus())) {
+            return Result.success(response, "表元数据同步完成，但存在部分错误");
+        }
+        return Result.success(response, "表元数据同步失败");
+    }
+
+    /**
      * 手动触发指定表的元数据同步
      */
     @PostMapping("/{id}/sync-metadata")

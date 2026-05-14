@@ -497,13 +497,7 @@ public class DorisMetadataSyncService {
 
                     result.addTableDifference(diff);
                 } else {
-                    // 已存在表：自动同步统计信息 + 检查结构差异
-                    boolean statsSynced = syncTableStatistics(clusterId, dorisTable, localTable);
-                    if (statsSynced) {
-                        result.incrementStatisticsSynced();
-                    }
-
-                    // 比对结构差异
+                    // 已存在表：只比对结构差异，不在稽核路径写入统计信息。
                     TableDifference diff = compareTable(clusterId, database, tableName, dorisTable, localTable);
                     if (diff != null && (!diff.getChanges().isEmpty() || !diff.getFieldDifferences().isEmpty())) {
                         result.addTableDifference(diff);
@@ -527,77 +521,78 @@ public class DorisMetadataSyncService {
         return result;
     }
 
-    /**
-     * 自动同步表的统计信息（行数、数据量、更新时间等）
-     * 这些信息是安全的，可以自动同步，不需要人工确认
-     */
-    private boolean syncTableStatistics(Long clusterId, Map<String, Object> dorisTable, DataTable localTable) {
-        boolean updated = false;
+    private boolean applyTableStatistics(Long clusterId,
+            String database,
+            String tableName,
+            Map<String, Object> dorisTable,
+            DataTable localTable,
+            SyncResult result) {
+        Map<String, Object> tableChanges = new LinkedHashMap<>();
 
-        try {
-            // 优先使用 runtime stats（SHOW TABLE STATS / information_schema.table_stats）
-            DorisConnectionService.TableRuntimeStats runtimeStats = null;
-            if (StringUtils.hasText(localTable.getDbName())) {
-                runtimeStats = dorisConnectionService
-                        .getTableRuntimeStats(clusterId, localTable.getDbName(), localTable.getTableName())
-                        .orElse(null);
-            }
-
-            if (runtimeStats != null) {
-                if (runtimeStats.getRowCount() != null
-                        && !Objects.equals(runtimeStats.getRowCount(), localTable.getRowCount())) {
-                    localTable.setRowCount(runtimeStats.getRowCount());
-                    updated = true;
-                }
-
-                if (runtimeStats.getDataSize() != null
-                        && !Objects.equals(runtimeStats.getDataSize(), localTable.getStorageSize())) {
-                    localTable.setStorageSize(runtimeStats.getDataSize());
-                    updated = true;
-                }
-
-                Timestamp lastUpdate = runtimeStats.getLastUpdate();
-                if (lastUpdate != null) {
-                    LocalDateTime updateDateTime = lastUpdate.toLocalDateTime();
-                    if (!Objects.equals(updateDateTime, localTable.getDorisUpdateTime())) {
-                        localTable.setDorisUpdateTime(updateDateTime);
-                        updated = true;
-                    }
-                }
-            } else {
-                // 后备：使用 information_schema.tables 中的粗略统计
-                Long tableRows = (Long) dorisTable.get("tableRows");
-                if (tableRows != null && !Objects.equals(tableRows, localTable.getRowCount())) {
-                    localTable.setRowCount(tableRows);
-                    updated = true;
-                }
-
-                Long dataLength = (Long) dorisTable.get("dataLength");
-                if (dataLength != null && !Objects.equals(dataLength, localTable.getStorageSize())) {
-                    localTable.setStorageSize(dataLength);
-                    updated = true;
-                }
-
-                Timestamp updateTime = (Timestamp) dorisTable.get("updateTime");
-                if (updateTime != null) {
-                    LocalDateTime updateDateTime = updateTime.toLocalDateTime();
-                    if (!Objects.equals(updateDateTime, localTable.getDorisUpdateTime())) {
-                        localTable.setDorisUpdateTime(updateDateTime);
-                        updated = true;
-                    }
-                }
-            }
-
-            // 如果有更新，保存到数据库
-            if (updated) {
-                dataTableMapper.updateById(localTable);
-                log.debug("Auto-synced statistics for table: {}.{}", localTable.getDbName(), localTable.getTableName());
-            }
-        } catch (Exception e) {
-            log.warn("Failed to sync statistics for table {}.{}", localTable.getDbName(), localTable.getTableName(), e);
+        // 优先使用 runtime stats（SHOW TABLE STATS / information_schema.table_stats）
+        DorisConnectionService.TableRuntimeStats runtimeStats = null;
+        if (StringUtils.hasText(database)) {
+            runtimeStats = dorisConnectionService
+                    .getTableRuntimeStats(clusterId, database, tableName)
+                    .orElse(null);
         }
 
-        return updated;
+        if (runtimeStats != null) {
+            if (runtimeStats.getRowCount() != null
+                    && !Objects.equals(runtimeStats.getRowCount(), localTable.getRowCount())) {
+                addChangedValue(tableChanges, "rowCount", localTable.getRowCount(), runtimeStats.getRowCount());
+                localTable.setRowCount(runtimeStats.getRowCount());
+            }
+
+            if (runtimeStats.getDataSize() != null
+                    && !Objects.equals(runtimeStats.getDataSize(), localTable.getStorageSize())) {
+                addChangedValue(tableChanges, "storageSize", localTable.getStorageSize(), runtimeStats.getDataSize());
+                localTable.setStorageSize(runtimeStats.getDataSize());
+            }
+
+            Timestamp lastUpdate = runtimeStats.getLastUpdate();
+            if (lastUpdate != null) {
+                LocalDateTime updateDateTime = lastUpdate.toLocalDateTime();
+                if (!Objects.equals(updateDateTime, localTable.getDorisUpdateTime())) {
+                    addChangedValue(tableChanges, "dorisUpdateTime", localTable.getDorisUpdateTime(), updateDateTime);
+                    localTable.setDorisUpdateTime(updateDateTime);
+                }
+            }
+        } else {
+            // 后备：使用 information_schema.tables 中的粗略统计
+            Long tableRows = (Long) dorisTable.get("tableRows");
+            if (tableRows != null && !Objects.equals(tableRows, localTable.getRowCount())) {
+                addChangedValue(tableChanges, "rowCount", localTable.getRowCount(), tableRows);
+                localTable.setRowCount(tableRows);
+            }
+
+            Long dataLength = (Long) dorisTable.get("dataLength");
+            if (dataLength != null && !Objects.equals(dataLength, localTable.getStorageSize())) {
+                addChangedValue(tableChanges, "storageSize", localTable.getStorageSize(), dataLength);
+                localTable.setStorageSize(dataLength);
+            }
+
+            Timestamp updateTime = (Timestamp) dorisTable.get("updateTime");
+            if (updateTime != null) {
+                LocalDateTime updateDateTime = updateTime.toLocalDateTime();
+                if (!Objects.equals(updateDateTime, localTable.getDorisUpdateTime())) {
+                    addChangedValue(tableChanges, "dorisUpdateTime", localTable.getDorisUpdateTime(), updateDateTime);
+                    localTable.setDorisUpdateTime(updateDateTime);
+                }
+            }
+        }
+
+        if (tableChanges.isEmpty()) {
+            return false;
+        }
+
+        localTable.setSyncTime(LocalDateTime.now());
+        dataTableMapper.updateById(localTable);
+        result.addUpdatedTable();
+        result.addUpdatedTableDetail(database, tableName, "表统计信息更新", tableChanges);
+        recordStatisticsSnapshot(clusterId, database, tableName, localTable);
+        log.debug("Synced statistics for table: {}.{}", database, tableName);
+        return true;
     }
 
     /**
@@ -767,6 +762,122 @@ public class DorisMetadataSyncService {
         } catch (Exception e) {
             log.error("Failed to sync metadata", e);
             result.addError("同步元数据失败: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * 同步指定集群的表统计信息，不同步结构元数据。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SyncResult syncAllStatistics(Long clusterId) {
+        resolveCluster(clusterId);
+        SyncResult result = new SyncResult();
+        log.info("Starting metadata statistics sync for cluster: {}", clusterId);
+
+        try {
+            List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
+                    .filter(db -> !IGNORED_DATABASES.contains(db))
+                    .collect(Collectors.toList());
+
+            for (String database : databases) {
+                try {
+                    syncDatabaseStatisticsInternal(clusterId, database, result);
+                } catch (Exception e) {
+                    log.error("Failed to sync statistics for database: {}", database, e);
+                    result.addError("同步数据库统计 " + database + " 失败: " + e.getMessage());
+                }
+            }
+
+            log.info("Metadata statistics sync completed: {}", result);
+        } catch (Exception e) {
+            log.error("Failed to sync metadata statistics", e);
+            result.addError("同步元数据统计失败: " + e.getMessage());
+        }
+
+        return result;
+    }
+
+    /**
+     * 同步指定数据库的表统计信息，不同步结构元数据。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SyncResult syncDatabaseStatistics(Long clusterId, String database) {
+        resolveCluster(clusterId);
+        return syncDatabaseStatisticsInternal(clusterId, database, new SyncResult());
+    }
+
+    private SyncResult syncDatabaseStatisticsInternal(Long clusterId, String database, SyncResult result) {
+        if (result == null) {
+            result = new SyncResult();
+        }
+
+        log.info("Syncing metadata statistics for database: {}", database);
+        List<Map<String, Object>> dorisTables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+        List<DataTable> localTables = dataTableMapper.selectList(
+                new LambdaQueryWrapper<DataTable>()
+                        .eq(DataTable::getDbName, database)
+                        .eq(DataTable::getClusterId, clusterId));
+
+        Map<String, DataTable> localTableMap = localTables.stream()
+                .collect(Collectors.toMap(DataTable::getTableName, t -> t));
+
+        for (Map<String, Object> dorisTable : dorisTables) {
+            String tableName = (String) dorisTable.get("tableName");
+            DataTable localTable = localTableMap.get(tableName);
+            if (localTable == null) {
+                continue;
+            }
+
+            try {
+                applyTableStatistics(clusterId, database, tableName, dorisTable, localTable, result);
+            } catch (Exception e) {
+                log.error("Failed to sync statistics for table {}.{}", database, tableName, e);
+                result.addError("同步表统计 " + database + "." + tableName + " 失败: " + e.getMessage());
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 同步指定表的统计信息，不同步结构元数据。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public SyncResult syncTableStatisticsOnly(Long clusterId, String database, String tableName) {
+        resolveCluster(clusterId);
+        SyncResult result = new SyncResult();
+        log.info("Syncing metadata statistics for table: {}.{}", database, tableName);
+
+        try {
+            List<Map<String, Object>> tables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+            Map<String, Object> dorisTable = tables.stream()
+                    .filter(t -> tableName.equals(t.get("tableName")))
+                    .findFirst()
+                    .orElse(null);
+
+            if (dorisTable == null) {
+                result.addError("表 " + database + "." + tableName + " 在 Doris 中不存在");
+                return result;
+            }
+
+            DataTable localTable = dataTableMapper.selectOne(
+                    new LambdaQueryWrapper<DataTable>()
+                            .eq(DataTable::getDbName, database)
+                            .eq(DataTable::getTableName, tableName)
+                            .eq(DataTable::getClusterId, clusterId));
+
+            if (localTable == null) {
+                result.addError("表 " + database + "." + tableName + " 在平台中不存在");
+                return result;
+            }
+
+            applyTableStatistics(clusterId, database, tableName, dorisTable, localTable, result);
+            log.info("Table statistics sync completed: {}", result);
+        } catch (Exception e) {
+            log.error("Failed to sync table statistics {}.{}", database, tableName, e);
+            result.addError("同步表统计失败: " + e.getMessage());
         }
 
         return result;
@@ -1057,20 +1168,19 @@ public class DorisMetadataSyncService {
         String tableType = normalizeTableType((String) dorisTable.get("tableType"));
         boolean viewType = isViewType(tableType);
 
-        boolean updated = false;
-        boolean statisticsUpdated = false;
+        boolean tableMetadataUpdated = false;
         Map<String, Object> tableChanges = new LinkedHashMap<>();
 
         // 同步数据源
         if (!Objects.equals(localTable.getClusterId(), clusterId)) {
             addChangedValue(tableChanges, "clusterId", localTable.getClusterId(), clusterId);
             localTable.setClusterId(clusterId);
-            updated = true;
+            tableMetadataUpdated = true;
         }
         if (!Objects.equals(tableType, localTable.getTableType())) {
             addChangedValue(tableChanges, "tableType", localTable.getTableType(), tableType);
             localTable.setTableType(tableType);
-            updated = true;
+            tableMetadataUpdated = true;
         }
 
         // 之前因账号不可见被降级为 inactive 的表，在再次可见时自动恢复
@@ -1078,7 +1188,7 @@ public class DorisMetadataSyncService {
                 && Objects.equals(localTable.getIsSynced(), 0)) {
             addChangedValue(tableChanges, "status", localTable.getStatus(), "active");
             localTable.setStatus("active");
-            updated = true;
+            tableMetadataUpdated = true;
         }
 
         // 按表名前缀自动修正数据分层（ods_/dwd_/dim_/dws_/ads_）
@@ -1086,7 +1196,7 @@ public class DorisMetadataSyncService {
         if (StringUtils.hasText(inferredLayer) && !Objects.equals(inferredLayer, localTable.getLayer())) {
             addChangedValue(tableChanges, "layer", localTable.getLayer(), inferredLayer);
             localTable.setLayer(inferredLayer);
-            updated = true;
+            tableMetadataUpdated = true;
         }
 
         // 更新表注释
@@ -1094,7 +1204,7 @@ public class DorisMetadataSyncService {
         if (tableComment != null && !tableComment.equals(localTable.getTableComment())) {
             addChangedValue(tableChanges, "tableComment", localTable.getTableComment(), tableComment);
             localTable.setTableComment(tableComment);
-            updated = true;
+            tableMetadataUpdated = true;
         }
 
         if (isDoris && !viewType) {
@@ -1104,7 +1214,7 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(bucketNum, localTable.getBucketNum())) {
                     addChangedValue(tableChanges, "bucketNum", localTable.getBucketNum(), bucketNum);
                     localTable.setBucketNum(bucketNum);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
 
@@ -1114,7 +1224,7 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(replicationNum, localTable.getReplicaNum())) {
                     addChangedValue(tableChanges, "replicationNum", localTable.getReplicaNum(), replicationNum);
                     localTable.setReplicaNum(replicationNum);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
 
@@ -1124,7 +1234,7 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(partitionColumn, localTable.getPartitionColumn())) {
                     addChangedValue(tableChanges, "partitionColumn", localTable.getPartitionColumn(), partitionColumn);
                     localTable.setPartitionColumn(partitionColumn);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
 
@@ -1134,7 +1244,7 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(distributionColumn, localTable.getDistributionColumn())) {
                     addChangedValue(tableChanges, "distributionColumn", localTable.getDistributionColumn(), distributionColumn);
                     localTable.setDistributionColumn(distributionColumn);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
 
@@ -1144,7 +1254,7 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(keyColumns, localTable.getKeyColumns())) {
                     addChangedValue(tableChanges, "keyColumns", localTable.getKeyColumns(), keyColumns);
                     localTable.setKeyColumns(keyColumns);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
 
@@ -1154,7 +1264,7 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(tableModel, localTable.getTableModel())) {
                     addChangedValue(tableChanges, "tableModel", localTable.getTableModel(), tableModel);
                     localTable.setTableModel(tableModel);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
 
@@ -1164,79 +1274,51 @@ public class DorisMetadataSyncService {
                 if (!Objects.equals(createTableSql, localTable.getDorisDdl())) {
                     addChangedValue(tableChanges, "dorisDdl", localTable.getDorisDdl(), createTableSql);
                     localTable.setDorisDdl(createTableSql);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             }
         } else {
             if (localTable.getBucketNum() != null) {
                 addChangedValue(tableChanges, "bucketNum", localTable.getBucketNum(), null);
                 localTable.setBucketNum(null);
-                updated = true;
+                tableMetadataUpdated = true;
             }
             if (localTable.getReplicaNum() != null) {
                 addChangedValue(tableChanges, "replicationNum", localTable.getReplicaNum(), null);
                 localTable.setReplicaNum(null);
-                updated = true;
+                tableMetadataUpdated = true;
             }
             if (StringUtils.hasText(localTable.getPartitionColumn())) {
                 addChangedValue(tableChanges, "partitionColumn", localTable.getPartitionColumn(), null);
                 localTable.setPartitionColumn(null);
-                updated = true;
+                tableMetadataUpdated = true;
             }
             if (StringUtils.hasText(localTable.getDistributionColumn())) {
                 addChangedValue(tableChanges, "distributionColumn", localTable.getDistributionColumn(), null);
                 localTable.setDistributionColumn(null);
-                updated = true;
+                tableMetadataUpdated = true;
             }
             if (StringUtils.hasText(localTable.getKeyColumns())) {
                 addChangedValue(tableChanges, "keyColumns", localTable.getKeyColumns(), null);
                 localTable.setKeyColumns(null);
-                updated = true;
+                tableMetadataUpdated = true;
             }
             if (StringUtils.hasText(localTable.getTableModel())) {
                 addChangedValue(tableChanges, "tableModel", localTable.getTableModel(), null);
                 localTable.setTableModel(null);
-                updated = true;
+                tableMetadataUpdated = true;
             }
             String createTableSql = (String) tableCreateInfo.get("createTableSql");
             if (StringUtils.hasText(createTableSql)) {
                 if (!Objects.equals(createTableSql, localTable.getDorisDdl())) {
                     addChangedValue(tableChanges, "dorisDdl", localTable.getDorisDdl(), createTableSql);
                     localTable.setDorisDdl(createTableSql);
-                    updated = true;
+                    tableMetadataUpdated = true;
                 }
             } else if (StringUtils.hasText(localTable.getDorisDdl())) {
                 addChangedValue(tableChanges, "dorisDdl", localTable.getDorisDdl(), null);
                 localTable.setDorisDdl(null);
-                updated = true;
-            }
-        }
-
-        // 更新统计信息
-        Long tableRows = (Long) dorisTable.get("tableRows");
-        if (tableRows != null && !Objects.equals(tableRows, localTable.getRowCount())) {
-            addChangedValue(tableChanges, "rowCount", localTable.getRowCount(), tableRows);
-            localTable.setRowCount(tableRows);
-            updated = true;
-            statisticsUpdated = true;
-        }
-
-        Long dataLength = (Long) dorisTable.get("dataLength");
-        if (dataLength != null && !Objects.equals(dataLength, localTable.getStorageSize())) {
-            addChangedValue(tableChanges, "storageSize", localTable.getStorageSize(), dataLength);
-            localTable.setStorageSize(dataLength);
-            updated = true;
-            statisticsUpdated = true;
-        }
-
-        Timestamp updateTime = (Timestamp) dorisTable.get("updateTime");
-        if (updateTime != null) {
-            LocalDateTime updateDateTime = updateTime.toLocalDateTime();
-            if (!Objects.equals(updateDateTime, localTable.getDorisUpdateTime())) {
-                addChangedValue(tableChanges, "dorisUpdateTime", localTable.getDorisUpdateTime(), updateDateTime);
-                localTable.setDorisUpdateTime(updateDateTime);
-                updated = true;
-                statisticsUpdated = true;
+                tableMetadataUpdated = true;
             }
         }
 
@@ -1245,10 +1327,8 @@ public class DorisMetadataSyncService {
         if (!Objects.equals(synced, localTable.getIsSynced())) {
             addChangedValue(tableChanges, "isSynced", localTable.getIsSynced(), synced);
             localTable.setIsSynced(synced);
-            updated = true;
+            tableMetadataUpdated = true;
         }
-        localTable.setSyncTime(LocalDateTime.now());
-        updated = true;
 
         // 同步Doris创建时间（如果本地还没有记录）
         if (localTable.getDorisCreateTime() == null) {
@@ -1256,23 +1336,26 @@ public class DorisMetadataSyncService {
             if (createTime != null) {
                 addChangedValue(tableChanges, "dorisCreateTime", localTable.getDorisCreateTime(), createTime.toLocalDateTime());
                 localTable.setDorisCreateTime(createTime.toLocalDateTime());
-                updated = true;
+                tableMetadataUpdated = true;
             }
         }
 
-        if (updated) {
+        // 同步字段（增量更新）
+        FieldSyncChanges fieldChanges = syncTableFieldsIncremental(localTable.getId(), database, tableName, columns, result);
+
+        if (tableMetadataUpdated) {
+            localTable.setSyncTime(LocalDateTime.now());
             dataTableMapper.updateById(localTable);
             if (!tableChanges.isEmpty()) {
                 result.addUpdatedTable();
                 result.addUpdatedTableDetail(database, tableName, "表元数据更新", tableChanges);
             }
+        } else if (fieldChanges.hasChanges()) {
+            DataTable syncTimeUpdate = new DataTable();
+            syncTimeUpdate.setId(localTable.getId());
+            syncTimeUpdate.setSyncTime(LocalDateTime.now());
+            dataTableMapper.updateById(syncTimeUpdate);
         }
-        if (statisticsUpdated) {
-            recordStatisticsSnapshot(clusterId, database, tableName, localTable);
-        }
-
-        // 同步字段（增量更新）
-        syncTableFieldsIncremental(localTable.getId(), database, tableName, columns, result);
     }
 
     /**
@@ -1335,11 +1418,13 @@ public class DorisMetadataSyncService {
     /**
      * 同步表字段（增量更新，用于已存在的表）
      */
-    private void syncTableFieldsIncremental(Long tableId,
+    private FieldSyncChanges syncTableFieldsIncremental(Long tableId,
             String database,
             String tableName,
             List<Map<String, Object>> dorisColumns,
             SyncResult result) {
+        FieldSyncChanges changes = new FieldSyncChanges();
+
         // 获取本地已存在的字段
         List<DataField> localFields = dataFieldMapper.selectList(
                 new LambdaQueryWrapper<DataField>()
@@ -1370,6 +1455,7 @@ public class DorisMetadataSyncService {
                 newField.setFieldOrder((Integer) dorisColumn.get("ordinalPosition"));
 
                 dataFieldMapper.insert(newField);
+                changes.markCreated();
                 result.addNewField();
                 Map<String, Object> fieldChanges = new LinkedHashMap<>();
                 addChangedValue(fieldChanges, "type", null, newField.getFieldType());
@@ -1428,6 +1514,7 @@ public class DorisMetadataSyncService {
 
                 if (updated) {
                     dataFieldMapper.updateById(localField);
+                    changes.markUpdated();
                     result.addUpdatedField();
                     result.addUpdatedFieldDetail(database, tableName, fieldName, fieldChanges);
                 }
@@ -1439,10 +1526,35 @@ public class DorisMetadataSyncService {
             if (!dorisFieldNames.contains(localField.getFieldName())) {
                 // 逻辑删除
                 dataFieldMapper.deleteById(localField.getId());
+                changes.markDeleted();
                 result.addDeletedField();
                 result.addDeletedFieldDetail(database, tableName, localField.getFieldName());
                 log.info("Logically deleted field: {} from table {}", localField.getFieldName(), tableId);
             }
+        }
+
+        return changes;
+    }
+
+    private static class FieldSyncChanges {
+        private boolean created;
+        private boolean updated;
+        private boolean deleted;
+
+        private void markCreated() {
+            created = true;
+        }
+
+        private void markUpdated() {
+            updated = true;
+        }
+
+        private void markDeleted() {
+            deleted = true;
+        }
+
+        private boolean hasChanges() {
+            return created || updated || deleted;
         }
     }
 

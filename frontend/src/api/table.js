@@ -219,5 +219,17 @@ export const tableApi = {
       params: { clusterId },
       timeout: METADATA_SYNC_TIMEOUT
     })
+  },
+
+  // 按库表名同步指定表的元数据（用于平台尚未存在 tableId 的 Doris 表）
+  syncTableMetadataByName(database, tableName, clusterId = null) {
+    return request.post(
+      `/v1/tables/sync-metadata/database/${encodeURIComponent(database)}/table/${encodeURIComponent(tableName)}`,
+      null,
+      {
+        params: { clusterId },
+        timeout: METADATA_SYNC_TIMEOUT
+      }
+    )
   }
 }

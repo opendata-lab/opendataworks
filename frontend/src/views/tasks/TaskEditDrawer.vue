@@ -931,6 +931,38 @@ const handleTaskNameBlur = () => {
   checkTaskName(form.task.taskName)
 }
 
+const resolveSavedWorkflowId = (savedTask, payload) => {
+  const candidates = [
+    savedTask?.workflowId,
+    savedTask?.task?.workflowId,
+    payload?.task?.workflowId,
+    form.task.workflowId
+  ]
+  for (const value of candidates) {
+    const id = Number(value)
+    if (Number.isFinite(id) && id > 0) return id
+  }
+  return null
+}
+
+const promptWorkflowPublishAfterSave = async (workflowId) => {
+  if (!workflowId) return
+  try {
+    await ElMessageBox.confirm(
+      '请跳转到任务调度页面，将工作流发布到 Dolphin。',
+      '工作流有变化',
+      {
+        type: 'warning',
+        confirmButtonText: '去发布',
+        cancelButtonText: '稍后处理'
+      }
+    )
+    router.push({ path: `/workflows/${workflowId}`, query: { publishHint: '1' } })
+  } catch (error) {
+    // 用户选择稍后处理。
+  }
+}
+
 const handleSave = async () => {
   if (!formRef.value) return
 
@@ -954,17 +986,20 @@ const handleSave = async () => {
       outputTableIds: form.outputTableIds
     }
 
+    let savedTask = null
     if (isEdit.value) {
-      await taskApi.update(form.task.id, payload)
+      savedTask = await taskApi.update(form.task.id, payload)
       ElMessage.success('更新成功')
     } else {
-      await taskApi.create(payload)
+      savedTask = await taskApi.create(payload)
       ElMessage.success('创建成功')
     }
+    const workflowId = resolveSavedWorkflowId(savedTask, payload)
 
     visible.value = false
     emit('saved')
     emit('success')
+    await promptWorkflowPublishAfterSave(workflowId)
   } catch (error) {
     console.error(error)
     ElMessage.error(isEdit.value ? '更新失败' : '创建失败')

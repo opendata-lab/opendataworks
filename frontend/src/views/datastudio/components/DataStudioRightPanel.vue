@@ -3,6 +3,29 @@
     <div v-if="hasTableTab && state" ref="panelShellRef" class="panel-shell" :style="panelShellStyle">
 
       <section class="meta-panel" @scroll.passive>
+        <el-alert
+          v-if="isPlatformMetadataMissing(state.table)"
+          type="error"
+          show-icon
+          :closable="false"
+          class="metadata-missing-alert"
+        >
+          <template #title>
+            <div class="metadata-missing-title">
+              <span>当前表在 Doris 中存在，平台中不存在。</span>
+              <el-button
+                type="danger"
+                link
+                :loading="state.metadataSyncing"
+                :disabled="isDemoMode"
+                @click="syncMissingTableMetadata(activeTabId)"
+              >
+                立即同步
+              </el-button>
+            </div>
+          </template>
+        </el-alert>
+
         <el-tabs v-model="state.metaTab" class="meta-tabs detail-tabs">
           <el-tab-pane name="basic" label="基本信息">
             <div class="meta-section meta-section-fill">
@@ -12,7 +35,16 @@
                     <div class="section-title">表信息</div>
                     <div class="section-actions">
                       <el-tooltip
-                        v-if="!state.metaEditing && isDorisTable(state.table) && !clusterId"
+                        v-if="!state.metaEditing && isPlatformMetadataMissing(state.table)"
+                        content="请先同步到平台元数据后再操作"
+                        placement="top"
+                      >
+                        <span>
+                          <el-button type="primary" size="small" disabled>编辑</el-button>
+                        </span>
+                      </el-tooltip>
+                      <el-tooltip
+                        v-else-if="!state.metaEditing && isDorisTable(state.table) && !clusterId"
                         content="请选择 Doris 集群后再编辑"
                         placement="top"
                       >
@@ -31,7 +63,16 @@
                       </el-button>
 
                       <el-tooltip
-                        v-if="!state.metaEditing && isDorisTable(state.table) && !clusterId"
+                        v-if="!state.metaEditing && isPlatformMetadataMissing(state.table)"
+                        content="请先同步到平台元数据后再操作"
+                        placement="top"
+                      >
+                        <span>
+                          <el-button type="danger" plain size="small" disabled>删除表</el-button>
+                        </span>
+                      </el-tooltip>
+                      <el-tooltip
+                        v-else-if="!state.metaEditing && isDorisTable(state.table) && !clusterId"
                         content="请选择 Doris 集群后再删除"
                         placement="top"
                       >
@@ -250,7 +291,16 @@
                     </el-tag>
 
                     <el-tooltip
-                      v-if="!state.fieldsEditing && isDorisTable(state.table) && !clusterId"
+                      v-if="!state.fieldsEditing && isPlatformMetadataMissing(state.table)"
+                      content="请先同步到平台元数据后再操作"
+                      placement="top"
+                    >
+                      <span>
+                        <el-button type="primary" size="small" disabled>编辑</el-button>
+                      </span>
+                    </el-tooltip>
+                    <el-tooltip
+                      v-else-if="!state.fieldsEditing && isDorisTable(state.table) && !clusterId"
                       content="请选择 Doris 集群后再编辑"
                       placement="top"
                     >
@@ -568,6 +618,7 @@ const {
   getMetaDataDomainOptions,
   handleMetaBusinessDomainChange,
   isDorisTable,
+  isPlatformMetadataMissing,
   isAggregateTable,
   isReplicaWarning,
   getLayerType,
@@ -576,6 +627,7 @@ const {
   cancelMetaEdit,
   saveMetaEdit,
   handleDeleteTable,
+  syncMissingTableMetadata,
   startFieldsEdit,
   cancelFieldsEdit,
   saveFieldsEdit,
@@ -1149,6 +1201,18 @@ const formatAccessDuration = (value) => {
   background: var(--panel);
   overflow: hidden;
   min-height: 0;
+}
+
+.metadata-missing-alert {
+  border-radius: 0;
+  border-width: 0 0 1px;
+}
+
+.metadata-missing-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .panel-resizer {
