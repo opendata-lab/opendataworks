@@ -26,6 +26,9 @@ Common options are passed through to the container:
   --judge-model <model>
   --dry-run
 
+Default output:
+  reports/dataagent-evals/<timestamp>/ under the package/workspace directory.
+
 Environment:
   OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE
   DATAAGENT_EVAL_JUDGE_BASE_URL

@@ -53,7 +53,7 @@ DATAAGENT_BUILTIN_RUN_LOCAL=1 bash scripts/run-dataagent-evals.sh --dry-run
 bash scripts/run-dataagent-evals.sh --case ARCH_ASSET_001 --case ARCH_EDGE_006
 ```
 
-Default output is written to `reports/dataagent-evals/<timestamp>/` with `cases.jsonl`, `summary.json`, `report.md`, and per-case raw JSON files.
+Default output is written to `reports/dataagent-evals/<timestamp>/` with `cases.jsonl`, `summary.json`, `report.md`, and per-case raw JSON files. In Docker/Podman mode the wrapper mounts the package as `/workspace`, so the default output is persisted back to the host package directory rather than the temporary container filesystem.
 
 The builtin module lives at `evals/dataagent-arch-governance-builtin/` and uses image `opendataworks-dataagent-evals-builtin:<tag>`. It is outside the DataAgent runtime; DataAgent is only the system under test. The legacy `scripts/run-dataagent-evals.py` path remains as a compatibility shim for local Python execution.
 

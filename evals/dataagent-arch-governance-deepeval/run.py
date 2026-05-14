@@ -82,8 +82,17 @@ class JudgeConfig:
     max_tokens: int = 4096
 
 
+def _is_eval_root(path: Path) -> bool:
+    return (path / "evals" / "dataagent-arch-governance" / "arch-governance-core.jsonl").is_file()
+
+
 def _repo_or_package_root() -> Path:
-    return Path(__file__).resolve().parents[2]
+    file_root = Path(__file__).resolve().parents[2]
+    cwd = Path.cwd().resolve()
+    for candidate in (cwd, *cwd.parents, file_root):
+        if _is_eval_root(candidate):
+            return candidate
+    return file_root
 
 
 def _timestamp() -> str:
@@ -936,6 +945,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             summary = build_summary([], dataset_stats, dry_run=True)
             write_outputs(output_dir, [], summary)
+            print(f"eval outputs written to: {output_dir}")
             return 0
 
         _ensure_deepeval_available()
@@ -950,6 +960,7 @@ def main(argv: list[str] | None = None) -> int:
         _apply_judges(results, metric)
         summary = build_summary(results, dataset_stats)
         write_outputs(output_dir, results, summary)
+        print(f"eval outputs written to: {output_dir}")
         return 0 if summary.get("passed") else 1
     except EvalRunnerError as exc:
         print(str(exc), file=sys.stderr)
