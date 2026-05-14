@@ -206,6 +206,45 @@ def test_merge_provider_settings_allows_enabled_model_without_detection():
     assert provider["enabled"] is True
 
 
+def test_merge_settings_defaults_to_all_bundled_skills_when_runtime_missing():
+    merged = _merge_settings_payload(
+        {"skills_output_dir": "../.claude/skills/dataagent-nl2sql"},
+        {},
+    )
+
+    assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
+    assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is True
+
+
+def test_merge_settings_adds_new_business_skill_to_legacy_runtime():
+    merged = _merge_settings_payload(
+        {
+            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skill_runtime": {"dataagent-nl2sql": {"enabled": True}},
+        },
+        {},
+    )
+
+    assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
+    assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is True
+
+
+def test_merge_settings_preserves_explicit_business_skill_disabled():
+    merged = _merge_settings_payload(
+        {
+            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skill_runtime": {
+                "dataagent-nl2sql": {"enabled": True},
+                "opendataworks-business-knowledge": {"enabled": False},
+            },
+        },
+        {},
+    )
+
+    assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
+    assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is False
+
+
 def test_merge_settings_payload_keeps_provider_and_model_empty_without_enabled_provider():
     merged = _merge_settings_payload(
         {
@@ -633,6 +672,9 @@ def test_uninstall_skill_rejects_builtin(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
         skill_admin_service.uninstall_skill("dataagent-nl2sql")
+
+    with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
+        skill_admin_service.uninstall_skill("opendataworks-business-knowledge")
 
 
 def test_uninstall_skill_rejects_last_enabled(monkeypatch, tmp_path):

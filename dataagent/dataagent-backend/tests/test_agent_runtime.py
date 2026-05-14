@@ -149,79 +149,80 @@ def test_build_allowed_tools_includes_portal_mcp_tools_once():
     assert len(allowed_tools) == len(set(allowed_tools))
 
 
-def test_build_system_prompt_prefers_lineage_and_ddl_tools():
+def test_build_system_prompt_routes_to_enabled_skills_without_low_level_commands():
     prompt = agent_runtime._build_system_prompt(None, {"enabled_folders": ["dataagent-nl2sql", "marketing-insights"]})
 
     assert "当前已启用：dataagent-nl2sql、marketing-insights" in prompt
-    assert "mcp__portal__portal_get_lineage" in prompt
-    assert "get_lineage.py" in prompt
-    assert "DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1" in prompt
-    assert "mcp__portal__portal_get_table_ddl" in prompt
-    assert "get_table_ddl.py" in prompt
+    assert "# Role" in prompt
+    assert "# Primary Goal" in prompt
+    assert "# Boundaries" in prompt
+    assert "# Instruction Priority" in prompt
+    assert "# Workflow" in prompt
+    assert "# Routing Rules" in prompt
+    assert "# Output Requirements" in prompt
+    assert "业务语义" in prompt
+    assert "通用问数 SQL" in prompt
+    assert "portal-mcp" in prompt
+    assert "run_sql.py" not in prompt
+    assert "validate_sql.py" not in prompt
+    assert "get_lineage.py" not in prompt
+    assert "DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1" not in prompt
+    assert "workflow_publish_record" not in prompt
 
 
 def test_build_system_prompt_includes_methodology_and_non_negotiables():
     prompt = agent_runtime._build_system_prompt(None, {"enabled_folders": ["dataagent-nl2sql"]})
 
     required_fragments = [
-        "内部工作循环",
-        "先判定用户意图与信息缺口",
-        "获取必要上下文",
-        "制定最小执行路径",
-        "基于真实工具结果执行和收口",
-        "不要向用户暴露隐藏推理",
-        "不得臆造表、字段、指标口径或租户私有默认值",
-        "不得绕过已启用 Skills 或 portal-mcp 优先级",
-        "不得重复试探等价 SQL",
-        "工具结果不足以支撑结论时，必须最小追问或说明缺口",
-        "只允许只读执行",
+        "企业数据分析 Data Agent",
+        "优先正确理解问题，再选择合适的数据查询路径",
+        "在术语、指标、口径不明确时，先做语义澄清或显式声明假设",
+        "不展示冗长内部推理，只输出必要结论、依据、假设与限制",
+        "不要臆造表、字段、指标口径、业务默认值或工具结果",
+        "已启用 Skills",
+        "默认只读分析",
     ]
     for fragment in required_fragments:
         assert fragment in prompt
 
 
-def test_build_system_prompt_requires_domain_skill_execution_and_stop_rules():
+def test_build_system_prompt_defines_three_layer_priority():
     prompt = agent_runtime._build_system_prompt(
         None,
-        {"enabled_folders": ["dataagent-nl2sql", "domain-governance"]},
+        {"enabled_folders": ["dataagent-nl2sql", "opendataworks-business-knowledge"]},
     )
 
     required_fragments = [
-        "领域型 Skill",
-        "不要先退回 OpenDataWorks 通用元数据",
-        "能执行真实只读查询时，不要只返回待执行 SQL",
-        "空结果、权限不足、工具超时或服务调用失败",
-        "不要继续换表、换字段、换路径或重复试探",
-        "首次有效结果后结束当前查询链路",
+        "先遵循本 system prompt",
+        "业务术语、指标口径、本体映射、歧义消解",
+        "业务语义 skill",
+        "表选择、字段选择、SQL 生成、SQL 自检",
+        "通用 SQL skill",
+        "运行时资源 > 业务语义 skill > 通用 SQL skill > 默认常识",
     ]
     for fragment in required_fragments:
         assert fragment in prompt
 
 
-def test_build_system_prompt_documents_layered_query_pipeline():
+def test_build_system_prompt_documents_high_level_work_order():
     prompt = agent_runtime._build_system_prompt(
         None,
-        {"enabled_folders": ["dataagent-nl2sql", "business-domain-assistant"]},
+        {"enabled_folders": ["dataagent-nl2sql", "opendataworks-business-knowledge"]},
     )
 
     required_fragments = [
-        "固定分层问数管线",
-        "一、上下文语义层",
-        "命中业务知识问数",
-        "没有命中业务知识 Skill 时",
-        "二、SQL 生成层",
-        "database、engine、tables、fields、filters、time_window",
-        "三、SQL 验证层",
-        "统一使用通用问数 Skill 的 validate_sql.py",
-        "业务知识 Skill 只提供本体、口径、关系和 SQL example",
-        "四、SQL 执行层",
-        "run_sql.py --database <db> --engine <mysql|doris> --sql \"<SQL>\"",
-        "不得只输出 SQL 或让用户自行执行",
-        "非交互评测场景不得追问用户",
+        "判断任务类型：定义解释、指标查询、明细查询、趋势分析、对比分析、异常归因",
+        "抽取关键槽位：业务对象、指标、维度、时间范围、过滤条件、统计粒度",
+        "判断是否需要业务语义解析",
+        "判断是否需要生成 SQL",
+        "若信息不足，先提出最小必要澄清问题",
+        "若信息足够，生成查询方案或最终答案",
+        "输出时明确说明：采用口径、查询范围、核心结果、限制说明",
     ]
     for fragment in required_fragments:
         assert fragment in prompt
-    assert "私有 Skill 的 validate_sql.py" not in prompt
+    assert "SQL 验证层" not in prompt
+    assert "run_sql.py --database" not in prompt
 
 
 def test_legacy_lf_system_prompt_template_is_removed():

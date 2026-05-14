@@ -38,7 +38,8 @@ SUPPORTED_PROVIDER_SET = set(SUPPORTED_PROVIDERS)
 MANAGED_FILE_SUFFIXES = {".json", ".md", ".markdown", ".py"}
 DEFAULT_PROVIDER_ID = "openrouter"
 MODEL_DETECTION_TIMEOUT_SECONDS = 30
-BUILTIN_SKILL_FOLDERS = {"dataagent-nl2sql"}
+BUILTIN_SKILL_FOLDERS = {"dataagent-nl2sql", "opendataworks-business-knowledge"}
+DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS = ("dataagent-nl2sql", "opendataworks-business-knowledge")
 SKILL_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 PROVIDER_DEFINITIONS: dict[str, dict[str, Any]] = {
@@ -180,6 +181,14 @@ def _normalize_skill_runtime(raw: Any, *, fallback_folder: str = "") -> dict[str
             normalized[folder_name] = {"enabled": enabled}
     if not normalized and fallback_folder:
         normalized[fallback_folder] = {"enabled": True}
+    if not raw and fallback_folder == "dataagent-nl2sql":
+        for folder in DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS:
+            normalized.setdefault(folder, {"enabled": True})
+    if (
+        bool((normalized.get("dataagent-nl2sql") or {}).get("enabled"))
+        and "opendataworks-business-knowledge" not in normalized
+    ):
+        normalized["opendataworks-business-knowledge"] = {"enabled": True}
     return normalized
 
 
