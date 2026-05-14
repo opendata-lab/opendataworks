@@ -246,6 +246,21 @@ def test_deepeval_dry_run_writes_unified_report(tmp_path, monkeypatch):
     assert calls["test_cases"] == []
 
 
+def test_deepeval_default_output_root_prefers_mounted_workspace(tmp_path, monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    workspace = tmp_path / "workspace"
+    dataset_dir = workspace / "evals" / "dataagent-arch-governance"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "arch-governance-core.jsonl").write_text("", encoding="utf-8")
+    monkeypatch.chdir(workspace)
+
+    root = runner._repo_or_package_root()
+
+    assert root == workspace
+    assert str(runner.default_output_dir(root)).startswith(str(workspace / "reports" / "dataagent-evals"))
+
+
 def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monkeypatch):
     calls = _install_fake_deepeval(monkeypatch)
     runner = _load_runner()

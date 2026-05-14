@@ -42,6 +42,20 @@ def test_dry_run_validates_real_dataset(tmp_path):
     assert (tmp_path / "report.md").exists()
 
 
+def test_default_output_root_prefers_mounted_workspace(tmp_path, monkeypatch):
+    runner = _load_runner()
+    workspace = tmp_path / "workspace"
+    dataset_dir = workspace / "evals" / "dataagent-arch-governance"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "arch-governance-core.jsonl").write_text("", encoding="utf-8")
+    monkeypatch.chdir(workspace)
+
+    root = runner._repo_or_package_root()
+
+    assert root == workspace
+    assert str(runner.default_output_dir(root)).startswith(str(workspace / "reports" / "dataagent-evals"))
+
+
 def test_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
     runner = _load_runner()
     calls = []

@@ -188,7 +188,7 @@ DATAAGENT_EVAL_JUDGE_MODEL=claude-opus-4-6 \
 bash scripts/run-dataagent-evals.sh --provider-id openrouter --model anthropic/claude-sonnet-4.5
 ```
 
-输出目录默认为 `reports/dataagent-evals/<timestamp>/`，包含：
+输出目录默认为当前离线包目录下的 `reports/dataagent-evals/<timestamp>/`。Docker/Podman 模式会把包目录挂载为 `/workspace`，默认输出会持久化回宿主机包目录而不是容器临时文件系统。输出包含：
 
 - `cases.jsonl`: 每条用例的执行、证据抽取和裁判结果
 - `summary.json`: 准入指标、阈值和上线建议
