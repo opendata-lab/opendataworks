@@ -241,6 +241,11 @@ export const resolvePublishVersionId = (workflow) => {
   return undefined
 }
 
+export const shouldPromptOnlineAfterDeploy = (row, record) => {
+  if (!row?.id) return false
+  return record?.status !== 'pending_approval'
+}
+
 export const buildPublishRepairHtml = (preview) => {
   const repairIssues = Array.isArray(preview?.repairIssues) ? preview.repairIssues : []
   const warnings = Array.isArray(preview?.warnings) ? preview.warnings : []

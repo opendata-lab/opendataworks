@@ -339,11 +339,19 @@
 <script setup>
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { taskApi } from '@/api/task'
 import { workflowApi } from '@/api/workflow'
 import { tableApi } from '@/api/table'
-import { buildTaskPayload, createDefaultTaskModel, normalizeDolphinFlag, syncTaskDatasourceType } from './taskEditForm'
+import {
+  buildTaskPayload,
+  buildTaskSaveSuccessMessage,
+  createDefaultTaskModel,
+  normalizeDolphinFlag,
+  resolveTaskWorkflowId,
+  shouldPromptUnboundWorkflowGuidance,
+  syncTaskDatasourceType
+} from './taskEditForm'
 
 const SqlEditor = defineAsyncComponent({
   loader: () => import('@/components/SqlEditor.vue'),
@@ -374,6 +382,7 @@ const originalTaskName = ref('')
 const workflowOptions = ref([])
 const isWriteTask = ref(false)
 const contextDolphinConfigId = ref(null)
+const openedFromRelatedTask = ref(false)
 
 const datasourceOptions = ref([])
 const tableOptions = ref([])
@@ -800,6 +809,7 @@ const open = async (id = null, initialData = {}) => {
   contextDolphinConfigId.value = initialData.dolphinConfigId || null
 
   resetForm()
+  openedFromRelatedTask.value = Boolean(initialData.relation && initialData.tableId)
   lockedWorkflowId.value = null
   if (initialData.workflowId) {
     form.task.workflowId = initialData.workflowId
@@ -931,22 +941,26 @@ const handleTaskNameBlur = () => {
   checkTaskName(form.task.taskName)
 }
 
-const resolveSavedWorkflowId = (savedTask, payload) => {
-  const candidates = [
-    savedTask?.workflowId,
-    savedTask?.task?.workflowId,
-    payload?.task?.workflowId,
-    form.task.workflowId
-  ]
-  for (const value of candidates) {
-    const id = Number(value)
-    if (Number.isFinite(id) && id > 0) return id
+const promptWorkflowPublishAfterSave = async (workflowId, options = {}) => {
+  if (!workflowId) {
+    if (!shouldPromptUnboundWorkflowGuidance(workflowId, options)) return
+    try {
+      await ElMessageBox.confirm(
+        '任务已创建，但尚未绑定工作流。如需进入 Dolphin 调度，请到任务调度页面将任务加入工作流，发布后再上线。',
+        '任务尚未进入工作流',
+        {
+          type: 'warning',
+          confirmButtonText: '去任务调度',
+          cancelButtonText: '稍后处理'
+        }
+      )
+      router.push({ path: '/workflows', query: { tab: 'tasks' } })
+    } catch (error) {
+      // 用户选择稍后处理。
+    }
+    return
   }
-  return null
-}
 
-const promptWorkflowPublishAfterSave = async (workflowId) => {
-  if (!workflowId) return
   try {
     await ElMessageBox.confirm(
       '请跳转到任务调度页面，将工作流发布到 Dolphin。',
@@ -989,17 +1003,17 @@ const handleSave = async () => {
     let savedTask = null
     if (isEdit.value) {
       savedTask = await taskApi.update(form.task.id, payload)
-      ElMessage.success('更新成功')
     } else {
       savedTask = await taskApi.create(payload)
-      ElMessage.success('创建成功')
     }
-    const workflowId = resolveSavedWorkflowId(savedTask, payload)
+    const workflowId = resolveTaskWorkflowId(savedTask, payload, form.task)
+    const saveOptions = { fromRelatedTask: openedFromRelatedTask.value }
+    ElMessage.success(buildTaskSaveSuccessMessage(isEdit.value, workflowId, saveOptions))
 
     visible.value = false
     emit('saved')
     emit('success')
-    await promptWorkflowPublishAfterSave(workflowId)
+    await promptWorkflowPublishAfterSave(workflowId, saveOptions)
   } catch (error) {
     console.error(error)
     ElMessage.error(isEdit.value ? '更新失败' : '创建失败')
@@ -1016,6 +1030,7 @@ const resetForm = () => {
   taskNameError.value = ''
   originalTaskName.value = ''
   isWriteTask.value = false
+  openedFromRelatedTask.value = false
   inputSelectionTouched.value = false
   outputSelectionTouched.value = false
   clearSqlAnalysis()

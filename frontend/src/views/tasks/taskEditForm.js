@@ -78,3 +78,32 @@ export const buildTaskPayload = (task) => {
   }
   return payload
 }
+
+export const resolveTaskWorkflowId = (savedTask, payload, draftTask) => {
+  const candidates = [
+    savedTask?.workflowId,
+    savedTask?.task?.workflowId,
+    payload?.task?.workflowId,
+    draftTask?.workflowId
+  ]
+  for (const value of candidates) {
+    const id = Number(value)
+    if (Number.isFinite(id) && id > 0) return id
+  }
+  return null
+}
+
+export const shouldPromptUnboundWorkflowGuidance = (workflowId, options = {}) => {
+  return !workflowId && options.fromRelatedTask === true
+}
+
+export const buildTaskSaveSuccessMessage = (isEdit, workflowId, options = {}) => {
+  const action = isEdit ? '更新' : '创建'
+  if (workflowId) {
+    return `${action}成功，工作流有变化`
+  }
+  if (shouldPromptUnboundWorkflowGuidance(workflowId, options)) {
+    return `${action}成功，请绑定工作流后发布上线`
+  }
+  return `${action}成功`
+}

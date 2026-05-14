@@ -1,4 +1,4 @@
-import { buildPublishPreviewHtml, resolvePublishVersionId } from '../publishPreviewHelper'
+import { buildPublishPreviewHtml, resolvePublishVersionId, shouldPromptOnlineAfterDeploy } from '../publishPreviewHelper'
 import { buildTaskFieldDiffRows } from '../publishPreviewDiffHelper'
 
 describe('publishPreviewHelper', () => {
@@ -60,5 +60,12 @@ describe('publishPreviewHelper', () => {
     })).toBe(101)
 
     expect(resolvePublishVersionId({})).toBeUndefined()
+  })
+
+  it('prompts for online after successful deploy even when stale row was already online', () => {
+    expect(shouldPromptOnlineAfterDeploy({ id: 1, status: 'online' }, { status: 'success' })).toBe(true)
+    expect(shouldPromptOnlineAfterDeploy({ id: 1, status: 'offline' }, { status: 'success' })).toBe(true)
+    expect(shouldPromptOnlineAfterDeploy({ id: 1, status: 'offline' }, { status: 'pending_approval' })).toBe(false)
+    expect(shouldPromptOnlineAfterDeploy(null, { status: 'success' })).toBe(false)
   })
 })
