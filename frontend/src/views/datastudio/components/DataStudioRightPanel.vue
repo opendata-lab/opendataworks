@@ -14,7 +14,8 @@
             <div class="metadata-missing-title">
               <span>当前表在 Doris 中存在，平台中不存在。</span>
               <el-button
-                type="danger"
+                class="metadata-sync-action"
+                type="primary"
                 link
                 :loading="state.metadataSyncing"
                 :disabled="isDemoMode"
@@ -1166,6 +1167,15 @@ const formatAccessDuration = (value) => {
   --tab-active: #ffffff;
   --flow-task-bg: #ffffff;
   --flow-table-bg: #fafbfd;
+}
+
+.metadata-missing-alert :deep(.metadata-sync-action.el-button--primary.is-link) {
+  color: #2563eb;
+}
+
+.metadata-missing-alert :deep(.metadata-sync-action.el-button--primary.is-link:hover),
+.metadata-missing-alert :deep(.metadata-sync-action.el-button--primary.is-link:focus) {
+  color: #1d4ed8;
 }
 
 .variant-data-console {

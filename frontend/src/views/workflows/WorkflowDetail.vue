@@ -835,7 +835,8 @@ import {
   buildPublishRepairHtml,
   firstPreviewErrorMessage,
   isDialogCancel,
-  resolvePublishVersionId
+  resolvePublishVersionId,
+  shouldPromptOnlineAfterDeploy
 } from './publishPreviewHelper'
 import QuartzCronBuilder from '@/components/QuartzCronBuilder.vue'
 
@@ -2220,7 +2221,7 @@ const resolveDeployOnlineVersionId = (row, record) => {
 }
 
 const promptOnlineAfterDeploy = async (row, record) => {
-  if (!row?.id || record?.status === 'pending_approval' || row.status === 'online') return
+  if (!shouldPromptOnlineAfterDeploy(row, record)) return
   try {
     await ElMessageBox.confirm(
       '发布已成功，是否立即上线该工作流？',

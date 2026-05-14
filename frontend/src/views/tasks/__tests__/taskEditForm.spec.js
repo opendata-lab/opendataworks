@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { buildTaskPayload, createDefaultTaskModel, syncTaskDatasourceType } from '../taskEditForm'
+import {
+  buildTaskPayload,
+  buildTaskSaveSuccessMessage,
+  createDefaultTaskModel,
+  resolveTaskWorkflowId,
+  shouldPromptUnboundWorkflowGuidance,
+  syncTaskDatasourceType
+} from '../taskEditForm'
 
 describe('taskEditForm', () => {
   it('defaults dolphinFlag to YES and datasourceType to null for new tasks', () => {
@@ -49,5 +56,25 @@ describe('taskEditForm', () => {
     expect(task.datasourceName).toBe('')
     expect(task.datasourceType).toBeNull()
     expect(buildTaskPayload(task).datasourceType).toBeNull()
+  })
+
+  it('resolves workflowId from saved response, payload, or draft task', () => {
+    expect(resolveTaskWorkflowId({ workflowId: 12 }, {}, {})).toBe(12)
+    expect(resolveTaskWorkflowId({ task: { workflowId: 13 } }, {}, {})).toBe(13)
+    expect(resolveTaskWorkflowId({}, { task: { workflowId: 14 } }, {})).toBe(14)
+    expect(resolveTaskWorkflowId({}, {}, { workflowId: 15 })).toBe(15)
+    expect(resolveTaskWorkflowId({}, { task: { workflowId: '' } }, { workflowId: null })).toBeNull()
+  })
+
+  it('marks related task saves without workflow as needing workflow guidance', () => {
+    expect(shouldPromptUnboundWorkflowGuidance(null, { fromRelatedTask: true })).toBe(true)
+    expect(shouldPromptUnboundWorkflowGuidance(12, { fromRelatedTask: true })).toBe(false)
+    expect(shouldPromptUnboundWorkflowGuidance(null, { fromRelatedTask: false })).toBe(false)
+  })
+
+  it('uses workflow-aware success messages after related task saves', () => {
+    expect(buildTaskSaveSuccessMessage(false, 12, { fromRelatedTask: true })).toBe('创建成功，工作流有变化')
+    expect(buildTaskSaveSuccessMessage(false, null, { fromRelatedTask: true })).toBe('创建成功，请绑定工作流后发布上线')
+    expect(buildTaskSaveSuccessMessage(true, null, { fromRelatedTask: false })).toBe('更新成功')
   })
 })
