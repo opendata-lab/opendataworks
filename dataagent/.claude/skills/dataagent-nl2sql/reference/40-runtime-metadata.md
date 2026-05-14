@@ -20,21 +20,23 @@
 - [`scripts/resolve_datasource.py`](../scripts/resolve_datasource.py)
 - [`scripts/get_lineage.py`](../scripts/get_lineage.py)
 - [`scripts/get_table_ddl.py`](../scripts/get_table_ddl.py)
+- [`scripts/validate_sql.py`](../scripts/validate_sql.py)
 - [`scripts/query_opendataworks_metadata.py`](../scripts/query_opendataworks_metadata.py)
 
 ## 使用原则
 
 - MCP 不可用时，fallback 脚本统一使用 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`，不要自己拼 `/app/scripts/...` 或 `scripts/<name>.py`。
 - MCP-first 运行时下，`portal_search_tables`、`portal_get_lineage`、`portal_resolve_datasource`、`portal_export_metadata`、`portal_get_table_ddl`、`portal_query_readonly` 会直接由 `portal-mcp` 暴露给模型。
-- 只有 MCP 不可用时，`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`query_opendataworks_metadata.py`、`run_sql.py` 才作为兼容 fallback 通过 skill 自带 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli` 调 backend agent API。
+- 只有 MCP 不可用时，`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`query_opendataworks_metadata.py`、`run_sql.py` 才作为兼容 fallback 通过 skill 自带 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli` 调 backend agent API。
 - 执行 metadata 相关脚本前，先检查 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli` 是否存在。
 - 部署时如果 bind mount 丢了执行位，运行时会自动退回 `sh "${DATAAGENT_SKILL_ROOT}/bin/odw-cli" ...`；但宿主机仍建议保留 `+x`。
 - 如果该固定路径缺少 CLI，必须先由用户自行安装到 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli`，然后再执行 metadata 相关脚本。
 - `inspect_metadata.py` 在 database 未指定时默认做全局检索，匹配范围覆盖表名、表注释、字段名、字段注释；只返回客观候选，不负责判断“哪张表最好”。
-- 平台核心表结构已在本页给出，字段明确时可直接写 SQL，并交给 `portal_query_readonly` 或 `run_sql.py` 通过 backend 执行。
+- 平台核心表结构已在本页给出，字段明确时可直接写 SQL，并交给 `portal_query_readonly` 或 `validate_sql.py` -> `run_sql.py` 通过 backend 执行。
 - `resolve_datasource.py` 只负责确认引擎与数据源摘要；对外不暴露 host / port / user / password / readonly_*。
 - `get_lineage.py` 是上游 / 下游问题的标准 fallback，优先级高于手写血缘 SQL。
 - `get_table_ddl.py` 不直接执行数据库连接，而是通过 `odw-cli ddl` 调 backend `/api/v1/ai/metadata/ddl`。
+- `validate_sql.py` 负责脚本 fallback 下的 SQL 验证。业务知识 Skill 只提供 ontology、口径和 SQL example；如需领域表字段校验，把业务 ontology 作为 `--ontology` 输入。
 - `run_sql.py` 不再直连数据库，而是通过 `odw-cli query-readonly` 调 backend `/api/v1/ai/query/read`。
 - runtime 会把原始用户问题注入 `DATAAGENT_ORIGINAL_QUESTION`；`run_sql.py` 会据此拦截首轮 `data_lineage` 类 SQL，避免把上游 / 下游问题退化成反复猜字段。
 - 一旦数据库明确，SQL 必须写 `<schema>.<table>`；平台核心表固定用 `opendataworks.<table>`。
@@ -124,7 +126,7 @@ LIMIT 100;
 诊断类硬规则：
 
 - 用户已经给出明确表名时，优先 `mcp__portal__portal_get_lineage`；无 MCP 时优先 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_lineage.py" --table <table> [--db-name <db>]`，不要先搜索仓库里的 lineage/血缘代码实现。
-- 只有 lineage 快照缺少用户明确要看的字段时，才允许追加 `run_sql.py` 查询 `data_lineage + data_table`。
+- 只有 lineage 快照缺少用户明确要看的字段时，才允许追加 `validate_sql.py` -> `run_sql.py` 查询 `data_lineage + data_table`。
 - 如果确实需要这类补充 SQL，显式带 `DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1`；否则 `run_sql.py` 会直接拒绝。
 - 只要第一次 lineage 工具结果已返回非空数据，就直接总结；即使 `downstream_table` 或 `upstream_table` 有空值，也不要因为补空列再继续追加第二条 SQL。
 - 只有同名表不唯一或用户没给出表名时，才退回 metadata 检索和追问。
@@ -133,9 +135,9 @@ LIMIT 100;
 
 - live DDL 的首选入口是 `mcp__portal__portal_get_table_ddl`
 - 无 MCP 时使用 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_table_ddl.py" --database <db> --table <table>`
-- 只有明确需要验证只读 SQL 兼容性时，才退回 `run_sql.py --sql "SHOW CREATE TABLE ..."`；平时优先走标准 DDL 路径
+- 只有明确需要验证只读 SQL 兼容性时，才退回 `validate_sql.py` -> `run_sql.py --sql "SHOW CREATE TABLE ..."`；平时优先走标准 DDL 路径
 
 ### datasource 摘要定位
 
 - `resolve_datasource.py` 和 `query_opendataworks_metadata.py --kind datasource` 只用于确认 database 对应的 `engine`、`source_type`、`cluster_id`、`cluster_name`、`resolved_by`
-- 不要期待这两个接口返回只读账号、host、port 或密码；真实只读查询统一走 backend `/api/v1/ai/query/read`
+- 不要期待这两个入口返回只读账号、host、port 或密码；真实只读查询统一走 backend `/api/v1/ai/query/read`

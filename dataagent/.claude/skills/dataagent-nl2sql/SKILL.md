@@ -7,7 +7,9 @@ tools: [Bash, Read]
 
 # DataAgent NL2SQL Skill
 
-Convert Chinese natural-language data questions into read-only SQL, execute against MySQL or Doris, and return structured results with optional chart specs. Prefer `portal-mcp` tools when the runtime exposes them; otherwise fall back to the built-in Python scripts.
+Convert Chinese natural-language data questions into read-only SQL, validate and execute against MySQL or Doris, and return structured results with optional chart specs. Prefer `portal-mcp` tools when the runtime exposes them; otherwise fall back to the built-in Python scripts.
+
+The fixed query pipeline is: 语义匹配 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口. validate_sql.py 是唯一推荐的 SQL 验证入口 for script fallback; run_sql.py 是唯一推荐的 SQL 执行入口 for script fallback and calls the backend read-only query API without connecting to databases directly.
 
 ## Scope
 
@@ -36,6 +38,10 @@ Convert Chinese natural-language data questions into read-only SQL, execute agai
 11. **ALWAYS** prefer global metadata search first when the user did not explicitly provide a database. Only add `--database` after the user or metadata has already narrowed the scope.
 12. **ALWAYS** do a small synonym or related-term expansion when the first metadata search is too sparse, but keep the expansion limited and grounded in the user’s wording.
 13. **ALWAYS** treat upstream/downstream/lineage questions as lineage-tool-first. For these questions, `run_sql.py` now hard-blocks first-pass `data_lineage` SQL unless `DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1` is explicitly set for a clearly scoped supplemental query.
+14. **ALWAYS** validate confirmed SQL with `validate_sql.py` before script-fallback execution; if a business Skill supplied ontology, pass that ontology path into the generic validator instead of using a business-Skill validator script.
+15. **ALWAYS** execute confirmed SQL through `run_sql.py`; 必须拿到真实只读结果后回答, and 不得只输出 SQL 或要求用户自行执行.
+16. **NEVER** add another SQL execution script. `run_sql.py` remains the single script fallback entrypoint for SQL execution.
+17. **NEVER** ask a business Skill to own SQL validation or execution. 业务知识 Skill 只提供本体、口径、关系和 SQL example; SQL 验证和执行 belong to this built-in skill.
 
 ## 数据问数质量门禁
 
@@ -105,21 +111,23 @@ Follow this priority order:
 3. **If MCP tools are unavailable**:
    - upstream/downstream lineage → `get_lineage.py`
    - need live table DDL → `get_table_ddl.py`
-   - platform core table with known fields → go straight to the `run_sql.py` read-only query path
+   - platform core table with known fields → go straight to `validate_sql.py` → `run_sql.py`
    - managed table, fields unclear → `inspect_metadata.py` first
    - engine unclear → `resolve_datasource.py`
-   - SQL confirmed → `run_sql.py`
+   - SQL confirmed → `validate_sql.py` → `run_sql.py`
 4. **Result suits a chart** → `build_chart_spec.py` with explicit `--chart-type bar|line|pie`
 5. **User explicitly wants a standalone table** → `build_chart_spec.py --chart-type table`
 6. **Need summary** → `format_answer.py`
 
 Do not execute `run_sql.py` without confirmed database, metrics, and dimensions.
+When using script fallback, 先 `validate_sql.py`，再 `run_sql.py`. For business-domain SQL, pass the business ontology file into the generic validator with `--ontology <path-to-ontology.json>`; do not look for a validator script inside the business Skill.
+When MCP SQL execution is unavailable, `run_sql.py` 是唯一推荐的 SQL 执行入口. If 看不到 run_sql.py 或 backend 查询不可用时, explain that execution is unavailable and state the exact missing runtime capability; do not pretend the query was executed.
 
 ### Step D: Execution Rules
 
 All scripts execute via: `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`
 
-Allowed scripts only: `inspect_metadata.py`, `resolve_datasource.py`, `get_lineage.py`, `get_table_ddl.py`, `run_sql.py`, `build_chart_spec.py`, `format_answer.py`, `query_opendataworks_metadata.py`, `build_reference_digest.py`
+Allowed scripts only: `inspect_metadata.py`, `resolve_datasource.py`, `get_lineage.py`, `get_table_ddl.py`, `validate_sql.py`, `run_sql.py`, `build_chart_spec.py`, `format_answer.py`, `query_opendataworks_metadata.py`, `build_reference_digest.py`
 
 Preferred MCP tools when available:
 
@@ -145,6 +153,9 @@ Command templates:
 # Live table DDL
 "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_table_ddl.py" --database <db_name> --table <table_name>
 
+# SQL validation
+"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/validate_sql.py" --ontology <optional-business-ontology.json> --json "<SQL>"
+
 # SQL execution
 "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/run_sql.py" --database <db_name> --engine <mysql|doris> --sql "<SQL>"
 
@@ -161,12 +172,13 @@ DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1 "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKIL
 Prohibitions:
 
 - Never fabricate script paths or names (no `/app/scripts/...`, no bare `scripts/<name>.py`)
-- Never call `odw-cli` directly unless you are already inside the documented Python-script fallback path; it is not the primary agent interface
+- Never call `odw-cli` directly unless you are already inside the documented Python-script fallback path; it is not the primary agent entrypoint
 - Never run environment probing commands (`pip install`, `which python`, etc.)
 - If a script returns an error, diagnose from the error output; do not blindly retry with different interpreters
 - Read the corresponding `reference/*` before executing a script; do not interleave reading and executing
 - For 统计/对比/趋势/占比/明细/诊断 questions, the first real action must be a concrete script call or a clarifying question, not reading `assets/*.json`
 - Once MCP or fallback-script parameters are clear, always execute the real tool; do not skip execution and give SQL conclusions based solely on references
+- Once SQL is confirmed, validate it through `validate_sql.py`, execute it through `run_sql.py`, and cite the structured result; do not stop at generated SQL
 - Do not invent or expose datasource credentials; skill/runtime only receives datasource summary fields and all metadata / read-only SQL go through `portal-mcp` or `odw-cli -> backend /api/v1/ai/*`
 - For upstream/downstream lineage questions, prefer `portal_get_lineage` or `get_lineage.py` before writing custom SQL; only use `run_sql.py` when the lineage snapshot still lacks required fields
 - For upstream/downstream lineage questions, do not retry guessed `data_lineage` SQL after the guard fires; switch to `portal_get_lineage` or `get_lineage.py`, and only use `DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1` for a clearly scoped supplemental query
@@ -209,6 +221,7 @@ Do not generate `chart_spec` when data is unsuitable for visualization. Retain `
 - [`scripts/resolve_datasource.py`](scripts/resolve_datasource.py) — resolve engine and datasource
 - [`scripts/get_lineage.py`](scripts/get_lineage.py) — fetch lineage snapshot through the backend metadata path
 - [`scripts/get_table_ddl.py`](scripts/get_table_ddl.py) — fetch live table DDL through the backend metadata path
+- [`scripts/validate_sql.py`](scripts/validate_sql.py) — validate read-only SQL before script-fallback execution
 - [`scripts/run_sql.py`](scripts/run_sql.py) — execute read-only SQL through the backend query path
 - [`scripts/build_chart_spec.py`](scripts/build_chart_spec.py) — generate chart spec from SQL results
 - [`scripts/format_answer.py`](scripts/format_answer.py) — summarize results for the final answer
@@ -228,5 +241,6 @@ Do not generate `chart_spec` when data is unsuitable for visualization. Retain `
 - If a query was executed, cite the structured result; do not repeat raw tool output
 - For pure terminology or SQL example questions, SQL execution is not required
 - If information is insufficient, state what is missing and ask a minimal clarifying question
+- For `sql_execution`, use `result_state`, `error_code`, and `failure_attribution` to decide whether to answer, report empty data, or stop on permission/schema/timeout failures
 - If the blocker is tenant-specific business knowledge missing from the built-in skill, say so explicitly instead of guessing
 - Never expose internal steps (reading docs, locating scripts, preparing execution) in the final answer

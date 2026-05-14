@@ -1,6 +1,6 @@
-# DataAgent Builtin Architecture-Governance Evaluations
+# DataAgent Builtin Evaluations
 
-This module is the stdlib-only DataAgent architecture-governance evaluation runner.
+This module is the stdlib-only DataAgent evaluation runner.
 
 It is intentionally separate from the DataAgent backend runtime. DataAgent is only used as the HTTP system under test through `/api/v1/nl2sql/*`.
 

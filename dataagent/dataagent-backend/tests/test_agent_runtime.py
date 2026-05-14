@@ -170,7 +170,7 @@ def test_build_system_prompt_includes_methodology_and_non_negotiables():
         "制定最小执行路径",
         "基于真实工具结果执行和收口",
         "不要向用户暴露隐藏推理",
-        "不得臆造表、字段、指标口径或业务默认值",
+        "不得臆造表、字段、指标口径或租户私有默认值",
         "不得绕过已启用 Skills 或 portal-mcp 优先级",
         "不得重复试探等价 SQL",
         "工具结果不足以支撑结论时，必须最小追问或说明缺口",
@@ -190,12 +190,38 @@ def test_build_system_prompt_requires_domain_skill_execution_and_stop_rules():
         "领域型 Skill",
         "不要先退回 OpenDataWorks 通用元数据",
         "能执行真实只读查询时，不要只返回待执行 SQL",
-        "空结果、权限不足、工具超时或接口失败",
+        "空结果、权限不足、工具超时或服务调用失败",
         "不要继续换表、换字段、换路径或重复试探",
         "首次有效结果后结束当前查询链路",
     ]
     for fragment in required_fragments:
         assert fragment in prompt
+
+
+def test_build_system_prompt_documents_layered_query_pipeline():
+    prompt = agent_runtime._build_system_prompt(
+        None,
+        {"enabled_folders": ["dataagent-nl2sql", "business-domain-assistant"]},
+    )
+
+    required_fragments = [
+        "固定分层问数管线",
+        "一、上下文语义层",
+        "命中业务知识问数",
+        "没有命中业务知识 Skill 时",
+        "二、SQL 生成层",
+        "database、engine、tables、fields、filters、time_window",
+        "三、SQL 验证层",
+        "统一使用通用问数 Skill 的 validate_sql.py",
+        "业务知识 Skill 只提供本体、口径、关系和 SQL example",
+        "四、SQL 执行层",
+        "run_sql.py --database <db> --engine <mysql|doris> --sql \"<SQL>\"",
+        "不得只输出 SQL 或让用户自行执行",
+        "非交互评测场景不得追问用户",
+    ]
+    for fragment in required_fragments:
+        assert fragment in prompt
+    assert "私有 Skill 的 validate_sql.py" not in prompt
 
 
 def test_legacy_lf_system_prompt_template_is_removed():

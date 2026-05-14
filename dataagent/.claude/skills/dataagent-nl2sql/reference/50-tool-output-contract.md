@@ -1,6 +1,6 @@
 # 工具输出契约
 
-先结论：结果表达统一走工具输出。`sql_execution` 负责结果明细，`chart_spec` 负责前端渲染所需的严格图表契约。
+先结论：结果表达统一走工具输出。`sql_validation` 负责 SQL 执行前门禁，`sql_execution` 负责结果明细，`chart_spec` 负责前端渲染所需的严格图表契约。
 
 `build_chart_spec.py` 不负责生成图片文件，只负责输出结构化 `chart_spec`。真正生图由前端根据 `chart_spec` 渲染。
 
@@ -12,6 +12,8 @@
   - engine / database / cluster 确认
 - `table_ddl`
   - live DDL、字段摘要、来源集群信息
+- `sql_validation`
+  - SQL 执行前验证结果、错误、警告和停止原因
 - `sql_execution`
   - SQL 文本、表格结果、耗时、错误
 - `python_execution`
@@ -40,6 +42,25 @@
 
 默认明细结果仍然由 `sql_execution` 承载；只有技能明确需要独立表格展示时，才额外输出 `chart_type=table` 的 `chart_spec`。
 
+`sql_validation` 示例：
+
+```json
+{
+  "kind": "sql_validation",
+  "valid": true,
+  "errors": [],
+  "warnings": [],
+  "passed": ["只读 SQL 检查通过", "表名 schema 前缀检查通过"],
+  "error_code": null,
+  "failure_attribution": [],
+  "retryable": false,
+  "stop_reason": "",
+  "ontology": ".claude/skills/business-domain-assistant/assets/ontology.json"
+}
+```
+
+验证失败时，必须修正 SQL 后再进入 `run_sql.py`；不要绕过 `sql_validation` 直接执行。
+
 ```json
 {
   "kind": "sql_execution",
@@ -53,9 +74,22 @@
   "has_more": false,
   "duration_ms": 120,
   "summary": "返回最近30天工作流发布次数趋势数据",
+  "result_state": "success",
+  "error_code": null,
+  "failure_attribution": [],
+  "retryable": false,
+  "stop_reason": "",
   "error": null
 }
 ```
+
+`sql_execution` 必须提供这些收口字段：
+
+- `result_state`: `success`、`empty_result` 或 `failed`
+- `error_code`: 成功时为 `null`；空结果为 `empty_result`；失败时为 `permission_denied`、`datasource_mismatch`、`unknown_table`、`unknown_column`、`tool_timeout`、`non_readonly_sql`、`lineage_guard` 或 `query_failed`
+- `failure_attribution`: 用于报告归因，例如 `empty_result`、`permission_denied`、`schema_mismatch`、`datasource_mismatch`、`tool_timeout`、`invalid_sql`
+- `retryable`: 当前 agent 是否应该继续重试；第一版固定由工具给出，模型不得自行扩大重试
+- `stop_reason`: 失败或空结果时给模型的中文收口理由
 
 ## 图表契约
 

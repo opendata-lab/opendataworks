@@ -93,7 +93,7 @@ def default_output_dir(root: Path) -> Path:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     root = _repo_or_package_root()
-    parser = argparse.ArgumentParser(description="Run DataAgent online architecture-governance evaluations.")
+    parser = argparse.ArgumentParser(description="Run DataAgent online evaluations.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8900", help="DataAgent backend base URL.")
     parser.add_argument(
         "--dataset",
@@ -339,7 +339,7 @@ def _auto_failure_attribution(
         failures.append("sql_only")
     if re.search(r"OpenDataWorks\s*平台元数据|托管元数据|data_table|data_lineage|data_task|data_workflow|inspect_metadata\.py|get_lineage\.py", combined, re.I):
         failures.append("wrong_domain")
-    if re.search(r"\{(?:target_date|TARGET_DATE|env_name|ENV_NAME|start_date|START_DATE|end_date|END_DATE|component_name|COMPONENT_NAME|database_name|DATABASE_NAME|database_schema|DATABASE_SCHEMA|table_name|TABLE_NAME|period|PERIOD|timeDim|RULE_KEY)\}|占位符|TODO", combined):
+    if re.search(r"\{(?:target_date|TARGET_DATE|start_date|START_DATE|end_date|END_DATE|database_name|DATABASE_NAME|database_schema|DATABASE_SCHEMA|table_name|TABLE_NAME|period|PERIOD|timeDim|RULE_KEY)\}|占位符|TODO", combined):
         failures.append("placeholder_leak")
     if re.search(r"超时|timeout", combined, re.I):
         failures.append("tool_timeout")
@@ -590,7 +590,7 @@ def _merge_auto_failure_attribution(judge: dict[str, Any], rule_check: dict[str,
 
 def _judge_system_prompt() -> str:
     return (
-        "你是 DataAgent 架构治理在线评测裁判。只能基于请求中的 case、最终回答、工具事件、SQL/图表输出和自动规则检查打分。"
+        "你是 DataAgent 在线问数评测裁判。只能基于请求中的 case、最终回答、工具事件、SQL/图表输出和自动规则检查打分。"
         "不要调用任何工具，不要编造事实。必须只输出一个 JSON 对象，字段为："
         "score, dimension_scores, hallucination, veto_rules_triggered, failure_attribution, comment。"
         "score 为 0 到 10；dimension_scores 包含 intent, ontology_entity, relation_scope, sql_or_tool_call, data_accuracy, reasoning, answer_quality。"
@@ -604,7 +604,7 @@ def _judge_user_prompt(payload: dict[str, Any], *, repair: bool = False, previou
             f"上一次输出：\n{previous_output}\n\n"
             f"评测输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
-    return "请按 10 分制评估以下 DataAgent 架构治理回答，严格返回 JSON。\n\n" + json.dumps(payload, ensure_ascii=False, indent=2)
+    return "请按 10 分制评估以下 DataAgent 问数回答，严格返回 JSON。\n\n" + json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _judge_message_content(payload: dict[str, Any], *, repair: bool = False, previous_output: str = "") -> str:
@@ -850,7 +850,7 @@ def _judge_config_from_args(args: argparse.Namespace) -> JudgeConfig:
 
 def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str:
     lines = [
-        "# DataAgent 架构治理在线评测报告",
+        "# DataAgent 在线评测报告",
         "",
         f"- 数据集: `{summary.get('dataset_path', '')}`",
         f"- 用例数: {summary.get('total_cases', 0)}",
@@ -882,7 +882,7 @@ def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str
             f"| SQL / 工具调用准确率 | {metrics.get('sql_tool_accuracy', 0):.2%} | >= 85% |",
             f"| 数据结果 Precision | {metrics.get('data_precision', 0):.2%} | >= 90% |",
             f"| 数据结果 Recall | {metrics.get('data_recall', 0):.2%} | >= 85% |",
-            f"| 架构推理平均分 | {metrics.get('reasoning_average', 0):.2f} | >= 4/5 |",
+            f"| 推理平均分 | {metrics.get('reasoning_average', 0):.2f} | >= 4/5 |",
             f"| 幻觉率 | {metrics.get('hallucination_rate', 0):.2%} | <= 5% |",
             "",
             "## 用例明细",

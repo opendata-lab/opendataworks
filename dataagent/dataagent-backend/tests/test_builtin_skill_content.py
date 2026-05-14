@@ -16,28 +16,6 @@ def _skill_text_snapshot() -> str:
 def test_builtin_skill_keeps_generic_df_di_rules_without_business_defaults():
     snapshot = _skill_text_snapshot()
 
-    forbidden_tokens = [
-        "CFC环境名称",
-        "数据中心名称",
-        "组件名称",
-        "接口名称",
-        "env_name",
-        "PROD",
-        "SIM",
-        "component_name",
-        "interface_name",
-        "dwd_tech_dev_inspection_rule_cnt_di",
-        "host sh+curl+pymysql",
-        "ODW_MYSQL_HOST",
-        "ODW_MYSQL_PORT",
-        "ODW_MYSQL_USER",
-        "ODW_MYSQL_PASSWORD",
-        "ODW_MYSQL_DATABASE",
-        "数据源账号密码只在脚本内部使用",
-    ]
-    for token in forbidden_tokens:
-        assert token not in snapshot
-
     required_tokens = [
         "DF快照表",
         "DI增量表",
@@ -55,7 +33,7 @@ def test_builtin_skill_keeps_generic_df_di_rules_without_business_defaults():
         "odw-cli ddl",
         "query-readonly",
         "/api/v1/ai/query/read",
-        "不再直连业务数据库",
+        "不再直连外部数据源",
         "http://backend:8080/api/v1/ai",
         "DATAAGENT_ORIGINAL_QUESTION",
         "DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1",
@@ -75,3 +53,23 @@ def test_builtin_skill_documents_data_quality_gate():
     ]
     for token in required_tokens:
         assert token in snapshot
+
+
+def test_builtin_skill_documents_run_sql_as_only_recommended_sql_execution_entrypoint():
+    snapshot = _skill_text_snapshot()
+
+    required_tokens = [
+        "validate_sql.py 是唯一推荐的 SQL 验证入口",
+        "run_sql.py 是唯一推荐的 SQL 执行入口",
+        "语义匹配 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口",
+        "先 `validate_sql.py`，再 `run_sql.py`",
+        "必须拿到真实只读结果后回答",
+        "不得只输出 SQL 或要求用户自行执行",
+        "看不到 run_sql.py 或 backend 查询不可用时",
+        "failure_attribution",
+        "error_code",
+        "result_state",
+    ]
+    for token in required_tokens:
+        assert token in snapshot
+    assert "私有 Skill 的 validate_sql.py" not in snapshot

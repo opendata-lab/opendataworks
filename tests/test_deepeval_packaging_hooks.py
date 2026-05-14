@@ -44,11 +44,12 @@ def test_builtin_eval_module_is_packaged_as_parallel_image():
     assert "tools/dataagent-evals/builtin/run.py" in run_wrapper
 
 
-def test_private_arch_governance_assets_are_ignored_and_not_packaged():
+def test_private_business_skill_assets_are_ignored_and_not_packaged():
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
 
-    assert "/.claude/skills/arch-governance-assistant/" in gitignore
-    assert "/dataagent/.claude/skills/arch-governance-assistant/" in gitignore
-    assert "arch-governance-core.jsonl" in gitignore
-    assert "--exclude='arch-governance-assistant'" in create_package
+    assert "/dataagent/.claude/skills/*/" in gitignore
+    assert "!/dataagent/.claude/skills/dataagent-nl2sql/" in gitignore
+    assert "/evals/" in gitignore
+    assert "*-core.jsonl" in gitignore
+    assert "--exclude='*-assistant'" in create_package

@@ -292,6 +292,127 @@ def test_run_sql_script_delegates_to_query_cli(monkeypatch):
     assert payload["result"]["engine"] == "mysql"
     assert payload["result"]["database"] == "opendataworks"
     assert payload["result"]["rows"] == [{"value": 1}]
+    assert payload["result"]["result_state"] == "success"
+    assert payload["result"]["error_code"] is None
+    assert payload["result"]["failure_attribution"] == []
+
+
+def test_run_sql_script_marks_empty_result_as_structured_stop_signal(monkeypatch):
+    module = _load_skill_module("run_sql.py", "dataagent_run_sql_empty")
+    payload = {}
+
+    def fake_query_readonly(database, sql, preferred_engine=None, limit=None, timeout_seconds=None):
+        return {
+            "kind": "query_result",
+            "engine": "doris",
+            "database": database,
+            "sql": sql,
+            "rows": [],
+            "row_count": 0,
+            "has_more": False,
+            "duration_ms": 11,
+        }
+
+    monkeypatch.setattr(module, "query_readonly", fake_query_readonly)
+    monkeypatch.setattr(module, "print_json", lambda value: payload.setdefault("result", value))
+    monkeypatch.setattr(sys, "argv", ["run_sql.py", "--database", "opendataworks", "--engine", "doris", "--sql", "SELECT 1 LIMIT 1"])
+
+    module.main()
+
+    assert payload["result"]["kind"] == "sql_execution"
+    assert payload["result"]["error"] is None
+    assert payload["result"]["result_state"] == "empty_result"
+    assert payload["result"]["error_code"] == "empty_result"
+    assert payload["result"]["failure_attribution"] == ["empty_result"]
+    assert payload["result"]["retryable"] is False
+    assert "不要继续换表" in payload["result"]["stop_reason"]
+
+
+def test_run_sql_script_classifies_permission_denied_error(monkeypatch):
+    module = _load_skill_module("run_sql.py", "dataagent_run_sql_permission")
+    payload = {}
+
+    def fake_query_readonly(database, sql, preferred_engine=None, limit=None, timeout_seconds=None):
+        raise RuntimeError("SELECT command denied to user 'opendataworks' for table 'workflow_publish_record'")
+
+    monkeypatch.setattr(module, "query_readonly", fake_query_readonly)
+    monkeypatch.setattr(module, "print_json", lambda value: payload.setdefault("result", value))
+    monkeypatch.setattr(sys, "argv", ["run_sql.py", "--database", "opendataworks", "--engine", "doris", "--sql", "SELECT 1"])
+
+    module.main()
+
+    assert payload["result"]["kind"] == "sql_execution"
+    assert payload["result"]["error_code"] == "permission_denied"
+    assert payload["result"]["failure_attribution"] == ["permission_denied"]
+    assert payload["result"]["retryable"] is False
+    assert "权限不足" in payload["result"]["stop_reason"]
+
+
+def test_run_sql_failure_classifier_covers_common_execution_failures():
+    module = _load_skill_module("run_sql.py", "dataagent_run_sql_classifier")
+
+    cases = [
+        ("database `business` 与 mysql 引擎不匹配", "datasource_mismatch", "datasource_mismatch"),
+        ("Unknown column 'dt' in 'table list'", "unknown_column", "schema_mismatch"),
+        ("Unknown table 'workflow_publish_daily'", "unknown_table", "schema_mismatch"),
+        ("read timed out after 60 seconds", "tool_timeout", "tool_timeout"),
+        ("仅允许只读 SQL", "non_readonly_sql", "invalid_sql"),
+    ]
+    for message, expected_code, expected_attribution in cases:
+        detail = module.classify_sql_execution_failure(message)
+        assert detail["error_code"] == expected_code
+        assert detail["failure_attribution"] == [expected_attribution]
+        assert detail["retryable"] is False
+
+
+def test_validate_sql_script_rejects_non_readonly_and_unqualified_table():
+    module = _load_skill_module("validate_sql.py", "dataagent_validate_sql_generic")
+    context = module.ValidationContext()
+
+    non_readonly = module.validate_sql("DELETE FROM opendataworks.workflow_publish_record WHERE ds = '2026-05-14'", context)
+    missing_schema = module.validate_sql("SELECT id FROM workflow_publish_record LIMIT 10", context)
+
+    assert non_readonly.is_valid is False
+    assert any("只读" in message for message in non_readonly.errors)
+    assert missing_schema.is_valid is False
+    assert any("schema 前缀" in message for message in missing_schema.errors)
+
+
+def test_validate_sql_script_can_use_business_ontology_without_living_in_business_skill(tmp_path):
+    module = _load_skill_module("validate_sql.py", "dataagent_validate_sql_ontology")
+    ontology_path = tmp_path / "ontology.json"
+    ontology_path.write_text(
+        """
+{
+  "object_types": [
+    {
+      "id": "workflow",
+      "physical_sources": [{"table": "opendataworks.workflow_publish_record"}],
+      "properties": [{"column": "workflow_code"}, {"column": "ds"}],
+      "query_functions": []
+    }
+  ],
+  "object_relations": []
+}
+""".strip(),
+        encoding="utf-8",
+    )
+    context = module.load_ontology(ontology_path)
+
+    valid = module.validate_sql(
+        "SELECT workflow_code FROM opendataworks.workflow_publish_record "
+        "WHERE ds = (SELECT MAX(ds) FROM opendataworks.workflow_publish_record)",
+        context,
+    )
+    unknown_table = module.validate_sql(
+        "SELECT workflow_code FROM opendataworks.missing_workflow "
+        "WHERE ds = (SELECT MAX(ds) FROM opendataworks.workflow_publish_record)",
+        context,
+    )
+
+    assert valid.is_valid is True
+    assert unknown_table.is_valid is False
+    assert any("未在 ontology 中注册的表" in message for message in unknown_table.errors)
 
 
 def test_run_sql_script_blocks_lineage_sql_before_query(monkeypatch):

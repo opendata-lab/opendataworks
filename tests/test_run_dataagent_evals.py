@@ -11,16 +11,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = REPO_ROOT / "tools" / "dataagent-evals" / "builtin" / "run.py"
 
 
-def _sample_case(case_id: str = "ARCH_SAMPLE_001"):
+def _sample_case(case_id: str = "ODW_SAMPLE_001"):
     return {
         "case_id": case_id,
-        "category": "架构治理通用样例",
-        "question": "当前生产环境组件数量是多少？",
-        "expected_intent": "查数",
-        "expected_ontology_objects": ["component"],
+        "category": "DataAgent 通用样例",
+        "question": "最近 30 天工作流发布次数趋势",
+        "expected_intent": "趋势分析",
+        "expected_ontology_objects": ["workflow_publish_record"],
         "expected_relations": [],
-        "expected_sql_or_tool_behavior": ["查询组件数量"],
-        "expected_answer_points": ["说明统计口径"],
+        "expected_sql_or_tool_behavior": ["查询工作流发布记录并按日期聚合"],
+        "expected_answer_points": ["说明时间范围和统计口径"],
         "scoring": {
             "intent": 1,
             "ontology_entity": 1,
@@ -36,7 +36,7 @@ def _sample_case(case_id: str = "ARCH_SAMPLE_001"):
     }
 
 
-def _write_dataset(path: Path, case_id: str = "ARCH_SAMPLE_001") -> Path:
+def _write_dataset(path: Path, case_id: str = "ODW_SAMPLE_001") -> Path:
     path.write_text(json.dumps(_sample_case(case_id), ensure_ascii=False) + "\n", encoding="utf-8")
     return path
 
@@ -113,14 +113,14 @@ def test_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
 
     result = runner.call_judge_model(
         runner.JudgeConfig(base_url="https://judge.example", token="token", model="model", max_tokens=2222),
-        {"case": {"case_id": "ARCH_SAMPLE_001"}, "final_answer": "answer"},
+        {"case": {"case_id": "ODW_SAMPLE_001"}, "final_answer": "answer"},
     )
 
     body = calls[0]["payload"]
     assert result["judge_failed"] is False
     assert body["max_tokens"] == 2222
     assert "system" not in body
-    assert "你是 DataAgent 架构治理在线评测裁判" in body["messages"][0]["content"]
+    assert "你是 DataAgent 在线问数评测裁判" in body["messages"][0]["content"]
 
 
 def test_poll_task_retries_transient_event_error(monkeypatch):
@@ -155,9 +155,9 @@ def test_auto_rule_check_adds_generic_failure_attribution():
 
     result = runner.auto_rule_check(
         _sample_case(),
-        final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在架构治理数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
+        final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在目标数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
         events=[{"data": {"output": {"row_count": 0}}}],
-        sql_outputs=["SELECT count(1) FROM tech.some_table WHERE ds = '{target_date}'"],
+        sql_outputs=["SELECT count(1) FROM opendataworks.workflow_publish_record WHERE ds = '{target_date}'"],
         tool_names=[],
     )
 
@@ -205,13 +205,13 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                             "record_type": "event",
                             "seq_id": 1,
                             "event_type": "BEFORE_TOOL_CALL",
-                            "data": {"tool_name": "run_sql", "input": {"sql": "select count(1) from public.dim_tech_public_env_cmp_df"}},
+                            "data": {"tool_name": "run_sql", "input": {"sql": "select count(1) from opendataworks.workflow_publish_record"}},
                         },
                         {
                             "record_type": "event",
                             "seq_id": 2,
                             "event_type": "AFTER_TOOL_CALL",
-                            "data": {"output": {"rows": [{"cnt": 1}], "sql": "select count(1) from public.dim_tech_public_env_cmp_df"}},
+                            "data": {"output": {"rows": [{"cnt": 1}], "sql": "select count(1) from opendataworks.workflow_publish_record"}},
                         },
                     ],
                 },
@@ -253,7 +253,7 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                             "sender_type": "assistant",
                             "type": "assistant",
                             "status": "success",
-                            "content": "answer with public.dim_tech_public_env_cmp_df",
+                            "content": "answer with opendataworks.workflow_publish_record",
                             "usage": {"input_tokens": 1, "output_tokens": 2},
                         },
                     ],
@@ -386,7 +386,7 @@ class FakeJudgeServer:
 
 def _run_fake_scenario(tmp_path, scenario: str, *extra_args: str):
     runner = _load_runner()
-    dataset = _write_dataset(tmp_path / "cases.jsonl", case_id="ARCH_SAMPLE_002")
+    dataset = _write_dataset(tmp_path / "cases.jsonl", case_id="ODW_SAMPLE_002")
     with FakeServer(scenario) as base_url, FakeJudgeServer(scenario) as judge_url:
         return runner.main(
             [
@@ -403,7 +403,7 @@ def _run_fake_scenario(tmp_path, scenario: str, *extra_args: str):
                 "--judge-model",
                 "judge-model",
                 "--case",
-                "ARCH_SAMPLE_002",
+                "ODW_SAMPLE_002",
                 *extra_args,
             ]
         )

@@ -1,6 +1,6 @@
-# DataAgent DeepEval Architecture-Governance Evaluations
+# DataAgent DeepEval Evaluations
 
-This module is a parallel DeepEval-based evaluation runner for DataAgent architecture-governance cases.
+This module is a parallel DeepEval-based evaluation runner for DataAgent evaluations.
 
 It is intentionally separate from the DataAgent backend runtime. DataAgent is only used as the HTTP system under test through `/api/v1/nl2sql/*`.
 

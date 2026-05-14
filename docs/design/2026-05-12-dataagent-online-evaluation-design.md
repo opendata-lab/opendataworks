@@ -14,18 +14,18 @@ DataAgent already exposes an HTTP task chain for intelligent-query execution:
 
 The offline deployment package already copies `deploy/`, `scripts/`, DataAgent settings, and editable Skills into `deploy/dataagent-runtime/`. Evaluation tooling is packaged at the offline-package root under `tools/dataagent-evals/` so it remains outside the DataAgent runtime directory. Private Skill content and private case datasets are manually deployed and are not committed to GitHub.
 
-The architecture-governance Skill evaluation source lives outside this repository as a private asset. It defines private architecture-governance cases and acceptance thresholds, but OpenDataWorks should only carry the generic executable online evaluation module.
+The business-domain Skill evaluation source lives outside this repository as a private asset. It defines private business-domain cases and acceptance thresholds, but OpenDataWorks should only carry the generic executable online evaluation module.
 
 ## Problem
 
 The current evaluation material is documentation-only. After an offline package is deployed in an intranet environment, operators need a repeatable manual command that:
 
-- runs externally supplied architecture-governance cases through the real DataAgent HTTP task chain
+- runs externally supplied domain-specific evaluation cases through the real DataAgent HTTP task chain
 - captures task status, events, final assistant messages, SQL/tool evidence, errors, duration, and usage
 - uses an independently configured judge model endpoint for scoring so evaluation code does not enter the DataAgent runtime
 - produces durable offline artifacts for review and release gating
 
-The solution must not move architecture-governance-specific behavior into generic DataAgent runtime modules.
+The solution must not move business-domain-specific behavior into generic DataAgent runtime modules.
 
 ## Scope
 
@@ -81,7 +81,7 @@ The source document's scoring model is normalized to a 10-point rubric:
 - `reasoning`: 2
 - `answer_quality`: 1
 
-## Judge Interface
+## Judge Contract
 
 The builtin runner calls an external Anthropic-compatible judge endpoint directly. Judge connection settings are supplied at runtime through CLI options or environment variables:
 
@@ -204,4 +204,4 @@ The first version does not persist results to MySQL. File artifacts are simpler 
 
 The runner extracts SQL/tool evidence heuristically from existing event/message payloads. DataAgent event contracts remain unchanged; richer extraction can be added later if the task event schema becomes more explicit.
 
-The runner keeps architecture-governance case semantics in the external private dataset and judge prompt, not in generic task execution modules. Evaluation tools are packaged under root `tools/dataagent-evals/`, not under `deploy/dataagent-runtime/`, to keep test tooling separate from DataAgent runtime assets. The builtin and DeepEval runners are intentionally parallel modules under `tools/dataagent-evals/`, each with its own image and wrapper script.
+The runner keeps business-domain case semantics in the external private dataset and judge prompt, not in generic task execution modules. Evaluation tools are packaged under root `tools/dataagent-evals/`, not under `deploy/dataagent-runtime/`, to keep test tooling separate from DataAgent runtime assets. The builtin and DeepEval runners are intentionally parallel modules under `tools/dataagent-evals/`, each with its own image and wrapper script.

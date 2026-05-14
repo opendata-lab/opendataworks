@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a manually-triggered online DataAgent evaluation module for externally supplied private architecture-governance cases.
+**Goal:** Add a manually-triggered online DataAgent evaluation module for externally supplied private business-domain cases.
 
 **Architecture:** Keep execution outside the main DataAgent runtime by keeping private datasets out of GitHub and adding a stdlib-only builtin runner under `tools/dataagent-evals/builtin/`. The runner drives the real HTTP task chain and calls an independently configured judge endpoint; DataAgent backend remains only the system under test.
 
@@ -12,7 +12,7 @@
 
 ## Files
 
-- Do not commit private datasets such as `arch-governance-core.jsonl`
+- Do not commit private datasets such as `*-core.jsonl`
 - Modify: `dataagent/dataagent-backend/main.py` only to ensure no eval router is registered
 - Modify: `dataagent/dataagent-backend/models/schemas.py` only to remove eval-only schemas
 - Create: `dataagent/dataagent-backend/tests/test_runtime_excludes_eval_api.py`
@@ -28,7 +28,7 @@
 
 ## Task 1: Private Dataset Boundary
 
-- [ ] Do not commit `arch-governance-core.jsonl` or any private case file.
+- [ ] Do not commit `*-core.jsonl` or any private case file.
 - [ ] Require `--dataset` or `DATAAGENT_EVAL_DATASET` to point at a private JSONL file.
 - [ ] Keep fixed fields: `case_id`, `category`, `question`, `expected_intent`, `expected_ontology_objects`, `expected_relations`, `expected_sql_or_tool_behavior`, `expected_answer_points`, `scoring`, `veto_rules`, `max_wait_seconds`.
 - [ ] Keep extension fields on every record as arrays/strings: `required_sql_fragments`, `forbidden_sql_patterns`, `expected_tool_names`, `judge_guidance`.

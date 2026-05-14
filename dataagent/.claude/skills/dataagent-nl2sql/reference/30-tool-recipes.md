@@ -1,12 +1,15 @@
 # 工具 Recipes
 
-先结论：优先 `portal-mcp`，没有 MCP 再回退脚本调用。无论走哪条路，都必须按“先澄清、再定位、后执行”的顺序进行。`run_sql.py` 不是盲猜工具；但如果问题已经明确指向 `opendataworks` 平台核心表且字段清楚，可以直接进入 `database=opendataworks`、`engine=mysql` 的只读查询路径。这里的“直接执行”仍然是 backend 代执行，不是 skill/runtime 直连 MySQL。
+先结论：优先 `portal-mcp`，没有 MCP 再回退脚本调用。固定管线是：语义匹配 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口。`validate_sql.py` 是唯一推荐的 SQL 验证入口，`run_sql.py` 是唯一推荐的 SQL 执行入口，二者都不是盲猜工具；但如果问题已经明确指向 `opendataworks` 平台核心表且字段清楚，可以直接进入 `database=opendataworks`、`engine=mysql` 的只读查询路径。这里的“直接执行”仍然是 backend 代执行，不是 skill/runtime 直连 MySQL。
 
 ## 统一命令规则
 
 - fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`
 - 若运行时暴露了 `mcp__portal__portal_*`，优先直接调用这些 MCP tools，不要先绕回脚本。
-- 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`run_sql.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
+- 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
+- `validate_sql.py` 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py`。
+- `run_sql.py` 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
+- 业务知识 Skill 只提供本体、口径、关系和 SQL example；不要在业务 Skill 中寻找或维护 SQL 验证/执行脚本。
 - 不要自己拼脚本路径或脚本名；禁止使用 `/app/scripts/...`、`scripts/<name>.py`、`resolvedadatsource.py` 这类猜测路径或拼写。
 - 动态 metadata 与只读 SQL 的固定实现是：Python 脚本内部优先调用 skill 自带 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli`，再由 CLI 请求 backend `/api/v1/ai/*`。
 - 执行任何 metadata 相关脚本前，先检查 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli` 是否存在。
@@ -16,6 +19,8 @@
 - 如果脚本报错，优先收敛输入参数或向用户追问，不要切换解释器反复试探。
 - 没有真实 Bash 报错时，不要自行下结论说“缺少依赖”或“环境异常”。
 - 统计 / 对比 / 趋势 / 占比 / 明细 / 诊断问题，不要用读取 `assets/*.json` 代替脚本执行；`assets` 只用于术语解释或 SQL 示例补充。
+- 已确认 SQL 时，先通过 `validate_sql.py` 校验，再通过 `run_sql.py` 拿真实只读结果后回答；不得只输出 SQL 或要求用户自行执行。
+- 看不到 run_sql.py 或 backend 查询不可用时，只说明缺少执行入口或 backend 查询能力，不要假装已执行。
 
 ## portal-mcp 首选工具
 
@@ -25,7 +30,7 @@
 - metadata 导出：`mcp__portal__portal_export_metadata`
 - 表 DDL：`mcp__portal__portal_get_table_ddl`
 - 只读 SQL：`mcp__portal__portal_query_readonly`
-- 只有当前 run 看不到这些工具时，才回退到 `inspect_metadata.py` / `resolve_datasource.py` / `get_lineage.py` / `get_table_ddl.py` / `run_sql.py` / `odw-cli`
+- 只有当前 run 看不到这些工具时，才回退到 `inspect_metadata.py` / `resolve_datasource.py` / `get_lineage.py` / `get_table_ddl.py` / `validate_sql.py` / `run_sql.py` / `odw-cli`
 
 ## inspect_metadata.py
 
@@ -87,7 +92,7 @@
   - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_lineage.py" --table-id 123 --depth 2`
 - 收口规则：
   - `lineage_snapshot` 返回后优先基于结果回答
-  - 只有 lineage 快照缺少用户明确要的字段时，才追加 `run_sql.py`
+  - 只有 lineage 快照缺少用户明确要的字段时，才追加 `validate_sql.py` -> `run_sql.py`
   - 如果必须补 `data_lineage + data_table` 的 SQL，显式使用 `DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1`
 
 ## get_table_ddl.py
@@ -108,6 +113,24 @@
 - 收口规则：
   - 返回 `table_ddl` 后就优先基于该结果回答，不要再手写等价 `SHOW CREATE TABLE`
 
+## validate_sql.py
+
+- 用途：执行脚本 fallback 下的 SQL 验证。
+- 适用场景：
+  - SQL 已形成，准备进入 `run_sql.py`
+  - 需要统一检查只读、安全、schema 前缀、`SELECT *`、相对日期和占位符
+  - 业务知识 Skill 提供了 ontology，需要用该 ontology 校验表名和字段候选
+- 固定链路：
+  - `validate_sql.py -> run_sql.py`
+  - 业务知识 Skill 只提供 `assets/ontology.json`、口径和 SQL example，不提供验证脚本
+- 命令模板：
+  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/validate_sql.py" --json "SELECT COUNT(*) AS table_cnt FROM opendataworks.data_table WHERE deleted = 0 LIMIT 20"`
+  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/validate_sql.py" --ontology .claude/skills/<business-skill>/assets/ontology.json --json "<domain SQL>"`
+- 收口规则：
+  - 验证失败时修正 SQL 后最多重跑一次同类验证
+  - 验证仍失败时按 `errors` 说明缺口，不要跳过验证直接执行
+  - 验证通过后立即进入 `run_sql.py`，不要再去业务 Skill 中查找 `validate_sql.py`
+
 ## run_sql.py
 
 - 用途：执行只读 SQL
@@ -119,7 +142,11 @@
   - 已明确要查 `opendataworks` 的平台核心表，且字段名已知
 - 固定链路：
   - `run_sql.py -> odw-cli query-readonly -> backend /api/v1/ai/query/read`
-  - skill/runtime 不再直连业务数据库，也不接收 datasource 凭据
+  - skill/runtime 不再直连外部数据源，也不接收 datasource 凭据
+- 结果归因：
+  - `result_state=success`：已拿到真实结果，直接收口回答
+  - `result_state=empty_result`：查询成功但无数据，说明口径和空结果，不要继续换表、换字段或重复试探
+  - `result_state=failed`：按 `error_code`、`failure_attribution`、`stop_reason` 说明权限、数据源、表字段或超时问题
 - 血缘硬约束：
   - `run_sql.py` 会读取 `DATAAGENT_ORIGINAL_QUESTION`
   - 当前问题命中“上游 / 下游 / 血缘”且 SQL 命中 `data_lineage` / `upstream_table_id` / `downstream_table_id` / `lineage_type` 时，默认拒绝执行
@@ -129,6 +156,7 @@
   - 时间范围清楚
   - 维度清楚
   - 数据库清楚
+  - SQL 已通过 `validate_sql.py`
 - SQL 编写规则：
   - 平台核心表统一写 `opendataworks.<table>`
   - 托管数据表统一写 `<db_name>.<table>`
@@ -143,16 +171,18 @@
 - 禁止：
   - 没定位到数据库就执行
   - 用来“试着猜一下”
+  - 跳过 `validate_sql.py`
 - 收口规则：
   - `sql_execution` 返回后就优先结束本轮推理
   - 首次返回非空且口径正确的 `sql_execution` 后，不要继续换表、换字段或重复执行等价 SQL
 - 若 `row_count = 0`，直接说明无数据，不要继续无休止换表或重复试探
+- 若返回 `permission_denied`、`datasource_mismatch`、`unknown_table`、`unknown_column` 或 `tool_timeout`，按 `stop_reason` 收口，不要再换库、换表、换字段重试。
 
 ## odw-cli 内部命令
 
 - 作用：
   - 这是非 MCP fallback 路径下的内部 CLI；skill 脚本通过 `${DATAAGENT_SKILL_ROOT}/bin/odw-cli` 调 backend agent API
-  - 模型不要把 CLI 当成首选接口，但需要知道它支持哪些动作和参数，便于理解脚本 fallback 行为
+  - 模型不要把 CLI 当成首选入口，但需要知道它支持哪些动作和参数，便于理解脚本 fallback 行为
 - 入口环境变量：
   - `ODW_BACKEND_BASE_URL`：固定指向 backend AI 根路径，规范值为 `http://backend:8080/api/v1/ai`
   - `ODW_AGENT_SERVICE_TOKEN`：backend service token
@@ -205,19 +235,19 @@
 
 ## 推荐脚本序列
 
-- 统计：平台核心表可直接进入 `run_sql.py` 只读查询快路径；托管数据表用 `inspect_metadata.py` -> `run_sql.py`
-- 对比：平台核心表可直接进入 `run_sql.py` 只读查询快路径 -> `build_chart_spec.py --chart-type bar`；托管数据表用 `inspect_metadata.py` -> `run_sql.py` -> `build_chart_spec.py --chart-type bar`
-- 趋势：平台核心表可直接进入 `run_sql.py` 只读查询快路径 -> `build_chart_spec.py --chart-type line`；托管数据表用 `inspect_metadata.py` -> `run_sql.py` -> `build_chart_spec.py --chart-type line`
-- 占比：平台核心表可直接进入 `run_sql.py` 只读查询快路径 -> `build_chart_spec.py --chart-type pie`；托管数据表用 `inspect_metadata.py` -> `run_sql.py` -> `build_chart_spec.py --chart-type pie`
-- 明细：平台核心表可直接进入 `run_sql.py` 只读查询快路径；托管数据表用 `inspect_metadata.py` -> `run_sql.py`
-- 诊断：优先 `mcp__portal__portal_get_lineage` / `mcp__portal__portal_get_table_ddl`；无 MCP 时优先 `get_lineage.py` / `get_table_ddl.py`，只有结果仍不足时再 `inspect_metadata.py` -> `resolve_datasource.py` -> `run_sql.py`
-- 工作流发布趋势快路径：`21-metric-index.md` -> `22-sql-example-index.md` -> `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/run_sql.py" --database opendataworks --engine mysql --sql "<按 created_at 按天聚合 workflow_publish_record 的 SQL>"` -> `build_chart_spec.py --chart-type line`；首个有效结果返回后直接总结
+- 统计：平台核心表可直接进入 `validate_sql.py` -> `run_sql.py` 只读查询快路径；托管数据表用 `inspect_metadata.py` -> `validate_sql.py` -> `run_sql.py`
+- 对比：平台核心表可直接进入 `validate_sql.py` -> `run_sql.py` 只读查询快路径 -> `build_chart_spec.py --chart-type bar`；托管数据表用 `inspect_metadata.py` -> `validate_sql.py` -> `run_sql.py` -> `build_chart_spec.py --chart-type bar`
+- 趋势：平台核心表可直接进入 `validate_sql.py` -> `run_sql.py` 只读查询快路径 -> `build_chart_spec.py --chart-type line`；托管数据表用 `inspect_metadata.py` -> `validate_sql.py` -> `run_sql.py` -> `build_chart_spec.py --chart-type line`
+- 占比：平台核心表可直接进入 `validate_sql.py` -> `run_sql.py` 只读查询快路径 -> `build_chart_spec.py --chart-type pie`；托管数据表用 `inspect_metadata.py` -> `validate_sql.py` -> `run_sql.py` -> `build_chart_spec.py --chart-type pie`
+- 明细：平台核心表可直接进入 `validate_sql.py` -> `run_sql.py` 只读查询快路径；托管数据表用 `inspect_metadata.py` -> `validate_sql.py` -> `run_sql.py`
+- 诊断：优先 `mcp__portal__portal_get_lineage` / `mcp__portal__portal_get_table_ddl`；无 MCP 时优先 `get_lineage.py` / `get_table_ddl.py`，只有结果仍不足时再 `inspect_metadata.py` -> `resolve_datasource.py` -> `validate_sql.py` -> `run_sql.py`
+- 工作流发布趋势快路径：`21-metric-index.md` -> `22-sql-example-index.md` -> `validate_sql.py` -> `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/run_sql.py" --database opendataworks --engine mysql --sql "<按 created_at 按天聚合 workflow_publish_record 的 SQL>"` -> `build_chart_spec.py --chart-type line`；首个有效结果返回后直接总结
 
 ## 诊断直达规则
 
 - 对 `workflow_publish_record` 或任意已给出明确表名的平台核心表诊断问题，不要再搜索仓库代码、测试文件或文档实现。
 - 上游 / 下游 / 血缘问题的第一动作应是 `mcp__portal__portal_get_lineage`；无 MCP 时使用 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_lineage.py" --table <table> [--db-name <db>]`。
-- 只有 lineage 快照里缺少用户明确需要的额外字段时，才允许再用 `run_sql.py` 查询 `data_lineage + data_table`。
+- 只有 lineage 快照里缺少用户明确需要的额外字段时，才允许再用 `validate_sql.py` -> `run_sql.py` 查询 `data_lineage + data_table`。
 - 如果 `run_sql.py` 返回“请先使用 `portal_get_lineage` / `get_lineage.py`”之类的 guard 错误，不要继续猜等价 SQL，直接切回 lineage 专用路径。
 - 如果第一次 lineage 工具结果已返回非空数据，即使部分 `upstream_table` / `downstream_table` 为空，也直接基于现有结果总结；不要为了补齐空列继续追加第二条 SQL。
 - 只有表名不唯一、数据库不清或字段不清时，才允许退回 `inspect_metadata.py` 或追问。

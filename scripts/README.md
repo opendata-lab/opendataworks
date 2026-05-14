@@ -13,8 +13,8 @@ This directory contains various utility scripts for building and deploying the O
 | `load-images.sh` | Load tarred images from `deploy/docker-images/` (offline deployment). |
 | `load-package-and-start.sh` | Extract an offline package, load images, and optionally start the stack. |
 | `create-offline-package.sh` | Produce an offline tarball containing compose files, scripts, and images. |
-| `run-dataagent-evals.sh` | Run the DataAgent architecture-governance online evaluation suite against a deployed backend. |
-| `run-dataagent-deepeval-evals.sh` | Run the parallel DeepEval-based DataAgent architecture-governance evaluation suite in Docker/Podman. |
+| `run-dataagent-evals.sh` | Run the DataAgent online evaluation suite against a deployed backend. |
+| `run-dataagent-deepeval-evals.sh` | Run the parallel DeepEval-based DataAgent evaluation suite in Docker/Podman. |
 
 ## Common Tasks
 
@@ -36,7 +36,7 @@ bash scripts/build/build-multiarch.sh
 ```
 
 ### DataAgent Builtin Evaluation
-Run the stdlib-only architecture-governance evaluation suite through its Docker image:
+Run the stdlib-only evaluation suite through its Docker image:
 ```bash
 DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \
 DATAAGENT_EVAL_JUDGE_TOKEN=... \

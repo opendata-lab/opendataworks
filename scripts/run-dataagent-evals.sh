@@ -11,7 +11,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/run-dataagent-evals.sh [options]
 
-Runs the builtin stdlib-only DataAgent architecture-governance evaluation module.
+Runs the builtin stdlib-only DataAgent evaluation module.
 
 Common options are passed through to the container:
   --base-url <url>

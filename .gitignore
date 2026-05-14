@@ -42,8 +42,9 @@ dolphinscheduler-service/*.egg-info/
 /.claude/skills/*
 !/.claude/skills/opendata-frontend-skill/
 !/.claude/skills/opendata-frontend-skill/SKILL.md
-/.claude/skills/arch-governance-assistant/
-/dataagent/.claude/skills/arch-governance-assistant/
+/dataagent/.claude/skills/*/
+!/dataagent/.claude/skills/dataagent-nl2sql/
+!/dataagent/.claude/skills/dataagent-nl2sql/**
 *.swp
 *.swo
 *~
@@ -79,7 +80,7 @@ artifacts/
 integration-test-results/
 /reports/
 /evals/
-arch-governance-core.jsonl
+*-core.jsonl
 
 # Additional Maven module
 backend-agent-api/target/

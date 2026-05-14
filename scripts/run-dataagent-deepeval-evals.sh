@@ -11,7 +11,7 @@ usage() {
     cat <<'EOF'
 Usage: scripts/run-dataagent-deepeval-evals.sh [options]
 
-Runs the DeepEval-based DataAgent architecture-governance evaluation module.
+Runs the DeepEval-based DataAgent evaluation module.
 
 Common options are passed through to the container:
   --base-url <url>
