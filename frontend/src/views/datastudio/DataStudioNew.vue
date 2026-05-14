@@ -99,6 +99,13 @@
 	                      <span class="table-name" :title="data.table?.tableName">
 	                        {{ data.table?.tableName }}
 	                      </span>
+                        <el-tooltip
+                          v-if="isPlatformMetadataMissing(data.table)"
+                          content="平台元数据不存在，请先同步"
+                          placement="top"
+                        >
+                          <el-icon class="metadata-warning-icon"><Warning /></el-icon>
+                        </el-tooltip>
 	                    </div>
 	                    <div v-if="data.table?.tableComment" class="table-comment" :title="data.table.tableComment">
 	                      {{ data.table.tableComment }}
@@ -1741,11 +1748,21 @@ const loadTables = async (sourceId, database, force = false, refreshTree = true)
         dorisCreateTime: item.createTime || item.CREATE_TIME || meta?.dorisCreateTime || null,
         dorisUpdateTime: item.updateTime || item.UPDATE_TIME || meta?.dorisUpdateTime || null
       }
-      if (!meta) return base
+      if (!meta) {
+        return {
+          ...base,
+          id: undefined,
+          metadataMissing: true,
+          metadataStatus: 'missing'
+        }
+      }
       return {
         ...meta,
         ...base,
-        tableComment: base.tableComment || meta.tableComment
+        id: meta.id,
+        tableComment: base.tableComment || meta.tableComment,
+        metadataMissing: false,
+        metadataStatus: 'synced'
       }
     })
     tableStore[sourceKey][database] = list
@@ -2264,6 +2281,20 @@ const isDorisTable = (table) => {
   )
 }
 
+const MISSING_PLATFORM_METADATA_MESSAGE = '该表未同步到平台，需同步后才能操作'
+
+const isPlatformMetadataMissing = (table) => {
+  if (!table) return false
+  if (table.metadataMissing === true || table.metadataStatus === 'missing') return true
+  return isDorisTable(table) && !table.id && hasText(table.dbName) && hasText(table.tableName)
+}
+
+const warnPlatformMetadataMissing = (table) => {
+  if (!isPlatformMetadataMissing(table)) return false
+  ElMessage.warning(MISSING_PLATFORM_METADATA_MESSAGE)
+  return true
+}
+
 const formatStorageSize = (size) => {
   if (size === null || size === undefined) return '-'
   if (size === 0) return '0 B'
@@ -2621,6 +2652,7 @@ const setupTableObserver = () => {
     },
     metaOriginal: {},
     metaDataDomainOptions: [],
+    metadataSyncing: false,
     fieldSubmitting: false,
     fieldsEditing: false,
     fieldsDraft: [],
@@ -2955,6 +2987,8 @@ const loadTabData = async (tabId) => {
         state.table.id = match.id
         state.table.tableComment = state.table.tableComment || match.tableComment
         state.table.layer = state.table.layer || match.layer
+        state.table.metadataMissing = false
+        state.table.metadataStatus = 'synced'
       }
     } catch (error) {
       console.error('解析表元数据失败', error)
@@ -3697,6 +3731,9 @@ const handleDeleteTable = async () => {
   const active = activeTab.value
   const state = active ? tabStates[active] : null
   const table = state?.table
+  if (warnPlatformMetadataMissing(table)) {
+    return
+  }
   if (!table?.id) {
     ElMessage.warning('请先选择要删除的表')
     return
@@ -3748,6 +3785,76 @@ const handleDeleteTable = async () => {
     if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('删除表失败')
     }
+  }
+}
+
+const syncMissingTableMetadata = async (tabId) => {
+  if (isDemoMode) {
+    showDemoReadonlyMessage('同步平台元数据')
+    return
+  }
+  const state = tabStates[String(tabId || '')]
+  const table = state?.table
+  if (!isPlatformMetadataMissing(table)) return
+  const sourceId = String(table.sourceId || table.clusterId || clusterId.value || '')
+  const dbName = table.dbName || table.databaseName || table.database || ''
+  const tableName = table.tableName || ''
+  if (!sourceId || !dbName || !tableName) {
+    ElMessage.warning('缺少数据源、数据库或表名，无法同步')
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      `确定将 “${dbName}.${tableName}” 同步到平台元数据吗？`,
+      '同步平台元数据',
+      {
+        type: 'warning',
+        confirmButtonText: '立即同步',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch (error) {
+    return
+  }
+
+  state.metadataSyncing = true
+  try {
+    const response = await tableApi.syncTableMetadataByName(dbName, tableName, sourceId)
+    await loadTables(sourceId, dbName, true)
+    const list = tableStore[String(sourceId)]?.[dbName] || []
+    const synced = list.find((item) => {
+      if (!item) return false
+      if (response?.tableId && String(item.id) === String(response.tableId)) return true
+      return item.tableName === tableName
+    })
+    const syncedTable = synced || {
+      ...table,
+      id: response?.tableId || table.id,
+      metadataMissing: false,
+      metadataStatus: 'synced'
+    }
+    state.table = {
+      ...state.table,
+      ...syncedTable,
+      sourceId,
+      dbName,
+      metadataMissing: false,
+      metadataStatus: 'synced'
+    }
+    const tab = openTabs.value.find((item) => String(item.id) === String(tabId))
+    if (tab) {
+      tab.sourceId = sourceId
+      tab.dbName = dbName
+      tab.tableName = tableName
+    }
+    state.dataLoaded = false
+    await loadTabData(String(tabId))
+    ElMessage.success('平台元数据已同步')
+  } catch (error) {
+    ElMessage.error('同步平台元数据失败')
+  } finally {
+    state.metadataSyncing = false
   }
 }
 
@@ -4051,6 +4158,7 @@ const startMetaEdit = async (tabId) => {
   }
   const state = tabStates[tabId]
   if (!state) return
+  if (warnPlatformMetadataMissing(state.table)) return
   if (!ensureClusterSelected(state.table)) return
   if (!businessDomainOptions.value.length) {
     await loadBusinessDomains()
@@ -4074,6 +4182,7 @@ const saveMetaEdit = async (tabId) => {
     return
   }
   const state = tabStates[tabId]
+  if (warnPlatformMetadataMissing(state?.table)) return
   if (!state?.table?.id) return
   if (!ensureClusterSelected(state.table)) return
   if (!state.metaForm.layer) {
@@ -4194,6 +4303,7 @@ const startFieldsEdit = (tabId) => {
   }
   const state = tabStates[tabId]
   if (!state) return
+  if (warnPlatformMetadataMissing(state.table)) return
   if (!ensureClusterSelected(state.table)) return
   state.fieldsEditing = true
   state.fieldsDraft = state.fields.map((item) => ({ ...item }))
@@ -4294,6 +4404,7 @@ const saveFieldsEdit = async (tabId) => {
     return
   }
   const state = tabStates[tabId]
+  if (warnPlatformMetadataMissing(state?.table)) return
   if (!state?.table?.id) return
   if (!ensureClusterSelected(state.table)) return
   const draft = state.fieldsDraft || []
@@ -4451,6 +4562,7 @@ const goCreateRelatedTask = (tabId, relation) => {
     return
   }
   const state = tabStates[String(tabId || '')]
+  if (warnPlatformMetadataMissing(state?.table)) return
   const tableId = state?.table?.id
   if (!tableId) {
     ElMessage.warning('请先选择表')
@@ -4471,6 +4583,7 @@ const handleTaskSuccess = async () => {
 
 const goLineage = (tabId) => {
   const state = tabStates[tabId]
+  if (warnPlatformMetadataMissing(state?.table)) return
   if (!state?.table?.id) return
   router.push({ path: '/lineage', query: { tableId: state.table.id } })
 }
@@ -4687,6 +4800,7 @@ watch(selectedTableKey, (value) => {
   getMetaDataDomainOptions,
   handleMetaBusinessDomainChange,
   isDorisTable,
+  isPlatformMetadataMissing,
   isAggregateTable,
   isReplicaWarning,
   getLayerType,
@@ -4695,6 +4809,7 @@ watch(selectedTableKey, (value) => {
   cancelMetaEdit,
   saveMetaEdit,
   handleDeleteTable,
+  syncMissingTableMetadata,
   startFieldsEdit,
   cancelFieldsEdit,
   saveFieldsEdit,
@@ -5092,6 +5207,11 @@ onBeforeUnmount(() => {
   flex: 1;
   min-width: 0;
   max-width: 200px;
+}
+
+.metadata-warning-icon {
+  color: #ef4444;
+  flex-shrink: 0;
 }
 
 .table-comment {

@@ -2215,6 +2215,48 @@ const updatePendingFlag = (workflowId, status) => {
   }
 }
 
+const resolveDeployOnlineVersionId = (row, record) => {
+  return record?.versionId || record?.workflowVersionId || record?.targetVersionId || resolvePublishVersionId(row)
+}
+
+const promptOnlineAfterDeploy = async (row, record) => {
+  if (!row?.id || record?.status === 'pending_approval' || row.status === 'online') return
+  try {
+    await ElMessageBox.confirm(
+      '发布已成功，是否立即上线该工作流？',
+      '立即上线',
+      {
+        type: 'warning',
+        confirmButtonText: '立即上线',
+        cancelButtonText: '稍后处理'
+      }
+    )
+  } catch (error) {
+    return
+  }
+
+  setActionLoading(row.id, 'online', true)
+  try {
+    const onlineRecord = await workflowApi.publish(row.id, {
+      operation: 'online',
+      versionId: resolveDeployOnlineVersionId(row, record),
+      requireApproval: false,
+      operator: 'portal-ui'
+    })
+    updatePendingFlag(row.id, onlineRecord?.status)
+    if (onlineRecord?.status === 'pending_approval') {
+      ElMessage.warning('上线已提交审批，等待审批通过')
+    } else {
+      ElMessage.success('上线成功')
+    }
+  } catch (error) {
+    console.error('上线失败', error)
+    ElMessage.error(getErrorMessage(error))
+  } finally {
+    setActionLoading(row.id, 'online', false)
+  }
+}
+
 const isDeployDisabled = (row) => {
   if (!row) return true
   if (pendingApprovalFlags[row.id]) return true
@@ -2267,6 +2309,7 @@ const handleDeploy = async (row) => {
       ElMessage.warning('发布已提交审批，等待审批通过')
     } else {
       ElMessage.success('发布成功')
+      await promptOnlineAfterDeploy(row, record)
     }
     loadWorkflowDetail()
   } catch (error) {
@@ -2507,6 +2550,14 @@ const handleToggleSchedule = async (val) => {
   }
 }
 
+const consumePublishHint = () => {
+  if (String(route.query.publishHint || '') !== '1') return
+  ElMessage.warning('工作流有变化，请使用发布按钮将工作流发布到 Dolphin。')
+  const nextQuery = { ...route.query }
+  delete nextQuery.publishHint
+  router.replace({ path: route.path, query: nextQuery })
+}
+
 const buildDolphinInstanceUrl = (instance) => {
   const wf = workflow.value?.workflow
   if (!wf || !dolphinWebuiUrl.value) {
@@ -2543,7 +2594,13 @@ watch(currentDolphinConfigId, async (nextId, prevId) => {
 onMounted(async () => {
   await Promise.all([loadDolphinConfigs(), loadWorkflowDetail()])
   await loadDolphinConfig()
+  consumePublishHint()
 })
+
+watch(
+  () => route.query.publishHint,
+  () => consumePublishHint()
+)
 </script>
 
 <style scoped>
