@@ -110,7 +110,7 @@ def test_build_portal_mcp_servers_returns_http_config():
     assert actual == {
         "portal": {
             "type": "http",
-            "url": "http://portal-mcp:8801/mcp",
+            "url": "http://portal-mcp:8801/mcp/",
             "headers": {"X-Portal-MCP-Token": "portal-token"},
         }
     }
@@ -132,12 +132,25 @@ def test_build_portal_mcp_servers_returns_empty_when_disabled_or_incomplete():
     assert agent_runtime._build_portal_mcp_servers(missing_token) == {}
 
 
+def test_build_portal_mcp_servers_adds_streamable_http_mount_slash():
+    cfg = SimpleNamespace(
+        dataagent_portal_mcp_enabled=True,
+        dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp",
+        dataagent_portal_mcp_token="portal-token",
+        dataagent_portal_mcp_token_header_name="X-Portal-MCP-Token",
+    )
+
+    actual = agent_runtime._build_portal_mcp_servers(cfg)
+
+    assert actual["portal"]["url"] == "http://portal-mcp:8801/mcp/"
+
+
 def test_build_allowed_tools_includes_portal_mcp_tools_once():
     allowed_tools = agent_runtime._build_allowed_tools(
         {
             "portal": {
                 "type": "http",
-                "url": "http://portal-mcp:8801/mcp",
+                "url": "http://portal-mcp:8801/mcp/",
                 "headers": {"X-Portal-MCP-Token": "portal-token"},
             }
         }
