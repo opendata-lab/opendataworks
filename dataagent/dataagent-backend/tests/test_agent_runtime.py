@@ -68,6 +68,26 @@ def test_build_runtime_env_defaults_query_limit_to_backend_max(monkeypatch):
     assert runtime_env["DATAAGENT_RESULT_PREVIEW_ROWS"] == "20"
 
 
+def test_build_runtime_env_derives_platform_root_from_primary_root_when_enabled_roots_lag(tmp_path: Path):
+    primary_root = tmp_path / ".claude" / "skills" / "dataagent-nl2sql"
+    platform_root = tmp_path / ".claude" / "skills" / "opendataworks-platform-tools"
+    primary_root.mkdir(parents=True)
+    platform_root.mkdir(parents=True)
+
+    runtime_env = agent_runtime._build_runtime_env(
+        SimpleNamespace(query_result_limit=1000),
+        {},
+        SimpleNamespace(question="", sql_read_timeout_seconds=0),
+        {
+            "primary_root": str(primary_root),
+            "enabled_folders": ["dataagent-nl2sql"],
+            "enabled_roots": {"dataagent-nl2sql": str(primary_root)},
+        },
+    )
+
+    assert runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] == str(platform_root.resolve())
+
+
 def test_safe_base_url_preserves_path_without_query_or_fragment():
     actual = agent_runtime._safe_base_url("http://relay.example.internal/maas?token=secret#frag")
 

@@ -220,6 +220,10 @@ def _build_runtime_env(
     enabled_folders = [str(item) for item in ((skill_runtime or {}).get("enabled_folders") or [])]
     enabled_roots = dict((skill_runtime or {}).get("enabled_roots") or {})
     platform_skill_root = str(enabled_roots.get(PLATFORM_TOOLS_SKILL_FOLDER) or "").strip()
+    if not platform_skill_root:
+        sibling_platform_root = skills_root.parent / PLATFORM_TOOLS_SKILL_FOLDER
+        if sibling_platform_root.is_dir():
+            platform_skill_root = str(sibling_platform_root)
     existing_path = str(os.getenv("PATH") or "").strip()
     runtime_path = python_dir if not existing_path else f"{python_dir}:{existing_path}"
     # Preserve the current process environment so skill-private env vars can be
