@@ -60,7 +60,7 @@ Use this method if you have internet access and are deploying directly from the 
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
    - DataAgent Backend: `http://localhost:8900`
    - Portal MCP Health: `http://localhost:8801/health`
-   - Portal MCP Streamable HTTP: `http://localhost:8801/mcp`
+   - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`
 
    说明：
    - 大模型供应商、Token 与候选模型在主前端配置页中维护，后端保存到 DataAgent 配置存储。
@@ -129,7 +129,7 @@ Use this method for isolated environments without internet access. You will use 
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
    - DataAgent Backend: `http://localhost:8900`
    - Portal MCP Health: `http://localhost:8801/health`
-   - Portal MCP Streamable HTTP: `http://localhost:8801/mcp`
+   - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`
 
    说明：
    - 离线包内保留 `deploy/dataagent-runtime/skills/` 可直接编辑。

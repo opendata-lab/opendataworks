@@ -278,7 +278,9 @@ def _build_portal_mcp_servers(cfg: Any) -> dict[str, dict[str, Any]]:
     return {
         PORTAL_MCP_SERVER_NAME: {
             "type": "http",
-            "url": raw_url.rstrip("/"),
+            # portal-mcp is mounted as a Starlette sub-app; /mcp redirects to
+            # /mcp/, and Streamable HTTP clients may not follow POST redirects.
+            "url": raw_url.rstrip("/") + "/",
             "headers": {
                 header_name: token,
             },
