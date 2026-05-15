@@ -292,7 +292,7 @@ if [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ]; then
     if docker buildx build $BUILD_ARGS \
         -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION \
         -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE:latest \
-        --file evals/dataagent-arch-governance-deepeval/Dockerfile \
+        --file tools/dataagent-evals/deepeval/Dockerfile \
         . ; then
         echo -e "${GREEN}✅ DataAgent DeepEval 评测镜像构建成功${NC}"
         ((SUCCESSFUL_BUILDS++))
@@ -312,7 +312,7 @@ if [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ]; then
     if docker buildx build $BUILD_ARGS \
         -t $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION \
         -t $DATAAGENT_EVALS_BUILTIN_IMAGE:latest \
-        --file evals/dataagent-arch-governance-builtin/Dockerfile \
+        --file tools/dataagent-evals/builtin/Dockerfile \
         . ; then
         echo -e "${GREEN}✅ DataAgent builtin 评测镜像构建成功${NC}"
         ((SUCCESSFUL_BUILDS++))

@@ -12,34 +12,30 @@ DataAgent already exposes an HTTP task chain for intelligent-query execution:
 - `GET /api/v1/nl2sql/tasks/{task_id}/events`
 - `GET /api/v1/nl2sql/topics/{topic_id}/messages`
 
-The offline deployment package already copies `deploy/`, `scripts/`, DataAgent settings, and editable Skills into `deploy/dataagent-runtime/`. Evaluation assets are packaged at the offline-package root under `evals/` so they remain outside the DataAgent runtime directory.
+The offline deployment package already copies `deploy/`, `scripts/`, DataAgent settings, and editable Skills into `deploy/dataagent-runtime/`. Evaluation tooling is packaged at the offline-package root under `tools/dataagent-evals/` so it remains outside the DataAgent runtime directory. Private Skill content and private case datasets are manually deployed and are not committed to GitHub.
 
-The architecture-governance Skill evaluation source currently lives outside this repository at:
-
-`/Users/guoruping/project/bigdata/onearch/.claude/skills/arch-governance-assistant/tests/evals/arch-governance-skill-evaluation.md`
-
-It defines 50 core architecture-governance cases and acceptance thresholds, but OpenDataWorks does not yet have an executable online evaluation module.
+The business-domain Skill evaluation source lives outside this repository as a private asset. It defines private business-domain cases and acceptance thresholds, but OpenDataWorks should only carry the generic executable online evaluation module.
 
 ## Problem
 
 The current evaluation material is documentation-only. After an offline package is deployed in an intranet environment, operators need a repeatable manual command that:
 
-- runs the 50 architecture-governance cases through the real DataAgent HTTP task chain
+- runs externally supplied domain-specific evaluation cases through the real DataAgent HTTP task chain
 - captures task status, events, final assistant messages, SQL/tool evidence, errors, duration, and usage
 - uses an independently configured judge model endpoint for scoring so evaluation code does not enter the DataAgent runtime
 - produces durable offline artifacts for review and release gating
 
-The solution must not move architecture-governance-specific behavior into generic DataAgent runtime modules.
+The solution must not move business-domain-specific behavior into generic DataAgent runtime modules.
 
 ## Scope
 
 In scope:
 
-- Add a structured JSONL evaluation dataset under `evals/dataagent-arch-governance/`.
-- Add a stdlib-only builtin runner under `evals/dataagent-arch-governance-builtin/`.
+- Keep private JSONL evaluation datasets outside GitHub and require `--dataset` at runtime.
+- Add a stdlib-only builtin runner under `tools/dataagent-evals/builtin/`.
 - Add independent judge endpoint configuration for the runner.
 - Add a standalone builtin eval image `opendataworks-dataagent-evals-builtin:<tag>`.
-- Add offline-package copy support for root `evals/`.
+- Add offline-package copy support for `tools/dataagent-evals/`.
 - Add documentation for online/offline execution.
 - Add focused runner and runtime-boundary tests.
 
@@ -54,7 +50,7 @@ Out of scope for the first version:
 
 ## Dataset Contract
 
-The first dataset is `evals/dataagent-arch-governance/arch-governance-core.jsonl`. Each line is one JSON object with these fixed fields:
+The dataset is an external private JSONL file supplied through `--dataset` or `DATAAGENT_EVAL_DATASET`. Each line is one JSON object with these fixed fields:
 
 - `case_id`
 - `category`
@@ -85,7 +81,7 @@ The source document's scoring model is normalized to a 10-point rubric:
 - `reasoning`: 2
 - `answer_quality`: 1
 
-## Judge Interface
+## Judge Contract
 
 The builtin runner calls an external Anthropic-compatible judge endpoint directly. Judge connection settings are supplied at runtime through CLI options or environment variables:
 
@@ -120,11 +116,11 @@ DataAgent backend does not expose an eval judge API and does not resolve judge c
 
 User entrypoint:
 
-`bash scripts/run-dataagent-evals.sh --base-url http://127.0.0.1:8900`
+`bash scripts/run-dataagent-evals.sh --base-url http://127.0.0.1:8900 --dataset /path/to/private-cases.jsonl`
 
 Python runner:
 
-`evals/dataagent-arch-governance-builtin/run.py`
+`tools/dataagent-evals/builtin/run.py`
 
 Compatibility shim:
 
@@ -134,7 +130,7 @@ Runner constraints:
 
 - stdlib-only Python
 - Docker/Podman wrapper defaults to `opendataworks-dataagent-evals-builtin:<tag>`
-- default dataset: `evals/dataagent-arch-governance/arch-governance-core.jsonl`
+- required external dataset: `--dataset /path/to/private-cases.jsonl`
 - default output: `reports/dataagent-evals/<timestamp>/`
 
 Runner arguments:
@@ -208,4 +204,4 @@ The first version does not persist results to MySQL. File artifacts are simpler 
 
 The runner extracts SQL/tool evidence heuristically from existing event/message payloads. DataAgent event contracts remain unchanged; richer extraction can be added later if the task event schema becomes more explicit.
 
-The runner keeps architecture-governance case semantics in the dataset and judge prompt, not in generic task execution modules. Evaluation files are packaged under root `evals/`, not under `deploy/dataagent-runtime/`, to keep test assets separate from DataAgent runtime assets. The builtin and DeepEval runners are intentionally parallel modules under `evals/`, each with its own image and wrapper script.
+The runner keeps business-domain case semantics in the external private dataset and judge prompt, not in generic task execution modules. Evaluation tools are packaged under root `tools/dataagent-evals/`, not under `deploy/dataagent-runtime/`, to keep test tooling separate from DataAgent runtime assets. The builtin and DeepEval runners are intentionally parallel modules under `tools/dataagent-evals/`, each with its own image and wrapper script.

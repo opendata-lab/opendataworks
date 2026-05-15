@@ -8,14 +8,15 @@ IMAGE_NAME = "opendataworks-dataagent-evals-deepeval"
 BUILTIN_IMAGE_NAME = "opendataworks-dataagent-evals-builtin"
 
 
-def test_offline_package_scripts_reference_deepeval_image_and_evals_dir():
+def test_offline_package_scripts_reference_deepeval_image_and_tools_dir():
     create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
     load_images = (REPO_ROOT / "scripts" / "load-images.sh").read_text(encoding="utf-8")
     build_images = (REPO_ROOT / "scripts" / "build" / "build-images.sh").read_text(encoding="utf-8")
     build_multiarch = (REPO_ROOT / "scripts" / "build" / "build-multiarch.sh").read_text(encoding="utf-8")
 
     assert IMAGE_NAME in create_package
-    assert "evals" in create_package
+    assert "tools/dataagent-evals" in create_package
+    assert "REPO_ROOT/evals" not in create_package
     assert "dataagent/evals" not in create_package
     assert "dataagent-runtime/evals" not in create_package
     assert IMAGE_NAME in load_images
@@ -31,8 +32,8 @@ def test_builtin_eval_module_is_packaged_as_parallel_image():
     build_multiarch = (REPO_ROOT / "scripts" / "build" / "build-multiarch.sh").read_text(encoding="utf-8")
     run_wrapper = (REPO_ROOT / "scripts" / "run-dataagent-evals.sh").read_text(encoding="utf-8")
 
-    assert (REPO_ROOT / "evals" / "dataagent-arch-governance-builtin" / "run.py").exists()
-    assert (REPO_ROOT / "evals" / "dataagent-arch-governance-builtin" / "Dockerfile").exists()
+    assert (REPO_ROOT / "tools" / "dataagent-evals" / "builtin" / "run.py").exists()
+    assert (REPO_ROOT / "tools" / "dataagent-evals" / "builtin" / "Dockerfile").exists()
     assert BUILTIN_IMAGE_NAME in create_package
     assert "opendataworks-dataagent-evals-builtin.tar" in load_images
     assert BUILTIN_IMAGE_NAME in build_images
@@ -40,3 +41,15 @@ def test_builtin_eval_module_is_packaged_as_parallel_image():
     assert "OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE" in run_wrapper
     assert "DATAAGENT_BUILTIN_RUN_LOCAL" in run_wrapper
     assert "DATAAGENT_EVAL_JUDGE_MAX_TOKENS" in run_wrapper
+    assert "tools/dataagent-evals/builtin/run.py" in run_wrapper
+
+
+def test_private_business_skill_assets_are_ignored_and_not_packaged():
+    gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
+    create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
+
+    assert "/dataagent/.claude/skills/*/" in gitignore
+    assert "!/dataagent/.claude/skills/dataagent-nl2sql/" in gitignore
+    assert "/evals/" in gitignore
+    assert "*-core.jsonl" in gitignore
+    assert "--exclude='*-assistant'" in create_package

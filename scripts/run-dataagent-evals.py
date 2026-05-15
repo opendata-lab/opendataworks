@@ -5,7 +5,7 @@ import runpy
 from pathlib import Path
 
 
-RUNNER = Path(__file__).resolve().parents[1] / "evals" / "dataagent-arch-governance-builtin" / "run.py"
+RUNNER = Path(__file__).resolve().parents[1] / "tools" / "dataagent-evals" / "builtin" / "run.py"
 
 
 if __name__ == "__main__":

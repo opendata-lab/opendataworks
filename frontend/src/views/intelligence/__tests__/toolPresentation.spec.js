@@ -5,13 +5,13 @@ describe('toolPresentation', () => {
     const tool = {
       name: 'Tool',
       input: {
-        skill: 'architecture-assistant'
+        skill: 'business-domain-assistant'
       },
-      output: 'Launching skill: architecture-assistant'
+      output: 'Launching skill: business-domain-assistant'
     }
 
-    expect(extractToolSkillName(tool)).toBe('architecture-assistant')
+    expect(extractToolSkillName(tool)).toBe('business-domain-assistant')
     expect(describeToolAction(tool).kind).toBe('skill')
-    expect(describeToolAction(tool).detail).toBe('architecture-assistant')
+    expect(describeToolAction(tool).detail).toBe('business-domain-assistant')
   })
 })

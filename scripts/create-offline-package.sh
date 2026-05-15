@@ -111,14 +111,14 @@ mkdir -p "$PACKAGE_ROOT"
 # 定义包内目录结构
 PACKAGED_DEPLOY_DIR="$PACKAGE_ROOT/deploy"
 PACKAGED_SCRIPTS_DIR="$PACKAGE_ROOT/scripts"
+PACKAGED_TOOLS_DIR="$PACKAGE_ROOT/tools"
 PACKAGED_DATAAGENT_RUNTIME_DIR="$PACKAGED_DEPLOY_DIR/dataagent-runtime"
-PACKAGED_EVALS_DIR="$PACKAGE_ROOT/evals"
 DEPLOY_IMAGE_DIR="$PACKAGED_DEPLOY_DIR/docker-images"
 
 mkdir -p "$PACKAGED_DEPLOY_DIR"
 mkdir -p "$PACKAGED_SCRIPTS_DIR"
+mkdir -p "$PACKAGED_TOOLS_DIR"
 mkdir -p "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills"
-mkdir -p "$PACKAGED_EVALS_DIR"
 mkdir -p "$DEPLOY_IMAGE_DIR"
 
 # 1. 复制 deploy/ 下的内容
@@ -129,10 +129,11 @@ tar -C "$REPO_ROOT/deploy" --exclude='docker-images/*.tar' -cf - . | tar -C "$PA
 log "Copying scripts/ content to package scripts/"
 tar -C "$REPO_ROOT/scripts" --exclude='build' -cf - . | tar -C "$PACKAGED_SCRIPTS_DIR" -xf -
 
-# 2.1 复制评测模块。评测工具独立于 DataAgent runtime，离线包中手动触发。
-if [[ -d "$REPO_ROOT/evals" ]]; then
-    log "Copying eval modules"
-    tar -C "$REPO_ROOT/evals" -cf - . | tar -C "$PACKAGED_EVALS_DIR" -xf -
+# 2.1 复制通用评测工具。私有评测集不随离线包内置，运行时通过 --dataset 指定。
+if [[ -d "$REPO_ROOT/tools/dataagent-evals" ]]; then
+    log "Copying DataAgent eval tools"
+    mkdir -p "$PACKAGED_TOOLS_DIR/dataagent-evals"
+    tar -C "$REPO_ROOT/tools/dataagent-evals" -cf - . | tar -C "$PACKAGED_TOOLS_DIR/dataagent-evals" -xf -
 fi
 
 # 3. 复制 DataAgent 运行时配置（不打包整个 dataagent 源码目录）
@@ -146,7 +147,7 @@ fi
 
 if [[ -d "$REPO_ROOT/dataagent/.claude/skills" ]]; then
     log "Copying DataAgent editable skills"
-    tar -C "$REPO_ROOT/dataagent/.claude/skills" -cf - . | tar -C "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills" -xf -
+    tar -C "$REPO_ROOT/dataagent/.claude/skills" --exclude='*-assistant' -cf - . | tar -C "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills" -xf -
 fi
 
 # 离线部署包必须保证 skills 目录树对容器内非 root 用户（uid 1000）可访问：

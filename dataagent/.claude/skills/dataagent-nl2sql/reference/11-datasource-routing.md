@@ -1,44 +1,32 @@
 # 数据源路由
 
-先结论：所有问数只允许单源路由。问题明确指向 `opendataworks` 平台核心表时，可直接进入 `database=opendataworks`、`engine=mysql` 的只读查询路径；托管数据表先用元数据判断库表归属，再决定落到 MySQL 还是 Doris。
+先结论：所有问数只允许单源路由。schema/database 来自用户明确输入、业务知识 Skill、metadata 或 datasource 工具；不要把 engine 当成 schema。
 
-## 路由规则
+## 路由步骤
 
-- `data_table`、`data_field`、`data_lineage`、`data_task`、`data_workflow`、`workflow_*`、`doris_*` 这类平台核心表查询固定使用 `database=opendataworks`、`engine=mysql`；执行仍经由 backend 只读查询接口
-- 托管数据表、事实表、汇总表先通过 metadata 定位数据库，再由 `resolve_datasource.py` 判断引擎
-- 若 `resolve_datasource.py` 返回 `mysql`，则按 MySQL 语法和能力执行
-- 若返回 `doris`，则按 Doris 语法和能力执行
-- metadata 返回的 `db_name` / schema 才是 SQL 的库名前缀；`mysql` / `doris` 只是引擎类型，不是 schema
-- 数据库明确后，SQL 统一写 `<database>.<table>`；平台核心表固定写 `opendataworks.<table>`
-- 若 Doris 表名体现 `df` 快照含义，默认视为每日全量快照表，日期字段优先 `ds`；除非归因分析或用户明确要求历史区间，否则只查最新 `ds`
-- 若 Doris 表名体现 `di` 增量含义，默认视为每日增量表，日期字段优先 `ds`；这类表必须按时间范围过滤
+1. 如果用户或业务知识 Skill 已确认 database/schema/table，先校验这些对象是否真实存在。
+2. 如果目标表不明确，使用 metadata 检索定位候选表和字段。
+3. 如果 engine 不明确，使用 datasource 工具解析。
+4. 如果候选表分布在不同 engine 或 database，要求用户缩小范围。
+5. 数据库明确后，SQL 统一写 `<schema>.<table>`。
 
-## 选择 MySQL 的典型情况
+## 单源约束
 
-- 查询平台元数据与治理表
-- 查询维表或轻量明细表
-- 数据库明确位于 MySQL
-
-## 选择 Doris 的典型情况
-
-- 趋势分析
-- 对比分析
-- 汇总统计
-- 大表聚合或日汇总表分析
+- 不在一次 SQL 中拼接跨源联查。
+- 不在 database 未确认时执行 SQL。
+- 不把示例 SQL 的 engine 直接套到真实问题。
+- 不把 engine 名写成 SQL schema。
 
 ## 必须先追问的路由冲突
 
-- 用户问题同时命中多个数据库
-- 候选表分布在不同引擎
-- 同一指标在多张表中都有口径实现
-- 用户命中 Doris `di` 增量表，但没有提供时间范围
-- 问题依赖当前内置 skill 未定义的租户业务术语、对象或默认过滤
+- 用户问题同时命中多个数据库。
+- 候选表分布在不同 engine。
+- 同一指标在多张表中都有实现且口径不清。
+- 业务知识 Skill 未定义用户所需的默认过滤或对象含义。
 
-## 禁止事项
+## 路由完成条件
 
-- 不要在单次回答里拼接跨源联查 SQL
-- 不要在没确认目标数据库前直接 `run_sql.py`
-- 不要把示例 SQL 的引擎直接套到真实问题里
-- 不要把 `doris` / `mysql` 写成 SQL 的 schema 名
-- 不要对 `df` 快照表默认扫全历史；未要求历史时先收敛到最新 `ds`
-- 不要对 `di` 增量表省略时间范围过滤
+- database/schema 已确认。
+- engine 已确认。
+- 表和必要字段已确认。
+- SQL 可在单一数据源内完成。

@@ -101,31 +101,31 @@ class BackendAgentQueryServiceTest {
     @Test
     void readQueryAcceptsDorisSelectWithNestedNotInAndChineseAliases() {
         String sql = "SELECT\n"
-                + "  c.cmp_name AS 组件英文名,\n"
-                + "  c.cn_cmp_name AS 组件中文名,\n"
-                + "  c.env_name AS 环境,\n"
-                + "  c.system_level AS 分级保障,\n"
-                + "  c.component_type AS 组件类型\n"
-                + "FROM public.dim_tech_public_env_cmp_df c\n"
-                + "WHERE c.ds = (\n"
+                + "  t.workflow_code AS 工作流编码,\n"
+                + "  t.workflow_name AS 工作流名称,\n"
+                + "  t.publish_channel AS 发布渠道,\n"
+                + "  t.publish_status AS 发布状态,\n"
+                + "  t.workflow_type AS 工作流类型\n"
+                + "FROM opendataworks.workflow_publish_record t\n"
+                + "WHERE t.ds = (\n"
                 + "  SELECT MAX(ds)\n"
-                + "  FROM public.dim_tech_public_env_cmp_df\n"
+                + "  FROM opendataworks.workflow_publish_record\n"
                 + "  WHERE ds <= '2026-05-08'\n"
                 + ")\n"
-                + "AND c.component_type != 'DB'\n"
-                + "AND c.env_name = 'PROD'\n"
-                + "AND c.cmp_name NOT IN (\n"
-                + "  SELECT DISTINCT cmp_name\n"
-                + "  FROM public.dim_tech_public_env_cmp_df\n"
+                + "AND t.workflow_type != 'TEMP'\n"
+                + "AND t.publish_status = 'SUCCESS'\n"
+                + "AND t.workflow_code NOT IN (\n"
+                + "  SELECT DISTINCT workflow_code\n"
+                + "  FROM opendataworks.workflow_publish_record\n"
                 + "  WHERE ds = (\n"
                 + "    SELECT MAX(ds)\n"
-                + "    FROM public.dim_tech_public_env_cmp_df\n"
+                + "    FROM opendataworks.workflow_publish_record\n"
                 + "    WHERE ds <= '2026-04-08'\n"
                 + "  )\n"
-                + "  AND component_type != 'DB'\n"
-                + "  AND env_name = 'PROD'\n"
+                + "  AND workflow_type != 'TEMP'\n"
+                + "  AND publish_status = 'SUCCESS'\n"
                 + ")\n"
-                + "ORDER BY c.cmp_name\n"
+                + "ORDER BY t.workflow_code\n"
                 + "LIMIT 500;";
 
         assertReadQueryAccepted(sql);
@@ -134,9 +134,9 @@ class BackendAgentQueryServiceTest {
     @Test
     void readQueryAcceptsDorisSelectWithChineseAliasAndMutatingWordsInMaskedText() {
         String sql = "/* example only: update demo set name = 'x'; delete from demo; */\n"
-                + "SELECT c.cmp_name AS 组件英文名\n"
-                + "FROM public.dim_tech_public_env_cmp_df c\n"
-                + "WHERE c.remark = 'drop table demo; update demo set name = ''x'''\n"
+                + "SELECT t.workflow_code AS 工作流编码\n"
+                + "FROM opendataworks.workflow_publish_record t\n"
+                + "WHERE t.remark = 'drop table demo; update demo set name = ''x'''\n"
                 + "LIMIT 10;";
 
         assertReadQueryAccepted(sql);
@@ -145,7 +145,7 @@ class BackendAgentQueryServiceTest {
     @Test
     void readQueryRejectsMultipleStatementsWhenParserFallbackHandlesDorisAlias() {
         assertReadQueryRejected(
-                "SELECT c.cmp_name AS 组件英文名 FROM public.dim_tech_public_env_cmp_df c; SELECT 2",
+                "SELECT t.workflow_code AS 工作流编码 FROM opendataworks.workflow_publish_record t; SELECT 2",
                 "仅支持单条只读 SQL"
         );
     }
@@ -153,7 +153,7 @@ class BackendAgentQueryServiceTest {
     @Test
     void readQueryRejectsMutatingSqlWhenParserFallbackHandlesDorisAlias() {
         assertReadQueryRejected(
-                "SELECT c.cmp_name AS 组件英文名 FROM public.dim_tech_public_env_cmp_df c DELETE FROM demo",
+                "SELECT t.workflow_code AS 工作流编码 FROM opendataworks.workflow_publish_record t DELETE FROM demo",
                 "仅支持只读 SQL"
         );
     }

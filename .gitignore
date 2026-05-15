@@ -42,6 +42,11 @@ dolphinscheduler-service/*.egg-info/
 /.claude/skills/*
 !/.claude/skills/opendata-frontend-skill/
 !/.claude/skills/opendata-frontend-skill/SKILL.md
+/dataagent/.claude/skills/*/
+!/dataagent/.claude/skills/dataagent-nl2sql/
+!/dataagent/.claude/skills/dataagent-nl2sql/**
+!/dataagent/.claude/skills/opendataworks-business-knowledge/
+!/dataagent/.claude/skills/opendataworks-business-knowledge/**
 *.swp
 *.swo
 *~
@@ -75,6 +80,9 @@ artifacts/
 
 # Test outputs
 integration-test-results/
+/reports/
+/evals/
+*-core.jsonl
 
 # Additional Maven module
 backend-agent-api/target/

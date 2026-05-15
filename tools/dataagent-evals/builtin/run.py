@@ -66,15 +66,19 @@ class JudgeConfig:
         self.max_tokens = max_tokens
 
 
-def _is_eval_root(path: Path) -> bool:
-    return (path / "evals" / "dataagent-arch-governance" / "arch-governance-core.jsonl").is_file()
+def _is_workspace_root(path: Path) -> bool:
+    return (
+        (path / "scripts").is_dir()
+        or (path / "deploy").is_dir()
+        or (path / "tools" / "dataagent-evals").is_dir()
+    )
 
 
 def _repo_or_package_root() -> Path:
-    file_root = Path(__file__).resolve().parents[2]
+    file_root = Path(__file__).resolve().parents[3]
     cwd = Path.cwd().resolve()
     for candidate in (cwd, *cwd.parents, file_root):
-        if _is_eval_root(candidate):
+        if _is_workspace_root(candidate):
             return candidate
     return file_root
 
@@ -83,19 +87,19 @@ def _timestamp() -> str:
     return dt.datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
-def default_dataset_path(root: Path) -> Path:
-    return root / "evals" / "dataagent-arch-governance" / "arch-governance-core.jsonl"
-
-
 def default_output_dir(root: Path) -> Path:
     return root / "reports" / "dataagent-evals" / _timestamp()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     root = _repo_or_package_root()
-    parser = argparse.ArgumentParser(description="Run DataAgent online architecture-governance evaluations.")
+    parser = argparse.ArgumentParser(description="Run DataAgent online evaluations.")
     parser.add_argument("--base-url", default="http://127.0.0.1:8900", help="DataAgent backend base URL.")
-    parser.add_argument("--dataset", default=str(default_dataset_path(root)), help="Evaluation JSONL dataset path.")
+    parser.add_argument(
+        "--dataset",
+        default=os.environ.get("DATAAGENT_EVAL_DATASET", ""),
+        help="Required external private evaluation JSONL dataset path.",
+    )
     parser.add_argument("--output-dir", default=str(default_output_dir(root)), help="Report output directory.")
     parser.add_argument("--case", action="append", dest="case_ids", default=[], help="Case ID to run. Can be repeated.")
     parser.add_argument("--provider-id", default="", help="Override DataAgent execution provider for evaluated tasks.")
@@ -312,6 +316,44 @@ def _collect_usage(task: dict[str, Any], messages: dict[str, Any], events: list[
     return usage
 
 
+def _dedupe(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
+
+
+def _auto_failure_attribution(
+    combined: str,
+    *,
+    missing_sql_fragments: list[str],
+    forbidden_hits: list[str],
+    missing_tool_names: list[str],
+) -> list[str]:
+    failures: list[str] = []
+    if re.search(r"请.*执行.*SQL|供.*执行|无法直接执行|未注入.*SQL|没有\s*SQL\s*执行|SQL.*尚未执行", combined, re.I | re.S):
+        failures.append("sql_only")
+    if re.search(r"OpenDataWorks\s*平台元数据|托管元数据|data_table|data_lineage|data_task|data_workflow|inspect_metadata\.py|get_lineage\.py", combined, re.I):
+        failures.append("wrong_domain")
+    if re.search(r"\{(?:target_date|TARGET_DATE|start_date|START_DATE|end_date|END_DATE|database_name|DATABASE_NAME|database_schema|DATABASE_SCHEMA|table_name|TABLE_NAME|period|PERIOD|timeDim|RULE_KEY)\}|占位符|TODO", combined):
+        failures.append("placeholder_leak")
+    if re.search(r"超时|timeout", combined, re.I):
+        failures.append("tool_timeout")
+    if re.search(r"未找到|没有找到|不存在|无匹配|空结果集|返回空", combined):
+        failures.append("empty_result")
+    if missing_sql_fragments:
+        failures.append("missing_sql_fragment")
+    if missing_tool_names:
+        failures.append("missing_tool")
+    if forbidden_hits:
+        failures.append("forbidden_sql")
+    return _dedupe(failures)
+
+
 def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
     combined = "\n".join(_flatten_strings(events) + sql_outputs + [final_answer])
     missing_sql_fragments = [
@@ -335,12 +377,19 @@ def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dic
     triggered_veto_rules: list[str] = []
     if forbidden_hits:
         triggered_veto_rules.append("SQL 不带 schema 前缀、使用 SELECT * 或明显违反当前 skill SQL 硬规则。")
+    failure_attribution = _auto_failure_attribution(
+        combined,
+        missing_sql_fragments=missing_sql_fragments,
+        forbidden_hits=forbidden_hits,
+        missing_tool_names=missing_tool_names,
+    )
     return {
         "passed": not forbidden_hits,
         "missing_sql_fragments": missing_sql_fragments,
         "forbidden_sql_patterns": forbidden_hits,
         "missing_tool_names": missing_tool_names,
         "triggered_veto_rules": triggered_veto_rules,
+        "failure_attribution": failure_attribution,
     }
 
 
@@ -531,9 +580,17 @@ def _failed_judge(reason: str, *, raw_output: str = "", attribution: list[str] |
     }
 
 
+def _merge_auto_failure_attribution(judge: dict[str, Any], rule_check: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(judge)
+    merged["failure_attribution"] = _dedupe(
+        list(rule_check.get("failure_attribution") or []) + list(judge.get("failure_attribution") or [])
+    )
+    return merged
+
+
 def _judge_system_prompt() -> str:
     return (
-        "你是 DataAgent 架构治理在线评测裁判。只能基于请求中的 case、最终回答、工具事件、SQL/图表输出和自动规则检查打分。"
+        "你是 DataAgent 在线问数评测裁判。只能基于请求中的 case、最终回答、工具事件、SQL/图表输出和自动规则检查打分。"
         "不要调用任何工具，不要编造事实。必须只输出一个 JSON 对象，字段为："
         "score, dimension_scores, hallucination, veto_rules_triggered, failure_attribution, comment。"
         "score 为 0 到 10；dimension_scores 包含 intent, ontology_entity, relation_scope, sql_or_tool_call, data_accuracy, reasoning, answer_quality。"
@@ -547,7 +604,7 @@ def _judge_user_prompt(payload: dict[str, Any], *, repair: bool = False, previou
             f"上一次输出：\n{previous_output}\n\n"
             f"评测输入：\n{json.dumps(payload, ensure_ascii=False, indent=2)}"
         )
-    return "请按 10 分制评估以下 DataAgent 架构治理回答，严格返回 JSON。\n\n" + json.dumps(payload, ensure_ascii=False, indent=2)
+    return "请按 10 分制评估以下 DataAgent 问数回答，严格返回 JSON。\n\n" + json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _judge_message_content(payload: dict[str, Any], *, repair: bool = False, previous_output: str = "") -> str:
@@ -667,7 +724,8 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
         "failure_attribution": ["task_not_submitted"],
         "comment": "task was not submitted",
         "judge_failed": True,
-}
+    }
+    judge = _merge_auto_failure_attribution(judge, rule_check)
     veto_rules = list(rule_check.get("triggered_veto_rules") or []) + list(judge.get("veto_rules_triggered") or [])
     case_passed = (
         not errors
@@ -792,7 +850,7 @@ def _judge_config_from_args(args: argparse.Namespace) -> JudgeConfig:
 
 def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str:
     lines = [
-        "# DataAgent 架构治理在线评测报告",
+        "# DataAgent 在线评测报告",
         "",
         f"- 数据集: `{summary.get('dataset_path', '')}`",
         f"- 用例数: {summary.get('total_cases', 0)}",
@@ -824,7 +882,7 @@ def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str
             f"| SQL / 工具调用准确率 | {metrics.get('sql_tool_accuracy', 0):.2%} | >= 85% |",
             f"| 数据结果 Precision | {metrics.get('data_precision', 0):.2%} | >= 90% |",
             f"| 数据结果 Recall | {metrics.get('data_recall', 0):.2%} | >= 85% |",
-            f"| 架构推理平均分 | {metrics.get('reasoning_average', 0):.2f} | >= 4/5 |",
+            f"| 推理平均分 | {metrics.get('reasoning_average', 0):.2f} | >= 4/5 |",
             f"| 幻觉率 | {metrics.get('hallucination_rate', 0):.2%} | <= 5% |",
             "",
             "## 用例明细",
@@ -850,6 +908,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.concurrency < 1:
         print("--concurrency must be >= 1", file=sys.stderr)
+        return 2
+    if not str(args.dataset or "").strip():
+        print("--dataset is required and must point to the private evaluation JSONL file", file=sys.stderr)
         return 2
     root = _repo_or_package_root()
     dataset_path = Path(args.dataset)
