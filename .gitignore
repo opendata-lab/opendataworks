@@ -47,6 +47,8 @@ dolphinscheduler-service/*.egg-info/
 !/dataagent/.claude/skills/dataagent-nl2sql/**
 !/dataagent/.claude/skills/opendataworks-business-knowledge/
 !/dataagent/.claude/skills/opendataworks-business-knowledge/**
+!/dataagent/.claude/skills/opendataworks-platform-tools/
+!/dataagent/.claude/skills/opendataworks-platform-tools/**
 *.swp
 *.swo
 *~

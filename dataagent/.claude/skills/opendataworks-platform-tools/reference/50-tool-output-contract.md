@@ -27,7 +27,7 @@
   "failure_attribution": [],
   "retryable": false,
   "stop_reason": "",
-  "ontology": ".claude/skills/<business-skill>/assets/ontology.json"
+  "ontology": "<business-knowledge-ontology-path>"
 }
 ```
 

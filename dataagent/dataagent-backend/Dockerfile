@@ -16,7 +16,7 @@ RUN mkdir -p /tmp/dataagent-home && chmod 1777 /tmp/dataagent-home
 
 COPY dataagent/dataagent-backend /app/dataagent-backend
 COPY dataagent/.claude /app/.claude
-RUN chmod +x /app/.claude/skills/dataagent-nl2sql/bin/odw-cli
+RUN chmod +x /app/.claude/skills/opendataworks-platform-tools/bin/odw-cli
 
 EXPOSE 8900
 

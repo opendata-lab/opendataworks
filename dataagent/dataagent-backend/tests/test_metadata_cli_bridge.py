@@ -9,7 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-SKILL_SCRIPTS_ROOT = BACKEND_ROOT.parent / ".claude" / "skills" / "dataagent-nl2sql" / "scripts"
+PLATFORM_TOOLS_ROOT = BACKEND_ROOT.parent / ".claude" / "skills" / "opendataworks-platform-tools"
+SKILL_SCRIPTS_ROOT = PLATFORM_TOOLS_ROOT / "scripts"
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 if str(SKILL_SCRIPTS_ROOT) not in sys.path:
@@ -30,7 +31,7 @@ def _load_runtime_module():
 
 
 def _bind_existing_cli(monkeypatch, runtime):
-    monkeypatch.setattr(runtime, "metadata_cli_bin", lambda: str(SKILL_SCRIPTS_ROOT.parent / "bin" / "odw-cli"))
+    monkeypatch.setattr(runtime, "metadata_cli_bin", lambda: str(PLATFORM_TOOLS_ROOT / "bin" / "odw-cli"))
 
 
 def test_resolve_datasource_uses_backend_cli(monkeypatch):
@@ -183,15 +184,29 @@ def test_call_metadata_cli_surfaces_non_zero_exit(monkeypatch):
         runtime.call_metadata_cli("export", kind="tables")
 
 
-def test_metadata_cli_bin_defaults_to_bundled_skill_cli(monkeypatch):
+def test_metadata_cli_bin_defaults_to_platform_tools_skill_cli(monkeypatch):
     runtime = _load_runtime_module()
-    monkeypatch.delenv("DATAAGENT_SKILL_ROOT", raising=False)
+    monkeypatch.delenv("DATAAGENT_PLATFORM_SKILL_ROOT", raising=False)
+    monkeypatch.delenv("DATAAGENT_ENABLED_SKILL_ROOTS", raising=False)
+    monkeypatch.setenv("DATAAGENT_SKILL_ROOT", "/tmp/wrong-primary-skill")
 
     cli_path = Path(runtime.metadata_cli_bin())
 
     assert cli_path.name == "odw-cli"
     assert cli_path.parent.name == "bin"
-    assert str(cli_path) == str(SKILL_SCRIPTS_ROOT.parent / "bin" / "odw-cli")
+    assert str(cli_path) == str(PLATFORM_TOOLS_ROOT / "bin" / "odw-cli")
+
+
+def test_metadata_cli_bin_uses_platform_skill_root_env(monkeypatch):
+    runtime = _load_runtime_module()
+    monkeypatch.delenv("DATAAGENT_SKILL_ROOT", raising=False)
+    monkeypatch.setenv("DATAAGENT_PLATFORM_SKILL_ROOT", "/tmp/platform-tools")
+
+    cli_path = Path(runtime.metadata_cli_bin())
+
+    assert cli_path.name == "odw-cli"
+    assert cli_path.parent.name == "bin"
+    assert str(cli_path) == "/tmp/platform-tools/bin/odw-cli"
 
 
 def test_call_metadata_cli_non_executable_bin_falls_back_to_sh(monkeypatch):

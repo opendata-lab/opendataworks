@@ -214,9 +214,10 @@ def test_merge_settings_defaults_to_all_bundled_skills_when_runtime_missing():
 
     assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
     assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is True
+    assert merged["skill_runtime"]["opendataworks-platform-tools"]["enabled"] is True
 
 
-def test_merge_settings_adds_new_business_skill_to_legacy_runtime():
+def test_merge_settings_adds_new_bundled_skills_to_legacy_runtime():
     merged = _merge_settings_payload(
         {
             "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
@@ -227,15 +228,17 @@ def test_merge_settings_adds_new_business_skill_to_legacy_runtime():
 
     assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
     assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is True
+    assert merged["skill_runtime"]["opendataworks-platform-tools"]["enabled"] is True
 
 
-def test_merge_settings_preserves_explicit_business_skill_disabled():
+def test_merge_settings_preserves_explicit_bundled_skill_disabled():
     merged = _merge_settings_payload(
         {
             "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
             "skill_runtime": {
                 "dataagent-nl2sql": {"enabled": True},
                 "opendataworks-business-knowledge": {"enabled": False},
+                "opendataworks-platform-tools": {"enabled": False},
             },
         },
         {},
@@ -243,6 +246,7 @@ def test_merge_settings_preserves_explicit_business_skill_disabled():
 
     assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
     assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is False
+    assert merged["skill_runtime"]["opendataworks-platform-tools"]["enabled"] is False
 
 
 def test_merge_settings_payload_keeps_provider_and_model_empty_without_enabled_provider():
@@ -445,7 +449,7 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
             return [
                 {
                     "id": 1,
-                    "relative_path": "dataagent-nl2sql/reference/40-runtime-metadata.md",
+                    "relative_path": "opendataworks-platform-tools/reference/40-runtime-metadata.md",
                     "file_name": "40-runtime-metadata.md",
                     "category": "reference",
                     "content_type": "markdown",
@@ -475,7 +479,7 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
 
     documents = skill_admin_service.list_documents()
 
-    assert documents[0]["folder"] == "dataagent-nl2sql"
+    assert documents[0]["folder"] == "opendataworks-platform-tools"
     assert documents[0]["relative_path"] == "reference/40-runtime-metadata.md"
     assert documents[0]["source"] == "bundled"
     assert documents[0]["enabled"] is True
@@ -675,6 +679,9 @@ def test_uninstall_skill_rejects_builtin(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
         skill_admin_service.uninstall_skill("opendataworks-business-knowledge")
+
+    with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
+        skill_admin_service.uninstall_skill("opendataworks-platform-tools")
 
 
 def test_uninstall_skill_rejects_last_enabled(monkeypatch, tmp_path):

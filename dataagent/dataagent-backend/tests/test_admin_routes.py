@@ -146,7 +146,7 @@ def test_model_detection_route_contract(monkeypatch):
 def test_skill_document_routes_contract(monkeypatch):
     summary = {
         "id": 1,
-        "folder": "dataagent-nl2sql",
+        "folder": "opendataworks-platform-tools",
         "relative_path": "reference/40-runtime-metadata.md",
         "file_name": "40-runtime-metadata.md",
         "category": "reference",
@@ -255,7 +255,7 @@ def test_skill_document_routes_contract(monkeypatch):
 
     list_response = client.get("/api/v1/dataagent/skills/documents")
     assert list_response.status_code == 200
-    assert list_response.json()[0]["folder"] == "dataagent-nl2sql"
+    assert list_response.json()[0]["folder"] == "opendataworks-platform-tools"
     assert list_response.json()[0]["relative_path"] == "reference/40-runtime-metadata.md"
     assert list_response.json()[0]["source"] == "bundled"
     assert list_response.json()[0]["enabled"] is True

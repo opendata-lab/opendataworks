@@ -6,6 +6,7 @@ from pathlib import Path
 SKILLS_ROOT = Path(__file__).resolve().parents[2] / ".claude" / "skills"
 SQL_SKILL_ROOT = SKILLS_ROOT / "dataagent-nl2sql"
 BUSINESS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-business-knowledge"
+PLATFORM_TOOLS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-platform-tools"
 
 
 def _skill_text_snapshot(root: Path) -> str:
@@ -25,16 +26,11 @@ def test_generic_sql_skill_keeps_methodology_and_tool_contracts_only():
         "DataAgent Generic SQL Skill",
         "通用问数 SQL 方法",
         "SQL 前检查",
-        "portal-mcp",
-        "mcp__portal__portal_search_tables",
-        "mcp__portal__portal_get_lineage",
-        "mcp__portal__portal_get_table_ddl",
-        "mcp__portal__portal_query_readonly",
-        "validate_sql.py",
-        "run_sql.py",
+        "相似表",
+        "候选表",
+        "业务知识 Skill",
+        "OpenDataWorks Platform Tools Skill",
         "失败处理",
-        "sql_execution",
-        "chart_spec",
     ]
     for token in required_tokens:
         assert token in snapshot
@@ -48,9 +44,19 @@ def test_generic_sql_skill_keeps_methodology_and_tool_contracts_only():
         "失败发布次数",
         "DF快照表",
         "DI增量表",
+        "mcp__portal__portal_search_tables",
+        "mcp__portal__portal_get_lineage",
+        "mcp__portal__portal_get_table_ddl",
+        "mcp__portal__portal_query_readonly",
+        "validate_sql.py",
+        "run_sql.py",
+        "DATAAGENT_PLATFORM_SKILL_ROOT",
+        "tool output contract",
     ]
     for token in forbidden_tokens:
         assert token not in snapshot
+    assert not (SQL_SKILL_ROOT / "scripts").exists()
+    assert not (SQL_SKILL_ROOT / "bin").exists()
 
 
 def test_generic_sql_skill_documents_data_quality_gate():
@@ -66,10 +72,12 @@ def test_generic_sql_skill_documents_data_quality_gate():
         assert token in snapshot
 
 
-def test_generic_sql_skill_documents_run_sql_as_only_recommended_sql_execution_entrypoint():
-    snapshot = _skill_text_snapshot(SQL_SKILL_ROOT)
+def test_platform_tools_skill_documents_run_sql_as_only_recommended_sql_execution_entrypoint():
+    snapshot = _skill_text_snapshot(PLATFORM_TOOLS_SKILL_ROOT)
 
     required_tokens = [
+        "OpenDataWorks Platform Tools Skill",
+        "DATAAGENT_PLATFORM_SKILL_ROOT",
         "validate_sql.py 是唯一推荐的 SQL 验证入口",
         "run_sql.py 是唯一推荐的 SQL 执行入口",
         "语义确认 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口",
@@ -84,6 +92,41 @@ def test_generic_sql_skill_documents_run_sql_as_only_recommended_sql_execution_e
     for token in required_tokens:
         assert token in snapshot
     assert "私有 Skill 的 validate_sql.py" not in snapshot
+
+
+def test_platform_tools_skill_contains_platform_capabilities_without_business_semantics():
+    snapshot = _skill_text_snapshot(PLATFORM_TOOLS_SKILL_ROOT)
+
+    required_tokens = [
+        "OpenDataWorks Platform Tools Skill",
+        "平台工具 Skill",
+        "获取表",
+        "获取字段",
+        "获取血缘",
+        "执行只读 SQL",
+        "portal-mcp",
+        "mcp__portal__portal_search_tables",
+        "mcp__portal__portal_get_lineage",
+        "mcp__portal__portal_get_table_ddl",
+        "mcp__portal__portal_query_readonly",
+        "inspect_metadata.py",
+        "resolve_datasource.py",
+        "get_table_ddl.py",
+        "get_lineage.py",
+        "validate_sql.py",
+        "run_sql.py",
+        "sql_execution",
+        "chart_spec",
+    ]
+    for token in required_tokens:
+        assert token in snapshot
+
+    assert (PLATFORM_TOOLS_SKILL_ROOT / "scripts" / "run_sql.py").exists()
+    assert (PLATFORM_TOOLS_SKILL_ROOT / "scripts" / "validate_sql.py").exists()
+    assert (PLATFORM_TOOLS_SKILL_ROOT / "bin" / "odw-cli").exists()
+    assert "metrics.json" not in snapshot
+    assert "ontology.json" not in snapshot
+    assert "发布记录数" not in snapshot
 
 
 def test_business_knowledge_skill_contains_semantics_without_execution_scripts():

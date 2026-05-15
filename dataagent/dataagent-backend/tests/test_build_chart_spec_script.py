@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / ".claude" / "skills" / "dataagent-nl2sql" / "scripts" / "build_chart_spec.py"
+SCRIPT = ROOT / ".claude" / "skills" / "opendataworks-platform-tools" / "scripts" / "build_chart_spec.py"
 
 
 def _run_chart_spec(payload: dict, *extra_args: str) -> dict:

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 READ_ONLY_PREFIXES = ("SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN")
+PLATFORM_TOOLS_SKILL_FOLDER = "opendataworks-platform-tools"
 
 
 def env_int(name: str, default: int) -> int:
@@ -21,9 +22,19 @@ def env_int(name: str, default: int) -> int:
 
 
 def skill_root_dir() -> Path:
-    configured = str(os.getenv("DATAAGENT_SKILL_ROOT", "")).strip()
+    configured = str(os.getenv("DATAAGENT_PLATFORM_SKILL_ROOT", "")).strip()
     if configured:
         return Path(configured).expanduser()
+    enabled_roots_raw = str(os.getenv("DATAAGENT_ENABLED_SKILL_ROOTS", "")).strip()
+    if enabled_roots_raw:
+        try:
+            enabled_roots = json.loads(enabled_roots_raw)
+        except json.JSONDecodeError:
+            enabled_roots = {}
+        if isinstance(enabled_roots, dict):
+            platform_root = str(enabled_roots.get(PLATFORM_TOOLS_SKILL_FOLDER) or "").strip()
+            if platform_root:
+                return Path(platform_root).expanduser()
     return Path(__file__).resolve().parents[1]
 
 
