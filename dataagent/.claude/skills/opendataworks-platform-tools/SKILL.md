@@ -1,71 +1,72 @@
 ---
 name: opendataworks-platform-tools
-description: "Use this bundled skill for OpenDataWorks platform capabilities: metadata lookup, table and field discovery, datasource routing, lineage, DDL, read-only SQL validation and execution, result formatting, and chart-contract output. It owns tools, not business semantics or generic query methodology."
-compatibility: "Requires DATAAGENT_PYTHON_BIN, DATAAGENT_PLATFORM_SKILL_ROOT, and either visible portal MCP tools or this skill's bin/odw-cli with backend service access."
+description: "当请求需要真实 OpenDataWorks 平台能力时使用：元数据查询、表/字段发现、数据源路由、血缘、DDL、只读 SQL 验证/执行、结果格式化或图表契约输出。不用于业务语义或 NL2SQL 推理。"
+compatibility: "需要 DATAAGENT_PYTHON_BIN、DATAAGENT_PLATFORM_SKILL_ROOT，以及可见的 portal MCP 工具或本技能 bin/odw-cli 的后端服务访问能力。"
 tools: [Bash, Read]
 ---
 
-# OpenDataWorks Platform Tools Skill
+# OpenDataWorks 平台工具技能
 
-This is the OpenDataWorks 平台工具 Skill. It exposes real platform capabilities: 获取表、获取字段、获取血缘、获取 DDL、解析数据源、验证 SQL、执行只读 SQL、格式化结果和生成图表契约.
+这是 OpenDataWorks 平台工具技能，提供真实平台能力：获取表、获取字段、获取血缘、获取 DDL、解析数据源、验证 SQL、执行只读 SQL、格式化结果和生成图表契约。
 
-It does not define business terms, ontology, metric口径, aliases, ambiguity rules, or query methodology. Use business knowledge skills for semantics and the generic SQL skill for method. Use this skill only when real OpenDataWorks platform evidence or execution is required.
+它不定义业务术语、本体、指标口径、别名、歧义规则或查询方法。业务含义交给语义技能，SQL 方法交给 `dataagent-nl2sql`。只有需要真实 OpenDataWorks 平台证据或执行时，才使用本技能。
 
-## Scope
+## 范围
 
-Covered:
+负责：
 
-- Metadata search and candidate table or field inspection.
-- Datasource routing and engine/database resolution.
-- Table DDL and field detail lookup.
-- Lineage lookup.
-- Read-only SQL validation.
-- Read-only SQL execution through backend platform APIs.
-- SQL execution result formatting.
-- `sql_execution` and `chart_spec` tool output contracts.
-- MCP-first, script fallback second.
+- 元数据搜索，以及候选表或字段检查。
+- 数据源路由和引擎/database 解析。
+- 表 DDL 和字段详情查询。
+- 血缘查询。
+- 只读 SQL 验证。
+- 通过 backend 平台 API 执行只读 SQL。
+- SQL 执行结果格式化。
+- `sql_execution` 和 `chart_spec` 工具输出契约。
+- 优先 MCP，MCP 不可用时才回退脚本。
 
-Out of scope:
+不负责：
 
-- Business terminology or metric definitions.
-- Object ontology and semantic mappings.
-- Domain aliases and ambiguity rules.
-- Generic NL2SQL reasoning methodology.
-- Tenant-private knowledge.
+- 业务术语或指标定义。
+- 对象本体和语义映射。
+- 领域别名和歧义规则。
+- 通用 NL2SQL 推理方法。
+- 判断 SQL 语义是否就绪；调用方必须提供已确认 SQL，或明确的元数据/DDL/血缘/数据源请求。
+- 租户私有知识。
 
-## Iron Laws
+## 硬规则
 
-1. **ALWAYS** prefer portal-mcp tools when they are visible in the current run.
-2. **ONLY** use script fallback when portal-mcp tools are unavailable.
-3. **ALWAYS** call fallback scripts through:
+1. 当前运行中能看到 portal MCP 工具时，优先使用 portal MCP。
+2. 只有 portal MCP 不可用时，才使用脚本回退。
+3. 脚本回退必须使用：
    `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
-4. **NEVER** use primary `DATAAGENT_SKILL_ROOT` for platform scripts.
-5. **ALWAYS** validate confirmed SQL before script-fallback execution.
-6. **ALWAYS** execute confirmed SQL through the single read-only SQL execution entrypoint.
-7. **NEVER** execute INSERT, UPDATE, DELETE, DROP, TRUNCATE, ALTER, CREATE, REPLACE, or other write statements.
-8. **ALWAYS** include a LIMIT clause on SELECT queries unless the validated statement type cannot support it.
-9. **NEVER** expose datasource credentials or direct database connection details.
-10. **ALWAYS** stop after the first sufficient platform result or non-retryable failure attribution.
+4. 平台脚本不要使用 primary `DATAAGENT_SKILL_ROOT`。
+5. 脚本回退执行前，必须先验证已确认 SQL。
+6. 已确认 SQL 必须通过唯一只读 SQL 执行入口执行。
+7. 不执行 `INSERT`、`UPDATE`、`DELETE`、`DROP`、`TRUNCATE`、`ALTER`、`CREATE`、`REPLACE` 或其他写语句。
+8. `SELECT` 查询默认带 `LIMIT`，除非已验证的语句类型不支持。
+9. 不暴露数据源账号密码或直连数据库细节。
+10. 首个足够平台结果或不可重试失败归因出现后就停止。
 
-## Reading Order
+## 读取顺序
 
-1. Read [`reference/30-tool-recipes.md`](reference/30-tool-recipes.md) for the exact platform capability path.
-2. Read [`reference/40-runtime-metadata.md`](reference/40-runtime-metadata.md) if runtime environment or root variables are unclear.
-3. Read [`reference/50-tool-output-contract.md`](reference/50-tool-output-contract.md) when interpreting validation, execution, or chart output.
-4. Inspect scripts only when a recipe requires exact arguments not visible in the reference.
+1. 读 [`reference/30-tool-recipes.md`](reference/30-tool-recipes.md)，确认具体平台能力路径。
+2. 运行时环境或根变量不清楚时，读 [`reference/40-runtime-metadata.md`](reference/40-runtime-metadata.md)。
+3. 解释验证、执行或图表输出时，读 [`reference/50-tool-output-contract.md`](reference/50-tool-output-contract.md)。
+4. 只有 recipe 需要且引用文档没有写明精确参数时，才查看脚本。
 
-## Capability Map
+## 能力地图
 
-| Capability | Use When | Preferred Path |
+| 能力 | 使用场景 | 优先路径 |
 | --- | --- | --- |
-| 获取表 / 获取字段 | Need candidate tables, similar tables, table comments, field names, or field comments | portal-mcp metadata search, then script fallback |
-| 获取血缘 | Need upstream/downstream evidence or lineage diagnosis | portal-mcp lineage, then script fallback |
-| 获取 DDL | Need live table structure, field order, partitions, comments, or create statement | portal-mcp DDL, then script fallback |
-| 解析数据源 | Need engine/database routing before SQL execution | portal-mcp datasource resolution, then script fallback |
-| 验证 SQL | SQL is ready for script fallback execution | validation script |
-| 执行只读 SQL | SQL passed validation and real results are required | read-only SQL execution script |
-| 图表契约 | SQL result shape is suitable for frontend chart rendering | chart contract script |
+| 获取表 / 获取字段 | 需要候选表、相似表、表注释、字段名或字段注释 | portal MCP 元数据搜索，失败再脚本回退 |
+| 获取血缘 | 需要上下游证据或血缘诊断 | portal MCP 血缘查询，失败再脚本回退 |
+| 获取 DDL | 需要实时表结构、字段顺序、分区、注释或建表语句 | portal MCP DDL 查询，失败再脚本回退 |
+| 解析数据源 | SQL 执行前需要执行引擎/database 路由 | portal MCP 数据源解析，失败再脚本回退 |
+| 验证 SQL | SQL 已就绪，准备脚本回退执行 | 验证脚本 |
+| 执行只读 SQL | SQL 已验证通过，且需要真实结果 | 只读 SQL 执行脚本 |
+| 图表契约 | SQL 结果形态适合前端图表渲染 | 图表契约脚本 |
 
-## Final Output
+## 最终输出
 
-Return Chinese conclusions based on structured platform results. Do not invent platform data. If a platform tool fails with a non-retryable error, report the failure attribution and stop instead of guessing another table or field.
+基于结构化平台结果返回中文结论。不要编造平台数据。平台工具返回不可重试错误时，报告失败归因并停止，不要猜另一张表或另一个字段。

@@ -1,112 +1,115 @@
 ---
 name: dataagent-nl2sql
-description: "Use this built-in skill for DataAgent generic Chinese data-question methodology: intent classification, semantic handoff, table and field discovery strategy, SQL generation checks, safe query planning, and result summarization. It owns method, not business semantics or OpenDataWorks platform tools."
-compatibility: "Pair this method skill with an enabled business knowledge Skill for semantics and the OpenDataWorks Platform Tools Skill for real metadata, lineage, validation, execution, and chart-capability access."
+description: "当 DataAgent 请求需要通用 NL2SQL 方法时使用：识别问数意图、把已确认语义交接转成只读 SQL、判断缺失槽位、选择元数据发现策略，或汇总真实查询结果。不用于定义业务语义或平台工具命令。"
+compatibility: "语义含义交给对应语义技能；真实元数据、血缘、验证、执行和图表契约交给 opendataworks-platform-tools。"
 tools: [Read]
 ---
 
-# DataAgent Generic SQL Skill
+# DataAgent 通用问数 SQL 技能
 
-This is the 通用问数 SQL 方法 skill. It owns methodology, steps, checks, failure handling, and answer收口. It does not define business terms, ontology, metric口径, aliases, business-rule exceptions, platform script names, CLI paths, or tool output schemas.
+这是通用问数 SQL 方法技能。它负责方法、步骤、检查、失败处理和答案收口；不定义业务术语、本体、指标口径、别名、业务规则例外、平台脚本名、CLI 路径或工具输出结构。
 
-Use this skill after the user asks a data question. If business semantics are unclear, first use the enabled 业务知识 Skill. If real platform evidence is needed, hand off to the OpenDataWorks Platform Tools Skill. This skill decides what must be known before SQL is generated; the platform tools skill supplies the actual platform capabilities.
+用户提出数据问题且需要 SQL 方法时使用本技能。业务语义不清时，先使用对应语义技能；需要真实平台证据时，交给 `opendataworks-platform-tools`。本技能判断生成 SQL 前必须确认什么，平台工具技能提供真实能力。
 
-## Scope
+## 范围
 
-Covered:
+负责：
 
-- Intent classification for data questions.
-- Minimal clarification when necessary inputs are missing.
-- 通用问数 SQL 方法, including SQL 前检查 and result收口.
-- Strategy for finding candidate tables and fields from data sources, metadata keywords, table comments, field comments, DDL, lineage clues, and similar tables.
-- Rules for when to trust a confirmed business ontology versus when to run generic metadata discovery.
-- Safety rules for single-source SQL planning, schema qualification, LIMIT protection, and read-only intent.
-- Failure handling for empty results, permission errors, schema mismatch, datasource mismatch, timeout, and unsafe SQL.
+- 数据问题的意图识别。
+- 必要输入缺失时的最小追问。
+- 通用问数 SQL 方法，包括 SQL 前检查和结果收口。
+- 基于数据源、元数据关键词、表注释、字段注释、DDL、血缘线索和相似表寻找候选表字段的策略。
+- 判断何时信任已确认语义交接，何时进入通用元数据发现。
+- 单源 SQL 规划、schema 限定、LIMIT 保护和只读意图的安全规则。
+- 空结果、权限错误、schema 不匹配、数据源不匹配、超时和不安全 SQL 的失败处理。
 
-Out of scope:
+不负责：
 
-- Business terminology.
-- Object ontology.
-- Metric definitions.
-- Domain aliases and ambiguity rules.
-- Business default filters or business-rule exceptions.
-- OpenDataWorks platform script paths, CLI usage, MCP tool names, SQL validation scripts, SQL execution scripts, or chart output contracts.
+- 业务术语。
+- 对象本体。
+- 指标定义。
+- 领域别名和歧义规则。
+- 业务默认过滤和业务规则例外。
+- OpenDataWorks 平台脚本路径、CLI 用法、MCP 工具名、SQL 验证脚本、SQL 执行脚本或图表输出契约。
+- 把未经验证的查询片段当成语义依据。
 
-## Core Boundary
+## 核心边界
 
-- 业务知识 Skill answers: “这个业务词是什么意思、指标怎么算、默认口径是什么、哪些对象和字段候选最符合业务定义。”
-- This generic SQL skill answers: “为了把已确认语义变成 SQL，还缺哪些槽位；应如何找候选表、候选字段、关联键、过滤条件和时间字段。”
-- OpenDataWorks Platform Tools Skill answers: “如何真实获取表、获取字段、获取血缘、获取 DDL、解析数据源、验证 SQL、执行只读 SQL、生成图表契约。”
+- 语义技能回答：“这个业务词是什么意思、指标怎么算、默认口径是什么、应该交接哪些语义对象或查询函数。”
+- 本通用 SQL 技能回答：“为了把已确认语义变成 SQL，还缺哪些槽位；应如何找候选表、候选字段、关联键、过滤条件和时间字段。”
+- `opendataworks-platform-tools` 回答：“如何真实获取表、获取字段、获取血缘、获取 DDL、解析数据源、验证 SQL、执行只读 SQL、生成图表契约。”
 
-## Fixed Method Pipeline
+## 固定方法链路
 
-1. 语义确认：优先使用业务知识 Skill 或用户明确输入确认指标、对象、口径和歧义。
-2. 候选定位：当口径不能直接确定物理表字段时，用平台工具收集数据源、表、字段、DDL、血缘和相似表证据。
-3. SQL 前检查：确认 database/schema、engine、table、field、filter、time range、dimension、grain、metric formula、join key。
-4. SQL 生成：只在必要槽位齐备后生成单源、只读、带 schema 前缀和 LIMIT 的查询。
-5. 平台执行：需要真实验证或结果时，交给 OpenDataWorks Platform Tools Skill。
-6. 结果收口：基于真实结果、空结果或失败归因回答；不要在失败后换表试探。
+1. 语义确认：优先使用对应语义技能或用户明确输入确认指标、对象、口径和歧义。
+2. 语义交接：若收到语义技能输出的 `query_functions`，把它当作业务口径契约；若收到候选映射，把它当作语义证据。
+3. 候选定位：当口径不能直接确定物理表字段时，用平台工具收集数据源、表、字段、DDL、血缘和相似表证据。
+4. SQL 前检查：确认 database/schema、engine、table、field、filter、时间范围、维度、粒度、指标公式和 join key。
+5. SQL 生成：只在必要槽位齐备后生成单源、只读、带 schema 前缀和 LIMIT 的查询。
+6. 平台执行：需要真实验证或结果时，交给 `opendataworks-platform-tools`。
+7. 结果收口：基于真实结果、空结果或失败归因回答；不要在失败后换表试探。
 
 ## 数据问数质量门禁
 
 - 执行 SQL 前必须确认目标、库/引擎/schema、表、使用字段、指标公式、过滤条件、时间范围、维度/粒度。
 - 涉及 JOIN、去重、明细定位、血缘映射时，必须确认主键、唯一键或关联键。
 - 主键、唯一键或关联键不是所有简单聚合的硬门槛；简单 COUNT、趋势、占比或明细预览可在表、字段、口径和时间范围已确认后执行。
-- 如果业务知识 Skill、metadata、DDL 或用户输入不能确认上述门禁，先做最小追问，不要用猜测补齐字段、关联关系或业务口径。
+- 如果语义技能、元数据、DDL 或用户输入不能确认上述门禁，先做最小追问，不要用猜测补齐字段、关联关系或业务口径。
 
 ## 相似表与字段发现原则
 
-- 先从用户词、业务知识 Skill 给出的对象名、指标名、别名和过滤词提取关键词。
+- 先从用户词和语义技能给出的对象、指标、别名、过滤词、`query_functions` 中提取关键词。
 - 用平台工具查找候选表时，同时比较表名、表注释、字段名、字段注释、分层、数据源和血缘上下游。
 - 候选表只能作为证据，不等于已确认口径；多个候选表都合理时先追问或说明候选差异。
 - 字段选择必须能解释它在指标、维度、时间范围或过滤条件中的作用。
-- 时间字段、状态字段、关联键不能只按名称相似猜测；需要业务知识、DDL、metadata 或用户确认。
+- 时间字段、状态字段、关联键不能只按名称相似猜测；需要语义技能、DDL、元数据或用户确认。
 
-## Iron Laws
+## 硬规则
 
-1. **ALWAYS** read [`reference/00-skill-map.md`](reference/00-skill-map.md) first, then progressively load references as needed. Never bulk-read all assets upfront.
-2. **ALWAYS** ask a minimal clarification before guessing when terminology, target table, time range, comparison dimension, or business semantics are ambiguous.
-3. **ALWAYS** write planned table names as `<schema>.<table>` once schema is confirmed. Never use an engine name as schema.
-4. **NEVER** plan INSERT, UPDATE, DELETE, DROP, TRUNCATE, ALTER, CREATE, or other write operations.
-5. **ALWAYS** include a LIMIT clause on SELECT queries unless the validated statement type cannot support it.
-6. **ALWAYS** use enabled business knowledge skills for semantics. Business knowledge skills only provide semantics.
-7. **ALWAYS** use the OpenDataWorks Platform Tools Skill for real platform access. This skill must not duplicate platform tool instructions.
-8. **ALWAYS** respond in Chinese: conclusion first, then evidence.
-9. **ALWAYS** stop after the first grounded result or sufficient failure attribution. Do not re-execute equivalent SQL or keep reading once the answer is grounded.
+1. 先读 [`reference/00-skill-map.md`](reference/00-skill-map.md)，再按需逐步读取引用文档；不要一开始批量读取全部资产。
+2. 术语、目标表、时间范围、对比维度或业务语义有歧义时，先做最小追问，不要猜。
+3. schema 确认后，规划中的表名写成 `<schema>.<table>`；不要把引擎名当成 schema。
+4. 不规划 `INSERT`、`UPDATE`、`DELETE`、`DROP`、`TRUNCATE`、`ALTER`、`CREATE` 或其他写操作。
+5. `SELECT` 查询默认带 `LIMIT`，除非已验证的语句类型不支持。
+6. 语义必须交给对应语义技能；本技能只处理问数方法，不在这里补写领域口径。
+7. 真实平台访问必须交给 `opendataworks-platform-tools`；本技能不要复制平台工具指令。
+8. 用中文回答：结论先行，再给证据。
+9. 首个有依据的结果或足够明确的失败归因出现后就停止；不要重复执行等价 SQL，也不要继续无效读取。
 
-## Anti-Patterns
+## 反模式
 
-| Anti-Pattern | Why It Fails | Correct Approach |
+| 反模式 | 问题 | 正确做法 |
 |---|---|---|
-| Encoding metric口径 in this skill | It competes with business knowledge skills | Ask the business knowledge Skill for semantics, then return here for query method |
-| Treating similar table names as confirmed口径 | Name similarity is not business evidence | Use table comments, fields, DDL, lineage, and user/semantic confirmation |
-| Storing platform script commands here | It couples generic method to OpenDataWorks runtime | Hand off platform access to OpenDataWorks Platform Tools Skill |
-| Running before database confirmation | Creates blind-guess queries | Resolve metadata and datasource first through platform tools |
-| Retrying equivalent SQL after a usable result | Wastes resources and confuses the answer | Stop after the first grounded result |
-| Treating tool errors as permission to guess | Produces unverifiable answers | Report the verified failure and the minimal next step |
+| 在本技能里编码指标口径 | 会和语义技能抢职责 | 先让正确的语义技能确认语义，再回到本技能做查询方法 |
+| 用复制来的查询片段替代 `query_functions` | 会丢掉本体交接契约 | 把 `query_functions` 当成语义契约，再通过方法/工具步骤解析真实表和 SQL |
+| 把相似表名当作已确认口径 | 名称相似不是业务证据 | 结合表注释、字段、DDL、血缘和用户/语义确认 |
+| 在本技能里保存平台脚本命令 | 会把通用方法和 OpenDataWorks 运行时耦合 | 平台访问交给 `opendataworks-platform-tools` |
+| database 未确认就执行 | 会生成盲猜查询 | 先通过平台工具解析元数据和数据源 |
+| 已有可用结果后继续重试等价 SQL | 浪费资源，也会让答案变乱 | 首个有依据结果出现后收口 |
+| 工具报错后继续猜 | 会产生不可验证答案 | 报告已验证失败和最小下一步 |
 
 ## 失败处理
 
-- Empty result: explain the confirmed口径 and that the query returned no rows.
-- Permission error: report the permission boundary and do not retry with guessed tables.
-- Schema or field mismatch: report the mismatched object and ask for the minimal missing metadata.
-- Datasource mismatch: resolve or ask for one data source; do not produce cross-source SQL.
-- Timeout: state the timeout and smallest next step, such as narrowing filters or moving to background execution.
+- 空结果：说明已确认口径，以及查询成功但没有返回行。
+- 权限错误：说明权限边界，不要换猜测表重试。
+- schema 或字段不匹配：指出不匹配对象，并追问最小缺失元数据。
+- 数据源不匹配：解析或追问单一数据源，不生成跨源 SQL。
+- 超时：说明超时和最小下一步，例如缩小过滤范围或改为后台执行。
 
-## Fixed Reading Order
+## 固定读取顺序
 
-Process any question in this order; stop as soon as sufficient context is gathered:
+处理任何问题时按此顺序；拿到足够上下文后立即停止读取：
 
-1. Read [`reference/00-skill-map.md`](reference/00-skill-map.md) to classify the method path.
-2. If semantics are unclear, invoke or read the relevant business knowledge Skill; do not solve business semantics in this skill.
-3. Read [`reference/10-query-playbooks.md`](reference/10-query-playbooks.md) to choose the generic query playbook.
-4. If datasource routing is unclear, read [`reference/11-datasource-routing.md`](reference/11-datasource-routing.md).
-5. If real metadata, DDL, lineage, validation, execution, or chart capability is needed, hand off to the OpenDataWorks Platform Tools Skill.
+1. 读 [`reference/00-skill-map.md`](reference/00-skill-map.md)，判断方法路径。
+2. 语义不清时，调用或读取相关语义技能；不要在本技能里解决业务语义。
+3. 读 [`reference/10-query-playbooks.md`](reference/10-query-playbooks.md)，选择通用查询 playbook。
+4. 数据源路由不清时，读 [`reference/11-datasource-routing.md`](reference/11-datasource-routing.md)。
+5. 需要真实元数据、DDL、血缘、验证、执行或图表能力时，交给 `opendataworks-platform-tools`。
 
-## Final Answer Requirements
+## 最终回答要求
 
-- Lead with the conclusion, then provide supporting evidence.
-- If a query was executed by platform tools, cite the structured result; do not repeat raw tool output.
-- For pure terminology or metric口径 questions, hand off to the relevant business knowledge Skill; SQL execution is not required.
-- If information is insufficient, state what is missing and ask a minimal clarifying question.
-- Never expose internal steps such as reading docs or preparing execution.
+- 结论先行，再给支撑证据。
+- 如果平台工具执行了查询，引用结构化结果；不要重复原始工具输出。
+- 纯术语或指标口径问题交给相关语义技能；不需要 SQL 执行。
+- 信息不足时，说明缺什么，并提出最小澄清问题。
+- 不暴露内部步骤，例如读取文档或准备执行。
