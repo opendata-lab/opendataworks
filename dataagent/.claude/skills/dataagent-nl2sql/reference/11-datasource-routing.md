@@ -1,10 +1,10 @@
 # 数据源路由
 
-先结论：所有问数只允许单源路由。schema/database 来自用户明确输入、业务知识 Skill、metadata 或 datasource 工具；不要把 engine 当成 schema。
+先结论：所有问数只允许单源路由。schema/database 来自用户明确输入、语义技能、元数据或数据源工具；不要把 engine 当成 schema。
 
 ## 路由步骤
 
-1. 如果用户或业务知识 Skill 已确认 database/schema/table，先校验这些对象是否真实存在。
+1. 如果用户或语义技能已确认 database/schema/table，先校验这些对象是否真实存在。
 2. 如果目标表不明确，使用 metadata 检索定位候选表和字段。
 3. 如果 engine 不明确，使用 datasource 工具解析。
 4. 如果候选表分布在不同 engine 或 database，要求用户缩小范围。
@@ -22,7 +22,7 @@
 - 用户问题同时命中多个数据库。
 - 候选表分布在不同 engine。
 - 同一指标在多张表中都有实现且口径不清。
-- 业务知识 Skill 未定义用户所需的默认过滤或对象含义。
+- 语义技能未定义用户所需的默认过滤、对象含义或 `query_functions`。
 
 ## 路由完成条件
 

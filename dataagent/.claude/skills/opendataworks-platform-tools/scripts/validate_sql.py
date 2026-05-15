@@ -308,7 +308,7 @@ def main():
     parser.add_argument("sql", nargs="?", help="SQL statement to validate")
     parser.add_argument("--file", "-f", help="Read SQL from a file")
     parser.add_argument("--stdin", action="store_true", help="Read SQL from stdin")
-    parser.add_argument("--ontology", help="Optional business ontology JSON for table/field checks")
+    parser.add_argument("--ontology", help="Optional ontology JSON supplied by the caller for table/field checks")
     parser.add_argument("--json", action="store_true", help="Print JSON output")
     args = parser.parse_args()
 

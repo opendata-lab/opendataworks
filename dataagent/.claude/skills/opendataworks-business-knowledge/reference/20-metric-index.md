@@ -6,7 +6,7 @@
 
 ### 数据表数量
 
-- Metric Key：`table_cnt`
+- 指标 Key：`table_cnt`
 - 公式：`COUNT(data_table.id)`
 - 默认时间字段：`created_at`
 - 默认映射：`data_table / id / count`
@@ -15,7 +15,7 @@
 
 ### 任务数量
 
-- Metric Key：`task_cnt`
+- 指标 Key：`task_cnt`
 - 公式：`COUNT(data_task.id)`
 - 默认时间字段：`created_at`
 - 默认映射：`data_task / id / count`
@@ -24,7 +24,7 @@
 
 ### 工作流数量
 
-- Metric Key：`workflow_cnt`
+- 指标 Key：`workflow_cnt`
 - 公式：`COUNT(data_workflow.id)`
 - 默认时间字段：`created_at`
 - 默认映射：`data_workflow / id / count`
@@ -33,7 +33,7 @@
 
 ### 发布记录数
 
-- Metric Key：`publish_record_cnt`
+- 指标 Key：`publish_record_cnt`
 - 公式：`COUNT(workflow_publish_record.id)`
 - 默认时间字段：`created_at`
 - 默认映射：`workflow_publish_record / id / count`
@@ -42,7 +42,7 @@
 
 ### 失败发布次数
 
-- Metric Key：`failed_publish_cnt`
+- 指标 Key：`failed_publish_cnt`
 - 公式：`SUM(CASE WHEN workflow_publish_record.status = 'failed' THEN 1 ELSE 0 END)`
 - 默认时间字段：`created_at`
 - 默认映射：`workflow_publish_record / status`
@@ -51,7 +51,7 @@
 
 ### 血缘关系数
 
-- Metric Key：`lineage_edge_cnt`
+- 指标 Key：`lineage_edge_cnt`
 - 公式：`COUNT(data_lineage.id)`
 - 默认时间字段：`created_at`
 - 默认映射：`data_lineage / id / count`

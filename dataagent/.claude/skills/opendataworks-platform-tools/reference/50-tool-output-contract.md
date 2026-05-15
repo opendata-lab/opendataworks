@@ -12,7 +12,7 @@
 - `python_execution`
 - `chart_spec`
 
-## SQL Validation
+## SQL 验证
 
 `sql_validation` 示例：
 
@@ -27,13 +27,13 @@
   "failure_attribution": [],
   "retryable": false,
   "stop_reason": "",
-  "ontology": "<business-knowledge-ontology-path>"
+  "ontology": "<ontology-path-from-caller>"
 }
 ```
 
 验证失败时，必须修正 SQL 后再进入 `run_sql.py`；不要绕过 `sql_validation` 直接执行。
 
-## SQL Execution
+## SQL 执行
 
 `sql_execution` 示例：
 
@@ -67,7 +67,7 @@
 - `retryable`: 当前 agent 是否应该继续重试
 - `stop_reason`: 失败或空结果时给模型的中文收口理由
 
-## Chart Contract
+## 图表契约
 
 图表输出统一通过 `chart_spec`，由 `chart_type` 区分：
 
@@ -104,11 +104,11 @@
 - 生成图表时，优先把完整 `sql_execution` JSON 直接作为输入传入；只有 JSON 过长时才落临时文件。
 - 对比 / 趋势 / 占比场景，必须显式传 `--chart-type`。
 
-## Frontend Rendering Boundary
+## 前端渲染边界
 
 - 前端是唯一图表渲染器；后端和脚本不生成 PNG、SVG 或静态图片 URL。
 - `table` 必须显式提供 `columns`。
 - `bar` / `line` / `pie` 必须显式提供 `x_field` 和 `series`。
 - `pie` 必须且只能提供 1 个 `series`。
-- `dataset` 顺序由 skill 决定，前端按原顺序渲染。
+- `dataset` 顺序由技能决定，前端按原顺序渲染。
 - `version` 当前固定为 `1`。

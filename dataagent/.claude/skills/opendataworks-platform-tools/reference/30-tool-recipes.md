@@ -1,6 +1,6 @@
 # 工具 Recipes
 
-先结论：优先 `portal-mcp`，没有 MCP 再回退脚本调用。固定管线是：语义确认 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口。
+先结论：优先 `portal-mcp`，没有 MCP 再回退脚本调用。本页只描述工具怎么调用；语义确认和 SQL 生成由上游技能完成。
 
 ## 统一命令规则
 
@@ -9,7 +9,7 @@
 - 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
 - validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py`。
 - run_sql.py 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
-- 业务知识 Skill 只提供语义；不要在业务知识 Skill 中寻找或维护 SQL 验证/执行脚本。
+- 语义技能只提供语义；不要在语义技能中寻找或维护 SQL 验证/执行脚本。
 - 不要自己拼脚本路径或脚本名；禁止使用 primary `DATAAGENT_SKILL_ROOT`、部署绝对路径、裸相对路径或猜测脚本名。
 - 不要执行环境探测或依赖安装命令。
 - 如果脚本报错，优先收敛输入参数或向用户追问，不要切换解释器反复试探。
@@ -59,17 +59,17 @@
 
 - 用途：执行脚本 fallback 下的 SQL 验证。
 - 适用场景：SQL 已形成，准备进入 `run_sql.py`。
-- 检查范围：只读、安全、schema 前缀、`SELECT *`、相对日期、占位符；可选 business ontology 表字段检查。
+- 检查范围：只读、安全、schema 前缀、`SELECT *`、相对日期、占位符；可选 ontology 表字段检查。
 - 命令模板：
   - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --json "<SQL>"`
-  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --ontology <business-knowledge-ontology-path> --json "<SQL>"`
+  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --ontology <ontology-path-from-caller> --json "<SQL>"`
 - 验证失败时修正 SQL 后最多重跑一次同类验证；仍失败则说明缺口。
 
 ## run_sql.py
 
 - 用途：执行只读 SQL。
 - 必须满足：database、engine、SQL 都已确认，且 SQL 已通过验证。
-- 固定链路：`run_sql.py -> backend read-only query API`。
+- 固定链路：`run_sql.py -> backend 只读查询 API`。
 - 结果归因：
   - `result_state=success`：已拿到真实结果，直接收口回答。
   - `result_state=empty_result`：查询成功但无数据，说明口径和空结果，不换表试探。
