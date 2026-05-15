@@ -4,16 +4,16 @@
 
 ## 统一命令规则
 
-- fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`
+- fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
 - 若运行时暴露了 `mcp__portal__portal_*`，优先直接调用 MCP tools，不要先绕回脚本。
 - 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
-- `validate_sql.py` 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py`。
-- `run_sql.py` 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
+- validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py`。
+- run_sql.py 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
 - 业务知识 Skill 只提供语义；不要在业务知识 Skill 中寻找或维护 SQL 验证/执行脚本。
-- 不要自己拼脚本路径或脚本名；禁止使用部署绝对路径、裸相对路径或猜测脚本名。
+- 不要自己拼脚本路径或脚本名；禁止使用 primary `DATAAGENT_SKILL_ROOT`、部署绝对路径、裸相对路径或猜测脚本名。
 - 不要执行环境探测或依赖安装命令。
 - 如果脚本报错，优先收敛输入参数或向用户追问，不要切换解释器反复试探。
-- 已确认 SQL 时，先通过 `validate_sql.py` 校验，再通过 `run_sql.py` 拿真实只读结果后回答；不得只输出 SQL 或要求用户自行执行。
+- 已确认 SQL 时，先通过 `validate_sql.py` 校验，再通过 `run_sql.py` 必须拿到真实只读结果后回答；不得只输出 SQL 或要求用户自行执行。
 - 看不到 run_sql.py 或 backend 查询不可用时，只说明缺少执行入口或 backend 查询能力，不要假装已执行。
 
 ## portal-mcp 首选工具
@@ -32,28 +32,28 @@
 - 用途：定位候选表、字段和 metadata。
 - 适用场景：用户没有给出明确表名；需要确认指标字段和维度字段；需要在元数据中做关键词检索。
 - 调用原则：用户没有明确给 database 时，先不要传 `--database`；首次结果过少时可做少量同义词补检。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/inspect_metadata.py" --keyword "<keyword>"`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/inspect_metadata.py" --keyword "<keyword>"`
 
 ## resolve_datasource.py
 
 - 用途：根据 database 判断 engine 和 datasource 摘要。
 - 必须满足：`--database` 必填，值直接取自已确认 database/schema。
 - 成功一次后不要重复调用。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/resolve_datasource.py" --database <database>`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/resolve_datasource.py" --database <database>`
 
 ## get_lineage.py
 
 - 用途：查看目标对象的上下游或血缘快照。
 - 必须满足：目标对象已确认；同名对象不唯一时先补充 database/schema。
 - 收口规则：返回足够证据后优先基于结果回答。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_lineage.py" --table <table> [--db-name <db>]`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/get_lineage.py" --table <table> [--db-name <db>]`
 
 ## get_table_ddl.py
 
 - 用途：查看 live DDL、字段顺序、注释、分区或建表属性。
 - 必须满足：目标 database/table 或 table id 已确认。
 - 收口规则：返回 `table_ddl` 后优先基于该结果回答。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/get_table_ddl.py" --database <db> --table <table>`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/get_table_ddl.py" --database <db> --table <table>`
 
 ## validate_sql.py
 
@@ -61,8 +61,8 @@
 - 适用场景：SQL 已形成，准备进入 `run_sql.py`。
 - 检查范围：只读、安全、schema 前缀、`SELECT *`、相对日期、占位符；可选 business ontology 表字段检查。
 - 命令模板：
-  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/validate_sql.py" --json "<SQL>"`
-  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/validate_sql.py" --ontology .claude/skills/<business-skill>/assets/ontology.json --json "<SQL>"`
+  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --json "<SQL>"`
+  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --ontology <business-knowledge-ontology-path> --json "<SQL>"`
 - 验证失败时修正 SQL 后最多重跑一次同类验证；仍失败则说明缺口。
 
 ## run_sql.py
@@ -74,7 +74,7 @@
   - `result_state=success`：已拿到真实结果，直接收口回答。
   - `result_state=empty_result`：查询成功但无数据，说明口径和空结果，不换表试探。
   - `result_state=failed`：按 `error_code`、`failure_attribution`、`stop_reason` 说明原因。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/run_sql.py" --database <db> --engine <mysql|doris> --sql "<SQL>"`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" --database <db> --engine <mysql|doris> --sql "<SQL>"`
 
 ## build_chart_spec.py
 

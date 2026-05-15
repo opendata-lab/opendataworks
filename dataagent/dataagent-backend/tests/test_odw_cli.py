@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 
-ODW_CLI = Path(__file__).resolve().parents[2] / ".claude" / "skills" / "dataagent-nl2sql" / "bin" / "odw-cli"
+ODW_CLI = Path(__file__).resolve().parents[2] / ".claude" / "skills" / "opendataworks-platform-tools" / "bin" / "odw-cli"
 
 
 def _write_fake_curl(tmp_path: Path) -> Path:

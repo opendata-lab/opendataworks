@@ -29,9 +29,10 @@ def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeyp
         params,
         {
             "primary_root": "/tmp/skill-root",
-            "enabled_folders": ["dataagent-nl2sql", "marketing-insights"],
+            "enabled_folders": ["dataagent-nl2sql", "opendataworks-platform-tools", "marketing-insights"],
             "enabled_roots": {
                 "dataagent-nl2sql": "/tmp/skill-root",
+                "opendataworks-platform-tools": "/tmp/platform-tools",
                 "marketing-insights": "/tmp/marketing-insights",
             },
         },
@@ -43,7 +44,8 @@ def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeyp
     assert runtime_env["DATAAGENT_SQL_READ_TIMEOUT_SECONDS"] == "45"
     assert runtime_env["DATAAGENT_ORIGINAL_QUESTION"] == "workflow_publish_record 的上游表有哪些"
     assert runtime_env["DATAAGENT_SKILL_ROOT"] == str(Path("/tmp/skill-root").resolve())
-    assert runtime_env["DATAAGENT_ENABLED_SKILLS"] == "dataagent-nl2sql,marketing-insights"
+    assert runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] == str(Path("/tmp/platform-tools").resolve())
+    assert runtime_env["DATAAGENT_ENABLED_SKILLS"] == "dataagent-nl2sql,opendataworks-platform-tools,marketing-insights"
     assert "marketing-insights" in runtime_env["DATAAGENT_ENABLED_SKILL_ROOTS"]
     assert "ODW_MYSQL_HOST" not in runtime_env
     assert "ODW_MYSQL_PORT" not in runtime_env
@@ -163,9 +165,12 @@ def test_build_allowed_tools_includes_portal_mcp_tools_once():
 
 
 def test_build_system_prompt_routes_to_enabled_skills_without_low_level_commands():
-    prompt = agent_runtime._build_system_prompt(None, {"enabled_folders": ["dataagent-nl2sql", "marketing-insights"]})
+    prompt = agent_runtime._build_system_prompt(
+        None,
+        {"enabled_folders": ["dataagent-nl2sql", "opendataworks-business-knowledge", "opendataworks-platform-tools"]},
+    )
 
-    assert "当前已启用：dataagent-nl2sql、marketing-insights" in prompt
+    assert "当前已启用：dataagent-nl2sql、opendataworks-business-knowledge、opendataworks-platform-tools" in prompt
     assert "# Role" in prompt
     assert "# Primary Goal" in prompt
     assert "# Boundaries" in prompt
@@ -175,10 +180,11 @@ def test_build_system_prompt_routes_to_enabled_skills_without_low_level_commands
     assert "# Output Requirements" in prompt
     assert "业务语义" in prompt
     assert "通用问数 SQL" in prompt
-    assert "portal-mcp" in prompt
+    assert "平台工具" in prompt
     assert "run_sql.py" not in prompt
     assert "validate_sql.py" not in prompt
     assert "get_lineage.py" not in prompt
+    assert "mcp__portal" not in prompt
     assert "DATAAGENT_ALLOW_LINEAGE_SQL_FALLBACK=1" not in prompt
     assert "workflow_publish_record" not in prompt
 
@@ -199,19 +205,21 @@ def test_build_system_prompt_includes_methodology_and_non_negotiables():
         assert fragment in prompt
 
 
-def test_build_system_prompt_defines_three_layer_priority():
+def test_build_system_prompt_defines_four_surface_priority():
     prompt = agent_runtime._build_system_prompt(
         None,
-        {"enabled_folders": ["dataagent-nl2sql", "opendataworks-business-knowledge"]},
+        {"enabled_folders": ["dataagent-nl2sql", "opendataworks-business-knowledge", "opendataworks-platform-tools"]},
     )
 
     required_fragments = [
         "先遵循本 system prompt",
         "业务术语、指标口径、本体映射、歧义消解",
         "业务语义 skill",
-        "表选择、字段选择、SQL 生成、SQL 自检",
+        "表字段发现、SQL 生成前检查、结果收口",
         "通用 SQL skill",
-        "运行时资源 > 业务语义 skill > 通用 SQL skill > 默认常识",
+        "metadata、DDL、血缘、SQL 验证、只读执行",
+        "平台工具 skill",
+        "运行时工具结果 > 业务语义 skill > 通用 SQL skill > 平台工具 skill > 默认常识",
     ]
     for fragment in required_fragments:
         assert fragment in prompt

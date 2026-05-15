@@ -19,7 +19,7 @@
 
 ## 使用原则
 
-- MCP 不可用时，fallback 脚本统一使用 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`。
+- MCP 不可用时，fallback 脚本统一使用 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`。
 - MCP-first 运行时下，portal tools 直接由 runtime 暴露给模型。
 - 只有 MCP 不可用时，Python 脚本才作为兼容 fallback 调 backend API。
 - 执行 metadata 相关脚本前，确认 skill 自带 CLI 路径存在；如果缺少，说明缺失能力，不尝试下载或安装。
@@ -32,7 +32,8 @@
 ## Runtime Environment
 
 - `DATAAGENT_PYTHON_BIN`：当前 DataAgent Python 解释器。
-- `DATAAGENT_SKILL_ROOT`：primary skill 根目录，当前用于 script fallback。
+- `DATAAGENT_SKILL_ROOT`：primary skill 根目录，不用于平台脚本 fallback。
+- `DATAAGENT_PLATFORM_SKILL_ROOT`：OpenDataWorks platform tools skill 根目录，平台脚本 fallback 只使用该根目录。
 - `DATAAGENT_ENABLED_SKILLS`：本轮启用的 skill 文件夹列表。
 - `DATAAGENT_ENABLED_SKILL_ROOTS`：启用 skill 到绝对路径的映射。
 - `DATAAGENT_QUERY_LIMIT`：查询结果限制。

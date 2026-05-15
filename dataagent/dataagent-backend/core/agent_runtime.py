@@ -26,6 +26,7 @@ PORTAL_MCP_TOOL_NAMES = [
     "portal_get_table_ddl",
     "portal_query_readonly",
 ]
+PLATFORM_TOOLS_SKILL_FOLDER = "opendataworks-platform-tools"
 
 
 def _build_prompt(history: list[dict[str, str]], question: str) -> str:
@@ -62,9 +63,9 @@ def _build_system_prompt(database_hint: str | None, skill_runtime: dict[str, Any
         "# Instruction Priority",
         "1. 先遵循本 system prompt。",
         "2. 涉及“业务术语、指标口径、本体映射、歧义消解”时，优先遵循业务语义 skill。",
-        "3. 涉及“表选择、字段选择、SQL 生成、SQL 自检”时，优先遵循通用 SQL skill。",
-        "4. 涉及实时 schema、指标字典、口径版本时，优先参考运行时资源、真实 metadata、DDL 和工具结果。",
-        "5. 如果多个来源冲突，优先级为：运行时资源 > 业务语义 skill > 通用 SQL skill > 默认常识。",
+        "3. 涉及“表字段发现、SQL 生成前检查、结果收口”时，优先遵循通用 SQL skill。",
+        "4. 涉及“metadata、DDL、血缘、SQL 验证、只读执行”时，使用平台工具 skill 获取真实证据。",
+        "5. 如果多个来源冲突，优先级为：运行时工具结果 > 业务语义 skill > 通用 SQL skill > 平台工具 skill > 默认常识。",
         f"- 已启用 Skills：当前已启用：{enabled_skills_text}。",
         "",
         "# Workflow",
@@ -80,9 +81,10 @@ def _build_system_prompt(database_hint: str | None, skill_runtime: dict[str, Any
         "# Routing Rules",
         "- 用户在问“XX 是什么意思 / 怎么定义 / 算法口径 / 指标区别”时，优先调用业务语义 skill。",
         "- 用户在问“怎么查 / SQL 怎么写 / 哪张表 / 哪些字段 / 为什么查不出来”时，优先调用通用问数 SQL skill。",
-        "- 同时涉及业务定义和查询实现时，先业务语义，后通用 SQL。",
+        "- 用户需要真实表、字段、DDL、血缘、数据源、验证或执行结果时，调用平台工具 skill。",
+        "- 同时涉及业务定义和查询实现时，先业务语义，后通用 SQL，最后平台工具。",
         "- 缺少时间范围、统计主体或粒度时，先澄清，再生成 SQL。",
-        "- 需要实时库表字段、数据源或查询结果时，使用运行时提供的真实资源；可用 portal-mcp 时优先使用 portal-mcp。",
+        "- 需要实时库表字段、数据源或查询结果时，使用运行时提供的真实资源，不用常识补造。",
         "",
         "# Output Requirements",
         "输出尽量采用以下结构：",
@@ -217,6 +219,7 @@ def _build_runtime_env(
     skills_root = Path(str((skill_runtime or {}).get("primary_root") or resolve_builtin_skill_root_dir())).resolve()
     enabled_folders = [str(item) for item in ((skill_runtime or {}).get("enabled_folders") or [])]
     enabled_roots = dict((skill_runtime or {}).get("enabled_roots") or {})
+    platform_skill_root = str(enabled_roots.get(PLATFORM_TOOLS_SKILL_FOLDER) or "").strip()
     existing_path = str(os.getenv("PATH") or "").strip()
     runtime_path = python_dir if not existing_path else f"{python_dir}:{existing_path}"
     # Preserve the current process environment so skill-private env vars can be
@@ -240,6 +243,8 @@ def _build_runtime_env(
             "TZ": str(os.getenv("TZ") or "Asia/Shanghai"),
         }
     )
+    if platform_skill_root:
+        runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] = str(Path(platform_skill_root).resolve())
     return runtime_env
 
 
