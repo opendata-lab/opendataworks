@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
@@ -105,7 +106,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--provider-id", default="", help="Override DataAgent execution provider for evaluated tasks.")
     parser.add_argument("--model", default="", help="Override DataAgent execution model for evaluated tasks.")
     parser.add_argument("--timeout-seconds", type=int, default=900, help="Maximum wait per case.")
-    parser.add_argument("--concurrency", type=int, default=1, help="Reserved for future parallel execution; first version runs sequentially.")
+    parser.add_argument("--concurrency", type=int, default=1, help="Number of cases to run in parallel.")
     parser.add_argument("--judge-base-url", default=os.environ.get("DATAAGENT_EVAL_JUDGE_BASE_URL", ""), help="Anthropic-compatible judge base URL.")
     parser.add_argument("--judge-token", default=os.environ.get("DATAAGENT_EVAL_JUDGE_TOKEN", ""), help="Judge model API token.")
     parser.add_argument("--judge-model", default=os.environ.get("DATAAGENT_EVAL_JUDGE_MODEL", ""), help="Judge model name.")
@@ -756,6 +757,44 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     }
 
 
+def _run_cases(base_url: str, cases: list[dict[str, Any]], args: argparse.Namespace, judge_config: JudgeConfig) -> list[dict[str, Any]]:
+    if args.concurrency <= 1:
+        return [run_case(base_url, case, args, judge_config) for case in cases]
+
+    results: list[dict[str, Any] | None] = [None] * len(cases)
+    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+        future_to_index = {pool.submit(run_case, base_url, case, args, judge_config): i for i, case in enumerate(cases)}
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                results[index] = future.result()
+            except Exception as exc:
+                case = cases[index]
+                results[index] = {
+                    "case_id": case.get("case_id"),
+                    "category": case.get("category"),
+                    "question": case.get("question"),
+                    "task_status": "runner_error",
+                    "final_answer": "",
+                    "tool_names": [],
+                    "sql_outputs": [],
+                    "chart_outputs": [],
+                    "usage": {},
+                    "duration_seconds": 0,
+                    "auto_rule_check": {"passed": False, "failure_attribution": ["runner_crash"]},
+                    "judge": {"score": 0, "judge_failed": True, "failure_attribution": ["runner_crash"]},
+                    "veto_rules_triggered": [],
+                    "case_passed": False,
+                    "errors": [{"code": "runner_crash", "message": str(exc)}],
+                }
+            else:
+                result = results[index]
+                case_id = (result or {}).get("case_id") if result else "?"
+                done = len([r for r in results if r is not None])
+                print(f"[{done}/{len(cases)}] {case_id} done", file=sys.stderr)
+    return [r for r in results if r is not None]
+
+
 def _avg(values: list[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
@@ -932,7 +971,7 @@ def main(argv: list[str] | None = None) -> int:
         judge_config = _judge_config_from_args(args)
         preflight_payload = preflight(base_url)
         dataset_stats["preflight"] = preflight_payload
-        results = [run_case(base_url, case, args, judge_config) for case in cases]
+        results = _run_cases(base_url, cases, args, judge_config)
         summary = build_summary(results, dataset_stats)
         write_outputs(output_dir, results, summary)
         print(f"eval outputs written to: {output_dir}")

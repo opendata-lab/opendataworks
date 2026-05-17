@@ -68,10 +68,10 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
     fi
 done
 
-EXTRA_VOLUMES=()
+VOLUMES=(-v "$REPO_ROOT:/workspace")
 if [[ -n "$DATASET_PATH" && "$DATASET_PATH" = /* ]]; then
     DATASET_DIR="$(cd "$(dirname "$DATASET_PATH")" && pwd)"
-    EXTRA_VOLUMES+=(-v "$DATASET_DIR:$DATASET_DIR:ro")
+    VOLUMES+=(-v "$DATASET_DIR:$DATASET_DIR:ro")
 fi
 
 exec "$CONTAINER_CMD" run --rm \
@@ -82,7 +82,6 @@ exec "$CONTAINER_CMD" run --rm \
     -e DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS="${DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS:-120}" \
     -e DATAAGENT_EVAL_JUDGE_MAX_TOKENS="${DATAAGENT_EVAL_JUDGE_MAX_TOKENS:-4096}" \
     -e DATAAGENT_EVAL_DATASET="${DATAAGENT_EVAL_DATASET:-}" \
-    -v "$REPO_ROOT:/workspace" \
-    "${EXTRA_VOLUMES[@]}" \
+    "${VOLUMES[@]}" \
     -w /workspace \
     "$IMAGE" "$@"

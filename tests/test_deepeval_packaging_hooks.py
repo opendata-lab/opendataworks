@@ -44,6 +44,23 @@ def test_builtin_eval_module_is_packaged_as_parallel_image():
     assert "tools/dataagent-evals/builtin/run.py" in run_wrapper
 
 
+def test_deepeval_eval_wrapper_keeps_volume_array_non_empty_for_bash_3():
+    run_wrapper = (REPO_ROOT / "scripts" / "run-dataagent-deepeval-evals.sh").read_text(encoding="utf-8")
+
+    assert "VOLUMES=(-v \"$REPO_ROOT:/workspace\")" in run_wrapper
+    assert "EXTRA_VOLUMES=()" not in run_wrapper
+    assert "\"${VOLUMES[@]}\"" in run_wrapper
+
+
+def test_online_eval_design_documents_verified_parallel_concurrency():
+    design = (REPO_ROOT / "docs" / "design" / "2026-05-12-dataagent-online-evaluation-design.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "runs sequentially" not in design
+    assert "--concurrency > 1" in design
+
+
 def test_private_business_skill_assets_are_ignored_and_not_packaged():
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")

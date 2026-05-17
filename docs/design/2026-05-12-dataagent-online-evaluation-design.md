@@ -149,7 +149,7 @@ Runner arguments:
 - `--judge-timeout-seconds`
 - `--dry-run`
 
-The first version accepts `--concurrency` but runs sequentially unless later versions introduce a verified parallel task-submission policy.
+When `--concurrency > 1`, the runner submits and polls multiple cases in parallel while preserving dataset order in the written outputs.
 
 ## Runner Flow
 
