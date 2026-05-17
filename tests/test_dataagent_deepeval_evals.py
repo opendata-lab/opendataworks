@@ -4,6 +4,7 @@ import importlib.util
 import json
 import threading
 import sys
+import time
 import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -170,6 +171,65 @@ def test_deepeval_apply_judges_uses_shared_results_when_metric_is_copied(monkeyp
     assert updated[0]["case_passed"] is True
 
 
+def test_deepeval_evaluate_error_without_all_judges_raises_runner_error(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    case = _sample_case()
+    test_case = runner.to_deepeval_test_case(
+        case,
+        {"case_id": case["case_id"], "final_answer": "answer", "auto_rule_check": {"passed": True}},
+    )
+    metric = runner.DataAgentEvaluationMetric(runner.JudgeConfig(base_url="http://judge", token="t", model="m"))
+
+    def broken_evaluate(**kwargs):
+        raise RuntimeError("deepeval crashed before measuring")
+
+    monkeypatch.setattr(runner, "deepeval_evaluate", broken_evaluate)
+
+    try:
+        runner.run_deepeval([test_case], metric)
+    except runner.EvalRunnerError as exc:
+        assert "deepeval evaluate failed before all judge results were captured" in str(exc)
+    else:
+        raise AssertionError("expected EvalRunnerError")
+
+
+def test_deepeval_evaluate_error_after_all_judges_is_nonfatal(monkeypatch, capsys):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    case = _sample_case()
+    test_case = runner.to_deepeval_test_case(
+        case,
+        {"case_id": case["case_id"], "final_answer": "answer", "auto_rule_check": {"passed": True}},
+    )
+    metric = runner.DataAgentEvaluationMetric(runner.JudgeConfig(base_url="http://judge", token="t", model="m"))
+
+    def fake_judge(config, payload):
+        return {
+            "score": 9,
+            "dimension_scores": {"intent": 1},
+            "hallucination": False,
+            "veto_rules_triggered": [],
+            "failure_attribution": [],
+            "comment": "ok",
+        }
+
+    def late_error_evaluate(**kwargs):
+        for test_case_item in kwargs["test_cases"]:
+            for metric_item in kwargs["metrics"]:
+                metric_item.measure(test_case_item)
+        raise RuntimeError("deepeval summary writer failed")
+
+    monkeypatch.setattr(runner, "call_judge_model", fake_judge)
+    monkeypatch.setattr(runner, "deepeval_evaluate", late_error_evaluate)
+
+    runner.run_deepeval([test_case], metric)
+
+    captured = capsys.readouterr()
+    assert "deepeval evaluate warning" in captured.err
+    assert metric.case_judges["ODW_SAMPLE_001"]["score"] == 9.0
+
+
 def test_deepeval_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
@@ -243,6 +303,50 @@ def test_deepeval_auto_rule_check_adds_generic_failure_attribution(monkeypatch):
     assert {"sql_only", "wrong_domain", "placeholder_leak", "empty_result"}.issubset(
         set(result["failure_attribution"])
     )
+
+
+def test_deepeval_run_cases_parallel_preserves_dataset_order_and_records_crashes(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    calls = []
+    cases = [
+        {**_sample_case(), "case_id": "CASE_SLOW"},
+        {**_sample_case(), "case_id": "CASE_FAST"},
+        {**_sample_case(), "case_id": "CASE_CRASH"},
+    ]
+
+    def fake_run_case(base_url, case, args):
+        calls.append(case["case_id"])
+        if case["case_id"] == "CASE_SLOW":
+            time.sleep(0.05)
+        if case["case_id"] == "CASE_CRASH":
+            raise RuntimeError("case crashed")
+        return {
+            "case_id": case["case_id"],
+            "category": case.get("category"),
+            "question": case.get("question"),
+            "task_status": "finished",
+            "final_answer": "ok",
+            "tool_names": [],
+            "sql_outputs": [],
+            "chart_outputs": [],
+            "usage": {},
+            "duration_seconds": 0,
+            "auto_rule_check": {"passed": True, "failure_attribution": []},
+            "judge": {},
+            "veto_rules_triggered": [],
+            "case_passed": False,
+            "errors": [],
+        }
+
+    monkeypatch.setattr(runner, "run_case", fake_run_case)
+
+    results = runner._run_cases("http://dataagent", cases, types.SimpleNamespace(concurrency=2))
+
+    assert [item["case_id"] for item in results] == ["CASE_SLOW", "CASE_FAST", "CASE_CRASH"]
+    assert set(calls) == {"CASE_SLOW", "CASE_FAST", "CASE_CRASH"}
+    assert results[2]["task_status"] == "runner_error"
+    assert results[2]["errors"] == [{"code": "runner_crash", "message": "case crashed"}]
 
 
 def test_deepeval_dry_run_writes_unified_report(tmp_path, monkeypatch):

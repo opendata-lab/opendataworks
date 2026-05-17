@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import threading
+import time
+import types
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -164,6 +166,55 @@ def test_auto_rule_check_adds_generic_failure_attribution():
     assert {"sql_only", "wrong_domain", "placeholder_leak", "empty_result"}.issubset(
         set(result["failure_attribution"])
     )
+
+
+def test_run_cases_parallel_preserves_dataset_order_and_records_crashes(monkeypatch):
+    runner = _load_runner()
+    calls = []
+    cases = [
+        _sample_case("CASE_SLOW"),
+        _sample_case("CASE_FAST"),
+        _sample_case("CASE_CRASH"),
+    ]
+
+    def fake_run_case(base_url, case, args, judge_config):
+        calls.append(case["case_id"])
+        if case["case_id"] == "CASE_SLOW":
+            time.sleep(0.05)
+        if case["case_id"] == "CASE_CRASH":
+            raise RuntimeError("case crashed")
+        return {
+            "case_id": case["case_id"],
+            "category": case.get("category"),
+            "question": case.get("question"),
+            "task_status": "success",
+            "final_answer": "ok",
+            "tool_names": [],
+            "sql_outputs": [],
+            "chart_outputs": [],
+            "usage": {},
+            "duration_seconds": 0,
+            "auto_rule_check": {"passed": True, "failure_attribution": []},
+            "judge": {"score": 9, "judge_failed": False, "failure_attribution": []},
+            "veto_rules_triggered": [],
+            "case_passed": True,
+            "errors": [],
+        }
+
+    monkeypatch.setattr(runner, "run_case", fake_run_case)
+
+    results = runner._run_cases(
+        "http://dataagent",
+        cases,
+        types.SimpleNamespace(concurrency=2),
+        runner.JudgeConfig(base_url="http://judge", token="t", model="m"),
+    )
+
+    assert [item["case_id"] for item in results] == ["CASE_SLOW", "CASE_FAST", "CASE_CRASH"]
+    assert set(calls) == {"CASE_SLOW", "CASE_FAST", "CASE_CRASH"}
+    assert results[2]["task_status"] == "runner_error"
+    assert results[2]["judge"]["judge_failed"] is True
+    assert results[2]["errors"] == [{"code": "runner_crash", "message": "case crashed"}]
 
 
 class _FakeDataAgentHandler(BaseHTTPRequestHandler):

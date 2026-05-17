@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -121,7 +122,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--provider-id", default="", help="Override DataAgent execution provider for evaluated tasks.")
     parser.add_argument("--model", default="", help="Override DataAgent execution model for evaluated tasks.")
     parser.add_argument("--timeout-seconds", type=int, default=900, help="Maximum wait per case.")
-    parser.add_argument("--concurrency", type=int, default=1, help="Reserved for future parallel execution; first version runs sequentially.")
+    parser.add_argument("--concurrency", type=int, default=1, help="Number of cases to run in parallel.")
     parser.add_argument("--judge-base-url", default=os.environ.get("DATAAGENT_EVAL_JUDGE_BASE_URL", ""), help="Anthropic-compatible judge base URL.")
     parser.add_argument("--judge-token", default=os.environ.get("DATAAGENT_EVAL_JUDGE_TOKEN", ""), help="Judge model API token.")
     parser.add_argument("--judge-model", default=os.environ.get("DATAAGENT_EVAL_JUDGE_MODEL", ""), help="Judge model name.")
@@ -528,6 +529,43 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     }
 
 
+def _run_cases(base_url: str, cases: list[dict[str, Any]], args: argparse.Namespace) -> list[dict[str, Any]]:
+    if args.concurrency <= 1:
+        return [run_case(base_url, case, args) for case in cases]
+
+    results: list[dict[str, Any] | None] = [None] * len(cases)
+    with ThreadPoolExecutor(max_workers=args.concurrency) as pool:
+        future_to_index = {pool.submit(run_case, base_url, case, args): i for i, case in enumerate(cases)}
+        for future in as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                results[index] = future.result()
+            except Exception as exc:
+                case = cases[index]
+                results[index] = {
+                    "case_id": case.get("case_id"),
+                    "category": case.get("category"),
+                    "question": case.get("question"),
+                    "task_status": "runner_error",
+                    "final_answer": "",
+                    "tool_names": [],
+                    "sql_outputs": [],
+                    "chart_outputs": [],
+                    "usage": {},
+                    "duration_seconds": 0,
+                    "auto_rule_check": {"passed": False, "failure_attribution": ["runner_crash"]},
+                    "judge": {},
+                    "veto_rules_triggered": [],
+                    "case_passed": False,
+                    "errors": [{"code": "runner_crash", "message": str(exc)}],
+                }
+            else:
+                result = results[index]
+                case_id = (result or {}).get("case_id") if result else "?"
+                print(f"[{len([r for r in results if r is not None])}/{len(cases)}] {case_id} done", file=sys.stderr)
+    return [r for r in results if r is not None]
+
+
 def _ensure_deepeval_available() -> None:
     if deepeval_evaluate is None or LLMTestCase is None:
         raise EvalRunnerError("deepeval is not installed; run through the DeepEval eval Docker image or install requirements.txt")
@@ -805,9 +843,22 @@ def run_deepeval(test_cases: list[Any], metric: DataAgentEvaluationMetric) -> No
     _ensure_deepeval_available()
     DataAgentEvaluationMetric.shared_case_judges = {}
     try:
-        deepeval_evaluate(test_cases=test_cases, metrics=[metric], print_results=False)
-    except TypeError:
-        deepeval_evaluate(test_cases=test_cases, metrics=[metric])
+        try:
+            deepeval_evaluate(test_cases=test_cases, metrics=[metric], print_results=False)
+        except TypeError:
+            deepeval_evaluate(test_cases=test_cases, metrics=[metric])
+    except Exception as exc:
+        expected_case_ids = {
+            str(DataAgentEvaluationMetric._payload_from_test_case(test_case).get("case", {}).get("case_id") or "")
+            for test_case in test_cases
+        }
+        expected_case_ids.discard("")
+        captured_case_ids = set(metric.case_judges) | set(DataAgentEvaluationMetric.shared_case_judges)
+        if not expected_case_ids.issubset(captured_case_ids):
+            raise EvalRunnerError(
+                f"deepeval evaluate failed before all judge results were captured: {exc}"
+            ) from exc
+        print(f"deepeval evaluate warning (judge results already captured): {exc}", file=sys.stderr)
 
 
 def _apply_judges(results: list[dict[str, Any]], metric: DataAgentEvaluationMetric) -> list[dict[str, Any]]:
@@ -1010,7 +1061,7 @@ def main(argv: list[str] | None = None) -> int:
         base_url = str(args.base_url or "").rstrip("/")
         preflight_payload = preflight(base_url)
         dataset_stats["preflight"] = preflight_payload
-        results = [run_case(base_url, case, args) for case in cases]
+        results = _run_cases(base_url, cases, args)
         metric = DataAgentEvaluationMetric(judge_config)
         test_cases = [to_deepeval_test_case(case, result) for case, result in zip(cases, results)]
         run_deepeval(test_cases, metric)
