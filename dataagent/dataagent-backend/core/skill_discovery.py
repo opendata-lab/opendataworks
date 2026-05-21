@@ -23,7 +23,7 @@ def _backend_root() -> Path:
 
 
 def _resolve_root_dir(raw: str) -> Path:
-    path = Path(raw or "../.claude/skills/dataagent-nl2sql")
+    path = Path(raw or "../.claude/skills/opendataworks-business-knowledge")
     if path.is_absolute():
         return path
     return (_backend_root() / path).resolve()

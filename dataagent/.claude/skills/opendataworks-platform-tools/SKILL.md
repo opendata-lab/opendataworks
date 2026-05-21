@@ -7,9 +7,11 @@ tools: [Bash, Read]
 
 # OpenDataWorks 平台工具技能
 
+OpenDataWorks Platform Tools Skill。平台工具 Skill。
+
 这是 OpenDataWorks 平台工具技能，提供真实平台能力：获取表、获取字段、获取血缘、获取 DDL、解析数据源、验证 SQL、执行只读 SQL、格式化结果和生成图表契约。
 
-它不定义业务术语、本体、指标口径、别名、歧义规则或查询方法。业务含义交给语义技能，SQL 方法交给 `dataagent-nl2sql`。只有需要真实 OpenDataWorks 平台证据或执行时，才使用本技能。
+它不定义业务术语、本体、指标口径、别名、歧义规则或查询方法。业务含义交给语义技能，SQL 就绪规则由 DataAgent system prompt 约束。只有需要真实 OpenDataWorks 平台证据或执行时，才使用本技能。
 
 ## 范围
 

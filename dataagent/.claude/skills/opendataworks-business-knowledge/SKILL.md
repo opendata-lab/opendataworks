@@ -6,9 +6,11 @@ tools: [Read]
 
 # OpenDataWorks 通用业务知识技能
 
+OpenDataWorks Business Knowledge Skill。业务知识 Skill。
+
 这是 OpenDataWorks 通用平台业务知识技能，只提供语义知识：术语、平台对象映射、指标口径、别名、歧义消解和业务规则例外。
 
-它不提供领域专属本体、SQL 验证、SQL 执行、元数据搜索、数据源路由、图表生成、环境探测或运维命令。查询方法交给 `dataagent-nl2sql`，真实平台访问交给 `opendataworks-platform-tools`。
+它不提供领域专属本体、SQL 验证、SQL 执行、元数据搜索、数据源路由、图表生成、环境探测或运维命令。它不提供 SQL 验证或执行脚本。通用问数方法和 SQL 就绪规则由 DataAgent system prompt 约束，真实平台访问交给 `opendataworks-platform-tools`。
 
 ## 范围
 
@@ -60,4 +62,4 @@ tools: [Read]
 
 ## 最终输出
 
-直接使用本技能时，用中文回答，语义结论先行，再给相关口径或澄清问题。用户要真实数据结果时，语义确认后交给通用 SQL/问数技能。
+直接使用本技能时，用中文回答，语义结论先行，再给相关口径或澄清问题。用户要真实数据结果时，语义确认后按 DataAgent system prompt 的问数流程继续，并通过平台工具获取真实证据。

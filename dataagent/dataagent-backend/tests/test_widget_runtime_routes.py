@@ -127,7 +127,7 @@ def install_widget_settings(monkeypatch):
         lambda: SimpleNamespace(
             llm_provider="openrouter",
             claude_model="claude-opus-4-6",
-            skills_output_dir="../.claude/skills/dataagent-nl2sql",
+            skills_output_dir="../.claude/skills/opendataworks-business-knowledge",
             redis_host="127.0.0.1",
             redis_port=6379,
             widget_allowed_sites_json='[{"website_id":"demo","allowed_origins":["https://host.example.com"],"project_name":"Demo","project_color":"#4A90A4"}]',

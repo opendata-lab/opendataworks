@@ -18,6 +18,11 @@ from core import skill_admin_service
 from core.skill_admin_service import _merge_provider_settings, _merge_settings_payload
 
 
+BUSINESS_SKILL = "opendataworks-business-knowledge"
+PLATFORM_TOOLS_SKILL = "opendataworks-platform-tools"
+LEGACY_SQL_SKILL = "dataagent-nl2sql"
+
+
 class FakeSkillStore:
     def __init__(self):
         self.documents: dict[str, dict] = {}
@@ -92,15 +97,18 @@ def configure_skill_filesystem(monkeypatch, tmp_path, store=None, *, settings=No
     persisted = {}
 
     monkeypatch.setattr(skill_admin_service, "resolve_skill_discovery_root_dir", lambda: discovery_root)
-    monkeypatch.setattr(skill_admin_service, "resolve_skills_root_dir", lambda: discovery_root / "dataagent-nl2sql")
+    monkeypatch.setattr(skill_admin_service, "resolve_skills_root_dir", lambda: discovery_root / BUSINESS_SKILL)
     monkeypatch.setattr(skill_admin_service, "get_skill_admin_store", lambda: fake_store)
     monkeypatch.setattr(
         skill_admin_service,
         "current_settings_payload",
         lambda: settings
         or {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
-            "skill_runtime": {"dataagent-nl2sql": {"enabled": True}},
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
+            "skill_runtime": {
+                BUSINESS_SKILL: {"enabled": True},
+                PLATFORM_TOOLS_SKILL: {"enabled": True},
+            },
         },
     )
     monkeypatch.setattr(skill_admin_service, "persist_admin_settings", lambda payload: persisted.update(payload) or payload)
@@ -206,47 +214,47 @@ def test_merge_provider_settings_allows_enabled_model_without_detection():
     assert provider["enabled"] is True
 
 
-def test_merge_settings_defaults_to_all_bundled_skills_when_runtime_missing():
+def test_merge_settings_defaults_to_current_bundled_skills_when_runtime_missing():
     merged = _merge_settings_payload(
-        {"skills_output_dir": "../.claude/skills/dataagent-nl2sql"},
+        {"skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}"},
         {},
     )
 
-    assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
-    assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is True
-    assert merged["skill_runtime"]["opendataworks-platform-tools"]["enabled"] is True
+    assert LEGACY_SQL_SKILL not in merged["skill_runtime"]
+    assert merged["skill_runtime"][BUSINESS_SKILL]["enabled"] is True
+    assert merged["skill_runtime"][PLATFORM_TOOLS_SKILL]["enabled"] is True
 
 
-def test_merge_settings_adds_new_bundled_skills_to_legacy_runtime():
+def test_merge_settings_migrates_legacy_sql_skill_to_current_bundled_skills():
     merged = _merge_settings_payload(
         {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
-            "skill_runtime": {"dataagent-nl2sql": {"enabled": True}},
+            "skills_output_dir": f"../.claude/skills/{LEGACY_SQL_SKILL}",
+            "skill_runtime": {LEGACY_SQL_SKILL: {"enabled": True}},
         },
         {},
     )
 
-    assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
-    assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is True
-    assert merged["skill_runtime"]["opendataworks-platform-tools"]["enabled"] is True
+    assert merged["skills_output_dir"] == f"../.claude/skills/{BUSINESS_SKILL}"
+    assert LEGACY_SQL_SKILL not in merged["skill_runtime"]
+    assert merged["skill_runtime"][BUSINESS_SKILL]["enabled"] is True
+    assert merged["skill_runtime"][PLATFORM_TOOLS_SKILL]["enabled"] is True
 
 
 def test_merge_settings_preserves_explicit_bundled_skill_disabled():
     merged = _merge_settings_payload(
         {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
             "skill_runtime": {
-                "dataagent-nl2sql": {"enabled": True},
-                "opendataworks-business-knowledge": {"enabled": False},
-                "opendataworks-platform-tools": {"enabled": False},
+                BUSINESS_SKILL: {"enabled": True},
+                PLATFORM_TOOLS_SKILL: {"enabled": False},
             },
         },
         {},
     )
 
-    assert merged["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
-    assert merged["skill_runtime"]["opendataworks-business-knowledge"]["enabled"] is False
-    assert merged["skill_runtime"]["opendataworks-platform-tools"]["enabled"] is False
+    assert LEGACY_SQL_SKILL not in merged["skill_runtime"]
+    assert merged["skill_runtime"][BUSINESS_SKILL]["enabled"] is True
+    assert merged["skill_runtime"][PLATFORM_TOOLS_SKILL]["enabled"] is False
 
 
 def test_merge_settings_payload_keeps_provider_and_model_empty_without_enabled_provider():
@@ -254,7 +262,7 @@ def test_merge_settings_payload_keeps_provider_and_model_empty_without_enabled_p
         {
             "provider_id": "",
             "model": "",
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
             "session_mysql_database": "dataagent",
         },
         {},
@@ -300,7 +308,7 @@ def test_bootstrap_admin_settings_persists_blank_provider_and_model(monkeypatch)
             doris_user="",
             doris_password="",
             doris_database="",
-            skills_output_dir="../.claude/skills/dataagent-nl2sql",
+            skills_output_dir=f"../.claude/skills/{BUSINESS_SKILL}",
             session_mysql_database="dataagent",
         ),
     )
@@ -469,9 +477,10 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
         skill_admin_service,
         "current_settings_payload",
         lambda: {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
             "skill_runtime": {
-                "dataagent-nl2sql": {"enabled": True},
+                BUSINESS_SKILL: {"enabled": True},
+                PLATFORM_TOOLS_SKILL: {"enabled": True},
                 "marketing-insights": {"enabled": True},
             },
         },
@@ -489,14 +498,14 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
 def test_update_skill_runtime_enables_second_skill_without_changing_primary(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {"dataagent-nl2sql", "marketing-insights"})
+    monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {BUSINESS_SKILL, "marketing-insights"})
     monkeypatch.setattr(
         skill_admin_service,
         "current_settings_payload",
         lambda: {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
             "skill_runtime": {
-                "dataagent-nl2sql": {"enabled": True},
+                BUSINESS_SKILL: {"enabled": True},
             },
         },
     )
@@ -508,27 +517,27 @@ def test_update_skill_runtime_enables_second_skill_without_changing_primary(monk
     result = skill_admin_service.update_skill_runtime("marketing-insights", True)
 
     assert "skills_output_dir" not in captured["payload"]
-    assert captured["payload"]["skill_runtime"]["dataagent-nl2sql"]["enabled"] is True
+    assert captured["payload"]["skill_runtime"][BUSINESS_SKILL]["enabled"] is True
     assert captured["payload"]["skill_runtime"]["marketing-insights"]["enabled"] is True
     assert result["skill_id"] == "marketing-insights"
     assert result["enabled"] is True
 
 
 def test_update_skill_runtime_rejects_disabling_last_skill(monkeypatch):
-    monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {"dataagent-nl2sql"})
+    monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {BUSINESS_SKILL})
     monkeypatch.setattr(
         skill_admin_service,
         "current_settings_payload",
         lambda: {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
             "skill_runtime": {
-                "dataagent-nl2sql": {"enabled": True},
+                BUSINESS_SKILL: {"enabled": True},
             },
         },
     )
 
     try:
-        skill_admin_service.update_skill_runtime("dataagent-nl2sql", False)
+        skill_admin_service.update_skill_runtime(BUSINESS_SKILL, False)
     except ValueError as exc:
         assert "至少需要保留一个启用 Skill" in str(exc)
     else:
@@ -538,14 +547,14 @@ def test_update_skill_runtime_rejects_disabling_last_skill(monkeypatch):
 def test_update_skill_runtime_moves_primary_when_disabling_current(monkeypatch):
     captured = {}
 
-    monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {"dataagent-nl2sql", "marketing-insights"})
+    monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {BUSINESS_SKILL, "marketing-insights"})
     monkeypatch.setattr(
         skill_admin_service,
         "current_settings_payload",
         lambda: {
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
             "skill_runtime": {
-                "dataagent-nl2sql": {"enabled": True},
+                BUSINESS_SKILL: {"enabled": True},
                 "marketing-insights": {"enabled": True},
             },
         },
@@ -560,12 +569,37 @@ def test_update_skill_runtime_moves_primary_when_disabling_current(monkeypatch):
         "persist_admin_settings",
         lambda payload: captured.setdefault("payload", payload) or payload,
     )
-    result = skill_admin_service.update_skill_runtime("dataagent-nl2sql", False)
+    result = skill_admin_service.update_skill_runtime(BUSINESS_SKILL, False)
 
     assert captured["payload"]["skills_output_dir"] == "../.claude/skills/marketing-insights"
-    assert captured["payload"]["skill_runtime"]["dataagent-nl2sql"]["enabled"] is False
+    assert captured["payload"]["skill_runtime"][BUSINESS_SKILL]["enabled"] is False
     assert captured["payload"]["skill_runtime"]["marketing-insights"]["enabled"] is True
-    assert result == {"skill_id": "dataagent-nl2sql", "enabled": False}
+    assert result == {"skill_id": BUSINESS_SKILL, "enabled": False}
+
+
+def test_resolve_enabled_skill_runtime_ignores_deleted_legacy_sql_skill(monkeypatch, tmp_path):
+    discovery_root = tmp_path / ".claude" / "skills"
+    (discovery_root / BUSINESS_SKILL).mkdir(parents=True)
+    (discovery_root / BUSINESS_SKILL / "SKILL.md").write_text("# Business\n", encoding="utf-8")
+    (discovery_root / PLATFORM_TOOLS_SKILL).mkdir(parents=True)
+    (discovery_root / PLATFORM_TOOLS_SKILL / "SKILL.md").write_text("# Tools\n", encoding="utf-8")
+
+    monkeypatch.setattr(skill_admin_service, "resolve_skill_discovery_root_dir", lambda: discovery_root)
+    monkeypatch.setattr(skill_admin_service, "resolve_skills_root_dir", lambda: discovery_root / BUSINESS_SKILL)
+    monkeypatch.setattr(
+        skill_admin_service,
+        "current_settings_payload",
+        lambda: {
+            "skills_output_dir": f"../.claude/skills/{LEGACY_SQL_SKILL}",
+            "skill_runtime": {LEGACY_SQL_SKILL: {"enabled": True}},
+        },
+    )
+
+    runtime = skill_admin_service.resolve_enabled_skill_runtime()
+
+    assert runtime["primary_folder"] == BUSINESS_SKILL
+    assert runtime["enabled_folders"] == [BUSINESS_SKILL, PLATFORM_TOOLS_SKILL]
+    assert LEGACY_SQL_SKILL not in runtime["enabled_roots"]
 
 
 def test_import_skill_from_root_zip_defaults_to_disabled(monkeypatch, tmp_path):
@@ -643,13 +677,13 @@ def test_uninstall_skill_removes_managed_folder_and_runtime(monkeypatch, tmp_pat
     settings = {
         "skills_output_dir": "../.claude/skills/marketing-insights",
         "skill_runtime": {
-            "dataagent-nl2sql": {"enabled": True},
+            BUSINESS_SKILL: {"enabled": True},
             "marketing-insights": {"enabled": True},
         },
     }
     discovery_root, store, persisted = configure_skill_filesystem(monkeypatch, tmp_path, settings=settings)
-    (discovery_root / "dataagent-nl2sql").mkdir()
-    (discovery_root / "dataagent-nl2sql" / "SKILL.md").write_text("# Builtin\n", encoding="utf-8")
+    (discovery_root / BUSINESS_SKILL).mkdir()
+    (discovery_root / BUSINESS_SKILL / "SKILL.md").write_text("# Builtin\n", encoding="utf-8")
     (discovery_root / "marketing-insights").mkdir()
     (discovery_root / "marketing-insights" / "SKILL.md").write_text("# Marketing\n", encoding="utf-8")
     store.save_document(
@@ -668,20 +702,17 @@ def test_uninstall_skill_removes_managed_folder_and_runtime(monkeypatch, tmp_pat
     assert result["removed_documents"][0]["folder"] == "marketing-insights"
     assert "marketing-insights/SKILL.md" not in store.documents
     assert "marketing-insights" not in persisted["skill_runtime"]
-    assert persisted["skills_output_dir"] == "../.claude/skills/dataagent-nl2sql"
+    assert persisted["skills_output_dir"] == f"../.claude/skills/{BUSINESS_SKILL}"
 
 
 def test_uninstall_skill_rejects_builtin(monkeypatch, tmp_path):
     configure_skill_filesystem(monkeypatch, tmp_path)
 
     with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
-        skill_admin_service.uninstall_skill("dataagent-nl2sql")
+        skill_admin_service.uninstall_skill(BUSINESS_SKILL)
 
     with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
-        skill_admin_service.uninstall_skill("opendataworks-business-knowledge")
-
-    with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
-        skill_admin_service.uninstall_skill("opendataworks-platform-tools")
+        skill_admin_service.uninstall_skill(PLATFORM_TOOLS_SKILL)
 
 
 def test_uninstall_skill_rejects_last_enabled(monkeypatch, tmp_path):

@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 SKILLS_ROOT = Path(__file__).resolve().parents[2] / ".claude" / "skills"
+SYSTEM_PROMPT = Path(__file__).resolve().parents[1] / "prompts" / "data_agent_system_prompt.md"
 SQL_SKILL_ROOT = SKILLS_ROOT / "dataagent-nl2sql"
 BUSINESS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-business-knowledge"
 PLATFORM_TOOLS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-platform-tools"
@@ -19,31 +20,27 @@ def _skill_text_snapshot(root: Path) -> str:
     return "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
 
-def test_generic_sql_skill_keeps_methodology_and_tool_contracts_only():
-    snapshot = _skill_text_snapshot(SQL_SKILL_ROOT)
+def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
+    snapshot = SYSTEM_PROMPT.read_text(encoding="utf-8")
 
     required_tokens = [
-        "DataAgent Generic SQL Skill",
-        "通用问数 SQL 方法",
-        "SQL 前检查",
-        "相似表",
-        "候选表",
-        "业务知识 Skill",
-        "OpenDataWorks Platform Tools Skill",
+        "企业级智能问数 Data Agent",
+        "你不是单纯的 SQL 生成器",
+        "任务路由",
+        "标准工作流",
+        "澄清规则",
+        "SQL 与数据使用原则",
+        "归因分析原则",
+        "输出规范",
         "失败处理",
     ]
     for token in required_tokens:
         assert token in snapshot
 
     forbidden_tokens = [
+        "dataagent-nl2sql",
+        "通用 SQL skill",
         "workflow_publish_record",
-        "data_table",
-        "数据层级",
-        "工作流发布记录",
-        "发布记录数",
-        "失败发布次数",
-        "DF快照表",
-        "DI增量表",
         "mcp__portal__portal_search_tables",
         "mcp__portal__portal_get_lineage",
         "mcp__portal__portal_get_table_ddl",
@@ -55,18 +52,25 @@ def test_generic_sql_skill_keeps_methodology_and_tool_contracts_only():
     ]
     for token in forbidden_tokens:
         assert token not in snapshot
-    assert not (SQL_SKILL_ROOT / "scripts").exists()
-    assert not (SQL_SKILL_ROOT / "bin").exists()
 
 
-def test_generic_sql_skill_documents_data_quality_gate():
-    snapshot = _skill_text_snapshot(SQL_SKILL_ROOT)
+def test_dataagent_nl2sql_skill_bundle_is_removed():
+    assert not SQL_SKILL_ROOT.exists()
+
+
+def test_system_prompt_documents_data_quality_gate():
+    snapshot = SYSTEM_PROMPT.read_text(encoding="utf-8")
 
     required_tokens = [
-        "数据问数质量门禁",
-        "执行 SQL 前必须确认目标、库/引擎/schema、表、使用字段、指标公式、过滤条件、时间范围、维度/粒度",
-        "涉及 JOIN、去重、明细定位、血缘映射时，必须确认主键、唯一键或关联键",
-        "主键、唯一键或关联键不是所有简单聚合的硬门槛",
+        "先确认相关表、字段、关联关系和时间字段",
+        "生成的查询应尽量简单、可解释、可审查",
+        "查询条件、聚合逻辑和时间范围必须与用户问题一致",
+        "区分目标表是每日全量快照表还是每日增量表",
+        "每日全量快照表用于常规问数时默认只查最新日期",
+        "只有归因分析、趋势分析、对比分析等需要历史基线的场景才查询历史日期",
+        "每日增量表按用户给定或澄清后的时间范围查询",
+        "不确定字段含义时，先查元数据或业务语义，不盲写",
+        "输出时说明关键过滤条件与统计口径",
     ]
     for token in required_tokens:
         assert token in snapshot
@@ -124,6 +128,7 @@ def test_platform_tools_skill_contains_platform_capabilities_without_business_se
     assert (PLATFORM_TOOLS_SKILL_ROOT / "scripts" / "run_sql.py").exists()
     assert (PLATFORM_TOOLS_SKILL_ROOT / "scripts" / "validate_sql.py").exists()
     assert (PLATFORM_TOOLS_SKILL_ROOT / "bin" / "odw-cli").exists()
+    assert "dataagent-nl2sql" not in snapshot
     assert "metrics.json" not in snapshot
     assert "ontology.json" not in snapshot
     assert "发布记录数" not in snapshot
@@ -153,5 +158,6 @@ def test_business_knowledge_skill_contains_semantics_without_execution_scripts()
 
     assert not (BUSINESS_SKILL_ROOT / "scripts").exists()
     assert not (BUSINESS_SKILL_ROOT / "bin").exists()
+    assert "dataagent-nl2sql" not in snapshot
     assert "run_sql.py" not in snapshot
     assert "validate_sql.py" not in snapshot

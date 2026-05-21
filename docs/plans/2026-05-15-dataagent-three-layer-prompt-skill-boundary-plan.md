@@ -1,5 +1,7 @@
 # DataAgent Prompt / Skill Boundary Plan
 
+> Superseded by [2026-05-21-dataagent-nl2sql-skill-removal-plan.md](2026-05-21-dataagent-nl2sql-skill-removal-plan.md). The current plan removes `dataagent-nl2sql` and moves the remaining generic query methodology into a Markdown system prompt.
+
 > Design: [2026-05-15-dataagent-three-layer-prompt-skill-boundary-design.md](../design/2026-05-15-dataagent-three-layer-prompt-skill-boundary-design.md)
 
 **Goal:** 将 DataAgent 问数上下文落到 system prompt、通用问数 skill、业务 knowledge skill、平台 tools skill 四个清晰职责面。

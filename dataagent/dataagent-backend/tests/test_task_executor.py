@@ -117,14 +117,14 @@ def _build_input(*, history=None, resume_session_id=None):
 
 
 def _patch_skill_runtime(monkeypatch, tmp_path: Path) -> dict[str, list[str]]:
-    enabled_folders = ["dataagent-nl2sql", "marketing-insights"]
+    enabled_folders = ["opendataworks-business-knowledge", "marketing-insights"]
     captured: dict[str, list[str]] = {}
 
     monkeypatch.setattr(
         task_executor,
         "resolve_enabled_skill_runtime",
         lambda: {
-            "primary_root": str(tmp_path / "dataagent-nl2sql"),
+            "primary_root": str(tmp_path / "opendataworks-business-knowledge"),
             "enabled_folders": enabled_folders,
             "enabled_roots": {folder: str(tmp_path / folder) for folder in enabled_folders},
         },
@@ -206,7 +206,7 @@ def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is True
     assert ClaudeAgentOptions.last_kwargs["cwd"] == str(tmp_path)
     assert ClaudeAgentOptions.last_kwargs["cli_path"] == "/tmp/claude-cli"
-    assert runtime["folders"] == ["dataagent-nl2sql", "marketing-insights"]
+    assert runtime["folders"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
 
     lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
@@ -568,8 +568,8 @@ def test_execute_task_stream_treats_text_before_later_tool_as_reasoning_in_compa
         monkeypatch,
         [
             AssistantMessage([TextBlock("我来帮你查询最近 30 天工作流发布次数的趋势数据。")]),
-            AssistantMessage([ToolUseBlock(id="tool-skill-1", name="Skill", input={"skill": "dataagent-nl2sql"})]),
-            UserMessage([ToolResultBlock(tool_use_id="tool-skill-1", name="Skill", content="Launching skill: dataagent-nl2sql")]),
+            AssistantMessage([ToolUseBlock(id="tool-skill-1", name="Skill", input={"skill": "opendataworks-business-knowledge"})]),
+            UserMessage([ToolResultBlock(tool_use_id="tool-skill-1", name="Skill", content="Launching skill: opendataworks-business-knowledge")]),
             AssistantMessage([TextBlock("根据参考文档，这是一个趋势分析问题。现在执行 SQL 查询。")]),
             AssistantMessage([ToolUseBlock(id="tool-bash-1", name="Bash", input={"command": "python scripts/run_sql.py --question trend"})]),
             UserMessage([ToolResultBlock(tool_use_id="tool-bash-1", name="Bash", content="2026-03-10,3\n2026-03-11,1")]),
