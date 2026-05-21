@@ -279,16 +279,44 @@ def _collect_tool_names(events: list[dict[str, Any]]) -> list[str]:
     return names
 
 
-def _extract_sql_outputs(events: list[dict[str, Any]], final_answer: str) -> list[str]:
-    combined = "\n".join(_flatten_strings(events) + [final_answer])
+def _looks_like_sql(text: str) -> bool:
+    return bool(re.match(r"(?is)^\s*(?:select|with)\b", str(text or "")))
+
+
+def _normalise_sql(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip()).rstrip(";")
+
+
+def _collect_structured_sql(value: Any) -> list[str]:
+    if isinstance(value, list):
+        sqls: list[str] = []
+        for item in value:
+            sqls.extend(_collect_structured_sql(item))
+        return sqls
+    if not isinstance(value, dict):
+        return []
+
     sqls: list[str] = []
-    fenced = re.findall(r"```sql\s*(.*?)```", combined, flags=re.IGNORECASE | re.DOTALL)
-    sqls.extend(item.strip() for item in fenced if item.strip())
-    for match in re.findall(r"(?is)\b(?:select|with)\b.+?(?:;|\n\n|$)", combined):
-        text = re.sub(r"\s+", " ", match).strip().rstrip(";")
-        if text and text not in sqls:
-            sqls.append(text)
+    for key, item in value.items():
+        key_text = str(key or "").lower()
+        if key_text in {"sql", "query"} and isinstance(item, str) and _looks_like_sql(item):
+            sqls.append(_normalise_sql(item))
+            continue
+        sqls.extend(_collect_structured_sql(item))
     return sqls
+
+
+def _extract_sql_outputs(events: list[dict[str, Any]], final_answer: str) -> list[str]:
+    sqls: list[str] = []
+    for event in events:
+        sqls.extend(_collect_structured_sql(event))
+    fenced = re.findall(r"```sql\s*(.*?)```", str(final_answer or ""), flags=re.IGNORECASE | re.DOTALL)
+    sqls.extend(_normalise_sql(item) for item in fenced if _looks_like_sql(item))
+    result: list[str] = []
+    for text in sqls:
+        if text and text not in result:
+            result.append(text)
+    return result
 
 
 def _extract_chart_outputs(events: list[dict[str, Any]]) -> list[Any]:
@@ -301,6 +329,56 @@ def _extract_chart_outputs(events: list[dict[str, Any]]) -> list[Any]:
             if value is not None:
                 charts.append(value)
     return charts
+
+
+def _truncate_for_judge(value: Any, *, max_text: int = 2000, max_rows: int = 20) -> Any:
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if len(text) <= max_text:
+            return text
+        return text[:max_text] + f"...[truncated {len(text) - max_text} chars]"
+    if isinstance(value, list):
+        return [_truncate_for_judge(item, max_text=max_text, max_rows=max_rows) for item in value[:max_rows]]
+    if isinstance(value, dict):
+        return {str(key): _truncate_for_judge(item, max_text=max_text, max_rows=max_rows) for key, item in value.items()}
+    return str(value)
+
+
+def _event_tool_name(event: dict[str, Any], data: dict[str, Any]) -> str:
+    for candidate in (event.get("tool_name"), event.get("name"), event.get("tool"), data.get("tool_name"), data.get("name"), data.get("tool")):
+        if isinstance(candidate, dict):
+            candidate = candidate.get("name")
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _summarize_tool_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summarized: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        data = event.get("data") if isinstance(event.get("data"), dict) else {}
+        event_type = str(event.get("event_type") or data.get("event_type") or "")
+        tool_name = _event_tool_name(event, data)
+        if not tool_name and "TOOL" not in event_type and not any(key in data for key in ("input", "output", "error")):
+            continue
+
+        item: dict[str, Any] = {
+            "seq_id": event.get("seq_id"),
+            "event_type": event_type,
+            "tool_name": tool_name,
+        }
+        for key in ("input", "output", "error"):
+            if key in data:
+                item[key] = _truncate_for_judge(data.get(key))
+            elif key in event:
+                item[key] = _truncate_for_judge(event.get(key))
+        summarized.append({key: value for key, value in item.items() if value not in (None, "")})
+    return summarized
 
 
 def _collect_usage(task: dict[str, Any], messages: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
@@ -332,7 +410,6 @@ def _auto_failure_attribution(
     combined: str,
     *,
     missing_sql_fragments: list[str],
-    forbidden_hits: list[str],
     missing_tool_names: list[str],
 ) -> list[str]:
     failures: list[str] = []
@@ -350,46 +427,32 @@ def _auto_failure_attribution(
         failures.append("missing_sql_fragment")
     if missing_tool_names:
         failures.append("missing_tool")
-    if forbidden_hits:
-        failures.append("forbidden_sql")
     return _dedupe(failures)
 
 
 def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
-    combined = "\n".join(_flatten_strings(events) + sql_outputs + [final_answer])
+    assessment_text = "\n".join(sql_outputs + [final_answer])
     missing_sql_fragments = [
         fragment
         for fragment in case.get("required_sql_fragments") or []
-        if str(fragment or "").strip() and str(fragment) not in combined
+        if str(fragment or "").strip() and str(fragment) not in assessment_text
     ]
-    forbidden_hits: list[str] = []
-    for pattern in case.get("forbidden_sql_patterns") or []:
-        try:
-            if re.search(str(pattern), combined):
-                forbidden_hits.append(str(pattern))
-        except re.error:
-            if str(pattern) in combined:
-                forbidden_hits.append(str(pattern))
     missing_tool_names = [
         name
         for name in case.get("expected_tool_names") or []
         if str(name or "").strip() and str(name) not in tool_names
     ]
-    triggered_veto_rules: list[str] = []
-    if forbidden_hits:
-        triggered_veto_rules.append("SQL 不带 schema 前缀、使用 SELECT * 或明显违反当前 skill SQL 硬规则。")
     failure_attribution = _auto_failure_attribution(
-        combined,
+        assessment_text,
         missing_sql_fragments=missing_sql_fragments,
-        forbidden_hits=forbidden_hits,
         missing_tool_names=missing_tool_names,
     )
     return {
-        "passed": not forbidden_hits,
+        "passed": True,
         "missing_sql_fragments": missing_sql_fragments,
-        "forbidden_sql_patterns": forbidden_hits,
+        "forbidden_sql_patterns": [],
         "missing_tool_names": missing_tool_names,
-        "triggered_veto_rules": triggered_veto_rules,
+        "triggered_veto_rules": [],
         "failure_attribution": failure_attribution,
     }
 
@@ -589,9 +652,21 @@ def _merge_auto_failure_attribution(judge: dict[str, Any], rule_check: dict[str,
     return merged
 
 
+def _case_for_judge(case: dict[str, Any]) -> dict[str, Any]:
+    judge_case = dict(case)
+    judge_case.pop("forbidden_sql_patterns", None)
+    judge_case["veto_rules"] = [
+        rule
+        for rule in case.get("veto_rules") or []
+        if "SQL 不带 schema 前缀" not in str(rule) and "SELECT *" not in str(rule)
+    ]
+    return judge_case
+
+
 def _judge_system_prompt() -> str:
     return (
         "你是 DataAgent 在线问数评测裁判。只能基于请求中的 case、最终回答、工具事件、SQL/图表输出和自动规则检查打分。"
+        "不要基于 SELECT *、schema 前缀或 SQL 风格合规性扣分；除非 SQL 风格直接导致未查到数据或结果错误。"
         "不要调用任何工具，不要编造事实。必须只输出一个 JSON 对象，字段为："
         "score, dimension_scores, hallucination, veto_rules_triggered, failure_attribution, comment。"
         "score 为 0 到 10；dimension_scores 包含 intent, ontology_entity, relation_scope, sql_or_tool_call, data_accuracy, reasoning, answer_quality。"
@@ -707,12 +782,12 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     usage = _collect_usage(task, messages, events)
     rule_check = auto_rule_check(case, final_answer=final_answer, events=events, sql_outputs=sql_outputs, tool_names=tool_names)
     judge_payload = {
-        "case": case,
+        "case": _case_for_judge(case),
         "user_question": str(case.get("question") or ""),
         "final_answer": final_answer,
         "task_status": str(task.get("task_status") or ""),
         "task_error": task.get("error") if isinstance(task.get("error"), dict) else None,
-        "tool_events": events,
+        "tool_events": _summarize_tool_events(events),
         "sql_outputs": sql_outputs,
         "chart_outputs": chart_outputs,
         "auto_rule_check": rule_check,

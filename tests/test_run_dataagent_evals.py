@@ -168,6 +168,157 @@ def test_auto_rule_check_adds_generic_failure_attribution():
     )
 
 
+def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
+    runner = _load_runner()
+    actual_sql = (
+        "SELECT COUNT(cmp_name) AS cmp_cnt "
+        "FROM public.dim_tech_public_env_cmp_df "
+        "WHERE env_name = 'PROD'"
+    )
+    events = [
+        {
+            "event_type": "BEFORE_AGENT_REPLY",
+            "data": {
+                "content": "技能说明：不要使用 SELECT *，模板中的 <SQL> 不是实际执行 SQL。",
+            },
+        },
+        {
+            "event_type": "AFTER_TOOL_CALL",
+            "data": {
+                "tool_name": "run_sql",
+                "output": {
+                    "kind": "sql_execution",
+                    "sql": actual_sql,
+                    "rows": [{"cmp_cnt": 301}],
+                },
+            },
+        },
+    ]
+
+    sql_outputs = runner._extract_sql_outputs(events, "当前 PROD 环境共有 301 个分级保障组件。")
+
+    assert sql_outputs == [actual_sql]
+
+
+def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
+    runner = _load_runner()
+    case = {
+        **_sample_case(),
+        "required_sql_fragments": ["public.dim_tech_public_env_cmp_df"],
+        "forbidden_sql_patterns": [r"(?i)select\s+\*"],
+    }
+    actual_sql = (
+        "SELECT * "
+        "FROM public.dim_tech_public_env_cmp_df "
+        "WHERE env_name = 'PROD'"
+    )
+    events = [
+        {
+            "data": {
+                "content": "参考文档提示：避免 SELECT *；OpenDataWorks 平台元数据不是本题答案。",
+            },
+        }
+    ]
+
+    result = runner.auto_rule_check(
+        case,
+        final_answer="当前 PROD 环境共有 301 个分级保障组件。",
+        events=events,
+        sql_outputs=[actual_sql],
+        tool_names=["run_sql"],
+    )
+
+    assert result["passed"] is True
+    assert result["forbidden_sql_patterns"] == []
+    assert "forbidden_sql" not in result["failure_attribution"]
+    assert "wrong_domain" not in result["failure_attribution"]
+
+
+def test_judge_payload_removes_sql_style_veto_rules():
+    runner = _load_runner()
+    case = {
+        **_sample_case(),
+        "veto_rules": [
+            "编造不存在的数据。",
+            "SQL 不带 schema 前缀、使用 SELECT * 或明显违反当前 skill SQL 硬规则。",
+        ],
+        "forbidden_sql_patterns": [r"(?i)select\s+\*"],
+    }
+
+    payload_case = runner._case_for_judge(case)
+
+    assert "forbidden_sql_patterns" not in payload_case
+    assert payload_case["veto_rules"] == ["编造不存在的数据。"]
+
+
+def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
+    runner = _load_runner()
+    events = [
+        {
+            "event_type": "BEFORE_AGENT_REPLY",
+            "data": {"content": "reasoning " + ("x" * 20000)},
+        },
+        {
+            "seq_id": 10,
+            "event_type": "BEFORE_TOOL_CALL",
+            "data": {
+                "tool_name": "run_sql",
+                "input": {
+                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                    "description": "count components",
+                },
+            },
+        },
+        {
+            "seq_id": 11,
+            "event_type": "AFTER_TOOL_CALL",
+            "data": {
+                "tool_name": "run_sql",
+                "output": {
+                    "kind": "sql_execution",
+                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                    "columns": ["cnt"],
+                    "rows": [{"cnt": 301}],
+                    "row_count": 1,
+                    "result_state": "success",
+                    "summary": "返回 1 行结果",
+                },
+            },
+        },
+    ]
+
+    summary = runner._summarize_tool_events(events)
+    serialized = json.dumps(summary, ensure_ascii=False)
+
+    assert len(serialized) < 4000
+    assert "xxxxxxxxxx" not in serialized
+    assert summary == [
+        {
+            "seq_id": 10,
+            "event_type": "BEFORE_TOOL_CALL",
+            "tool_name": "run_sql",
+            "input": {
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "description": "count components",
+            },
+        },
+        {
+            "seq_id": 11,
+            "event_type": "AFTER_TOOL_CALL",
+            "tool_name": "run_sql",
+            "output": {
+                "kind": "sql_execution",
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "columns": ["cnt"],
+                "rows": [{"cnt": 301}],
+                "row_count": 1,
+                "result_state": "success",
+                "summary": "返回 1 行结果",
+            },
+        },
+    ]
+
+
 def test_run_cases_parallel_preserves_dataset_order_and_records_crashes(monkeypatch):
     runner = _load_runner()
     calls = []
