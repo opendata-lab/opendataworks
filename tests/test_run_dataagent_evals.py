@@ -125,6 +125,79 @@ def test_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
     assert "你是 DataAgent 在线问数评测裁判" in body["messages"][0]["content"]
 
 
+def test_default_judge_timeout_is_long_enough_for_slow_judge(monkeypatch):
+    runner = _load_runner()
+    monkeypatch.delenv("DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS", raising=False)
+
+    args = runner.parse_args(["--dry-run", "--dataset", "cases.jsonl"])
+    config = runner._judge_config_from_args(
+        types.SimpleNamespace(
+            judge_base_url="http://judge",
+            judge_token="token",
+            judge_model="model",
+            judge_timeout_seconds=args.judge_timeout_seconds,
+            judge_max_tokens=args.judge_max_tokens,
+        )
+    )
+
+    assert config.timeout_seconds == 300
+
+
+def test_http_json_wraps_socket_timeout_as_eval_runner_error(monkeypatch):
+    runner = _load_runner()
+
+    def fake_urlopen(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", fake_urlopen)
+
+    try:
+        runner.http_json("POST", "http://judge/v1/messages", {"model": "m"}, timeout=1)
+    except runner.EvalRunnerError as exc:
+        assert "request timed out" in str(exc)
+        assert exc.exit_code == 2
+    else:
+        raise AssertionError("expected EvalRunnerError")
+
+
+def test_compact_judge_payload_bounds_large_evidence_payload():
+    runner = _load_runner()
+    payload = {
+        "case": _sample_case(),
+        "user_question": "最近 30 天工作流发布次数趋势",
+        "final_answer": "answer-" + ("x" * 50000),
+        "task_status": "success",
+        "task_error": None,
+        "tool_events": [
+            {
+                "seq_id": i,
+                "event_type": "AFTER_TOOL_CALL",
+                "tool_name": "run_sql",
+                "output": {
+                    "sql": "SELECT " + ("col, " * 1000) + "1",
+                    "rows": [{"value": "y" * 1000} for _ in range(50)],
+                    "summary": "返回 50 行结果",
+                },
+            }
+            for i in range(120)
+        ],
+        "sql_outputs": ["SELECT " + ("x" * 10000) for _ in range(60)],
+        "chart_outputs": [{"rows": ["z" * 1000 for _ in range(30)]} for _ in range(20)],
+        "auto_rule_check": {"passed": True, "failure_attribution": []},
+    }
+
+    compact = runner._compact_judge_payload(payload)
+    serialized = json.dumps(compact, ensure_ascii=False)
+
+    assert len(serialized) < 80000
+    assert compact["case"]["case_id"] == "ODW_SAMPLE_001"
+    assert len(compact["final_answer"]) < len(payload["final_answer"])
+    assert len(compact["tool_events"]) <= 80
+    assert len(compact["sql_outputs"]) <= 20
+    assert len(compact["chart_outputs"]) <= 5
+    assert "truncated" in serialized
+
+
 def test_poll_task_retries_transient_event_error(monkeypatch):
     runner = _load_runner()
     calls = {"task": 0, "events": 0}

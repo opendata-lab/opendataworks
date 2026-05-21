@@ -31,6 +31,12 @@ REQUIRED_CASE_FIELDS = {
 }
 TERMINAL_STATUSES = {"success", "finished", "failed", "error", "suspended", "cancelled", "canceled"}
 SUCCESS_STATUSES = {"success", "finished"}
+JUDGE_DEFAULT_TIMEOUT_SECONDS = 300
+JUDGE_MAX_FINAL_ANSWER_CHARS = 6000
+JUDGE_MAX_SQL_OUTPUTS = 20
+JUDGE_MAX_SQL_OUTPUT_CHARS = 800
+JUDGE_MAX_TOOL_EVENTS = 30
+JUDGE_MAX_CHART_OUTPUTS = 5
 GATES = {
     "average_score": 8.0,
     "intent_accuracy": 0.90,
@@ -59,7 +65,15 @@ class EvalRunnerError(Exception):
 
 
 class JudgeConfig:
-    def __init__(self, *, base_url: str, token: str, model: str, timeout_seconds: int = 120, max_tokens: int = 4096):
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        token: str,
+        model: str,
+        timeout_seconds: int = JUDGE_DEFAULT_TIMEOUT_SECONDS,
+        max_tokens: int = 4096,
+    ):
         self.base_url = base_url
         self.token = token
         self.model = model
@@ -113,7 +127,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--judge-timeout-seconds",
         type=int,
-        default=int(os.environ.get("DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS", "120")),
+        default=int(os.environ.get("DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS", str(JUDGE_DEFAULT_TIMEOUT_SECONDS))),
         help="Judge request timeout.",
     )
     parser.add_argument(
@@ -226,6 +240,8 @@ def http_json(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read().decode("utf-8")
             return json.loads(body) if body else {}
+    except TimeoutError as exc:
+        raise EvalRunnerError(f"request timed out {url} after {timeout}s: {exc}", exit_code=2) from exc
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         raise EvalRunnerError(f"HTTP {exc.code} {url}: {body}", exit_code=2) from exc
@@ -344,6 +360,40 @@ def _truncate_for_judge(value: Any, *, max_text: int = 2000, max_rows: int = 20)
     if isinstance(value, dict):
         return {str(key): _truncate_for_judge(item, max_text=max_text, max_rows=max_rows) for key, item in value.items()}
     return str(value)
+
+
+def _bounded_list_for_judge(value: Any, *, max_items: int) -> Any:
+    if not isinstance(value, list) or len(value) <= max_items:
+        return value
+    head_count = max(1, max_items // 2)
+    tail_count = max(1, max_items - head_count - 1)
+    omitted = len(value) - head_count - tail_count
+    return [
+        *value[:head_count],
+        {"kind": "truncated", "omitted_items": omitted},
+        *value[-tail_count:],
+    ]
+
+
+def _compact_judge_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    compact: dict[str, Any] = {}
+    for key, value in payload.items():
+        if key == "case":
+            compact[key] = _truncate_for_judge(value, max_text=1200, max_rows=30)
+        elif key == "final_answer":
+            compact[key] = _truncate_for_judge(value, max_text=JUDGE_MAX_FINAL_ANSWER_CHARS, max_rows=1)
+        elif key == "tool_events":
+            limited = _bounded_list_for_judge(value, max_items=JUDGE_MAX_TOOL_EVENTS)
+            compact[key] = _truncate_for_judge(limited, max_text=400, max_rows=2)
+        elif key == "sql_outputs":
+            limited = _bounded_list_for_judge(value, max_items=JUDGE_MAX_SQL_OUTPUTS)
+            compact[key] = _truncate_for_judge(limited, max_text=JUDGE_MAX_SQL_OUTPUT_CHARS, max_rows=1)
+        elif key == "chart_outputs":
+            limited = _bounded_list_for_judge(value, max_items=JUDGE_MAX_CHART_OUTPUTS)
+            compact[key] = _truncate_for_judge(limited, max_text=500, max_rows=2)
+        else:
+            compact[key] = _truncate_for_judge(value, max_text=3000, max_rows=20)
+    return compact
 
 
 def _event_tool_name(event: dict[str, Any], data: dict[str, Any]) -> str:
@@ -716,6 +766,7 @@ def _extract_message_text(response: dict[str, Any]) -> str:
 
 def call_judge_model(config: JudgeConfig, payload: dict[str, Any]) -> dict[str, Any]:
     raw_output = ""
+    judge_payload = _compact_judge_payload(payload)
     headers = {
         "anthropic-version": "2023-06-01",
         "x-api-key": config.token,
@@ -726,7 +777,7 @@ def call_judge_model(config: JudgeConfig, payload: dict[str, Any]) -> dict[str, 
             "model": config.model,
             "max_tokens": config.max_tokens,
             "temperature": 0,
-            "messages": [{"role": "user", "content": _judge_message_content(payload, repair=attempt > 0, previous_output=raw_output)}],
+            "messages": [{"role": "user", "content": _judge_message_content(judge_payload, repair=attempt > 0, previous_output=raw_output)}],
         }
         try:
             response = http_json("POST", _anthropic_messages_url(config.base_url), body, timeout=config.timeout_seconds, headers=headers)
