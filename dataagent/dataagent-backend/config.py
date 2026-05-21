@@ -71,7 +71,7 @@ class Settings(BaseSettings):
     doris_database: str = ""
 
     # ---- Skills ----
-    skills_output_dir: str = "../.claude/skills/dataagent-nl2sql"
+    skills_output_dir: str = "../.claude/skills/opendataworks-business-knowledge"
     dataagent_runtime_project_cwd: str = ""
     dataagent_portal_mcp_enabled: bool = True
     dataagent_portal_mcp_base_url: str = ""

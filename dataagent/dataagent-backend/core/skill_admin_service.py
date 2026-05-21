@@ -38,15 +38,17 @@ SUPPORTED_PROVIDER_SET = set(SUPPORTED_PROVIDERS)
 MANAGED_FILE_SUFFIXES = {".json", ".md", ".markdown", ".py"}
 DEFAULT_PROVIDER_ID = "openrouter"
 MODEL_DETECTION_TIMEOUT_SECONDS = 30
+LEGACY_SQL_SKILL_FOLDER = "dataagent-nl2sql"
+DEFAULT_PRIMARY_SKILL_FOLDER = "opendataworks-business-knowledge"
+PLATFORM_TOOLS_SKILL_FOLDER = "opendataworks-platform-tools"
+DEFAULT_SKILLS_OUTPUT_DIR = f"../.claude/skills/{DEFAULT_PRIMARY_SKILL_FOLDER}"
 BUILTIN_SKILL_FOLDERS = {
-    "dataagent-nl2sql",
-    "opendataworks-business-knowledge",
-    "opendataworks-platform-tools",
+    DEFAULT_PRIMARY_SKILL_FOLDER,
+    PLATFORM_TOOLS_SKILL_FOLDER,
 }
 DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS = (
-    "dataagent-nl2sql",
-    "opendataworks-business-knowledge",
-    "opendataworks-platform-tools",
+    DEFAULT_PRIMARY_SKILL_FOLDER,
+    PLATFORM_TOOLS_SKILL_FOLDER,
 )
 SKILL_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
@@ -187,12 +189,13 @@ def _normalize_skill_runtime(raw: Any, *, fallback_folder: str = "") -> dict[str
                 continue
             enabled = bool(entry.get("enabled")) if isinstance(entry, dict) else bool(entry)
             normalized[folder_name] = {"enabled": enabled}
-    if not normalized and fallback_folder:
+    legacy_enabled = bool((normalized.get(LEGACY_SQL_SKILL_FOLDER) or {}).get("enabled"))
+    if LEGACY_SQL_SKILL_FOLDER in normalized:
+        normalized.pop(LEGACY_SQL_SKILL_FOLDER, None)
+
+    if not normalized and fallback_folder and fallback_folder != LEGACY_SQL_SKILL_FOLDER:
         normalized[fallback_folder] = {"enabled": True}
-    if not raw and fallback_folder == "dataagent-nl2sql":
-        for folder in DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS:
-            normalized.setdefault(folder, {"enabled": True})
-    if bool((normalized.get("dataagent-nl2sql") or {}).get("enabled")):
+    if not raw or fallback_folder == LEGACY_SQL_SKILL_FOLDER or legacy_enabled:
         for folder in DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS:
             normalized.setdefault(folder, {"enabled": True})
     return normalized
@@ -465,7 +468,11 @@ def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any
         patch_provider_settings,
         legacy_payload=base | update,
     )
-    fallback_skill_folder = _folder_from_skills_output_dir(str(base.get("skills_output_dir") or ""))
+    configured_skills_output_dir = str(base.get("skills_output_dir") or "").strip()
+    fallback_skill_folder = _folder_from_skills_output_dir(configured_skills_output_dir)
+    normalized_skills_output_dir = configured_skills_output_dir or DEFAULT_SKILLS_OUTPUT_DIR
+    if fallback_skill_folder == LEGACY_SQL_SKILL_FOLDER:
+        normalized_skills_output_dir = DEFAULT_SKILLS_OUTPUT_DIR
     skill_runtime = _normalize_skill_runtime(
         update.get("skill_runtime") if "skill_runtime" in update else base.get("skill_runtime"),
         fallback_folder=fallback_skill_folder,
@@ -507,7 +514,7 @@ def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any
         "doris_user": str(base.get("doris_user") or ""),
         "doris_password": str(base.get("doris_password") or ""),
         "doris_database": str(base.get("doris_database") or ""),
-        "skills_output_dir": str(base.get("skills_output_dir") or ""),
+        "skills_output_dir": normalized_skills_output_dir,
         "session_mysql_database": str(base.get("session_mysql_database") or ""),
         "provider_settings": provider_settings,
         "skill_runtime": skill_runtime,

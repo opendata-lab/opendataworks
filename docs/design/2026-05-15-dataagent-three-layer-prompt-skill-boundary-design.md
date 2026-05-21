@@ -1,5 +1,7 @@
 # DataAgent Prompt / Skill Boundary Design
 
+> Superseded by [2026-05-21-dataagent-nl2sql-skill-removal-design.md](2026-05-21-dataagent-nl2sql-skill-removal-design.md). The current design removes `dataagent-nl2sql` and moves the remaining generic query methodology into a Markdown system prompt.
+
 **Date:** 2026-05-15
 **Goal:** 将 DataAgent 问数上下文拆成 system prompt、通用问数方法 skill、业务知识 skill、平台工具 skill 四个清晰职责面，并消除职责重叠。
 **Tech Stack:** DataAgent 后端 FastAPI / Claude Agent SDK；内置 Skills `dataagent-nl2sql`、`opendataworks-business-knowledge` 与 `opendataworks-platform-tools`；pytest。

@@ -47,11 +47,11 @@ def test_admin_settings_contract(monkeypatch):
             "doris_user": "root",
             "doris_password": "pwd",
             "doris_database": "ods",
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": "../.claude/skills/opendataworks-business-knowledge",
             "session_mysql_database": "dataagent",
         },
     )
-    monkeypatch.setattr(admin_routes, "resolve_skills_root_dir", lambda: "/tmp/.claude/skills/dataagent-nl2sql")
+    monkeypatch.setattr(admin_routes, "resolve_skills_root_dir", lambda: "/tmp/.claude/skills/opendataworks-business-knowledge")
     monkeypatch.setattr(
         admin_routes,
         "_provider_catalog",
@@ -283,12 +283,12 @@ def test_skill_document_routes_contract(monkeypatch):
     assert rollback_response.status_code == 200
     assert rollback_response.json()["id"] == 1
 
-    runtime_response = client.put("/api/v1/dataagent/skills/runtime/dataagent-nl2sql", json={"enabled": True})
+    runtime_response = client.put("/api/v1/dataagent/skills/runtime/opendataworks-business-knowledge", json={"enabled": True})
     assert runtime_response.status_code == 200
-    assert runtime_response.json()["skill_id"] == "dataagent-nl2sql"
+    assert runtime_response.json()["skill_id"] == "opendataworks-business-knowledge"
     assert runtime_response.json()["enabled"] is True
 
-    runtime_disable_response = client.put("/api/v1/dataagent/skills/runtime/dataagent-nl2sql", json={"enabled": False})
+    runtime_disable_response = client.put("/api/v1/dataagent/skills/runtime/opendataworks-business-knowledge", json={"enabled": False})
     assert runtime_disable_response.status_code == 200
     assert runtime_disable_response.json()["enabled"] is False
 
@@ -318,7 +318,7 @@ def test_skill_uninstall_route_rejects_service_errors(monkeypatch):
     monkeypatch.setattr(admin_routes, "uninstall_skill", _reject_uninstall)
 
     client = TestClient(app)
-    response = client.delete("/api/v1/dataagent/skills/dataagent-nl2sql")
+    response = client.delete("/api/v1/dataagent/skills/opendataworks-business-knowledge")
 
     assert response.status_code == 400
     assert response.json()["detail"] == "内置 Skill 不支持卸载"

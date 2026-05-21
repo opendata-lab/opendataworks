@@ -44,10 +44,10 @@ def _write_skill(root: Path, folder: str):
 def test_discovery_paths_are_based_on_primary_skill_root(tmp_path: Path):
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
-    _write_skill(skills_root, "dataagent-nl2sql")
-    update_settings({"skills_output_dir": str(skills_root / "dataagent-nl2sql")})
+    _write_skill(skills_root, "opendataworks-business-knowledge")
+    update_settings({"skills_output_dir": str(skills_root / "opendataworks-business-knowledge")})
 
-    assert resolve_skills_root_dir() == skills_root / "dataagent-nl2sql"
+    assert resolve_skills_root_dir() == skills_root / "opendataworks-business-knowledge"
     assert resolve_skill_discovery_root_dir() == skills_root
     assert resolve_agent_project_cwd() == project
 
@@ -55,21 +55,21 @@ def test_discovery_paths_are_based_on_primary_skill_root(tmp_path: Path):
 def test_prepare_enabled_skills_project_cwd_exposes_only_enabled_skills(tmp_path: Path):
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
-    _write_skill(skills_root, "dataagent-nl2sql")
+    _write_skill(skills_root, "opendataworks-business-knowledge")
     _write_skill(skills_root, "marketing-insights")
     _write_skill(skills_root, "disabled-skill")
     runtime_root = tmp_path / "runtime"
     update_settings(
         {
-            "skills_output_dir": str(skills_root / "dataagent-nl2sql"),
+            "skills_output_dir": str(skills_root / "opendataworks-business-knowledge"),
             "dataagent_runtime_project_cwd": str(runtime_root),
         }
     )
 
-    project_cwd = prepare_enabled_skills_project_cwd(["dataagent-nl2sql", "marketing-insights"])
+    project_cwd = prepare_enabled_skills_project_cwd(["opendataworks-business-knowledge", "marketing-insights"])
 
     runtime_skills = project_cwd / ".claude" / "skills"
-    assert (runtime_skills / "dataagent-nl2sql" / "SKILL.md").exists()
+    assert (runtime_skills / "opendataworks-business-knowledge" / "SKILL.md").exists()
     assert (runtime_skills / "marketing-insights" / "SKILL.md").exists()
     assert not (runtime_skills / "disabled-skill").exists()
 
@@ -87,8 +87,8 @@ def test_prepare_enabled_skills_project_cwd_rejects_missing_skill_md(tmp_path: P
 def test_prepare_enabled_skills_project_cwd_rejects_empty_enabled_list(tmp_path: Path):
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
-    _write_skill(skills_root, "dataagent-nl2sql")
-    update_settings({"skills_output_dir": str(skills_root / "dataagent-nl2sql")})
+    _write_skill(skills_root, "opendataworks-business-knowledge")
+    update_settings({"skills_output_dir": str(skills_root / "opendataworks-business-knowledge")})
 
     with pytest.raises(SkillDiscoveryError, match="no enabled skills"):
         prepare_enabled_skills_project_cwd([])

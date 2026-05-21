@@ -88,7 +88,7 @@ def test_normalize_settings_row_keeps_provider_settings_dict():
             "doris_user": "",
             "doris_password": "",
             "doris_database": "",
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": "../.claude/skills/opendataworks-business-knowledge",
             "updated_at": None,
             "raw_json": "{\"provider_settings\":{\"openrouter\":{\"provider_id\":\"openrouter\",\"enabled_models\":[\"anthropic/claude-sonnet-4.5\"]}}}",
         }
@@ -117,7 +117,7 @@ def test_normalize_settings_row_accepts_legacy_providers_list():
             "doris_user": "",
             "doris_password": "",
             "doris_database": "",
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": "../.claude/skills/opendataworks-business-knowledge",
             "updated_at": None,
             "raw_json": "{\"providers\":[{\"provider_id\":\"openrouter\",\"enabled_models\":[\"anthropic/claude-sonnet-4.5\"]}]}",
         }
@@ -146,7 +146,7 @@ def test_normalize_settings_row_keeps_blank_provider_and_model():
             "doris_user": "",
             "doris_password": "",
             "doris_database": "",
-            "skills_output_dir": "../.claude/skills/dataagent-nl2sql",
+            "skills_output_dir": "../.claude/skills/opendataworks-business-knowledge",
             "updated_at": None,
             "raw_json": None,
         }

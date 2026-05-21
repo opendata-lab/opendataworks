@@ -1,6 +1,6 @@
 # 工具 Recipes
 
-先结论：优先 `portal-mcp`，没有 MCP 再回退脚本调用。本页只描述工具怎么调用；语义确认和 SQL 生成由上游技能完成。
+先结论：优先 `portal-mcp`，没有 MCP 再回退脚本调用。本页只描述工具怎么调用；语义确认和 SQL 生成由 DataAgent system prompt 约束。
 
 ## 统一命令规则
 
@@ -9,6 +9,7 @@
 - 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
 - validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py`。
 - run_sql.py 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
+- 标准链路：语义确认 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口。
 - 语义技能只提供语义；不要在语义技能中寻找或维护 SQL 验证/执行脚本。
 - 不要自己拼脚本路径或脚本名；禁止使用 primary `DATAAGENT_SKILL_ROOT`、部署绝对路径、裸相对路径或猜测脚本名。
 - 不要执行环境探测或依赖安装命令。
