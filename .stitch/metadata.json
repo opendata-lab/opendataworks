@@ -1,0 +1,56 @@
+{
+  "projectId": "16477035654904643054",
+  "projectTitle": "OpenDataWorks",
+  "designSystemId": "assets/1912764326092695272",
+  "screens": {
+    "desktop": {
+      "current": "52468d74a41544819f576db5db05dd95",
+      "history": [
+        "52468d74a41544819f576db5db05dd95"
+      ]
+    },
+    "mobile": {
+      "current": "",
+      "history": []
+    }
+  },
+  "interview": {
+    "projectName": "OpenDataWorks",
+    "description": "An open-source unified data portal for metadata management, workflow orchestration, lineage analysis, and natural language intelligent query.",
+    "targetUsers": "Data platform teams, data engineers, and technical teams evaluating a deployable open-source data portal.",
+    "cta": "查看在线 Demo",
+    "ctaUrl": "https://opendataworks-demo.vercel.app",
+    "brandFeel": [
+      "professional",
+      "open-source friendly",
+      "intelligent"
+    ],
+    "colorMode": "LIGHT",
+    "primaryColor": "#0D9488",
+    "colorVariant": "TONAL_SPOT",
+    "headlineFont": "SPACE_GROTESK",
+    "bodyFont": "IBM_PLEX_SANS",
+    "roundness": "ROUND_EIGHT"
+  },
+  "iterationCount": 5,
+  "status": "designing",
+  "lastHtmlPath": "/Users/guoruping/project/bigdata/opendataworks/.stitch/designs/desktop-v5.html",
+  "manualRevisions": [
+    {
+      "version": "desktop-v2.html",
+      "reason": "Replaced generated product mockup with real OpenDataWorks screenshots for workflow orchestration, lineage, and Data Studio."
+    },
+    {
+      "version": "desktop-v3.html",
+      "reason": "Replaced product screenshots with a professional product architecture diagram covering Portal, Platform Backend, Workflow and Lineage, DataAgent, integrations, runtime, and deployment."
+    },
+    {
+      "version": "desktop-v4.html",
+      "reason": "Replaced the HTML-built architecture layout with a standalone professional architecture image asset, using PNG in the landing page and keeping SVG as the editable source."
+    },
+    {
+      "version": "desktop-v5.html",
+      "reason": "Simplified the architecture image into three clear layers: access layer, core capabilities, and deploy/integrate layer, with fewer words and stronger module focus."
+    }
+  ]
+}

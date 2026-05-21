@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="820" viewBox="0 0 1600 820" role="img" aria-labelledby="title desc">
+  <title id="title">OpenDataWorks simplified product architecture</title>
+  <desc id="desc">A clean three-layer product architecture diagram highlighting OpenDataWorks portal, four core capabilities, and deployment integrations.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FCFA"/>
+      <stop offset="52%" stop-color="#F1FAF7"/>
+      <stop offset="100%" stop-color="#F6F8FF"/>
+    </linearGradient>
+    <linearGradient id="portal" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#DDFCF5"/>
+      <stop offset="100%" stop-color="#E6ECFF"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="100%" stop-color="#1E40AF"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-18%" y="-30%" width="136%" height="170%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#14211F" flood-opacity="0.13"/>
+    </filter>
+    <filter id="softShadow" x="-15%" y="-25%" width="130%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#14211F" flood-opacity="0.09"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#0D9488"/>
+    </marker>
+    <style>
+      .font { font-family: "IBM Plex Sans", "Inter", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; }
+      .headline { font-family: "Space Grotesk", "IBM Plex Sans", "PingFang SC", "Microsoft YaHei", Arial, sans-serif; font-weight: 700; }
+      .eyebrow { font-size: 16px; font-weight: 700; letter-spacing: 4px; fill: #0D9488; }
+      .title { font-size: 38px; font-weight: 700; fill: #243331; }
+      .subtitle { font-size: 20px; fill: #5D6B68; }
+      .layer { font-size: 16px; font-weight: 700; letter-spacing: 3px; fill: #0D9488; }
+      .module { font-size: 25px; font-weight: 700; fill: #263432; }
+      .cap { font-size: 18px; fill: #5E6A68; }
+      .chip { font-size: 17px; font-weight: 700; fill: #273533; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="820" rx="36" fill="url(#bg)"/>
+  <circle cx="116" cy="120" r="112" fill="#8AF1E3" opacity="0.22"/>
+  <circle cx="1472" cy="708" r="150" fill="#4766E8" opacity="0.08"/>
+
+  <g class="font">
+    <text x="72" y="78" class="headline" font-size="34" fill="#00796B">OpenDataWorks</text>
+    <text x="72" y="112" class="subtitle">Unified data portal for metadata, workflow, lineage, and intelligent query</text>
+  </g>
+
+  <g filter="url(#cardShadow)">
+    <rect x="64" y="150" width="1472" height="604" rx="32" fill="#FFFFFF" stroke="#C8D8D5"/>
+  </g>
+
+  <g class="font">
+    <text x="110" y="206" class="layer">ACCESS LAYER</text>
+    <g filter="url(#softShadow)">
+      <rect x="110" y="228" width="1380" height="112" rx="24" fill="url(#portal)" stroke="#9ED8CF"/>
+      <text x="152" y="282" class="title">统一数据门户</text>
+      <text x="152" y="312" class="subtitle">一个入口连接数据资产、任务运维、血缘洞察与自然语言分析</text>
+      <rect x="1018" y="260" width="120" height="40" rx="20" fill="#D8FFF8" stroke="#76DFD3"/>
+      <text x="1049" y="286" font-size="16" font-weight="700" fill="#00796B">Portal</text>
+      <rect x="1154" y="260" width="150" height="40" rx="20" fill="#E5EAFF" stroke="#BDCAFF"/>
+      <text x="1188" y="286" font-size="16" font-weight="700" fill="#365BD6">Data Studio</text>
+      <rect x="1320" y="260" width="122" height="40" rx="20" fill="#E8FFE9" stroke="#9DF2A9"/>
+      <text x="1358" y="286" font-size="16" font-weight="700" fill="#087B35">AI</text>
+    </g>
+
+    <path d="M800 348 L800 388" stroke="#0D9488" stroke-width="4" marker-end="url(#arrow)" fill="none"/>
+    <text x="110" y="410" class="layer">CORE CAPABILITIES</text>
+
+    <g filter="url(#softShadow)">
+      <rect x="110" y="432" width="315" height="154" rx="22" fill="#FFFFFF" stroke="#C9D9D6"/>
+      <rect x="146" y="468" width="54" height="54" rx="16" fill="#D8FFF8" stroke="#84EADB"/>
+      <text x="163" y="504" font-size="28" fill="#00796B">▦</text>
+      <text x="224" y="491" class="module">元数据管理</text>
+      <text x="224" y="526" class="cap">资产目录 · 分层模型</text>
+      <text x="224" y="554" class="cap">表级上下文</text>
+    </g>
+
+    <g filter="url(#softShadow)">
+      <rect x="462" y="432" width="315" height="154" rx="22" fill="#FFFFFF" stroke="#C9D9D6"/>
+      <rect x="498" y="468" width="54" height="54" rx="16" fill="#E5EAFF" stroke="#BDCAFF"/>
+      <text x="516" y="504" font-size="28" fill="#365BD6">↯</text>
+      <text x="576" y="491" class="module">工作流编排</text>
+      <text x="576" y="526" class="cap">创建 · 发布 · 调度</text>
+      <text x="576" y="554" class="cap">运行监控</text>
+    </g>
+
+    <g filter="url(#softShadow)">
+      <rect x="814" y="432" width="315" height="154" rx="22" fill="#FFFFFF" stroke="#C9D9D6"/>
+      <rect x="850" y="468" width="54" height="54" rx="16" fill="#E8FFE9" stroke="#9DF2A9"/>
+      <text x="866" y="504" font-size="28" fill="#087B35">⌘</text>
+      <text x="928" y="491" class="module">血缘分析</text>
+      <text x="928" y="526" class="cap">SQL 解析 · 图谱探索</text>
+      <text x="928" y="554" class="cap">影响分析</text>
+    </g>
+
+    <g filter="url(#softShadow)">
+      <rect x="1166" y="432" width="324" height="154" rx="22" fill="#FFFFFF" stroke="#C9D9D6"/>
+      <rect x="1202" y="468" width="54" height="54" rx="16" fill="#D8FFF8" stroke="#84EADB"/>
+      <text x="1218" y="504" font-size="28" fill="#00796B">✦</text>
+      <text x="1280" y="491" class="module">智能问数</text>
+      <text x="1280" y="526" class="cap">NL2SQL · 结果洞察</text>
+      <text x="1280" y="554" class="cap">会话追踪</text>
+    </g>
+
+    <path d="M425 509 L456 509" stroke="#0D9488" stroke-width="3.5" marker-end="url(#arrow)" fill="none"/>
+    <path d="M777 509 L808 509" stroke="#0D9488" stroke-width="3.5" marker-end="url(#arrow)" fill="none"/>
+    <path d="M1129 509 L1160 509" stroke="#0D9488" stroke-width="3.5" marker-end="url(#arrow)" fill="none"/>
+
+    <text x="110" y="650" class="layer">DEPLOY &amp; INTEGRATE</text>
+    <g>
+      <rect x="110" y="674" width="180" height="54" rx="18" fill="#F0F8F6" stroke="#CBDAD7"/>
+      <text x="153" y="708" class="chip">Docker</text>
+      <rect x="314" y="674" width="210" height="54" rx="18" fill="#F0F8F6" stroke="#CBDAD7"/>
+      <text x="362" y="708" class="chip">MySQL / Redis</text>
+      <rect x="548" y="674" width="250" height="54" rx="18" fill="#F0F8F6" stroke="#CBDAD7"/>
+      <text x="590" y="708" class="chip">DolphinScheduler</text>
+      <rect x="822" y="674" width="190" height="54" rx="18" fill="#F0F8F6" stroke="#CBDAD7"/>
+      <text x="868" y="708" class="chip">Portal MCP</text>
+      <rect x="1036" y="674" width="210" height="54" rx="18" fill="#F0F8F6" stroke="#CBDAD7"/>
+      <text x="1085" y="708" class="chip">Data Sources</text>
+      <rect x="1270" y="674" width="220" height="54" rx="18" fill="#F0F8F6" stroke="#CBDAD7"/>
+      <text x="1316" y="708" class="chip">Open Source</text>
+    </g>
+
+    <g>
+      <rect x="538" y="610" width="524" height="44" rx="22" fill="url(#accent)"/>
+      <text x="626" y="638" font-size="18" font-weight="700" fill="#FFFFFF">Catalog → Workflow → Lineage → NL2SQL</text>
+    </g>
+  </g>
+</svg>
