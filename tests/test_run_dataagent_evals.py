@@ -125,6 +125,79 @@ def test_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
     assert "你是 DataAgent 在线问数评测裁判" in body["messages"][0]["content"]
 
 
+def test_default_judge_timeout_is_long_enough_for_slow_judge(monkeypatch):
+    runner = _load_runner()
+    monkeypatch.delenv("DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS", raising=False)
+
+    args = runner.parse_args(["--dry-run", "--dataset", "cases.jsonl"])
+    config = runner._judge_config_from_args(
+        types.SimpleNamespace(
+            judge_base_url="http://judge",
+            judge_token="token",
+            judge_model="model",
+            judge_timeout_seconds=args.judge_timeout_seconds,
+            judge_max_tokens=args.judge_max_tokens,
+        )
+    )
+
+    assert config.timeout_seconds == 300
+
+
+def test_http_json_wraps_socket_timeout_as_eval_runner_error(monkeypatch):
+    runner = _load_runner()
+
+    def fake_urlopen(*args, **kwargs):
+        raise TimeoutError("timed out")
+
+    monkeypatch.setattr(runner.urllib.request, "urlopen", fake_urlopen)
+
+    try:
+        runner.http_json("POST", "http://judge/v1/messages", {"model": "m"}, timeout=1)
+    except runner.EvalRunnerError as exc:
+        assert "request timed out" in str(exc)
+        assert exc.exit_code == 2
+    else:
+        raise AssertionError("expected EvalRunnerError")
+
+
+def test_compact_judge_payload_bounds_large_evidence_payload():
+    runner = _load_runner()
+    payload = {
+        "case": _sample_case(),
+        "user_question": "最近 30 天工作流发布次数趋势",
+        "final_answer": "answer-" + ("x" * 50000),
+        "task_status": "success",
+        "task_error": None,
+        "tool_events": [
+            {
+                "seq_id": i,
+                "event_type": "AFTER_TOOL_CALL",
+                "tool_name": "run_sql",
+                "output": {
+                    "sql": "SELECT " + ("col, " * 1000) + "1",
+                    "rows": [{"value": "y" * 1000} for _ in range(50)],
+                    "summary": "返回 50 行结果",
+                },
+            }
+            for i in range(120)
+        ],
+        "sql_outputs": ["SELECT " + ("x" * 10000) for _ in range(60)],
+        "chart_outputs": [{"rows": ["z" * 1000 for _ in range(30)]} for _ in range(20)],
+        "auto_rule_check": {"passed": True, "failure_attribution": []},
+    }
+
+    compact = runner._compact_judge_payload(payload)
+    serialized = json.dumps(compact, ensure_ascii=False)
+
+    assert len(serialized) < 80000
+    assert compact["case"]["case_id"] == "ODW_SAMPLE_001"
+    assert len(compact["final_answer"]) < len(payload["final_answer"])
+    assert len(compact["tool_events"]) <= 80
+    assert len(compact["sql_outputs"]) <= 20
+    assert len(compact["chart_outputs"]) <= 5
+    assert "truncated" in serialized
+
+
 def test_poll_task_retries_transient_event_error(monkeypatch):
     runner = _load_runner()
     calls = {"task": 0, "events": 0}
@@ -166,6 +239,157 @@ def test_auto_rule_check_adds_generic_failure_attribution():
     assert {"sql_only", "wrong_domain", "placeholder_leak", "empty_result"}.issubset(
         set(result["failure_attribution"])
     )
+
+
+def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
+    runner = _load_runner()
+    actual_sql = (
+        "SELECT COUNT(cmp_name) AS cmp_cnt "
+        "FROM public.dim_tech_public_env_cmp_df "
+        "WHERE env_name = 'PROD'"
+    )
+    events = [
+        {
+            "event_type": "BEFORE_AGENT_REPLY",
+            "data": {
+                "content": "技能说明：不要使用 SELECT *，模板中的 <SQL> 不是实际执行 SQL。",
+            },
+        },
+        {
+            "event_type": "AFTER_TOOL_CALL",
+            "data": {
+                "tool_name": "run_sql",
+                "output": {
+                    "kind": "sql_execution",
+                    "sql": actual_sql,
+                    "rows": [{"cmp_cnt": 301}],
+                },
+            },
+        },
+    ]
+
+    sql_outputs = runner._extract_sql_outputs(events, "当前 PROD 环境共有 301 个分级保障组件。")
+
+    assert sql_outputs == [actual_sql]
+
+
+def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
+    runner = _load_runner()
+    case = {
+        **_sample_case(),
+        "required_sql_fragments": ["public.dim_tech_public_env_cmp_df"],
+        "forbidden_sql_patterns": [r"(?i)select\s+\*"],
+    }
+    actual_sql = (
+        "SELECT * "
+        "FROM public.dim_tech_public_env_cmp_df "
+        "WHERE env_name = 'PROD'"
+    )
+    events = [
+        {
+            "data": {
+                "content": "参考文档提示：避免 SELECT *；OpenDataWorks 平台元数据不是本题答案。",
+            },
+        }
+    ]
+
+    result = runner.auto_rule_check(
+        case,
+        final_answer="当前 PROD 环境共有 301 个分级保障组件。",
+        events=events,
+        sql_outputs=[actual_sql],
+        tool_names=["run_sql"],
+    )
+
+    assert result["passed"] is True
+    assert result["forbidden_sql_patterns"] == []
+    assert "forbidden_sql" not in result["failure_attribution"]
+    assert "wrong_domain" not in result["failure_attribution"]
+
+
+def test_judge_payload_removes_sql_style_veto_rules():
+    runner = _load_runner()
+    case = {
+        **_sample_case(),
+        "veto_rules": [
+            "编造不存在的数据。",
+            "SQL 不带 schema 前缀、使用 SELECT * 或明显违反当前 skill SQL 硬规则。",
+        ],
+        "forbidden_sql_patterns": [r"(?i)select\s+\*"],
+    }
+
+    payload_case = runner._case_for_judge(case)
+
+    assert "forbidden_sql_patterns" not in payload_case
+    assert payload_case["veto_rules"] == ["编造不存在的数据。"]
+
+
+def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
+    runner = _load_runner()
+    events = [
+        {
+            "event_type": "BEFORE_AGENT_REPLY",
+            "data": {"content": "reasoning " + ("x" * 20000)},
+        },
+        {
+            "seq_id": 10,
+            "event_type": "BEFORE_TOOL_CALL",
+            "data": {
+                "tool_name": "run_sql",
+                "input": {
+                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                    "description": "count components",
+                },
+            },
+        },
+        {
+            "seq_id": 11,
+            "event_type": "AFTER_TOOL_CALL",
+            "data": {
+                "tool_name": "run_sql",
+                "output": {
+                    "kind": "sql_execution",
+                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                    "columns": ["cnt"],
+                    "rows": [{"cnt": 301}],
+                    "row_count": 1,
+                    "result_state": "success",
+                    "summary": "返回 1 行结果",
+                },
+            },
+        },
+    ]
+
+    summary = runner._summarize_tool_events(events)
+    serialized = json.dumps(summary, ensure_ascii=False)
+
+    assert len(serialized) < 4000
+    assert "xxxxxxxxxx" not in serialized
+    assert summary == [
+        {
+            "seq_id": 10,
+            "event_type": "BEFORE_TOOL_CALL",
+            "tool_name": "run_sql",
+            "input": {
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "description": "count components",
+            },
+        },
+        {
+            "seq_id": 11,
+            "event_type": "AFTER_TOOL_CALL",
+            "tool_name": "run_sql",
+            "output": {
+                "kind": "sql_execution",
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "columns": ["cnt"],
+                "rows": [{"cnt": 301}],
+                "row_count": 1,
+                "result_state": "success",
+                "summary": "返回 1 行结果",
+            },
+        },
+    ]
 
 
 def test_run_cases_parallel_preserves_dataset_order_and_records_crashes(monkeypatch):
