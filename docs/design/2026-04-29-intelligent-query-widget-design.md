@@ -16,6 +16,7 @@ External Vue + Spring Boot projects need to embed intelligent query with a singl
   src="https://odw.example.com/widget/opendataworks-widget.bundle.js"
   data-display-mode="floating"
   data-website-id="your-project"
+  data-agent-id="agent_widget"
   data-user-id="USER_123"
   data-project-name="Your Project"
   data-project-color="#4A90A4"
@@ -34,6 +35,7 @@ Some host systems also need to place intelligent query inside a normal applicati
   data-display-mode="inline"
   data-container-id="odw-intelligent-query"
   data-website-id="your-project"
+  data-agent-id="agent_widget"
   data-user-id="USER_123"
   data-project-name="Your Project"
   data-project-color="#4A90A4"
@@ -95,6 +97,8 @@ Widget calls add these headers:
 - `X-ODW-Website-Id: <website_id>`
 - `X-ODW-User-Id: <business_user_id>`
 - `X-ODW-Visitor-Id: <generated_visitor_id>` when no user id is provided
+
+Widget runtime payloads also include `agent_id` from the embedding script's `data-agent-id`. Widget topic creation requires this value so the selected DataAgent profile snapshot, including its `data_scope`, is stored on the topic. Widget topic listing and message delivery pass the same `agent_id` to keep history filtering and task validation aligned with the selected agent.
 
 Portal calls send no widget headers and remain `source=portal`.
 

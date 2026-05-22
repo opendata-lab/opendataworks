@@ -3,12 +3,14 @@ package com.onedata.portal.agentapi.service;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentReadQueryRequest;
 import com.onedata.portal.agentapi.dto.AgentReadQueryResponse;
+import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import lombok.RequiredArgsConstructor;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.Statements;
 import net.sf.jsqlparser.statement.select.Select;
+import net.sf.jsqlparser.util.TablesNamesFinder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -54,6 +56,8 @@ public class BackendAgentQueryService implements AgentQueryService {
         }
 
         validateReadOnlySql(sql);
+        AgentDataScopeContext.requireDatabaseNameAllowed(database);
+        validateSqlReferencesInScope(sql);
         int limit = normalizeLimit(request.getLimit());
         int timeoutSeconds = normalizeTimeout(request.getTimeoutSeconds());
         String preferredEngine = trimToLower(request.getPreferredEngine());
@@ -112,6 +116,44 @@ public class BackendAgentQueryService implements AgentQueryService {
         }
 
         return READ_ONLY_FALLBACK_KEYWORDS.contains(detectLeadingKeyword(sql));
+    }
+
+    private void validateSqlReferencesInScope(String sql) {
+        if (!AgentDataScopeContext.isActive()) {
+            return;
+        }
+        try {
+            Statement statement = CCJSqlParserUtil.parse(sql);
+            TablesNamesFinder finder = new TablesNamesFinder();
+            for (String tableName : finder.getTableList(statement)) {
+                String schema = schemaFromTableName(tableName);
+                if (StringUtils.hasText(schema)) {
+                    AgentDataScopeContext.requireSqlSchemaAllowed(schema);
+                }
+            }
+        } catch (JSQLParserException ignored) {
+            validateSqlReferencesInScopeLexically(sql);
+        }
+    }
+
+    private void validateSqlReferencesInScopeLexically(String sql) {
+        String normalizedSql = maskCommentsAndQuotedText(sql);
+        Matcher matcher = Pattern.compile("(?i)\\b(?:from|join|describe|desc)\\s+`?([A-Za-z0-9_]+)`?\\s*\\.").matcher(normalizedSql);
+        while (matcher.find()) {
+            AgentDataScopeContext.requireSqlSchemaAllowed(matcher.group(1));
+        }
+    }
+
+    private String schemaFromTableName(String tableName) {
+        if (!StringUtils.hasText(tableName)) {
+            return null;
+        }
+        String normalized = tableName.replace("`", "").trim();
+        int index = normalized.indexOf('.');
+        if (index <= 0) {
+            return null;
+        }
+        return normalized.substring(0, index).trim();
     }
 
     private void validateReadOnlySqlWithLexicalFallback(String sql) {

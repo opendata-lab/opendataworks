@@ -127,15 +127,44 @@ def test_build_portal_mcp_servers_returns_http_config():
         dataagent_portal_mcp_token_header_name="X-Portal-MCP-Token",
     )
 
-    actual = agent_runtime._build_portal_mcp_servers(cfg)
+    actual = agent_runtime._build_portal_mcp_servers(
+        cfg,
+        agent_snapshot={
+            "data_scope": {
+                "allowed_scopes": [
+                    {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"}
+                ]
+            }
+        },
+    )
 
     assert actual == {
         "portal": {
             "type": "http",
             "url": "http://portal-mcp:8801/mcp/",
-            "headers": {"X-Portal-MCP-Token": "portal-token"},
+            "headers": {
+                "X-Portal-MCP-Token": "portal-token",
+                "X-Agent-Data-Scope": "eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19",
+            },
         }
     }
+
+
+def test_build_system_prompt_includes_authorized_data_scope():
+    prompt = agent_runtime._build_system_prompt(
+        None,
+        {"enabled_folders": ["opendataworks-platform-tools"]},
+        {
+            "data_scope": {
+                "allowed_scopes": [
+                    {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"}
+                ]
+            }
+        },
+    )
+
+    assert "已授权数据范围" in prompt
+    assert "cluster_id=3, source_type=DORIS, database=ads_user" in prompt
 
 
 def test_build_portal_mcp_servers_returns_empty_when_disabled_or_incomplete():

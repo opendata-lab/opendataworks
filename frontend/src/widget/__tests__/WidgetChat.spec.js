@@ -30,6 +30,7 @@ vi.mock('@/api/nl2sql', () => ({
 const baseConfig = {
   displayMode: 'floating',
   projectColor: '#4A90A4',
+  agentId: 'agent_widget',
   headers: {
     'X-ODW-Client': 'widget',
     'X-ODW-Website-Id': 'demo',
@@ -135,6 +136,7 @@ describe('WidgetChat history conversations', () => {
     expect(apiMocks.createClient).toHaveBeenCalledWith(expect.objectContaining({
       defaultHeaders: baseConfig.headers
     }))
+    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: 'agent_widget' })
     expect(apiMocks.topicApi.getTopicMessages).toHaveBeenCalledWith('topic-1', { page: 1, page_size: 200, order: 'asc' })
   })
 
@@ -152,10 +154,21 @@ describe('WidgetChat history conversations', () => {
 
     await wrapper.get('[data-testid="new-conversation"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('Widget 会话')
+    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('Widget 会话', { agent_id: 'agent_widget' })
     expect(wrapper.text()).toContain('Widget 会话')
     expect(wrapper.text()).toContain('请输入你的数据问题')
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
+  })
+
+  it('shows a configuration error when the embedding script omits agent id', async () => {
+    const { wrapper } = mountChat({ config: { agentId: '', displayMode: 'inline' } })
+
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Widget 缺少 data-agent-id 配置')
+    expect(wrapper.get('[data-testid="new-conversation"]').attributes('disabled')).toBeDefined()
+    expect(apiMocks.topicApi.listTopics).not.toHaveBeenCalled()
+    expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
   })
 
   it('renders floating as a compact portal-style panel with a history drawer and no delete actions', async () => {
@@ -201,5 +214,8 @@ describe('WidgetChat history conversations', () => {
     await flushPromises()
 
     expect(wrapper.findAll('.query-main-text').some((item) => item.text().includes('smoke-ok'))).toBe(true)
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      agent_id: 'agent_widget'
+    }))
   })
 })

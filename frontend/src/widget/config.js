@@ -36,6 +36,7 @@ export function parseWidgetConfig(script = resolveCurrentScript()) {
   const dataset = script?.dataset || {}
   const websiteId = String(dataset.websiteId || '').trim()
   const userId = String(dataset.userId || '').trim()
+  const agentId = String(dataset.agentId || '').trim()
   const visitorId = userId ? '' : resolveVisitorId(websiteId)
   const apiBaseUrl = trimTrailingSlash(dataset.apiBaseUrl || (script?.src ? new URL(script.src, window.location.href).origin : ''))
   const projectName = String(dataset.projectName || DEFAULT_PROJECT_NAME).trim() || DEFAULT_PROJECT_NAME
@@ -57,6 +58,7 @@ export function parseWidgetConfig(script = resolveCurrentScript()) {
   return {
     websiteId,
     userId,
+    agentId,
     visitorId,
     projectName,
     projectColor,

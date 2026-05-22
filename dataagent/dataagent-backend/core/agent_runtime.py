@@ -13,6 +13,7 @@ from typing import Any
 from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import normalize_provider_id as _normalize_provider_id
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
+from core.data_scope import encode_scope_header, normalize_data_scope
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
     prepare_enabled_skills_project_cwd,
@@ -78,6 +79,17 @@ def _build_system_prompt(
     custom_prompt = str((agent_snapshot or {}).get("system_prompt") or "").strip()
     if custom_prompt:
         lines.extend(["", "# 智能体系统提示词", custom_prompt])
+    data_scope = normalize_data_scope((agent_snapshot or {}).get("data_scope") or {})
+    scope_items = data_scope.get("allowed_scopes", [])
+    if scope_items:
+        lines.extend(["", "# 已授权数据范围"])
+        for item in scope_items:
+            cluster_text = "null" if item.get("cluster_id") is None else str(item.get("cluster_id"))
+            lines.append(
+                f"- cluster_id={cluster_text}, source_type={item.get('source_type') or ''}, database={item.get('database') or ''}"
+            )
+    else:
+        lines.extend(["", "# 已授权数据范围", "- 无。未配置数据范围时禁止访问任何元数据或查询任何数据。"])
     if database_hint:
         lines.append(f"- 用户显式提供的 database hint: {database_hint}")
     return "\n".join(lines)
@@ -251,6 +263,11 @@ def _build_runtime_env(
             "DATAAGENT_SKILL_ROOT": str(skills_root),
             "DATAAGENT_ENABLED_SKILLS": ",".join(enabled_folders),
             "DATAAGENT_ENABLED_SKILL_ROOTS": json.dumps(enabled_roots, ensure_ascii=False),
+            "DATAAGENT_DATA_SCOPE_JSON": json.dumps(
+                normalize_data_scope((getattr(params, "agent_snapshot", None) or {}).get("data_scope") or {}),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             "VIRTUAL_ENV": str(python_bin.parent.parent),
             "PATH": runtime_path,
             "TZ": str(os.getenv("TZ") or "Asia/Shanghai"),
@@ -292,6 +309,7 @@ def _resolve_sdk_permission_mode(permission_mode: str | None = None) -> str:
 def _build_portal_mcp_servers(
     cfg: Any,
     mcp_server_ids: list[str] | tuple[str, ...] | None = None,
+    agent_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     selected = _dedupe_strings(mcp_server_ids)
     if mcp_server_ids is not None and PORTAL_MCP_SERVER_NAME not in selected:
@@ -309,15 +327,19 @@ def _build_portal_mcp_servers(
         str(getattr(cfg, "dataagent_portal_mcp_token_header_name", "") or "").strip()
         or "X-Portal-MCP-Token"
     )
+    headers = {
+        header_name: token,
+    }
+    if agent_snapshot is not None:
+        headers["X-Agent-Data-Scope"] = encode_scope_header((agent_snapshot or {}).get("data_scope") or {})
+
     return {
         PORTAL_MCP_SERVER_NAME: {
             "type": "http",
             # portal-mcp is mounted as a Starlette sub-app; /mcp redirects to
             # /mcp/, and Streamable HTTP clients may not follow POST redirects.
             "url": raw_url.rstrip("/") + "/",
-            "headers": {
-                header_name: token,
-            },
+            "headers": headers,
         }
     }
 

@@ -380,6 +380,7 @@ class AgentProfileBase(BaseModel):
     skill_folders: Optional[List[str]] = None
     max_turns: Optional[int] = None
     env_vars: Optional[Dict[str, str]] = None
+    data_scope: Optional[Dict[str, Any]] = None
 
 
 class AgentProfileCreateRequest(AgentProfileBase):
@@ -410,6 +411,13 @@ class AgentCapabilitiesResponse(BaseModel):
     permission_modes: List[str] = Field(default_factory=list)
 
 
+class AgentDataScopeOption(BaseModel):
+    cluster_id: Optional[int] = None
+    cluster_name: str = ""
+    source_type: str = ""
+    database: str = ""
+
+
 class AgentProfile(BaseModel):
     agent_id: str
     name: str
@@ -422,6 +430,7 @@ class AgentProfile(BaseModel):
     skill_folders: List[str] = Field(default_factory=list)
     max_turns: int = 0
     env_vars: Dict[str, str] = Field(default_factory=dict)
+    data_scope: Dict[str, Any] = Field(default_factory=lambda: {"allowed_scopes": []})
     is_default: bool = False
     is_builtin: bool = False
     created_at: str = ""

@@ -844,7 +844,11 @@ async def execute_task_stream(
     permission_mode = _resolve_sdk_permission_mode(str((agent_snapshot or {}).get("permission_mode") or "inherit"))
     max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
     setting_sources = ["project"]
-    mcp_servers = _build_portal_mcp_servers(cfg, (agent_snapshot or {}).get("mcp_server_ids") if agent_snapshot else None)
+    mcp_servers = _build_portal_mcp_servers(
+        cfg,
+        (agent_snapshot or {}).get("mcp_server_ids") if agent_snapshot else None,
+        agent_snapshot=agent_snapshot,
+    )
     allowed_tools = _build_allowed_tools(mcp_servers, (agent_snapshot or {}).get("allowed_tools") if agent_snapshot else None)
     options_kwargs = dict(
         system_prompt=system_prompt,

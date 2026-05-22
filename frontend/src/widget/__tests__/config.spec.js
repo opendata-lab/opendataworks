@@ -11,11 +11,13 @@ describe('parseWidgetConfig', () => {
     script.dataset.projectName = 'Demo Project'
     script.dataset.projectColor = '#4A90A4'
     script.dataset.apiBaseUrl = 'https://odw.example.com/'
+    script.dataset.agentId = 'agent_widget'
 
     const config = parseWidgetConfig(script)
 
     expect(config.websiteId).toBe('demo')
     expect(config.userId).toBe('user-123')
+    expect(config.agentId).toBe('agent_widget')
     expect(config.projectName).toBe('Demo Project')
     expect(config.projectColor).toBe('#4A90A4')
     expect(config.apiBaseUrl).toBe('https://odw.example.com')

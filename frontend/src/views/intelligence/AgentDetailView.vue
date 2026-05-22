@@ -82,6 +82,31 @@
           <el-input v-model="envVarsText" type="textarea" :rows="6" />
         </el-form-item>
       </section>
+
+      <section class="agent-section">
+        <h3>数据范围</h3>
+        <el-form-item label="允许访问的 Schema">
+          <el-select
+            v-model="scopeSelection"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="选择数据源 Schema"
+          >
+            <el-option
+              v-for="option in dataScopeOptions"
+              :key="scopeKey(option)"
+              :label="scopeLabel(option)"
+              :value="scopeKey(option)"
+            />
+          </el-select>
+        </el-form-item>
+        <div v-if="!scopeSelection.length" class="scope-empty">无可访问数据范围</div>
+        <div v-else class="scope-list">
+          <span v-for="key in scopeSelection" :key="key">{{ scopeLabel(scopeOptionByKey[key]) }}</span>
+        </div>
+      </section>
     </el-form>
   </section>
 </template>
@@ -98,6 +123,8 @@ const router = useRouter()
 const loading = ref(false)
 const saving = ref(false)
 const envVarsText = ref('{}')
+const dataScopeOptions = ref([])
+const scopeSelection = ref([])
 
 const capabilities = reactive({
   tools: [],
@@ -118,10 +145,29 @@ const form = reactive({
   skill_folders: [],
   max_turns: 0,
   env_vars: {},
+  data_scope: { allowed_scopes: [] },
   is_default: false
 })
 
 const agentId = computed(() => String(route.params.agentId || ''))
+const scopeOptionByKey = computed(() => {
+  const map = {}
+  for (const option of dataScopeOptions.value) {
+    map[scopeKey(option)] = option
+  }
+  for (const item of form.data_scope?.allowed_scopes || []) {
+    map[scopeKey(item)] = map[scopeKey(item)] || item
+  }
+  return map
+})
+
+const scopeKey = (scope) => `${scope?.cluster_id ?? 'platform'}::${scope?.database || ''}`
+const scopeLabel = (scope) => {
+  if (!scope) return ''
+  const cluster = scope.cluster_name || (scope.cluster_id == null ? 'platform-mysql' : `cluster_id=${scope.cluster_id}`)
+  const source = scope.source_type || '-'
+  return `${cluster} / ${source} / ${scope.database || ''}`
+}
 
 const applyAgent = (agent) => {
   Object.assign(form, {
@@ -136,17 +182,22 @@ const applyAgent = (agent) => {
     skill_folders: Array.isArray(agent?.skill_folders) ? [...agent.skill_folders] : [],
     max_turns: Number(agent?.max_turns || 0),
     env_vars: agent?.env_vars && typeof agent.env_vars === 'object' ? { ...agent.env_vars } : {},
+    data_scope: agent?.data_scope && typeof agent.data_scope === 'object'
+      ? { allowed_scopes: Array.isArray(agent.data_scope.allowed_scopes) ? [...agent.data_scope.allowed_scopes] : [] }
+      : { allowed_scopes: [] },
     is_default: Boolean(agent?.is_default)
   })
   envVarsText.value = JSON.stringify(form.env_vars || {}, null, 2)
+  scopeSelection.value = (form.data_scope.allowed_scopes || []).map(scopeKey)
 }
 
 const loadDetail = async () => {
   loading.value = true
   try {
-    const [agent, caps] = await Promise.all([
+    const [agent, caps, scopeOptions] = await Promise.all([
       dataagentApi.getAgent(agentId.value),
-      dataagentApi.getAgentCapabilities()
+      dataagentApi.getAgentCapabilities(),
+      dataagentApi.listDataScopeOptions()
     ])
     Object.assign(capabilities, {
       tools: caps?.tools || [],
@@ -154,6 +205,7 @@ const loadDetail = async () => {
       skills: caps?.skills || [],
       permission_modes: caps?.permission_modes || capabilities.permission_modes
     })
+    dataScopeOptions.value = Array.isArray(scopeOptions) ? scopeOptions : []
     applyAgent(agent)
   } finally {
     loading.value = false
@@ -179,7 +231,17 @@ const buildPayload = () => {
     mcp_server_ids: [...form.mcp_server_ids],
     skill_folders: [...form.skill_folders],
     max_turns: Number(form.max_turns || 0),
-    env_vars: envVars
+    env_vars: envVars,
+    data_scope: {
+      allowed_scopes: scopeSelection.value
+        .map((key) => scopeOptionByKey.value[key])
+        .filter(Boolean)
+        .map((scope) => ({
+          cluster_id: scope.cluster_id ?? null,
+          source_type: scope.source_type || '',
+          database: scope.database || ''
+        }))
+    }
   }
 }
 
@@ -265,6 +327,25 @@ onMounted(loadDetail)
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 6px 12px;
+}
+
+.scope-empty {
+  color: #b42318;
+  font-size: 13px;
+}
+
+.scope-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scope-list span {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: #eef4ff;
+  color: #344054;
+  font-size: 12px;
 }
 
 @media (max-width: 960px) {

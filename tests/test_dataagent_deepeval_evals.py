@@ -171,6 +171,64 @@ def test_deepeval_apply_judges_uses_shared_results_when_metric_is_copied(monkeyp
     assert updated[0]["case_passed"] is True
 
 
+def test_deepeval_agent_id_can_default_from_environment(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    monkeypatch.setenv("DATAAGENT_EVAL_AGENT_ID", "agent_eval")
+
+    args = runner.parse_args(["--dry-run", "--dataset", "cases.jsonl"])
+
+    assert args.agent_id == "agent_eval"
+
+
+def test_deepeval_non_dry_run_requires_agent_id(tmp_path, capsys, monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    dataset = tmp_path / "cases.jsonl"
+    dataset.write_text(json.dumps(_sample_case(), ensure_ascii=False) + "\n", encoding="utf-8")
+
+    code = runner.main(
+        [
+            "--dataset",
+            str(dataset),
+            "--output-dir",
+            str(tmp_path),
+            "--judge-base-url",
+            "http://judge",
+            "--judge-token",
+            "token",
+            "--judge-model",
+            "model",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "--agent-id" in captured.err
+
+
+def test_deepeval_topic_and_task_requests_include_agent_id(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, **kwargs):
+        calls.append({"method": method, "url": url, "payload": payload, "kwargs": kwargs})
+        if url.endswith("/topics"):
+            return {"topic_id": "topic-1"}
+        return {"task_id": "task-1"}
+
+    monkeypatch.setattr(runner, "http_json", fake_http_json)
+    args = types.SimpleNamespace(provider_id="", model="", agent_id="agent_eval")
+
+    topic_id = runner._create_topic("http://dataagent", _sample_case(), args.agent_id)
+    task_id = runner._submit_task("http://dataagent", topic_id, _sample_case(), args)
+
+    assert task_id == "task-1"
+    assert calls[0]["payload"]["agent_id"] == "agent_eval"
+    assert calls[1]["payload"]["agent_id"] == "agent_eval"
+
+
 def test_deepeval_evaluate_error_without_all_judges_raises_runner_error(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
@@ -467,6 +525,8 @@ def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monk
                 str(dataset),
                 "--output-dir",
                 str(output_dir),
+                "--agent-id",
+                "agent_eval",
                 "--judge-base-url",
                 "http://judge",
                 "--judge-token",

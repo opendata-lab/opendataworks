@@ -8,13 +8,15 @@ It is intentionally separate from the DataAgent backend runtime. DataAgent is on
 
 Datasets are private deployment assets and are not committed with this tool. Pass the JSONL file explicitly with `--dataset` or set `DATAAGENT_EVAL_DATASET`. The JSONL schema matches the builtin runner dataset so both engines can be compared case by case.
 
+Non-dry-run evaluation must also choose the DataAgent profile to execute with. Pass `--agent-id` or set `DATAAGENT_EVAL_AGENT_ID`. The selected agent's `data_scope` is snapshotted on each eval topic and enforces metadata/query access.
+
 ## Run With Docker
 
 ```bash
 DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \
 DATAAGENT_EVAL_JUDGE_TOKEN=... \
 DATAAGENT_EVAL_JUDGE_MODEL=claude-opus-4-6 \
-bash scripts/run-dataagent-deepeval-evals.sh --base-url http://127.0.0.1:8900 --dataset /path/to/private-cases.jsonl
+bash scripts/run-dataagent-deepeval-evals.sh --base-url http://127.0.0.1:8900 --agent-id agent_eval --dataset /path/to/private-cases.jsonl
 ```
 
 The wrapper runs `opendataworks-dataagent-evals-deepeval:latest` by default. Override with:

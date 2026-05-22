@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .scope_context import get_data_scope_header
 
 
 class BackendApiError(RuntimeError):
@@ -48,6 +49,9 @@ class BackendApiClient:
             "Accept": "application/json",
             self.settings.backend_token_header_name: self.settings.backend_service_token,
         }
+        data_scope = get_data_scope_header()
+        if data_scope:
+            headers["X-Agent-Data-Scope"] = data_scope
         timeout = httpx.Timeout(self.settings.backend_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:
