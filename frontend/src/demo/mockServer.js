@@ -1131,26 +1131,6 @@ const demoAgents = [
     resolved_workdir: '/demo/opendataworks',
     is_default: true,
     is_builtin: true
-  },
-  {
-    agent_id: 'agent_lineage',
-    name: '血缘分析助手',
-    description: '用于解释样例表上下游链路与任务关系。',
-    system_prompt: '你专注于数据血缘分析。',
-    permission_mode: 'inherit',
-    allowed_tools: ['Skill', 'Read'],
-    mcp_server_ids: [],
-    skill_folders: ['dataagent-nl2sql'],
-    max_turns: 0,
-    env_vars: {},
-    data_scope: {
-      allowed_scopes: [
-        { cluster_id: DEMO_CLUSTER_ID, source_type: 'DORIS', database: DEMO_DATABASE }
-      ]
-    },
-    resolved_workdir: '/demo/opendataworks',
-    is_default: false,
-    is_builtin: true
   }
 ]
 
@@ -1161,13 +1141,24 @@ const demoSkillDocuments = [
     file_name: 'SKILL.md',
     relative_path: 'SKILL.md',
     category: 'root',
+    content_type: 'markdown',
     source: 'bundled',
     enabled: true,
     editable: false,
     content: '# dataagent-nl2sql\n\n演示模式下使用前端内置数据回答样例问题。',
+    current_content: '# dataagent-nl2sql\n\n演示模式下使用前端内置数据回答样例问题。\n\n## 可回答范围\n\n- 样例表结构、DDL 与预览数据\n- demo_order_detail 的上下游血缘\n- 最近订单、门店销售等演示问数场景',
     updated_at: '2026-05-22T00:00:00+08:00',
     version_count: 1,
-    versions: []
+    versions: [
+      {
+        id: 'skill-doc-1-v1',
+        version_no: 1,
+        is_current: true,
+        change_source: 'demo',
+        change_summary: '初始化演示 Skill',
+        created_at: '2026-05-22T00:00:00+08:00'
+      }
+    ]
   },
   {
     id: 'skill-doc-2',
@@ -1175,13 +1166,24 @@ const demoSkillDocuments = [
     file_name: 'question-routing.md',
     relative_path: 'reference/question-routing.md',
     category: 'reference',
+    content_type: 'markdown',
     source: 'bundled',
     enabled: true,
     editable: false,
     content: '优先识别血缘、趋势、表结构和查询类问题。',
+    current_content: '# 问题路由\n\n优先识别血缘、趋势、表结构和查询类问题；演示模式下只返回前端内置样例数据。',
     updated_at: '2026-05-22T00:00:00+08:00',
     version_count: 1,
-    versions: []
+    versions: [
+      {
+        id: 'skill-doc-2-v1',
+        version_no: 1,
+        is_current: true,
+        change_source: 'demo',
+        change_summary: '初始化演示路由说明',
+        created_at: '2026-05-22T00:00:00+08:00'
+      }
+    ]
   }
 ]
 
@@ -2166,6 +2168,7 @@ export const demoAdapter = async (config) => {
     const document = demoSkillDocuments.find((item) => String(item.id) === documentId)
     if (!document) return createRejectedResponse(config, 'Skill 文档不存在', 404)
     document.content = String(body.content || document.content || '')
+    document.current_content = document.content
     document.updated_at = demoNow()
     return createResponse(config, clone(document))
   }

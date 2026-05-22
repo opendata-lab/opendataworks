@@ -25,5 +25,6 @@ describe('demo nl2sql client integration', () => {
         name: '通用数据问答'
       })
     ]))
+    await expect(client.agentApi.listAgents()).resolves.toHaveLength(1)
   })
 })
