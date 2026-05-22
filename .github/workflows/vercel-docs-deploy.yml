@@ -1,0 +1,63 @@
+name: Deploy Docs to Vercel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'website/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vercel-docs-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_DOCS_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_DOCS_PROJECT_ID }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_DOCS_TOKEN }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          for key in VERCEL_ORG_ID VERCEL_PROJECT_ID VERCEL_TOKEN; do
+            if [ -z "${!key}" ]; then
+              echo "Missing required secret (check VERCEL_DOCS_* secrets)" >&2
+              exit 1
+            fi
+          done
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel project settings
+        run: vercel pull --yes --environment=production --token="${VERCEL_TOKEN}"
+
+      - name: Build docs site
+        run: vercel build --prod --token="${VERCEL_TOKEN}"
+
+      - name: Deploy production build
+        run: |
+          set -euo pipefail
+          url="$(vercel deploy --prebuilt --prod --token="${VERCEL_TOKEN}")"
+          echo "Deployment URL: ${url}"
+          {
+            echo "## Vercel Docs Deployment"
+            echo ""
+            echo "- Environment: production"
+            echo "- URL: ${url}"
+          } >> "${GITHUB_STEP_SUMMARY}"
