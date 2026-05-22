@@ -15,7 +15,7 @@
           <div class="query-brand">智能问数</div>
           <div class="query-brand-meta">数据分析</div>
         </div>
-        <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy" @click="newConversation">
+        <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy || !hasAgentId" @click="newConversation">
           新建
         </button>
       </div>
@@ -78,7 +78,7 @@
                 :key="suggestion"
                 class="query-suggestion"
                 type="button"
-                :disabled="isBusy"
+                :disabled="isBusy || !hasAgentId"
                 @click="handleSuggestion(suggestion)"
               >
                 {{ suggestion }}
@@ -171,7 +171,7 @@
               v-model="inputText"
               class="query-textarea"
               rows="1"
-              :disabled="!providers.length || !availableModels.length"
+              :disabled="!hasAgentId || !providers.length || !availableModels.length"
               placeholder="例如：查询最近 30 天工作流发布次数趋势"
               @keydown.ctrl.enter.prevent="send"
               @keydown.meta.enter.prevent="send"
@@ -282,10 +282,13 @@ const providers = ref([])
 const selectedProvider = ref('')
 const selectedModel = ref('')
 const hydratedTopicIds = new Set()
+const missingAgentMessage = 'Widget 缺少 data-agent-id 配置'
 
 const isInline = computed(() => props.config.displayMode === 'inline')
 const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
 const isBusy = computed(() => isSubmitting.value || Boolean(activeTaskId.value))
+const agentId = computed(() => String(props.config.agentId || '').trim())
+const hasAgentId = computed(() => Boolean(agentId.value))
 const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === topicId.value) || null)
 const activeProviderConfig = computed(() => (
   providers.value.find((provider) => provider.provider_id === selectedProvider.value)
@@ -302,6 +305,7 @@ const availableModels = computed(() => {
 const canSend = computed(() => (
   Boolean(inputText.value.trim())
   && !isBusy.value
+  && hasAgentId.value
   && Boolean(selectedProvider.value)
   && Boolean(selectedModel.value)
 ))
@@ -422,8 +426,15 @@ const loadTopicMessages = async (targetTopicId) => {
 }
 
 const loadTopics = async () => {
+  if (!hasAgentId.value) {
+    errorText.value = missingAgentMessage
+    emit('event', { name: 'error', payload: errorText.value })
+    topics.value = []
+    messages.value = []
+    return
+  }
   try {
-    const list = await api.topicApi.listTopics()
+    const list = await api.topicApi.listTopics({ agent_id: agentId.value })
     topics.value = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
     sortTopics()
     const nextTopicId = topicId.value || topics.value[0]?.topic_id || ''
@@ -433,6 +444,13 @@ const loadTopics = async () => {
     topics.value = []
     messages.value = []
   }
+}
+
+const ensureAgentConfigured = () => {
+  if (hasAgentId.value) return true
+  errorText.value = missingAgentMessage
+  emit('event', { name: 'error', payload: errorText.value })
+  return false
 }
 
 const guardIdle = () => {
@@ -455,10 +473,11 @@ const selectTopic = async (targetTopicId) => {
 }
 
 const newConversation = async () => {
+  if (!ensureAgentConfigured()) return
   if (!guardIdle()) return
   errorText.value = ''
   searchKeyword.value = ''
-  const topic = normalizeTopic(await api.topicApi.createTopic('Widget 会话'))
+  const topic = normalizeTopic(await api.topicApi.createTopic('Widget 会话', { agent_id: agentId.value }))
   if (!topic.topic_id) return
   topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
   topicId.value = topic.topic_id
@@ -479,8 +498,9 @@ const deleteConversation = async (targetTopicId) => {
 }
 
 const ensureTopic = async (title) => {
+  if (!ensureAgentConfigured()) return ''
   if (topicId.value) return topicId.value
-  const topic = normalizeTopic(await api.topicApi.createTopic(title || 'Widget 会话'))
+  const topic = normalizeTopic(await api.topicApi.createTopic(title || 'Widget 会话', { agent_id: agentId.value }))
   if (!topic.topic_id) return ''
   topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
   topicId.value = topic.topic_id
@@ -566,6 +586,7 @@ const updateActiveTopicAfterSend = (text, taskId) => {
 const send = async () => {
   const text = inputText.value.trim()
   if (!text || isBusy.value) return
+  if (!ensureAgentConfigured()) return
   isSubmitting.value = true
   inputText.value = ''
   errorText.value = ''
@@ -579,6 +600,7 @@ const send = async () => {
       content: text,
       provider_id: selectedProvider.value,
       model: selectedModel.value,
+      agent_id: agentId.value,
       debug: false,
       execution_mode: 'auto'
     })

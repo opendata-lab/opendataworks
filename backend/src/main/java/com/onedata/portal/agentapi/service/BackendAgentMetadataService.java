@@ -8,6 +8,7 @@ import com.onedata.portal.agentapi.dto.AgentLineageRecord;
 import com.onedata.portal.agentapi.dto.AgentLineageResponse;
 import com.onedata.portal.agentapi.dto.AgentTableMetadata;
 import com.onedata.portal.agentapi.dto.AgentTableDdlResponse;
+import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataLineage;
 import com.onedata.portal.entity.DataTable;
@@ -94,7 +95,10 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             throw new IllegalArgumentException("table 或 tableId 至少提供一个");
         }
 
-        List<DataTable> targets = resolveLineageTargets(normalizedTable, normalizedDbName, tableId);
+        List<DataTable> targets = filterTablesByScope(resolveLineageTargets(normalizedTable, normalizedDbName, tableId));
+        if (tableId != null && targets.isEmpty()) {
+            throw new IllegalArgumentException("数据范围限制: 未授权访问 tableId `" + tableId + "`");
+        }
         AgentLineageResponse response = new AgentLineageResponse();
         response.setDbName(normalizedDbName);
         response.setTable(normalizedTable);
@@ -154,6 +158,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
 
         JdbcMysqlTarget platformMysql = parsePlatformMysql(dataSourceProperties.getUrl());
         if (platformMysql != null && targetDatabase.equals(platformMysql.getDatabase())) {
+            AgentDataScopeContext.requireAllowed(null, targetDatabase);
             ensurePreferredEngine(targetDatabase, normalizedPreferredEngine, "mysql");
             AgentDatasourceResolution response = new AgentDatasourceResolution();
             response.setEngine("mysql");
@@ -183,6 +188,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if (cluster == null) {
             throw new IllegalArgumentException("cluster_id `" + clusterId + "` 不存在");
         }
+        AgentDataScopeContext.requireAllowed(clusterId, targetDatabase);
 
         String sourceType = normalizeSourceType(cluster.getSourceType());
         String engine = "MYSQL".equals(sourceType) ? "mysql" : "doris";
@@ -233,6 +239,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         String targetDatabase = normalizedDatabase;
         String rawTableName = normalizedTable;
         if (matchedTable != null) {
+            AgentDataScopeContext.requireAllowed(matchedTable.getClusterId(), matchedTable.getDbName());
             if (StringUtils.hasText(matchedTable.getDbName())) {
                 targetDatabase = matchedTable.getDbName();
             }
@@ -307,6 +314,9 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         for (DataLineage lineage : lineages) {
             DataTable upstream = tableMap.get(lineage.getUpstreamTableId());
             DataTable downstream = tableMap.get(lineage.getDownstreamTableId());
+            if (!isTableAllowed(upstream) && !isTableAllowed(downstream)) {
+                continue;
+            }
             if (StringUtils.hasText(normalizedDatabase)) {
                 String upstreamDb = upstream == null ? null : upstream.getDbName();
                 String downstreamDb = downstream == null ? null : downstream.getDbName();
@@ -374,6 +384,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         }
 
         return candidates.values().stream()
+                .filter(candidate -> isTableAllowed(candidate.getTable()))
                 .filter(candidate -> candidate.matches(table, keyword))
                 .sorted(Comparator
                         .comparingLong(SearchCandidate::getScore).reversed()
@@ -478,7 +489,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         return fields.stream()
                 .filter(field -> {
                     DataTable table = tableMap.get(field.getTableId());
-                    return isSearchableTable(table, database);
+                    return isSearchableTable(table, database) && isTableAllowed(table);
                 })
                 .collect(Collectors.toList());
     }
@@ -508,7 +519,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if ("deprecated".equalsIgnoreCase(trimToEmpty(table.getStatus()))) {
             return false;
         }
-        return !StringUtils.hasText(database) || database.equals(table.getDbName());
+        return (!StringUtils.hasText(database) || database.equals(table.getDbName())) && isTableAllowed(table);
     }
 
     private long scoreTextMatch(String source, String term, long exactScore, long containsScore) {
@@ -616,6 +627,9 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             AgentLineageRecord record = new AgentLineageRecord();
             record.setId(lineage.getId());
             record.setLineageType(lineage.getLineageType());
+            if (!isTableAllowed(upstream) && !isTableAllowed(downstream)) {
+                continue;
+            }
             record.setUpstreamDb(upstream == null ? null : upstream.getDbName());
             record.setUpstreamTable(upstream == null ? null : upstream.getTableName());
             record.setDownstreamDb(downstream == null ? null : downstream.getDbName());
@@ -663,7 +677,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if (StringUtils.hasText(dbName)) {
             wrapper.eq(DataTable::getDbName, dbName);
         }
-        return dataTableMapper.selectList(wrapper);
+        return filterTablesByScope(dataTableMapper.selectList(wrapper));
     }
 
     private Long resolveClusterIdFromTables(String database) {
@@ -713,6 +727,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
                         .orderByAsc(DataTable::getId)
                         .last("LIMIT 4")
         );
+        matched = filterTablesByScope(matched);
         if (matched.size() > 1) {
             throw new IllegalArgumentException("database `" + database + "` 与 table `" + table + "` 命中了多张表，请改用 tableId");
         }
@@ -744,7 +759,24 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if (StringUtils.hasText(database)) {
             wrapper.eq(DataTable::getDbName, database);
         }
-        return dataTableMapper.selectList(wrapper);
+        return filterTablesByScope(dataTableMapper.selectList(wrapper));
+    }
+
+    private List<DataTable> filterTablesByScope(List<DataTable> tables) {
+        if (!AgentDataScopeContext.isActive()) {
+            return tables;
+        }
+        if (tables == null || tables.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return tables.stream().filter(this::isTableAllowed).collect(Collectors.toList());
+    }
+
+    private boolean isTableAllowed(DataTable table) {
+        if (!AgentDataScopeContext.isActive()) {
+            return true;
+        }
+        return table != null && AgentDataScopeContext.isAllowed(table.getClusterId(), table.getDbName());
     }
 
     private Map<String, DorisDbUser> loadReadonlyUserMap(List<DataTable> tables) {

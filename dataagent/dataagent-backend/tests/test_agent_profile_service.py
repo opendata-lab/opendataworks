@@ -49,6 +49,13 @@ def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
             "skill_folders": ["opendataworks-business-knowledge"],
             "max_turns": 12,
             "env_vars": {"AGENT_SCENE": "quality"},
+            "data_scope": {
+                "allowed_scopes": [
+                    {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
+                    {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
+                    {"cluster_id": None, "source_type": "MYSQL", "database": "opendataworks"},
+                ]
+            },
         },
         available_skill_folders={"opendataworks-business-knowledge", "opendataworks-platform-tools"},
         available_mcp_server_ids={"portal"},
@@ -61,6 +68,22 @@ def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
     assert payload["skill_folders"] == ["opendataworks-business-knowledge"]
     assert payload["max_turns"] == 12
     assert payload["env_vars"] == {"AGENT_SCENE": "quality"}
+    assert payload["data_scope"] == {
+        "allowed_scopes": [
+            {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
+            {"cluster_id": None, "source_type": "MYSQL", "database": "opendataworks"},
+        ]
+    }
+
+
+def test_normalize_agent_profile_payload_defaults_empty_data_scope_to_deny_all():
+    payload = agent_profile_service.normalize_agent_profile_payload(
+        {"name": "无数据授权智能体"},
+        available_skill_folders=set(),
+        available_mcp_server_ids=set(),
+    )
+
+    assert payload["data_scope"] == {"allowed_scopes": []}
 
 
 def test_normalize_agent_profile_payload_rejects_reserved_environment_keys():
@@ -88,6 +111,11 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
             "skill_folders": ["opendataworks-business-knowledge"],
             "max_turns": 8,
             "env_vars": {"AGENT_SCENE": "quality"},
+            "data_scope": {
+                "allowed_scopes": [
+                    {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
+                ]
+            },
             "resolved_workdir": "/tmp/agent",
             "is_default": False,
             "is_builtin": False,
@@ -107,6 +135,11 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
         "skill_folders": ["opendataworks-business-knowledge"],
         "max_turns": 8,
         "env_vars": {"AGENT_SCENE": "quality"},
+        "data_scope": {
+            "allowed_scopes": [
+                {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
+            ]
+        },
         "is_default": False,
         "is_builtin": False,
     }

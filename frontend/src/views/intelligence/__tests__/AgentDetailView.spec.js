@@ -8,6 +8,7 @@ const routeState = vi.hoisted(() => ({
 const dataagentApi = vi.hoisted(() => ({
   getAgent: vi.fn(),
   getAgentCapabilities: vi.fn(),
+  listDataScopeOptions: vi.fn(),
   updateAgent: vi.fn()
 }))
 
@@ -91,8 +92,15 @@ describe('AgentDetailView', () => {
       skill_folders: ['marketing-insights'],
       max_turns: 12,
       env_vars: { SAFE_FLAG: '1' },
+      data_scope: {
+        allowed_scopes: [{ cluster_id: 3, source_type: 'DORIS', database: 'ads_user' }]
+      },
       is_default: false
     })
+    dataagentApi.listDataScopeOptions.mockResolvedValue([
+      { cluster_id: 3, cluster_name: 'cluster-a', source_type: 'DORIS', database: 'ads_user' },
+      { cluster_id: 4, cluster_name: 'cluster-b', source_type: 'DORIS', database: 'ods_user' }
+    ])
     dataagentApi.getAgentCapabilities.mockResolvedValue({
       tools: ['Skill', 'Read', 'Bash'],
       mcp_servers: [{ id: 'portal', name: 'Portal MCP', enabled: true, tool_names: [] }],
@@ -123,8 +131,23 @@ describe('AgentDetailView', () => {
       'agent_1',
       expect.objectContaining({
         name: '营销分析 Plus',
-        env_vars: { SAFE_FLAG: '1' }
+        env_vars: { SAFE_FLAG: '1' },
+        data_scope: {
+          allowed_scopes: [{ cluster_id: 3, source_type: 'DORIS', database: 'ads_user' }]
+        }
       })
     )
+  })
+
+  it('loads data scope options and renders current authorization', async () => {
+    const wrapper = shallowMount(AgentDetailView, { global: { stubs } })
+
+    await flushPromises()
+
+    expect(dataagentApi.listDataScopeOptions).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.scopeSelection).toEqual(['3::ads_user'])
+    expect(wrapper.vm.buildPayload().data_scope.allowed_scopes).toEqual([
+      { cluster_id: 3, source_type: 'DORIS', database: 'ads_user' }
+    ])
   })
 })

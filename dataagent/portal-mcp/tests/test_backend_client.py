@@ -12,6 +12,7 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from portal_mcp.backend_client import BackendApiClient, BackendApiError
 from portal_mcp.config import Settings
+from portal_mcp.scope_context import set_data_scope_header
 
 
 def _settings() -> Settings:
@@ -40,6 +41,7 @@ class _FakeAsyncClient:
         return False
 
     async def request(self, *args, **kwargs):
+        self.last_kwargs = kwargs
         if self._error is not None:
             raise self._error
         return self._response
@@ -105,3 +107,19 @@ async def test_backend_client_maps_request_error(monkeypatch):
 
     with pytest.raises(BackendApiError, match="backend agent api 不可达"):
         await client.inspect(database="dw")
+
+
+@pytest.mark.anyio
+async def test_backend_client_forwards_agent_data_scope_header(monkeypatch):
+    fake_client = _FakeAsyncClient(response=_response(200, json_payload={"ok": True}))
+    monkeypatch.setattr(
+        "portal_mcp.backend_client.httpx.AsyncClient",
+        lambda **kwargs: fake_client,
+    )
+    reset = set_data_scope_header("encoded-scope")
+    try:
+        await BackendApiClient(_settings()).inspect(database="dw")
+    finally:
+        reset()
+
+    assert fake_client.last_kwargs["headers"]["X-Agent-Data-Scope"] == "encoded-scope"

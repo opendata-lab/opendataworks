@@ -7,11 +7,13 @@ Tool Runtime（单一路径）
 """
 
 import logging
+import os
 import time
 from typing import Any
 
 import pymysql
 
+from core.data_scope import current_env_scope, scope_allows_database
 from core.datasource_resolver import (
     DatasourceResolutionError,
     resolve_engine_for_database,
@@ -63,6 +65,7 @@ def invoke_tool(tool_name: str, payload: dict[str, Any] | None = None) -> dict[s
 def run_query(sql: str, database: str | None = None, limit: int | None = None) -> dict[str, Any]:
     if not str(database or "").strip():
         raise ToolRuntimeError("database is required")
+    _ensure_database_in_scope(str(database or "").strip())
     try:
         engine = resolve_engine_for_database(database)
     except DatasourceResolutionError as e:
@@ -84,6 +87,7 @@ def _native_mysql_query(payload: dict[str, Any]) -> dict[str, Any]:
     _ensure_read_only(sql)
 
     database = str(payload.get("database") or "").strip()
+    _ensure_database_in_scope(database)
     params = payload.get("params") or []
     limit = _to_positive_int(payload.get("limit"))
     datasource = _resolve_datasource("mysql", database)
@@ -135,6 +139,7 @@ def _native_doris_query(payload: dict[str, Any]) -> dict[str, Any]:
     _ensure_read_only(sql)
 
     database = str(payload.get("database") or "").strip()
+    _ensure_database_in_scope(database)
     limit = _to_positive_int(payload.get("limit"))
     datasource = _resolve_datasource("doris", database)
 
@@ -194,3 +199,8 @@ def _resolve_datasource(engine: str, database: str) -> Any:
         return resolve_query_datasource(engine, database)
     except DatasourceResolutionError as e:
         raise ToolRuntimeError(str(e)) from e
+
+
+def _ensure_database_in_scope(database: str) -> None:
+    if "DATAAGENT_DATA_SCOPE_JSON" in os.environ and not scope_allows_database(current_env_scope(), database):
+        raise ToolRuntimeError(f"数据范围限制: 未授权访问 database `{str(database or '').strip()}`")

@@ -7,6 +7,7 @@ from core.agent_profile_service import (
     create_agent_profile,
     delete_agent_profile,
     get_agent_profile,
+    list_data_scope_options,
     list_agent_profiles,
     skill_folders_from_documents,
     update_agent_profile,
@@ -30,6 +31,7 @@ from models.schemas import (
     AdminSettingsResponse,
     AdminSettingsUpdateRequest,
     AgentCapabilitiesResponse,
+    AgentDataScopeOption,
     AgentProfile,
     AgentProfileCreateRequest,
     AgentProfileUpdateRequest,
@@ -115,6 +117,11 @@ async def get_skill_documents():
 @skills_router.get("/agents/capabilities", response_model=AgentCapabilitiesResponse)
 async def get_agent_capabilities():
     return AgentCapabilitiesResponse.model_validate(agent_capabilities(list_documents()))
+
+
+@skills_router.get("/data-scope/options", response_model=list[AgentDataScopeOption])
+async def get_data_scope_options():
+    return [AgentDataScopeOption.model_validate(item) for item in list_data_scope_options()]
 
 
 @skills_router.get("/agents", response_model=list[AgentProfile])

@@ -87,5 +87,9 @@ export const dataagentApi = {
 
   getAgentCapabilities() {
     return dataagentRequest.get('/v1/dataagent/agents/capabilities')
+  },
+
+  listDataScopeOptions() {
+    return dataagentRequest.get('/v1/dataagent/data-scope/options')
   }
 }

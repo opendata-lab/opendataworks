@@ -119,6 +119,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--output-dir", default=str(default_output_dir(root)), help="Report output directory.")
     parser.add_argument("--case", action="append", dest="case_ids", default=[], help="Case ID to run. Can be repeated.")
+    parser.add_argument("--agent-id", default=os.environ.get("DATAAGENT_EVAL_AGENT_ID", ""), help="Required DataAgent agent_id for non-dry-run evaluation tasks.")
     parser.add_argument("--provider-id", default="", help="Override DataAgent execution provider for evaluated tasks.")
     parser.add_argument("--model", default="", help="Override DataAgent execution model for evaluated tasks.")
     parser.add_argument("--timeout-seconds", type=int, default=900, help="Maximum wait per case.")
@@ -411,8 +412,12 @@ def _final_assistant_answer(messages: dict[str, Any], task_id: str) -> str:
     return str((candidates[-1] if candidates else {}).get("content") or "").strip()
 
 
-def _create_topic(base_url: str, case: dict[str, Any]) -> str:
-    topic = http_json("POST", f"{base_url}/api/v1/nl2sql/topics", {"title": f"DeepEval {case['case_id']}"})
+def _create_topic(base_url: str, case: dict[str, Any], agent_id: str) -> str:
+    topic = http_json(
+        "POST",
+        f"{base_url}/api/v1/nl2sql/topics",
+        {"title": f"DeepEval {case['case_id']}", "agent_id": agent_id},
+    )
     topic_id = str(topic.get("topic_id") or "").strip()
     if not topic_id:
         raise EvalRunnerError("topic creation response did not include topic_id")
@@ -423,6 +428,7 @@ def _submit_task(base_url: str, topic_id: str, case: dict[str, Any], args: argpa
     payload: dict[str, Any] = {
         "topic_id": topic_id,
         "content": str(case.get("question") or ""),
+        "agent_id": str(args.agent_id or "").strip(),
         "execution_mode": "background",
     }
     if args.provider_id:
@@ -486,7 +492,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     messages: dict[str, Any] = {}
     final_answer = ""
     try:
-        topic_id = _create_topic(base_url, case)
+        topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
         task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
         task, events, poll_errors = _poll_task(base_url, task_id, case_timeout)
@@ -512,6 +518,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         "case_id": case.get("case_id"),
         "category": case.get("category"),
         "question": case.get("question"),
+        "agent_id": str(args.agent_id or "").strip(),
         "topic_id": topic_id,
         "task_id": task_id,
         "task_status": str(task.get("task_status") or ""),
@@ -546,6 +553,7 @@ def _run_cases(base_url: str, cases: list[dict[str, Any]], args: argparse.Namesp
                     "case_id": case.get("case_id"),
                     "category": case.get("category"),
                     "question": case.get("question"),
+                    "agent_id": str(getattr(args, "agent_id", "") or "").strip(),
                     "task_status": "runner_error",
                     "final_answer": "",
                     "tool_names": [],
@@ -950,6 +958,7 @@ def render_report(summary: dict[str, Any], results: list[dict[str, Any]]) -> str
         "",
         f"- 引擎: `{summary.get('engine', 'deepeval')}`",
         f"- 数据集: `{summary.get('dataset_path', '')}`",
+        f"- Agent: `{summary.get('agent_id', '')}`",
         f"- 用例数: {summary.get('total_cases', 0)}",
         f"- 结论: {summary.get('recommendation', '')}",
         "",
@@ -1040,6 +1049,9 @@ def main(argv: list[str] | None = None) -> int:
     if not str(args.dataset or "").strip():
         print("--dataset is required and must point to the private evaluation JSONL file", file=sys.stderr)
         return 2
+    if not args.dry_run and not str(args.agent_id or "").strip():
+        print("--agent-id is required for non-dry-run evaluation", file=sys.stderr)
+        return 2
     root = _repo_or_package_root()
     dataset_path = Path(args.dataset)
     if not dataset_path.is_absolute():
@@ -1061,6 +1073,7 @@ def main(argv: list[str] | None = None) -> int:
         base_url = str(args.base_url or "").rstrip("/")
         preflight_payload = preflight(base_url)
         dataset_stats["preflight"] = preflight_payload
+        dataset_stats["agent_id"] = str(args.agent_id or "").strip()
         results = _run_cases(base_url, cases, args)
         metric = DataAgentEvaluationMetric(judge_config)
         test_cases = [to_deepeval_test_case(case, result) for case, result in zip(cases, results)]

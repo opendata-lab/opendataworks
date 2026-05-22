@@ -3,6 +3,7 @@ package com.onedata.portal.agentapi;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentReadQueryRequest;
 import com.onedata.portal.agentapi.dto.AgentReadQueryResponse;
+import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.agentapi.service.AgentJdbcExecutor;
 import com.onedata.portal.agentapi.service.AgentMetadataService;
 import com.onedata.portal.agentapi.service.BackendAgentQueryService;
@@ -195,6 +196,35 @@ class BackendAgentQueryServiceTest {
     @Test
     void readQueryRejectsMultipleStatements() {
         assertReadQueryRejected("SELECT 1; SELECT 2", "仅支持单条只读 SQL");
+    }
+
+    @Test
+    void readQueryRejectsDatabaseOutsideAgentDataScope() {
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            assertReadQueryRejected("SELECT 1", "数据范围限制: 未授权访问 database `opendataworks`");
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
+    void readQueryRejectsCrossSchemaReferencesOutsideAgentDataScope() {
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            AgentReadQueryRequest request = new AgentReadQueryRequest();
+            request.setDatabase("ads_user");
+            request.setSql("SELECT * FROM ads_user.profile p JOIN ods_user.orders o ON p.id = o.user_id");
+
+            IllegalArgumentException exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> backendAgentQueryService.readQuery(request)
+            );
+
+            assertEquals("数据范围限制: SQL 引用了未授权 schema `ods_user`", exception.getMessage());
+        } finally {
+            AgentDataScopeContext.clear();
+        }
     }
 
     @Test

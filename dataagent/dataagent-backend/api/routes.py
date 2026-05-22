@@ -166,6 +166,8 @@ async def api_create_topic(http_request: Request, request: CreateTopicRequest | 
     store = _get_store()
     context = _request_context(http_request)
     payload = request or CreateTopicRequest()
+    if context.get("source") == "widget" and not str(payload.agent_id or "").strip():
+        raise HTTPException(status_code=400, detail="agent_id is required for widget requests")
     profile = _require_agent_profile(payload.agent_id)
     topic = store.create_topic(
         title=str(payload.title or "").strip() or "新话题",

@@ -84,6 +84,60 @@ def test_missing_dataset_argument_returns_exit_2(tmp_path, capsys):
     assert "--dataset" in captured.err
 
 
+def test_non_dry_run_requires_agent_id(tmp_path, capsys):
+    runner = _load_runner()
+    dataset = _write_dataset(tmp_path / "cases.jsonl")
+
+    code = runner.main(
+        [
+            "--dataset",
+            str(dataset),
+            "--output-dir",
+            str(tmp_path),
+            "--judge-base-url",
+            "http://judge",
+            "--judge-token",
+            "token",
+            "--judge-model",
+            "model",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "--agent-id" in captured.err
+
+
+def test_agent_id_can_default_from_environment(monkeypatch):
+    runner = _load_runner()
+    monkeypatch.setenv("DATAAGENT_EVAL_AGENT_ID", "agent_eval")
+
+    args = runner.parse_args(["--dry-run", "--dataset", "cases.jsonl"])
+
+    assert args.agent_id == "agent_eval"
+
+
+def test_topic_and_task_requests_include_agent_id(monkeypatch):
+    runner = _load_runner()
+    calls = []
+
+    def fake_http_json(method, url, payload=None, **kwargs):
+        calls.append({"method": method, "url": url, "payload": payload, "kwargs": kwargs})
+        if url.endswith("/topics"):
+            return {"topic_id": "topic-1"}
+        return {"task_id": "task-1"}
+
+    monkeypatch.setattr(runner, "http_json", fake_http_json)
+    args = types.SimpleNamespace(provider_id="", model="", agent_id="agent_eval")
+
+    topic_id = runner._create_topic("http://dataagent", _sample_case(), args.agent_id)
+    task_id = runner._submit_task("http://dataagent", topic_id, _sample_case(), args)
+
+    assert task_id == "task-1"
+    assert calls[0]["payload"]["agent_id"] == "agent_eval"
+    assert calls[1]["payload"]["agent_id"] == "agent_eval"
+
+
 def test_default_output_root_prefers_mounted_workspace(tmp_path, monkeypatch):
     runner = _load_runner()
     workspace = tmp_path / "workspace"
@@ -671,6 +725,8 @@ def _run_fake_scenario(tmp_path, scenario: str, *extra_args: str):
                 str(dataset),
                 "--output-dir",
                 str(tmp_path),
+                "--agent-id",
+                "agent_eval",
                 "--judge-base-url",
                 judge_url,
                 "--judge-token",

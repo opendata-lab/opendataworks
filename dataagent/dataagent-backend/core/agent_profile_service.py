@@ -12,6 +12,7 @@ from typing import Any
 import pymysql
 
 from config import get_settings
+from core.data_scope import normalize_data_scope
 
 DEFAULT_AGENT_ID = "agent_default"
 DEFAULT_AGENT_NAME = "通用智能体"
@@ -199,6 +200,7 @@ def normalize_agent_profile_payload(
     )
     max_turns = _validate_max_turns(data.get("max_turns", base.get("max_turns") or 0))
     env_vars = _validate_env_vars(data.get("env_vars", base.get("env_vars") or {}))
+    data_scope = normalize_data_scope(data.get("data_scope", base.get("data_scope") or {}))
 
     return {
         "name": name,
@@ -210,6 +212,7 @@ def normalize_agent_profile_payload(
         "skill_folders": skill_folders,
         "max_turns": max_turns,
         "env_vars": env_vars,
+        "data_scope": data_scope,
     }
 
 
@@ -225,6 +228,7 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "skill_folders": _dedupe_strings(profile.get("skill_folders")),
         "max_turns": int(profile.get("max_turns") or 0),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
+        "data_scope": normalize_data_scope(profile.get("data_scope") or {}),
         "is_default": bool(profile.get("is_default")),
         "is_builtin": bool(profile.get("is_builtin")),
     }
@@ -264,6 +268,7 @@ def default_agent_payload() -> dict[str, Any]:
         "skill_folders": [],
         "max_turns": 0,
         "env_vars": {},
+        "data_scope": {"allowed_scopes": []},
         "is_default": True,
         "is_builtin": True,
     }
@@ -281,6 +286,7 @@ def opendataworks_agent_payload() -> dict[str, Any]:
         "skill_folders": ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
         "max_turns": 0,
         "env_vars": {},
+        "data_scope": {"allowed_scopes": []},
         "is_default": False,
         "is_builtin": True,
     }
@@ -356,6 +362,7 @@ class AgentProfileStore:
             "skill_folders": _dedupe_strings(_safe_json_load(row.get("skill_folders_json"), [])),
             "max_turns": int(row.get("max_turns") or 0),
             "env_vars": _validate_env_vars(_safe_json_load(row.get("env_vars_json"), {})),
+            "data_scope": normalize_data_scope(_safe_json_load(row.get("data_scope_json"), {})),
             "is_default": bool(row.get("is_default")),
             "is_builtin": bool(row.get("is_builtin")),
             "created_at": _to_iso(row.get("created_at")),
@@ -373,7 +380,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt, permission_mode,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, is_default, is_builtin, created_at, updated_at
+                           max_turns, env_vars_json, data_scope_json, is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
                     ORDER BY is_builtin DESC, is_default DESC, updated_at DESC, created_at DESC
                     """
@@ -392,7 +399,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt, permission_mode,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, is_default, is_builtin, created_at, updated_at
+                           max_turns, env_vars_json, data_scope_json, is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
                     WHERE agent_id = %s
                     LIMIT 1
@@ -419,8 +426,8 @@ class AgentProfileStore:
                     INSERT INTO da_agent_profile (
                         agent_id, name, description, system_prompt, permission_mode,
                         allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                        max_turns, env_vars_json, is_default, is_builtin
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        max_turns, env_vars_json, data_scope_json, is_default, is_builtin
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         name = VALUES(name),
                         description = VALUES(description),
@@ -431,6 +438,7 @@ class AgentProfileStore:
                         skill_folders_json = VALUES(skill_folders_json),
                         max_turns = VALUES(max_turns),
                         env_vars_json = VALUES(env_vars_json),
+                        data_scope_json = VALUES(data_scope_json),
                         is_default = VALUES(is_default),
                         is_builtin = VALUES(is_builtin),
                         updated_at = CURRENT_TIMESTAMP
@@ -446,6 +454,7 @@ class AgentProfileStore:
                         _json_dump(_dedupe_strings(profile.get("skill_folders"))),
                         int(profile.get("max_turns") or 0),
                         _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
+                        _json_dump(normalize_data_scope(profile.get("data_scope") or {})),
                         1 if is_default else 0,
                         1 if is_builtin else 0,
                     ),
@@ -583,6 +592,7 @@ def update_agent_profile(
     )
     normalized["agent_id"] = existing["agent_id"]
     normalized["is_default"] = bool(existing.get("is_default"))
+    normalized["is_builtin"] = bool(existing.get("is_builtin"))
     return get_agent_profile_store().save_profile(normalized)
 
 
@@ -623,3 +633,74 @@ def skill_folders_from_documents(skill_documents: list[dict[str, Any]]) -> set[s
         if folder:
             folders.add(folder)
     return folders
+
+
+def list_data_scope_options() -> list[dict[str, Any]]:
+    cfg = get_settings()
+    metadata_schema = str(cfg.mysql_database or "opendataworks").strip() or "opendataworks"
+    rows: list[dict[str, Any]] = []
+    conn = pymysql.connect(
+        host=cfg.mysql_host,
+        port=cfg.mysql_port,
+        user=cfg.mysql_user,
+        password=cfg.mysql_password,
+        database=metadata_schema,
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT
+                    dt.cluster_id,
+                    COALESCE(dc.cluster_name, '') AS cluster_name,
+                    COALESCE(NULLIF(dc.source_type, ''), 'DORIS') AS source_type,
+                    dt.db_name AS database_name
+                FROM `{metadata_schema}`.`data_table` dt
+                LEFT JOIN `{metadata_schema}`.`doris_cluster` dc
+                    ON dc.id = dt.cluster_id
+                WHERE dt.deleted = 0
+                  AND (dt.status IS NULL OR dt.status <> 'deprecated')
+                  AND dt.db_name IS NOT NULL
+                  AND dt.db_name <> ''
+                GROUP BY dt.cluster_id, dc.cluster_name, dc.source_type, dt.db_name
+                ORDER BY dc.cluster_name ASC, dt.db_name ASC
+                """
+            )
+            rows.extend(dict(item) for item in (cur.fetchall() or []))
+    finally:
+        conn.close()
+
+    platform_database = str(cfg.mysql_database or "").strip()
+    if platform_database:
+        rows.append(
+            {
+                "cluster_id": None,
+                "cluster_name": "platform-mysql",
+                "source_type": "MYSQL",
+                "database_name": platform_database,
+            }
+        )
+
+    result: list[dict[str, Any]] = []
+    seen: set[tuple[int | None, str]] = set()
+    for row in rows:
+        database = str(row.get("database_name") or row.get("database") or "").strip()
+        if not database:
+            continue
+        cluster_id = row.get("cluster_id")
+        cluster_id = int(cluster_id) if cluster_id not in (None, "") else None
+        key = (cluster_id, database)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(
+            {
+                "cluster_id": cluster_id,
+                "cluster_name": str(row.get("cluster_name") or ""),
+                "source_type": str(row.get("source_type") or "").upper(),
+                "database": database,
+            }
+        )
+    return result

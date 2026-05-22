@@ -18,6 +18,7 @@ Common options are passed through to the container:
   --dataset <path>       Required private JSONL dataset path
   --output-dir <path>
   --case <case_id>
+  --agent-id <agent_id> Required for non-dry-run evaluation
   --provider-id <provider_id>
   --model <model>
   --timeout-seconds <seconds>
@@ -36,6 +37,7 @@ Environment:
   DATAAGENT_EVAL_JUDGE_MODEL
   DATAAGENT_EVAL_JUDGE_MAX_TOKENS
   DATAAGENT_EVAL_DATASET
+  DATAAGENT_EVAL_AGENT_ID
   DATAAGENT_DEEPEVAL_RUN_LOCAL=1  Run local Python instead of Docker/Podman.
 EOF
 }
@@ -82,6 +84,7 @@ exec "$CONTAINER_CMD" run --rm \
     -e DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS="${DATAAGENT_EVAL_JUDGE_TIMEOUT_SECONDS:-120}" \
     -e DATAAGENT_EVAL_JUDGE_MAX_TOKENS="${DATAAGENT_EVAL_JUDGE_MAX_TOKENS:-4096}" \
     -e DATAAGENT_EVAL_DATASET="${DATAAGENT_EVAL_DATASET:-}" \
+    -e DATAAGENT_EVAL_AGENT_ID="${DATAAGENT_EVAL_AGENT_ID:-}" \
     "${VOLUMES[@]}" \
     -w /workspace \
     "$IMAGE" "$@"

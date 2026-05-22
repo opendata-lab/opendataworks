@@ -49,12 +49,12 @@ class FakeTopicStore:
     def init_schema(self):
         self.calls.append(("init_schema", None))
 
-    def create_topic(self, title="新话题", *, context=None):
-        self.calls.append(("create_topic", context))
+    def create_topic(self, title="新话题", *, agent_snapshot=None, context=None):
+        self.calls.append(("create_topic", context, agent_snapshot))
         return topic_payload("topic-created", title)
 
-    def list_topics(self, include_messages=False, *, context=None):
-        self.calls.append(("list_topics", context))
+    def list_topics(self, include_messages=False, *, context=None, agent_id=None):
+        self.calls.append(("list_topics", context, agent_id))
         return [topic_payload("topic-widget")]
 
     def get_topic(self, topic_id, *, context=None):
@@ -137,6 +137,28 @@ def install_widget_settings(monkeypatch):
     )
 
 
+def install_agent_profile(monkeypatch, agent_id="agent_widget"):
+    profile = {
+        "agent_id": agent_id,
+        "name": "Widget Agent",
+        "description": "",
+        "system_prompt": "",
+        "permission_mode": "inherit",
+        "allowed_tools": ["Read"],
+        "mcp_server_ids": [],
+        "skill_folders": [],
+        "max_turns": 0,
+        "env_vars": {},
+        "data_scope": {
+            "allowed_scopes": [
+                {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"}
+            ]
+        },
+    }
+    monkeypatch.setattr(routes, "get_agent_profile", lambda requested_agent_id: profile if requested_agent_id == agent_id else None)
+    return profile
+
+
 def widget_headers(user_id="u1", *, origin="https://host.example.com", visitor_id=""):
     headers = {
         "Origin": origin,
@@ -179,15 +201,66 @@ def test_widget_requests_pass_website_and_user_context_to_unified_routes(monkeyp
     assert context["visitor_id"] == ""
 
 
+def test_widget_topic_list_passes_agent_filter(monkeypatch):
+    install_widget_settings(monkeypatch)
+    store = install_fake_store(monkeypatch)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/v1/nl2sql/topics?agent_id=agent_widget",
+        headers=widget_headers("user-123"),
+    )
+
+    assert response.status_code == 200
+    assert store.calls[-1][0] == "list_topics"
+    assert store.calls[-1][2] == "agent_widget"
+
+
+def test_widget_topic_create_requires_explicit_agent_id(monkeypatch):
+    install_widget_settings(monkeypatch)
+    install_agent_profile(monkeypatch)
+    install_fake_store(monkeypatch)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/nl2sql/topics",
+        headers=widget_headers("user-123"),
+        json={"title": "Widget 会话"},
+    )
+
+    assert response.status_code == 400
+    assert "agent_id" in response.json()["detail"]
+
+
+def test_widget_topic_create_uses_requested_agent_snapshot(monkeypatch):
+    install_widget_settings(monkeypatch)
+    profile = install_agent_profile(monkeypatch, "agent_widget")
+    store = install_fake_store(monkeypatch)
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/nl2sql/topics",
+        headers=widget_headers("user-123"),
+        json={"title": "Widget 会话", "agent_id": "agent_widget"},
+    )
+
+    assert response.status_code == 200
+    assert store.calls[-1][0] == "create_topic"
+    agent_snapshot = store.calls[-1][2]
+    assert agent_snapshot["agent_id"] == profile["agent_id"]
+    assert agent_snapshot["data_scope"]["allowed_scopes"] == profile["data_scope"]["allowed_scopes"]
+
+
 def test_widget_requests_fall_back_to_visitor_context_without_user_id(monkeypatch):
     install_widget_settings(monkeypatch)
+    install_agent_profile(monkeypatch)
     store = install_fake_store(monkeypatch)
     client = TestClient(app)
 
     response = client.post(
         "/api/v1/nl2sql/topics",
         headers=widget_headers("", visitor_id="visitor-abc"),
-        json={"title": "匿名访客"},
+        json={"title": "匿名访客", "agent_id": "agent_widget"},
     )
 
     assert response.status_code == 200
