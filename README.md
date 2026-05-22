@@ -24,7 +24,7 @@
 
 English | [简体中文](README_zh-CN.md)
 
-[Website](https://mingkevan.github.io/opendataworks/) · [Quick Start](docs/guide/start/quick-start.md) · [Features](docs/guide/manual/features.md) · [Architecture](docs/guide/architecture/design.md) · [Configuration](docs/guide/configuration/index.md) · [Contributing](docs/guide/contribution/guide.md) · [Slack](https://opendataworkshq.slack.com/)
+[Website](https://opendataworks.vercel.app/) · [Quick Start](https://opendataworks.vercel.app/guide/quick-start) · [Features](https://opendataworks.vercel.app/guide/features) · [Architecture](https://opendataworks.vercel.app/architecture/overview) · [Configuration](https://opendataworks.vercel.app/guide/configuration) · [Contributing](https://opendataworks.vercel.app/guide/contribution) · [Slack](https://opendataworkshq.slack.com/)
 
 </div>
 
@@ -62,19 +62,19 @@ It brings the core pieces of a modern data platform into a deployable full-stack
 
 ### Workflow Orchestration
 
-![OpenDataWorks workflow orchestration screen](docs/assets/screenshots/readme-workflows.png)
+![OpenDataWorks workflow orchestration screen](website/public/readme-workflows.png)
 
 Manage workflow lists, publishing status, and common workflow actions.
 
 ### Data Lineage
 
-![OpenDataWorks data lineage screen](docs/assets/screenshots/readme-lineage.png)
+![OpenDataWorks data lineage screen](website/public/readme-lineage.png)
 
 Explore upstream and downstream table relationships around a selected table.
 
 ### Data Studio
 
-![OpenDataWorks Data Studio screen](docs/assets/screenshots/readme-datastudio.png)
+![OpenDataWorks Data Studio screen](website/public/readme-datastudio.png)
 
 Browse catalogs, write SQL, and inspect table metadata in one workspace.
 
@@ -107,25 +107,25 @@ See the [deployment guide](deploy/README.md) for production deployment and offli
 
 ## Quick Start
 
-Follow the [quick start guide](docs/guide/start/quick-start.md) to deploy and run OpenDataWorks locally.
+Follow the [quick start guide](https://opendataworks.vercel.app/guide/quick-start) to deploy and run OpenDataWorks locally.
 
 ## Documentation
 
-Project documentation lives under [docs/](docs/):
+Full documentation is available at: **https://opendataworks.vercel.app/**
 
-- [Quick Start](docs/guide/start/quick-start.md)
-- [Architecture](docs/guide/architecture/design.md)
-- [Configuration](docs/guide/configuration/index.md)
-- [FAQ](docs/guide/faq/faq.md)
+- [Quick Start](https://opendataworks.vercel.app/guide/quick-start)
+- [Architecture](https://opendataworks.vercel.app/architecture/overview)
+- [Configuration](https://opendataworks.vercel.app/guide/configuration)
+- [FAQ](https://opendataworks.vercel.app/guide/faq)
 
 ## Community
 
 - Join the [OpenDataWorks Slack community](https://opendataworkshq.slack.com/) to discuss usage, deployment, roadmap ideas, and contributions.
-- Open a [GitHub Issue](https://github.com/MingkeVan/opendataworks/issues) for bugs, feature requests, or documentation feedback.
+- Open a [GitHub Issue](https://github.com/opendata-lab/opendataworks/issues) for bugs, feature requests, or documentation feedback.
 
 ## Contributing
 
-Contributions are welcome. Please read the [contribution guide](docs/guide/contribution/guide.md) before opening a pull request.
+Contributions are welcome. Please read the [contribution guide](https://opendataworks.vercel.app/guide/contribution) before opening a pull request.
 
 ## License
 

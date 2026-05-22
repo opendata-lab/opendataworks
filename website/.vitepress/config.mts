@@ -5,6 +5,8 @@ export default defineConfig({
   title: 'OpenDataWorks',
   description: '统一数据门户 — 元数据管理、工作流编排、血缘分析与智能查询',
   ignoreDeadLinks: [/localhost/],
+  srcDir: '.',
+  srcExclude: ['**/node_modules/**', '**/README.md'],
 
   head: [
     ['link', { rel: 'icon', type: 'image/svg+xml', href: '/logo.svg' }],

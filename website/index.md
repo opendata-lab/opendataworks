@@ -10,10 +10,10 @@ import { ref } from 'vue'
 
 const activeTab = ref('lineage')
 const tabs = [
-  { id: 'lineage', label: '数据血缘' },
-  { id: 'schedule', label: '任务调度' },
-  { id: 'asset', label: '数据资产' },
-  { id: 'query', label: '智能查询' },
+  { id: 'lineage', label: '数据血缘', img: '/readme-lineage.png' },
+  { id: 'schedule', label: '任务调度', img: '/readme-workflows.png' },
+  { id: 'asset', label: '数据资产', img: '/readme-datastudio.png' },
+  { id: 'query', label: '智能查询', img: '' },
 ]
 </script>
 
@@ -413,9 +413,12 @@ const tabs = [
       <button v-for="tab in tabs" :key="tab.id" class="tab-btn" :class="{ active: activeTab === tab.id }" @click="activeTab = tab.id">{{ tab.label }}</button>
     </div>
     <div class="showcase-frame">
-      <div class="showcase-placeholder">
-        产品截图即将上线 — 点击下方链接体验真实产品
-      </div>
+      <template v-for="tab in tabs" :key="tab.id">
+        <img v-if="activeTab === tab.id && tab.img" :src="tab.img" :alt="tab.label" style="width:100%; border-radius:8px; display:block;" />
+        <div v-if="activeTab === tab.id && !tab.img" class="showcase-placeholder">
+          截图即将上线 — 点击下方链接体验真实产品
+        </div>
+      </template>
     </div>
     <a href="https://opendataworks-demo.vercel.app/" target="_blank" class="demo-link">查看在线 Demo →</a>
   </div>
