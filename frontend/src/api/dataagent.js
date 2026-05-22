@@ -1,13 +1,22 @@
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
+import { demoAdapter } from '@/demo/mockServer'
+import { isDemoMode } from '@/demo/runtime'
 
 const dataagentRequest = axios.create({
   baseURL: '/api',
-  timeout: 120000
+  timeout: 120000,
+  ...(isDemoMode ? { adapter: demoAdapter } : {})
 })
 
 dataagentRequest.interceptors.response.use(
-  (response) => response.data,
+  (response) => {
+    const payload = response.data
+    if (payload && typeof payload === 'object' && payload.code === 200 && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+      return payload.data
+    }
+    return payload
+  },
   (error) => {
     const message = error?.response?.data?.detail || error?.response?.data?.message || error.message || '请求失败'
     ElMessage.error(message)

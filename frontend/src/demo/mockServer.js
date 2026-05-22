@@ -1006,7 +1006,20 @@ const createCanceledResponse = (config) => {
 }
 
 const parseRequestUrl = (config) => {
-  const url = new URL(config.url || '/', 'https://demo.local')
+  const rawUrl = String(config.url || '/')
+  const rawBaseUrl = String(config.baseURL || '')
+  const urlAlreadyIncludesBase = rawBaseUrl && rawUrl.startsWith(rawBaseUrl)
+  const urlAlreadyIncludesApiPrefix = rawBaseUrl !== '/api' && rawUrl.startsWith('/api/')
+  const combinedUrl = rawBaseUrl
+    && !/^[a-z][a-z\d+.-]*:\/\//i.test(rawUrl)
+    && !urlAlreadyIncludesBase
+    && !urlAlreadyIncludesApiPrefix
+    ? `${rawBaseUrl.replace(/\/+$/, '')}/${rawUrl.replace(/^\/+/, '')}`
+    : rawUrl
+  const url = new URL(combinedUrl || '/', 'https://demo.local')
+  const pathname = url.pathname.startsWith('/api/')
+    ? url.pathname.slice(4)
+    : url.pathname
   const params = new URLSearchParams(url.search)
   Object.entries(config.params || {}).forEach(([key, value]) => {
     if (value === undefined || value === null || value === '') {
@@ -1020,7 +1033,7 @@ const parseRequestUrl = (config) => {
   })
   return {
     method: String(config.method || 'get').toLowerCase(),
-    pathname: url.pathname,
+    pathname,
     params: paramObject,
     body: parseData(config.data)
   }
@@ -1066,6 +1079,185 @@ const extractTableNameFromSql = (sql) => {
     return simpleMatch[1]
   }
   return ''
+}
+
+const demoProviderSettings = {
+  provider_id: 'demo-provider',
+  model: 'demo-nl2sql',
+  providers: [
+    {
+      provider_id: 'demo-provider',
+      display_name: 'Demo 模型',
+      provider_group: '演示',
+      provider_enabled: true,
+      enabled: true,
+      models: ['demo-nl2sql'],
+      supported_models: ['demo-nl2sql'],
+      custom_models: [],
+      default_model: 'demo-nl2sql',
+      base_url: 'https://demo.local',
+      auth_token_set: true,
+      supports_partial_messages: true,
+      validation_status: 'verified',
+      validation_message: '演示模式使用前端模拟响应。',
+      model_detections: {
+        'demo-nl2sql': {
+          status: 'verified',
+          message: '演示模型可用',
+          checked_at: '2026-05-22T00:00:00+08:00'
+        }
+      }
+    }
+  ]
+}
+
+const demoAgents = [
+  {
+    agent_id: 'agent_default',
+    name: '通用数据问答',
+    description: '面向 OpenDataWorks 演示数据的智能问数助手。',
+    system_prompt: '你是 OpenDataWorks 演示数据助手。',
+    permission_mode: 'inherit',
+    allowed_tools: ['Skill', 'Read', 'Grep'],
+    mcp_server_ids: [],
+    skill_folders: ['dataagent-nl2sql'],
+    max_turns: 0,
+    env_vars: {},
+    data_scope: {
+      allowed_scopes: [
+        { cluster_id: DEMO_CLUSTER_ID, source_type: 'DORIS', database: DEMO_DATABASE }
+      ]
+    },
+    resolved_workdir: '/demo/opendataworks',
+    is_default: true,
+    is_builtin: true
+  },
+  {
+    agent_id: 'agent_lineage',
+    name: '血缘分析助手',
+    description: '用于解释样例表上下游链路与任务关系。',
+    system_prompt: '你专注于数据血缘分析。',
+    permission_mode: 'inherit',
+    allowed_tools: ['Skill', 'Read'],
+    mcp_server_ids: [],
+    skill_folders: ['dataagent-nl2sql'],
+    max_turns: 0,
+    env_vars: {},
+    data_scope: {
+      allowed_scopes: [
+        { cluster_id: DEMO_CLUSTER_ID, source_type: 'DORIS', database: DEMO_DATABASE }
+      ]
+    },
+    resolved_workdir: '/demo/opendataworks',
+    is_default: false,
+    is_builtin: true
+  }
+]
+
+const demoSkillDocuments = [
+  {
+    id: 'skill-doc-1',
+    folder: 'dataagent-nl2sql',
+    file_name: 'SKILL.md',
+    relative_path: 'SKILL.md',
+    category: 'root',
+    source: 'bundled',
+    enabled: true,
+    editable: false,
+    content: '# dataagent-nl2sql\n\n演示模式下使用前端内置数据回答样例问题。',
+    updated_at: '2026-05-22T00:00:00+08:00',
+    version_count: 1,
+    versions: []
+  },
+  {
+    id: 'skill-doc-2',
+    folder: 'dataagent-nl2sql',
+    file_name: 'question-routing.md',
+    relative_path: 'reference/question-routing.md',
+    category: 'reference',
+    source: 'bundled',
+    enabled: true,
+    editable: false,
+    content: '优先识别血缘、趋势、表结构和查询类问题。',
+    updated_at: '2026-05-22T00:00:00+08:00',
+    version_count: 1,
+    versions: []
+  }
+]
+
+let demoTopicSeq = 1
+let demoTaskSeq = 1
+const demoTopics = [
+  {
+    topic_id: 'demo-topic-1',
+    title: '演示问数会话',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: '',
+    current_task_status: '',
+    created_at: '2026-05-22T10:00:00+08:00',
+    updated_at: '2026-05-22T10:02:00+08:00',
+    messages: [
+      {
+        message_id: 'demo-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '查看 demo_order_detail 的上下游血缘',
+        created_at: '2026-05-22T10:00:00+08:00'
+      },
+      {
+        message_id: 'demo-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: 'demo_order_detail 上游来自 demo_order_event_raw 与 demo_member_profile，下游产出 demo_store_sales_daily 和 demo_order_risk_alert。',
+        status: 'finished',
+        blocks: [
+          {
+            block_id: 'main-text',
+            type: 'main_text',
+            status: 'success',
+            text: 'demo_order_detail 上游来自 demo_order_event_raw 与 demo_member_profile，下游产出 demo_store_sales_daily 和 demo_order_risk_alert。'
+          }
+        ],
+        created_at: '2026-05-22T10:02:00+08:00'
+      }
+    ]
+  }
+]
+const demoTasks = {}
+
+const publicTopic = (topic) => {
+  const { messages, ...summary } = topic
+  return {
+    ...summary,
+    message_count: Array.isArray(messages) ? messages.length : Number(summary.message_count || 0)
+  }
+}
+
+const findDemoTopic = (topicId) => demoTopics.find((topic) => String(topic.topic_id) === String(topicId))
+
+const demoNow = () => new Date().toISOString()
+
+const handleDemoSettingsUpdate = (body = {}) => {
+  if (Array.isArray(body.providers)) {
+    body.providers.forEach((patch) => {
+      const provider = demoProviderSettings.providers.find((item) => item.provider_id === patch.provider_id)
+      if (!provider) return
+      Object.assign(provider, {
+        provider_enabled: patch.provider_enabled ?? provider.provider_enabled,
+        enabled: patch.provider_enabled ?? provider.enabled,
+        base_url: patch.base_url ?? provider.base_url,
+        supports_partial_messages: patch.supports_partial_messages ?? provider.supports_partial_messages,
+        custom_models: Array.isArray(patch.custom_models) ? patch.custom_models : provider.custom_models,
+        models: Array.isArray(patch.enabled_models) ? patch.enabled_models : provider.models,
+        model_detections: patch.model_detections || provider.model_detections,
+        auth_token_set: true
+      })
+    })
+  }
+  if (body.provider_id) demoProviderSettings.provider_id = body.provider_id
+  if (body.model) demoProviderSettings.model = body.model
+  return clone(demoProviderSettings)
 }
 
 const buildStatementPreview = (statement, statementIndex) => {
@@ -1410,6 +1602,39 @@ const handleTablesByDatabase = (params) => {
   return records
 }
 
+const handleTableList = (params = {}) => {
+  let records = getTables()
+  const keyword = String(params.keyword || params.tableName || '').trim().toLowerCase()
+  if (params.clusterId) {
+    records = records.filter((item) => Number(item.clusterId) === Number(params.clusterId))
+  }
+  if (params.database || params.dbName) {
+    const database = params.database || params.dbName
+    records = records.filter((item) => item.dbName === database)
+  }
+  if (params.layer) {
+    records = records.filter((item) => item.layer === params.layer)
+  }
+  if (params.businessDomain) {
+    records = records.filter((item) => item.businessDomain === params.businessDomain)
+  }
+  if (params.dataDomain) {
+    records = records.filter((item) => item.dataDomain === params.dataDomain)
+  }
+  if (keyword) {
+    records = records.filter((item) => {
+      return [item.tableName, item.tableComment, item.owner, item.layer]
+        .some((value) => String(value || '').toLowerCase().includes(keyword))
+    })
+  }
+  return {
+    ...toPaged(records, params.pageNum || params.current || params.page, params.pageSize || params.size),
+    size: Math.max(1, Number(params.pageSize || params.size) || 10),
+    current: Math.max(1, Number(params.pageNum || params.current || params.page) || 1),
+    pages: Math.ceil(records.length / Math.max(1, Number(params.pageSize || params.size) || 10))
+  }
+}
+
 const handleTableOptions = (params) => {
   const keyword = String(params.keyword || '').trim().toLowerCase()
   let records = getTables()
@@ -1427,6 +1652,74 @@ const handleTableOptions = (params) => {
   }
   const limit = Math.max(1, Number(params.limit) || 20)
   return records.slice(0, limit)
+}
+
+const getLatestTableStatistics = (tableId) => {
+  const table = getTableById(tableId)
+  const history = statisticsHistoryMap[Number(tableId)] || []
+  const latest = history[history.length - 1] || {}
+  return {
+    tableId: Number(tableId),
+    clusterId: table?.clusterId || DEMO_CLUSTER_ID,
+    databaseName: table?.dbName || DEMO_DATABASE,
+    tableName: table?.tableName || '',
+    rowCount: Number(latest.rowCount ?? table?.rowCount ?? 0),
+    dataSize: Number(latest.dataSize ?? table?.storageSize ?? 0),
+    statisticsTime: latest.statisticsTime || table?.updatedAt || '2026-03-11T00:00:00',
+    createdAt: latest.statisticsTime || table?.updatedAt || '2026-03-11T00:00:00',
+    updatedAt: latest.statisticsTime || table?.updatedAt || '2026-03-11T00:00:00'
+  }
+}
+
+const handleDatabaseStatistics = (database, params = {}) => {
+  const tables = getTables().filter((item) => {
+    if (database && item.dbName !== database) return false
+    if (params.clusterId && Number(item.clusterId) !== Number(params.clusterId)) return false
+    return true
+  })
+  const totalRows = tables.reduce((sum, item) => sum + Number(item.rowCount || 0), 0)
+  const totalDataSize = tables.reduce((sum, item) => sum + Number(item.storageSize || 0), 0)
+  return {
+    database,
+    clusterId: params.clusterId ? Number(params.clusterId) : DEMO_CLUSTER_ID,
+    tableCount: tables.length,
+    rowCount: totalRows,
+    totalRows,
+    dataSize: totalDataSize,
+    totalDataSize,
+    statisticsTime: '2026-03-11T00:00:00',
+    tables: tables.map((item) => getLatestTableStatistics(item.id))
+  }
+}
+
+const buildDemoDdl = (body = {}) => {
+  const tableName = String(body.tableName || body.customIdentifier || 'demo_new_table').trim() || 'demo_new_table'
+  const columns = Array.isArray(body.columns) && body.columns.length
+    ? body.columns
+    : [
+        { columnName: 'id', dataType: 'BIGINT', nullable: false, comment: '主键 ID' },
+        { columnName: 'biz_date', dataType: 'DATE', nullable: true, comment: '业务日期' }
+      ]
+  const columnLines = columns.map((column) => {
+    const name = column.columnName || column.fieldName || 'col'
+    const type = column.dataType || column.fieldType || 'VARCHAR(255)'
+    const nullable = column.nullable === false ? ' NOT NULL' : ''
+    const comment = column.comment || column.fieldComment
+    return `  \`${name}\` ${type}${nullable}${comment ? ` COMMENT '${comment}'` : ''}`
+  })
+  return `CREATE TABLE \`${tableName}\` (\n${columnLines.join(',\n')}\n) ENGINE=OLAP\nDUPLICATE KEY(\`${columns[0]?.columnName || 'id'}\`)\nCOMMENT '${body.tableComment || '演示建表预览'}';`
+}
+
+const buildDemoTableName = (body = {}) => {
+  const layer = String(body.layer || 'dwd').toLowerCase()
+  const business = String(body.businessDomain || 'demo').toLowerCase()
+  const domain = String(body.dataDomain || 'data').toLowerCase()
+  const identifier = String(body.customIdentifier || body.topic || 'sample')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'sample'
+  const updateType = String(body.updateType || 'di').toLowerCase()
+  return `${layer}_${business}_${domain}_${identifier}_${updateType}`
 }
 
 const handleQueryHistory = (params) => {
@@ -1510,8 +1803,60 @@ export const demoAdapter = async (config) => {
     ])
   }
 
+  if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+$/)) {
+    const clusterId = Number(pathname.split('/').pop())
+    return clusterId === DEMO_CLUSTER_ID
+      ? createResponse(config, {
+          id: DEMO_CLUSTER_ID,
+          clusterName: 'README 演示集群',
+          sourceType: 'DORIS',
+          feHost: 'demo-doris.local',
+          fePort: 9030,
+          isDefault: 1,
+          status: 'active'
+        })
+      : createRejectedResponse(config, '数据源不存在', 404)
+  }
+
   if (method === 'post' && pathname.match(/^\/v1\/doris-clusters\/\d+\/test$/)) {
     return createResponse(config, true)
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/sync-history$/)) {
+    return createResponse(config, {
+      ...toPaged([
+        {
+          id: 'sync-demo-1',
+          runId: 'sync-demo-1',
+          clusterId: DEMO_CLUSTER_ID,
+          status: 'SUCCESS',
+          syncType: 'FULL',
+          databaseName: DEMO_DATABASE,
+          tableCount: getTables().length,
+          startedAt: '2026-03-11T04:50:00',
+          finishedAt: '2026-03-11T04:51:14',
+          message: '演示元数据已同步'
+        }
+      ], params.pageNum, params.pageSize),
+      current: Math.max(1, Number(params.pageNum) || 1),
+      size: Math.max(1, Number(params.pageSize) || 10),
+      pages: 1
+    })
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/sync-history\/[^/]+$/)) {
+    return createResponse(config, {
+      id: 'sync-demo-1',
+      runId: decodeURIComponent(pathname.split('/').pop()),
+      clusterId: DEMO_CLUSTER_ID,
+      status: 'SUCCESS',
+      details: getTables().map((table) => ({
+        databaseName: table.dbName,
+        tableName: table.tableName,
+        status: 'SYNCED',
+        message: '演示表已同步'
+      }))
+    })
   }
 
   if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/schema-object-counts$/)) {
@@ -1555,6 +1900,14 @@ export const demoAdapter = async (config) => {
 
   if (method === 'get' && pathname === '/v1/tables/databases') {
     return createResponse(config, [DEMO_DATABASE])
+  }
+
+  if (method === 'get' && pathname === '/v1/tables') {
+    return createResponse(config, handleTableList(params))
+  }
+
+  if (method === 'get' && pathname === '/v1/tables/all') {
+    return createResponse(config, getTables())
   }
 
   if (method === 'get' && pathname === '/v1/tables/by-database') {
@@ -1638,10 +1991,30 @@ export const demoAdapter = async (config) => {
     return createResponse(config, clone(payload))
   }
 
+  if (method === 'get' && pathname.match(/^\/v1\/tables\/\d+\/statistics$/)) {
+    const tableId = Number(pathname.split('/')[3])
+    return createResponse(config, getLatestTableStatistics(tableId))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/tables\/statistics\/database\/[^/]+$/)) {
+    const database = decodeURIComponent(pathname.split('/').pop())
+    return createResponse(config, handleDatabaseStatistics(database, params))
+  }
+
   if (method === 'get' && pathname.match(/^\/v1\/tables\/\d+\/statistics\/history$/)) {
     const tableId = Number(pathname.split('/')[3])
     const limit = Math.max(1, Number(params.limit) || 30)
     return createResponse(config, clone((statisticsHistoryMap[tableId] || []).slice(-limit)))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/tables\/\d+\/statistics\/history\/last7days$/)) {
+    const tableId = Number(pathname.split('/')[3])
+    return createResponse(config, clone((statisticsHistoryMap[tableId] || []).slice(-7)))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/tables\/\d+\/statistics\/history\/last30days$/)) {
+    const tableId = Number(pathname.split('/')[3])
+    return createResponse(config, clone((statisticsHistoryMap[tableId] || []).slice(-30)))
   }
 
   if (method === 'get' && pathname === '/v1/lineage') {
@@ -1662,6 +2035,281 @@ export const demoAdapter = async (config) => {
 
   if (method === 'get' && pathname === '/v1/data-query/history') {
     return createResponse(config, handleQueryHistory(params))
+  }
+
+  if (method === 'post' && pathname === '/v1/table-designer/table-name') {
+    return createResponse(config, buildDemoTableName(body))
+  }
+
+  if (method === 'post' && pathname === '/v1/table-designer/preview') {
+    const tableName = buildDemoTableName(body)
+    const ddl = buildDemoDdl({ ...body, tableName })
+    return createResponse(config, {
+      tableName,
+      dorisDdl: ddl,
+      ddl
+    })
+  }
+
+  if (method === 'post' && pathname === '/v1/table-designer') {
+    const tableName = buildDemoTableName(body)
+    return createResponse(config, {
+      id: 900001,
+      tableName,
+      dbName: body.dbName || DEMO_DATABASE,
+      clusterId: body.dorisClusterId || DEMO_CLUSTER_ID,
+      dorisDdl: body.dorisDdl || buildDemoDdl({ ...body, tableName })
+    })
+  }
+
+  if (method === 'get' && pathname === '/v1/nl2sql/runtime-config') {
+    return createResponse(config, {
+      demo: true,
+      supports_async_tasks: true,
+      stream_transport: 'mock'
+    })
+  }
+
+  if (method === 'get' && pathname === '/v1/nl2sql/health') {
+    return createResponse(config, { status: 'ok', mode: 'demo' })
+  }
+
+  if (method === 'get' && pathname === '/v1/nl2sql-admin/settings') {
+    return createResponse(config, clone(demoProviderSettings))
+  }
+
+  if (method === 'put' && pathname === '/v1/nl2sql-admin/settings') {
+    return createResponse(config, handleDemoSettingsUpdate(body))
+  }
+
+  if (method === 'post' && pathname === '/v1/nl2sql-admin/model-detections') {
+    return createResponse(config, {
+      status: 'verified',
+      message: '演示模型检测通过',
+      checked_at: demoNow()
+    })
+  }
+
+  if (method === 'get' && pathname === '/v1/dataagent/agents') {
+    return createResponse(config, clone(demoAgents))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+$/)) {
+    const agentId = decodeURIComponent(pathname.split('/').pop())
+    const agent = demoAgents.find((item) => item.agent_id === agentId)
+    return agent
+      ? createResponse(config, clone(agent))
+      : createRejectedResponse(config, '智能体不存在', 404)
+  }
+
+  if (method === 'post' && pathname === '/v1/dataagent/agents') {
+    const next = {
+      ...clone(demoAgents[0]),
+      ...body,
+      agent_id: `agent_demo_${demoAgents.length + 1}`,
+      is_default: false,
+      is_builtin: false,
+      resolved_workdir: '/demo/opendataworks'
+    }
+    demoAgents.push(next)
+    return createResponse(config, clone(next))
+  }
+
+  if (method === 'put' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+$/)) {
+    const agentId = decodeURIComponent(pathname.split('/').pop())
+    const index = demoAgents.findIndex((item) => item.agent_id === agentId)
+    if (index < 0) return createRejectedResponse(config, '智能体不存在', 404)
+    demoAgents[index] = { ...demoAgents[index], ...body, agent_id: agentId }
+    return createResponse(config, clone(demoAgents[index]))
+  }
+
+  if (method === 'delete' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+$/)) {
+    return createResponse(config, { status: 'ok' })
+  }
+
+  if (method === 'get' && pathname === '/v1/dataagent/agents/capabilities') {
+    return createResponse(config, {
+      tools: ['Skill', 'Read', 'Grep', 'Bash'],
+      mcp_servers: [],
+      skills: demoSkillDocuments
+        .filter((item) => item.file_name === 'SKILL.md')
+        .map((item) => ({ folder: item.folder, name: item.folder, enabled: item.enabled })),
+      permission_modes: ['inherit', 'allow_all', 'restricted']
+    })
+  }
+
+  if (method === 'get' && pathname === '/v1/dataagent/data-scope/options') {
+    return createResponse(config, [
+      {
+        cluster_id: DEMO_CLUSTER_ID,
+        source_type: 'DORIS',
+        database: DEMO_DATABASE,
+        label: 'README 演示集群 / opendataworks'
+      }
+    ])
+  }
+
+  if (method === 'get' && pathname === '/v1/dataagent/skills/documents') {
+    return createResponse(config, clone(demoSkillDocuments))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/dataagent\/skills\/documents\/[^/]+$/)) {
+    const documentId = decodeURIComponent(pathname.split('/').pop())
+    const document = demoSkillDocuments.find((item) => String(item.id) === documentId)
+    return document
+      ? createResponse(config, clone(document))
+      : createRejectedResponse(config, 'Skill 文档不存在', 404)
+  }
+
+  if (method === 'put' && pathname.match(/^\/v1\/dataagent\/skills\/documents\/[^/]+$/)) {
+    const documentId = decodeURIComponent(pathname.split('/').pop())
+    const document = demoSkillDocuments.find((item) => String(item.id) === documentId)
+    if (!document) return createRejectedResponse(config, 'Skill 文档不存在', 404)
+    document.content = String(body.content || document.content || '')
+    document.updated_at = demoNow()
+    return createResponse(config, clone(document))
+  }
+
+  if (method === 'put' && pathname.match(/^\/v1\/dataagent\/skills\/runtime\/[^/]+$/)) {
+    const folder = decodeURIComponent(pathname.split('/').pop())
+    demoSkillDocuments.forEach((document) => {
+      if (document.folder === folder) document.enabled = Boolean(body.enabled)
+    })
+    return createResponse(config, { folder, enabled: Boolean(body.enabled) })
+  }
+
+  if (method === 'post' && pathname.match(/^\/v1\/dataagent\/skills\/documents\/[^/]+\/compare$/)) {
+    return createResponse(config, { changed: false, diff: '' })
+  }
+
+  if (method === 'post' && pathname.match(/^\/v1\/dataagent\/skills\/documents\/[^/]+\/versions\/[^/]+\/rollback$/)) {
+    const documentId = decodeURIComponent(pathname.split('/')[5])
+    const document = demoSkillDocuments.find((item) => String(item.id) === documentId)
+    return document
+      ? createResponse(config, clone(document))
+      : createRejectedResponse(config, 'Skill 文档不存在', 404)
+  }
+
+  if (method === 'post' && pathname === '/v1/dataagent/skills/imports') {
+    return createResponse(config, { skill_id: 'demo-imported-skill' })
+  }
+
+  if (method === 'delete' && pathname.match(/^\/v1\/dataagent\/skills\/[^/]+$/)) {
+    return createResponse(config, { status: 'ok' })
+  }
+
+  if (method === 'get' && pathname === '/v1/nl2sql/topics') {
+    const list = params.agent_id
+      ? demoTopics.filter((topic) => topic.agent_id === params.agent_id)
+      : demoTopics
+    return createResponse(config, clone(list.map(publicTopic)))
+  }
+
+  if (method === 'post' && pathname === '/v1/nl2sql/topics') {
+    const topic = {
+      topic_id: `demo-topic-${++demoTopicSeq}`,
+      title: String(body.title || '新话题'),
+      agent_id: String(body.agent_id || 'agent_default'),
+      message_count: 0,
+      current_task_id: '',
+      current_task_status: '',
+      created_at: demoNow(),
+      updated_at: demoNow(),
+      messages: []
+    }
+    demoTopics.unshift(topic)
+    return createResponse(config, publicTopic(topic))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/nl2sql\/topics\/[^/]+$/)) {
+    const topicId = decodeURIComponent(pathname.split('/').pop())
+    const topic = findDemoTopic(topicId)
+    return topic
+      ? createResponse(config, clone(publicTopic(topic)))
+      : createRejectedResponse(config, '话题不存在', 404)
+  }
+
+  if (method === 'put' && pathname.match(/^\/v1\/nl2sql\/topics\/[^/]+$/)) {
+    const topicId = decodeURIComponent(pathname.split('/').pop())
+    const topic = findDemoTopic(topicId)
+    if (!topic) return createRejectedResponse(config, '话题不存在', 404)
+    topic.title = String(body.title || topic.title)
+    topic.updated_at = demoNow()
+    return createResponse(config, clone(publicTopic(topic)))
+  }
+
+  if (method === 'delete' && pathname.match(/^\/v1\/nl2sql\/topics\/[^/]+$/)) {
+    return createResponse(config, { status: 'ok' })
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/nl2sql\/topics\/[^/]+\/messages$/)) {
+    const topicId = decodeURIComponent(pathname.split('/')[4])
+    const topic = findDemoTopic(topicId)
+    const items = topic ? topic.messages : []
+    return createResponse(config, {
+      items: clone(items),
+      total: items.length,
+      page: Number(params.page || 1),
+      page_size: Number(params.page_size || 500)
+    })
+  }
+
+  if (method === 'post' && pathname === '/v1/nl2sql/tasks/deliver-message') {
+    const topic = findDemoTopic(body.topic_id)
+    const now = demoNow()
+    const taskId = `demo-task-${demoTaskSeq++}`
+    const assistantMessageId = `demo-assistant-${demoTaskSeq}`
+    if (topic) {
+      topic.messages.push({
+        message_id: `demo-user-${demoTaskSeq}`,
+        sender_type: 'user',
+        role: 'user',
+        content: String(body.content || ''),
+        created_at: now
+      })
+      topic.messages.push({
+        message_id: assistantMessageId,
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '',
+        status: 'waiting',
+        task_id: taskId,
+        created_at: now
+      })
+      topic.current_task_id = taskId
+      topic.current_task_status = 'waiting'
+      topic.updated_at = now
+    }
+    demoTasks[taskId] = {
+      task_id: taskId,
+      topic_id: String(body.topic_id || ''),
+      task_status: 'finished',
+      assistant_message_id: assistantMessageId,
+      created_at: now,
+      updated_at: now
+    }
+    return createResponse(config, {
+      accepted: true,
+      task_id: taskId,
+      assistant_message_id: assistantMessageId,
+      task_status: 'waiting'
+    })
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/nl2sql\/tasks\/[^/]+$/)) {
+    const taskId = decodeURIComponent(pathname.split('/').pop())
+    return createResponse(config, clone(demoTasks[taskId] || {
+      task_id: taskId,
+      task_status: 'finished'
+    }))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/nl2sql\/tasks\/[^/]+\/events$/)) {
+    return createResponse(config, { items: [], total: 0 })
+  }
+
+  if (method === 'post' && pathname.match(/^\/v1\/nl2sql\/tasks\/[^/]+\/cancel$/)) {
+    return createResponse(config, { status: 'ok' })
   }
 
   if (['post', 'put', 'delete', 'patch'].includes(method)) {

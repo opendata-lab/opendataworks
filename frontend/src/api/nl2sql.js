@@ -1,4 +1,6 @@
 import axios from 'axios'
+import { demoAdapter } from '@/demo/mockServer'
+import { isDemoMode } from '@/demo/runtime'
 
 const DEFAULT_TIMEOUT = 120000
 const RUNTIME_PREFIX = '/api/v1/nl2sql'
@@ -24,7 +26,11 @@ function buildUrl(baseURL, path) {
 }
 
 function unwrapResponse(response) {
-  return response?.data
+  const payload = response?.data
+  if (payload && typeof payload === 'object' && payload.code === 200 && Object.prototype.hasOwnProperty.call(payload, 'data')) {
+    return payload.data
+  }
+  return payload
 }
 
 async function extractHttpError(response) {
@@ -89,7 +95,8 @@ function createAxiosClient(baseURL, prefix, timeout, defaultHeaders = {}) {
   const request = axios.create({
     baseURL: buildUrl(baseURL, prefix),
     timeout,
-    headers: { ...defaultHeaders }
+    headers: { ...defaultHeaders },
+    ...(isDemoMode ? { adapter: demoAdapter } : {})
   })
 
   request.interceptors.response.use(
@@ -157,6 +164,15 @@ export function createNl2SqlApiClient(options = {}) {
     },
     async streamTaskEvents(taskId, options = {}) {
       const { onEvent, signal, afterSeq = 0 } = options
+      if (isDemoMode) {
+        const events = createDemoTaskEvents(taskId, afterSeq)
+        for (const event of events) {
+          if (signal?.aborted) return
+          onEvent?.(event)
+          await new Promise((resolve) => window.setTimeout(resolve, 80))
+        }
+        return
+      }
       const response = await fetch(
         buildUrl(baseURL, `${RUNTIME_PREFIX}/tasks/${taskId}/events/stream?after_seq=${encodeURIComponent(afterSeq)}`),
         {
@@ -271,4 +287,53 @@ export function createNl2SqlApiClient(options = {}) {
       return runtimeRequest.get('/health')
     }
   }
+}
+
+function createDemoTaskEvents(taskId, afterSeq = 0) {
+  const startSeq = Math.max(0, Number(afterSeq || 0))
+  const task = String(taskId || 'demo-task')
+  const messageId = `msg_${task}`
+  const events = [
+    {
+      seq_id: 1,
+      task_id: task,
+      message_id: messageId,
+      record_type: 'chunk',
+      content: '识别问题意图，读取演示数据目录与血缘样例。',
+      metadata: { content_type: 'reasoning', correlation_id: 'demo-reasoning' },
+      delta: { status: 'STREAMING' }
+    },
+    {
+      seq_id: 2,
+      task_id: task,
+      message_id: messageId,
+      record_type: 'chunk',
+      content: '识别问题意图，读取演示数据目录与血缘样例。',
+      metadata: { content_type: 'reasoning', correlation_id: 'demo-reasoning' },
+      delta: { status: 'END' }
+    },
+    {
+      seq_id: 3,
+      task_id: task,
+      message_id: messageId,
+      record_type: 'chunk',
+      content: '这是纯前端演示回答：当前样例包含 5 张表、4 条血缘边，核心链路为 `demo_order_event_raw` 和 `demo_member_profile` 汇入 `demo_order_detail`，再产出门店销售汇总与订单风险预警。真实模型执行请连接 DataAgent 后端。',
+      metadata: { content_type: 'content', correlation_id: 'demo-content' },
+      delta: { status: 'STREAMING' }
+    },
+    {
+      seq_id: 4,
+      task_id: task,
+      message_id: messageId,
+      record_type: 'event',
+      event_type: 'AFTER_AGENT_REPLY',
+      content_type: 'content',
+      correlation_id: 'demo-content',
+      data: {
+        status: 'finished',
+        token_usage: { input_tokens: 0, output_tokens: 0 }
+      }
+    }
+  ]
+  return events.filter((event) => Number(event.seq_id || 0) > startSeq)
 }
