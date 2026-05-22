@@ -19,7 +19,10 @@
         <div class="agent-card-main">
           <div class="agent-card-title-row">
             <h3>{{ agent.name }}</h3>
-            <el-tag v-if="agent.is_default" size="small" type="info">默认</el-tag>
+            <div class="agent-card-tags">
+              <el-tag v-if="agent.is_default" size="small" type="info">默认</el-tag>
+              <span v-if="agent.is_default || agent.is_builtin" class="agent-built-in-tag">内置</span>
+            </div>
           </div>
           <p>{{ agent.description || '未配置描述' }}</p>
         </div>
@@ -39,7 +42,7 @@
           <el-tooltip content="查看编辑" placement="top">
             <el-button :icon="Edit" circle @click="handleDetail(agent)" />
           </el-tooltip>
-          <el-tooltip v-if="!agent.is_default" content="删除" placement="top">
+          <el-tooltip v-if="!isBuiltinAgent(agent)" content="删除" placement="top">
             <el-button :icon="Delete" circle type="danger" plain @click="handleDelete(agent)" />
           </el-tooltip>
         </div>
@@ -61,6 +64,8 @@ const router = useRouter()
 const agents = ref([])
 const loading = ref(false)
 const creating = ref(false)
+
+const isBuiltinAgent = (agent) => Boolean(agent?.is_builtin || agent?.is_default)
 
 const loadAgents = async () => {
   loading.value = true
@@ -176,6 +181,25 @@ onMounted(loadAgents)
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.agent-card-tags {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+.agent-built-in-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid #b7e3c2;
+  border-radius: 4px;
+  background: #f0f9eb;
+  color: #2f7d32;
+  font-size: 12px;
+  line-height: 1;
 }
 
 .agent-card h3 {

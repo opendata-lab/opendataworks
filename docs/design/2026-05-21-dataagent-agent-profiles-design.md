@@ -25,6 +25,7 @@ Administrators need multiple intelligent-query agents. Each agent should have a 
 In scope:
 
 - Add a DataAgent profile model and API.
+- Seed two built-in profiles: a default general agent and an OpenDataWorks assistant.
 - Add an “智能体” tab inside the existing intelligent-query module.
 - Show agents in a multi-column card list.
 - Support create, detail, edit, save, and “start chat with this agent”.
@@ -57,9 +58,10 @@ Add `da_agent_profile` in the DataAgent session schema. Each profile stores:
 - `max_turns`
 - `env_vars_json`
 - `is_default`
+- `is_builtin`
 - timestamps
 
-The backend resolves `resolved_workdir` from runtime configuration instead of storing arbitrary paths. The default profile preserves the existing DataAgent runtime behavior. Non-default profiles use a managed cwd under the DataAgent runtime home.
+The backend resolves `resolved_workdir` from runtime configuration instead of storing arbitrary paths. The default profile is the built-in `通用智能体`, which has no skills or MCP services and uses only a minimal read-only tool set. The built-in `OpenDataWorks助手智能体` preserves the OpenDataWorks-specific intelligent-query behavior by enabling the OpenDataWorks skill folders, safe tool set, and Portal MCP service. User-created profiles use a managed cwd under the DataAgent runtime home.
 
 ### Topic And Task Binding
 
@@ -67,7 +69,7 @@ Add `agent_id` and `agent_snapshot_json` to `da_agent_topic` and `da_agent_task`
 
 Topic creation accepts `agent_id`. The backend snapshots the selected profile into the topic. Every task created in that topic copies the topic snapshot, so later profile edits only affect new topics.
 
-Existing topics are backfilled to the default agent. Existing tasks can have a null snapshot but are normalized to the default profile at runtime.
+Existing topics are backfilled to the default general agent. Existing tasks can have a null snapshot but are normalized to the general profile at runtime.
 
 ### Runtime Integration
 
@@ -85,7 +87,7 @@ Root execution still downgrades `bypassPermissions` to SDK-compatible default be
 
 ### Frontend UX
 
-The existing intelligent-query shell gains an “智能体” tab. The list uses cards in a responsive grid and shows name, description, enabled skills, allowed tools, MCP services, max turns, and default marker.
+The existing intelligent-query shell gains an “智能体” tab. The list uses cards in a responsive grid and shows name, description, enabled skills, allowed tools, MCP services, max turns, default marker, and built-in marker.
 
 The detail view is an Element Plus form with sections:
 
@@ -97,6 +99,15 @@ The detail view is an Element Plus form with sections:
 Memory management is intentionally omitted in v1.
 
 The chat view adds an agent selector in the upper-left. Selecting an agent reloads the topic list for that agent. New topics and submitted messages use the active agent. Existing topics cannot switch agents.
+
+### Built-in Agent Semantics
+
+Two profiles are owned by the system:
+
+- `agent_default` / `通用智能体`: default selector target and backfill target for records that had no agent before profiles existed. It is intentionally broad but not all-powerful: no skill folders, no MCP services, and only `Read`, `LS`, `Glob`, and `Grep` tools.
+- `agent_opendataworks` / `OpenDataWorks助手智能体`: OpenDataWorks-specific assistant with the current business-knowledge and platform-tools skill folders, the safe tool set, and Portal MCP.
+
+Both built-in agents are visible and can start chats. They cannot be deleted. User-created agents are always non-built-in.
 
 ## Interfaces
 

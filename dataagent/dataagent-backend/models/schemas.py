@@ -367,6 +367,7 @@ class AgentSummary(BaseModel):
     name: str
     description: str = ""
     is_default: bool = False
+    is_builtin: bool = False
 
 
 class AgentProfileBase(BaseModel):
@@ -422,6 +423,7 @@ class AgentProfile(BaseModel):
     max_turns: int = 0
     env_vars: Dict[str, str] = Field(default_factory=dict)
     is_default: bool = False
+    is_builtin: bool = False
     created_at: str = ""
     updated_at: str = ""
 

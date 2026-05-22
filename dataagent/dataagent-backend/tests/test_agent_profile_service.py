@@ -12,6 +12,31 @@ if str(BACKEND_ROOT) not in sys.path:
 from core import agent_profile_service
 
 
+def test_default_agent_payload_is_general_builtin_agent():
+    payload = agent_profile_service.default_agent_payload()
+
+    assert payload["agent_id"] == "agent_default"
+    assert payload["name"] == "通用智能体"
+    assert payload["description"] == "通用对话与分析入口，不预置 OpenDataWorks 专属 Skills。"
+    assert payload["allowed_tools"] == ["Read", "LS", "Glob", "Grep"]
+    assert payload["mcp_server_ids"] == []
+    assert payload["skill_folders"] == []
+    assert payload["is_default"] is True
+    assert payload["is_builtin"] is True
+
+
+def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
+    payload = agent_profile_service.opendataworks_agent_payload()
+
+    assert payload["agent_id"] == "agent_opendataworks"
+    assert payload["name"] == "OpenDataWorks助手智能体"
+    assert payload["allowed_tools"] == ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
+    assert payload["mcp_server_ids"] == ["portal"]
+    assert payload["skill_folders"] == ["opendataworks-business-knowledge", "opendataworks-platform-tools"]
+    assert payload["is_default"] is False
+    assert payload["is_builtin"] is True
+
+
 def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
     payload = agent_profile_service.normalize_agent_profile_payload(
         {
@@ -65,6 +90,7 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
             "env_vars": {"AGENT_SCENE": "quality"},
             "resolved_workdir": "/tmp/agent",
             "is_default": False,
+            "is_builtin": False,
             "created_at": "2026-05-21T10:00:00",
             "updated_at": "2026-05-21T11:00:00",
         }
@@ -82,4 +108,5 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
         "max_turns": 8,
         "env_vars": {"AGENT_SCENE": "quality"},
         "is_default": False,
+        "is_builtin": False,
     }
