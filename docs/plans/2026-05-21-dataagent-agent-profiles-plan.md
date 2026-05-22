@@ -24,6 +24,17 @@
 10. Add/adjust backend pytest and frontend Vitest coverage.
 11. Run focused verification; run local HTTP smoke if the environment is available.
 
+## Built-in Agent Increment
+
+This follow-up keeps the profile architecture from the original plan and adjusts the built-in seed data:
+
+1. Add `is_builtin` to `da_agent_profile` with a new Alembic migration.
+2. Treat `agent_default` as `通用智能体`; it is `is_default=true`, `is_builtin=true`, has no skills/MCP services, and uses the minimal read-only tool set.
+3. Add `agent_opendataworks` as `OpenDataWorks助手智能体`; it is `is_default=false`, `is_builtin=true`, and carries the OpenDataWorks skills, safe tools, and Portal MCP.
+4. Backfill only missing topic/task agent bindings to `agent_default` so old records without an agent map to the general agent.
+5. Expose `is_builtin` in agent summaries and profiles; hide delete actions for built-in profiles in the frontend.
+6. Update backend pytest and frontend Vitest coverage before implementation, then rerun the focused verification commands.
+
 ## File Map
 
 - `dataagent/dataagent-backend/alembic/versions/20260521_000007_add_agent_profiles.py`: database migration.

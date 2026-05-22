@@ -49,7 +49,8 @@ describe('AgentStudio', () => {
         allowed_tools: ['Skill', 'Read'],
         mcp_server_ids: ['portal'],
         skill_folders: ['dataagent-nl2sql'],
-        is_default: true
+        is_default: true,
+        is_builtin: true
       }
     ])
   })
@@ -63,6 +64,7 @@ describe('AgentStudio', () => {
     expect(wrapper.text()).toContain('默认智能问数助手')
     expect(wrapper.text()).toContain('/tmp/default')
     expect(wrapper.text()).toContain('1 Skills')
+    expect(wrapper.text()).toContain('内置')
   })
 
   it('creates an agent and navigates to detail', async () => {

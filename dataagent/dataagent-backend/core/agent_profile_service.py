@@ -14,9 +14,12 @@ import pymysql
 from config import get_settings
 
 DEFAULT_AGENT_ID = "agent_default"
-DEFAULT_AGENT_NAME = "默认智能问数助手"
+DEFAULT_AGENT_NAME = "通用智能体"
+OPENDATAWORKS_AGENT_ID = "agent_opendataworks"
+OPENDATAWORKS_AGENT_NAME = "OpenDataWorks助手智能体"
 PERMISSION_MODES = {"inherit", "default", "bypassPermissions"}
 SAFE_AGENT_TOOLS = ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
+GENERAL_AGENT_TOOLS = ["Read", "LS", "Glob", "Grep"]
 PORTAL_MCP_SERVER_ID = "portal"
 PORTAL_MCP_TOOL_NAMES = [
     "portal_search_tables",
@@ -223,6 +226,7 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "max_turns": int(profile.get("max_turns") or 0),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
         "is_default": bool(profile.get("is_default")),
+        "is_builtin": bool(profile.get("is_builtin")),
     }
 
 
@@ -233,6 +237,7 @@ def agent_summary_from_snapshot(snapshot: dict[str, Any] | None) -> dict[str, An
         "name": str(payload.get("name") or DEFAULT_AGENT_NAME),
         "description": str(payload.get("description") or ""),
         "is_default": bool(payload.get("is_default")),
+        "is_builtin": bool(payload.get("is_builtin")),
     }
 
 
@@ -251,15 +256,33 @@ def default_agent_payload() -> dict[str, Any]:
     return {
         "agent_id": DEFAULT_AGENT_ID,
         "name": DEFAULT_AGENT_NAME,
-        "description": "使用当前 DataAgent 默认提示词、Skills、工具和 MCP 配置。",
+        "description": "通用对话与分析入口，不预置 OpenDataWorks 专属 Skills。",
         "system_prompt": "",
-        "permission_mode": "inherit",
-        "allowed_tools": list(SAFE_AGENT_TOOLS),
-        "mcp_server_ids": [PORTAL_MCP_SERVER_ID],
+        "permission_mode": "default",
+        "allowed_tools": list(GENERAL_AGENT_TOOLS),
+        "mcp_server_ids": [],
         "skill_folders": [],
         "max_turns": 0,
         "env_vars": {},
         "is_default": True,
+        "is_builtin": True,
+    }
+
+
+def opendataworks_agent_payload() -> dict[str, Any]:
+    return {
+        "agent_id": OPENDATAWORKS_AGENT_ID,
+        "name": OPENDATAWORKS_AGENT_NAME,
+        "description": "面向 OpenDataWorks 数据门户、元数据、血缘、工作流和智能问数场景。",
+        "system_prompt": "你是 OpenDataWorks 数据门户助手，优先围绕平台元数据、工作流、血缘、数据质量和智能问数场景提供帮助。",
+        "permission_mode": "inherit",
+        "allowed_tools": list(SAFE_AGENT_TOOLS),
+        "mcp_server_ids": [PORTAL_MCP_SERVER_ID],
+        "skill_folders": ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
+        "max_turns": 0,
+        "env_vars": {},
+        "is_default": False,
+        "is_builtin": True,
     }
 
 
@@ -334,6 +357,7 @@ class AgentProfileStore:
             "max_turns": int(row.get("max_turns") or 0),
             "env_vars": _validate_env_vars(_safe_json_load(row.get("env_vars_json"), {})),
             "is_default": bool(row.get("is_default")),
+            "is_builtin": bool(row.get("is_builtin")),
             "created_at": _to_iso(row.get("created_at")),
             "updated_at": _to_iso(row.get("updated_at")),
         }
@@ -349,9 +373,9 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt, permission_mode,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, is_default, created_at, updated_at
+                           max_turns, env_vars_json, is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
-                    ORDER BY is_default DESC, updated_at DESC, created_at DESC
+                    ORDER BY is_builtin DESC, is_default DESC, updated_at DESC, created_at DESC
                     """
                 )
                 rows = cur.fetchall() or []
@@ -368,7 +392,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt, permission_mode,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, is_default, created_at, updated_at
+                           max_turns, env_vars_json, is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
                     WHERE agent_id = %s
                     LIMIT 1
@@ -384,6 +408,7 @@ class AgentProfileStore:
         self._ensure_ready()
         agent_id = str(profile.get("agent_id") or "").strip() or _new_agent_id()
         is_default = bool(profile.get("is_default"))
+        is_builtin = bool(profile.get("is_builtin"))
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
@@ -394,8 +419,8 @@ class AgentProfileStore:
                     INSERT INTO da_agent_profile (
                         agent_id, name, description, system_prompt, permission_mode,
                         allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                        max_turns, env_vars_json, is_default
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        max_turns, env_vars_json, is_default, is_builtin
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         name = VALUES(name),
                         description = VALUES(description),
@@ -407,6 +432,7 @@ class AgentProfileStore:
                         max_turns = VALUES(max_turns),
                         env_vars_json = VALUES(env_vars_json),
                         is_default = VALUES(is_default),
+                        is_builtin = VALUES(is_builtin),
                         updated_at = CURRENT_TIMESTAMP
                     """,
                     (
@@ -421,6 +447,7 @@ class AgentProfileStore:
                         int(profile.get("max_turns") or 0),
                         _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
                         1 if is_default else 0,
+                        1 if is_builtin else 0,
                     ),
                 )
             conn.commit()
@@ -433,8 +460,8 @@ class AgentProfileStore:
         profile = self.get_profile(agent_id)
         if not profile:
             return False
-        if profile.get("is_default"):
-            raise ValueError("default agent cannot be deleted")
+        if profile.get("is_builtin"):
+            raise ValueError("built-in agent cannot be deleted")
         if self.count_topic_references(agent_id) > 0:
             raise ValueError("agent is referenced by topics")
         conn = self._connect(database=self._schema_name())
@@ -502,13 +529,14 @@ def get_agent_profile_store() -> AgentProfileStore:
 def bootstrap_default_agent_profile() -> dict[str, Any]:
     store = get_agent_profile_store()
     store.init_schema()
-    existing = store.get_profile(DEFAULT_AGENT_ID)
-    if existing:
-        store.backfill_default_bindings(existing)
-        return existing
-    created = store.save_profile(default_agent_payload())
-    store.backfill_default_bindings(created)
-    return created
+    default_profile = store.get_profile(DEFAULT_AGENT_ID)
+    if not default_profile:
+        default_profile = store.save_profile(default_agent_payload())
+    opendataworks_profile = store.get_profile(OPENDATAWORKS_AGENT_ID)
+    if not opendataworks_profile:
+        store.save_profile(opendataworks_agent_payload())
+    store.backfill_default_bindings(default_profile)
+    return default_profile
 
 
 def list_agent_profiles() -> list[dict[str, Any]]:

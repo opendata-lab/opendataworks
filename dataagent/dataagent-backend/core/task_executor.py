@@ -830,10 +830,13 @@ async def execute_task_stream(
         os.environ[key] = value
 
     enabled_folders = skill_runtime.get("enabled_folders") or []
-    if agent_snapshot and not bool(agent_snapshot.get("is_default")):
+    if agent_snapshot:
         project_cwd = prepare_enabled_skills_project_cwd(
             enabled_folders,
-            runtime_project_cwd=resolved_agent_workdir(str(agent_snapshot.get("agent_id") or ""), is_default=False),
+            runtime_project_cwd=resolved_agent_workdir(
+                str(agent_snapshot.get("agent_id") or ""),
+                is_default=bool(agent_snapshot.get("is_default")),
+            ),
             allow_empty=True,
         )
     else:

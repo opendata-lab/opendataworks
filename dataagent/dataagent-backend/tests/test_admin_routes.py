@@ -338,6 +338,7 @@ def test_agent_profile_routes_contract(monkeypatch):
         "max_turns": 12,
         "env_vars": {"SAFE_FLAG": "1"},
         "is_default": False,
+        "is_builtin": False,
         "created_at": "2026-05-21T10:00:00",
         "updated_at": "2026-05-21T10:00:00",
     }
@@ -386,6 +387,7 @@ def test_agent_profile_routes_contract(monkeypatch):
     listed = client.get("/api/v1/dataagent/agents")
     assert listed.status_code == 200
     assert listed.json()[0]["agent_id"] == "agent_1"
+    assert listed.json()[0]["is_builtin"] is False
 
     created = client.post(
         "/api/v1/dataagent/agents",

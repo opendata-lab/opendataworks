@@ -89,7 +89,7 @@ def resolve_agent_skill_runtime(
 ) -> dict[str, Any]:
     selected = _dedupe_strings((agent_snapshot or {}).get("skill_folders"))
     if not selected:
-        if agent_snapshot and not bool(agent_snapshot.get("is_default")):
+        if agent_snapshot:
             return {
                 "primary_folder": "",
                 "primary_root": str(resolve_builtin_skill_root_dir()),
