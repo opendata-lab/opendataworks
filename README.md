@@ -24,7 +24,7 @@
 
 English | [简体中文](README_zh-CN.md)
 
-[Website](https://opendataworks.vercel.app/) · [Quick Start](https://opendataworks.vercel.app/guide/quick-start) · [Features](https://opendataworks.vercel.app/guide/features) · [Architecture](https://opendataworks.vercel.app/architecture/overview) · [Configuration](https://opendataworks.vercel.app/guide/configuration) · [Contributing](https://opendataworks.vercel.app/guide/contribution) · [Slack](https://opendataworkshq.slack.com/)
+[Website](https://opendataworks.vercel.app/) · [Quick Start](https://opendataworks.vercel.app/guide/quick-start.html) · [Features](https://opendataworks.vercel.app/guide/features.html) · [Architecture](https://opendataworks.vercel.app/architecture/overview.html) · [Configuration](https://opendataworks.vercel.app/guide/configuration.html) · [Contributing](https://opendataworks.vercel.app/guide/contribution.html) · [Slack](https://opendataworkshq.slack.com/)
 
 </div>
 
@@ -107,16 +107,16 @@ See the [deployment guide](deploy/README.md) for production deployment and offli
 
 ## Quick Start
 
-Follow the [quick start guide](https://opendataworks.vercel.app/guide/quick-start) to deploy and run OpenDataWorks locally.
+Follow the [quick start guide](https://opendataworks.vercel.app/guide/quick-start.html) to deploy and run OpenDataWorks locally.
 
 ## Documentation
 
 Full documentation is available at: **https://opendataworks.vercel.app/**
 
-- [Quick Start](https://opendataworks.vercel.app/guide/quick-start)
-- [Architecture](https://opendataworks.vercel.app/architecture/overview)
-- [Configuration](https://opendataworks.vercel.app/guide/configuration)
-- [FAQ](https://opendataworks.vercel.app/guide/faq)
+- [Quick Start](https://opendataworks.vercel.app/guide/quick-start.html)
+- [Architecture](https://opendataworks.vercel.app/architecture/overview.html)
+- [Configuration](https://opendataworks.vercel.app/guide/configuration.html)
+- [FAQ](https://opendataworks.vercel.app/guide/faq.html)
 
 ## Community
 
@@ -125,7 +125,7 @@ Full documentation is available at: **https://opendataworks.vercel.app/**
 
 ## Contributing
 
-Contributions are welcome. Please read the [contribution guide](https://opendataworks.vercel.app/guide/contribution) before opening a pull request.
+Contributions are welcome. Please read the [contribution guide](https://opendataworks.vercel.app/guide/contribution.html) before opening a pull request.
 
 ## License
 
