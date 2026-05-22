@@ -14,7 +14,11 @@ from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import normalize_provider_id as _normalize_provider_id
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
-from core.skill_discovery import prepare_enabled_skills_project_cwd, resolve_builtin_skill_root_dir
+from core.skill_discovery import (
+    prepare_enabled_skills_project_cwd,
+    resolve_builtin_skill_root_dir,
+    resolve_skill_discovery_root_dir,
+)
 
 SAFE_AUTO_ALLOWED_TOOLS = ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
 PORTAL_MCP_SERVER_NAME = "portal"
@@ -46,13 +50,62 @@ def _load_system_prompt_template() -> str:
     return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
 
 
-def _build_system_prompt(database_hint: str | None, skill_runtime: dict[str, Any] | None = None) -> str:
+def _dedupe_strings(values: Any) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        values = [values]
+    result: list[str] = []
+    seen: set[str] = set()
+    iterable = values if isinstance(values, (list, tuple, set)) else []
+    for value in iterable:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        result.append(text)
+        seen.add(text)
+    return result
+
+
+def _build_system_prompt(
+    database_hint: str | None,
+    skill_runtime: dict[str, Any] | None = None,
+    agent_snapshot: dict[str, Any] | None = None,
+) -> str:
     enabled_skills = list((skill_runtime or {}).get("enabled_folders") or [])
     enabled_skills_text = "、".join(enabled_skills) if enabled_skills else "未配置"
     lines = [_load_system_prompt_template(), "", "# 运行时上下文", f"- 已启用 Skills：当前已启用：{enabled_skills_text}。"]
+    custom_prompt = str((agent_snapshot or {}).get("system_prompt") or "").strip()
+    if custom_prompt:
+        lines.extend(["", "# 智能体系统提示词", custom_prompt])
     if database_hint:
         lines.append(f"- 用户显式提供的 database hint: {database_hint}")
     return "\n".join(lines)
+
+
+def resolve_agent_skill_runtime(
+    agent_snapshot: dict[str, Any] | None,
+    fallback_runtime: dict[str, Any],
+) -> dict[str, Any]:
+    selected = _dedupe_strings((agent_snapshot or {}).get("skill_folders"))
+    if not selected:
+        if agent_snapshot and not bool(agent_snapshot.get("is_default")):
+            return {
+                "primary_folder": "",
+                "primary_root": str(resolve_builtin_skill_root_dir()),
+                "enabled_folders": [],
+                "enabled_roots": {},
+            }
+        return fallback_runtime
+    discovery_root = resolve_skill_discovery_root_dir()
+    roots = {folder: str((discovery_root / folder).resolve()) for folder in selected}
+    primary_folder = selected[0]
+    return {
+        "primary_folder": primary_folder,
+        "primary_root": roots.get(primary_folder, str(resolve_builtin_skill_root_dir())),
+        "enabled_folders": selected,
+        "enabled_roots": roots,
+    }
 
 
 def _looks_like_procedural_preamble(text: str) -> bool:
@@ -205,6 +258,11 @@ def _build_runtime_env(
     )
     if platform_skill_root:
         runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] = str(Path(platform_skill_root).resolve())
+    agent_env = getattr(params, "agent_env_vars", None)
+    if not agent_env and getattr(params, "agent_snapshot", None):
+        agent_env = dict((getattr(params, "agent_snapshot", None) or {}).get("env_vars") or {})
+    if isinstance(agent_env, dict):
+        runtime_env.update({str(key): str(value) for key, value in agent_env.items()})
     return runtime_env
 
 
@@ -218,15 +276,26 @@ def _is_running_as_root() -> bool:
         return False
 
 
-def _resolve_sdk_permission_mode() -> str:
+def _resolve_sdk_permission_mode(permission_mode: str | None = None) -> str:
+    requested = str(permission_mode or "inherit").strip() or "inherit"
+    if requested == "default":
+        return "default"
     if _is_running_as_root():
         # Claude Code rejects bypassPermissions under root/sudo. Fall back to the
         # standard mode and rely on allowed_tools for the read-only + script path.
         return "default"
+    if requested == "bypassPermissions":
+        return "bypassPermissions"
     return "bypassPermissions"
 
 
-def _build_portal_mcp_servers(cfg: Any) -> dict[str, dict[str, Any]]:
+def _build_portal_mcp_servers(
+    cfg: Any,
+    mcp_server_ids: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, dict[str, Any]]:
+    selected = _dedupe_strings(mcp_server_ids)
+    if mcp_server_ids is not None and PORTAL_MCP_SERVER_NAME not in selected:
+        return {}
     enabled = bool(getattr(cfg, "dataagent_portal_mcp_enabled", True))
     if not enabled:
         return {}
@@ -253,8 +322,11 @@ def _build_portal_mcp_servers(cfg: Any) -> dict[str, dict[str, Any]]:
     }
 
 
-def _build_allowed_tools(mcp_servers: dict[str, Any] | None = None) -> list[str]:
-    allowed = list(SAFE_AUTO_ALLOWED_TOOLS)
+def _build_allowed_tools(
+    mcp_servers: dict[str, Any] | None = None,
+    allowed_tools: list[str] | tuple[str, ...] | None = None,
+) -> list[str]:
+    allowed = _dedupe_strings(allowed_tools) if allowed_tools is not None else list(SAFE_AUTO_ALLOWED_TOOLS)
     if mcp_servers and PORTAL_MCP_SERVER_NAME in mcp_servers:
         allowed.extend(
             f"mcp__{PORTAL_MCP_SERVER_NAME}__{tool_name}"
@@ -291,7 +363,9 @@ def _result_subtype_to_reason(subtype: str, detail: str) -> str:
     return "模型会话未正常结束"
 
 
-def _resolve_max_turns(cfg, execution_mode: str | None) -> int:
+def _resolve_max_turns(cfg, execution_mode: str | None, agent_max_turns: int | None = None) -> int:
+    if int(agent_max_turns or 0) > 0:
+        return max(1, int(agent_max_turns or 0))
     mode = str(execution_mode or "").strip().lower()
     if mode in {"background", "auto"}:
         return max(1, int(getattr(cfg, "agent_background_max_turns", 0) or getattr(cfg, "agent_max_turns", 0) or 40))

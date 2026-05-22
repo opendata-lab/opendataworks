@@ -99,7 +99,7 @@ def _install_fake_sdk(monkeypatch, messages, *, final_exception=None):
     )
 
 
-def _build_input(*, history=None, resume_session_id=None):
+def _build_input(*, history=None, resume_session_id=None, agent_snapshot=None):
     return task_executor.TaskExecutionInput(
         task_id="task-1",
         topic_id="topic-1",
@@ -113,6 +113,7 @@ def _build_input(*, history=None, resume_session_id=None):
         timeout_seconds=60,
         sql_read_timeout_seconds=30,
         sql_write_timeout_seconds=30,
+        agent_snapshot=agent_snapshot,
     )
 
 
@@ -266,6 +267,74 @@ def test_execute_task_stream_logs_safe_runtime_base_url_and_preserves_env(monkey
     assert "env_base_url=http://relay.example.internal/maas" in caplog.text
     assert "auth_token_set=True" in caplog.text
     assert "api_key_set=False" in caplog.text
+
+
+def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatch, tmp_path: Path):
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            AssistantMessage([TextBlock("custom-agent-ok")]),
+            ResultMessage("success", session_id="sdk-session-agent"),
+        ],
+    )
+    monkeypatch.setattr(
+        task_executor,
+        "resolve_runtime_provider_selection",
+        lambda provider_id, model: {
+            "provider_id": provider_id,
+            "model": model,
+            "api_key": "",
+            "auth_token": "",
+            "base_url": "https://example.invalid",
+            "supports_partial_messages": False,
+        },
+    )
+    _patch_skill_runtime(monkeypatch, tmp_path)
+    agent_cwd = tmp_path / "agents" / "agent_1"
+    captured: dict[str, object] = {}
+
+    def fake_prepare_enabled_skills_project_cwd(folders, **kwargs):
+        captured["folders"] = list(folders)
+        captured["kwargs"] = dict(kwargs)
+        return agent_cwd
+
+    monkeypatch.setattr(task_executor, "prepare_enabled_skills_project_cwd", fake_prepare_enabled_skills_project_cwd)
+    monkeypatch.setattr(task_executor, "resolved_agent_workdir", lambda agent_id, is_default=False: str(agent_cwd))
+
+    async def _run():
+        return await task_executor.execute_task_stream(
+            _build_input(
+                agent_snapshot={
+                    "agent_id": "agent_1",
+                    "name": "自定义智能体",
+                    "description": "",
+                    "system_prompt": "只返回自定义智能体结果。",
+                    "permission_mode": "default",
+                    "allowed_tools": ["Read"],
+                    "mcp_server_ids": [],
+                    "skill_folders": [],
+                    "max_turns": 7,
+                    "env_vars": {"SAFE_FLAG": "1"},
+                    "is_default": False,
+                }
+            ),
+            emit=lambda record: None,
+        )
+
+    result = asyncio.run(_run())
+
+    assert result.task_status == "finished"
+    assert result.content == "custom-agent-ok"
+    assert captured["folders"] == []
+    assert captured["kwargs"]["runtime_project_cwd"] == str(agent_cwd)
+    assert captured["kwargs"]["allow_empty"] is True
+    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(agent_cwd)
+    assert ClaudeAgentOptions.last_kwargs["allowed_tools"] == ["Read"]
+    assert ClaudeAgentOptions.last_kwargs["mcp_servers"] == {}
+    assert ClaudeAgentOptions.last_kwargs["max_turns"] == 7
+    assert ClaudeAgentOptions.last_kwargs["permission_mode"] == "default"
+    assert ClaudeAgentOptions.last_kwargs["env"]["SAFE_FLAG"] == "1"
+    assert "只返回自定义智能体结果。" in ClaudeAgentOptions.last_kwargs["system_prompt"]
 
 
 def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tmp_path: Path):

@@ -49,6 +49,7 @@ class QAExample(BaseModel):
 
 class CreateTopicRequest(BaseModel):
     title: Optional[str] = None
+    agent_id: Optional[str] = None
 
 
 class UpdateTopicRequest(BaseModel):
@@ -58,6 +59,7 @@ class UpdateTopicRequest(BaseModel):
 class DeliverMessageRequest(BaseModel):
     topic_id: str
     content: str
+    agent_id: Optional[str] = None
     provider_id: Optional[str] = None
     model: Optional[str] = None
     debug: bool = False
@@ -69,6 +71,7 @@ class CreateTaskRequest(BaseModel):
     topic_id: str
     message_type: str
     message_content: Any
+    agent_id: Optional[str] = None
     provider_id: Optional[str] = None
     model: Optional[str] = None
     debug: bool = False
@@ -359,6 +362,70 @@ class SkillDocumentCompareResponse(BaseModel):
     changed_lines: int = 0
 
 
+class AgentSummary(BaseModel):
+    agent_id: str
+    name: str
+    description: str = ""
+    is_default: bool = False
+
+
+class AgentProfileBase(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    system_prompt: Optional[str] = None
+    permission_mode: Optional[str] = None
+    allowed_tools: Optional[List[str]] = None
+    mcp_server_ids: Optional[List[str]] = None
+    skill_folders: Optional[List[str]] = None
+    max_turns: Optional[int] = None
+    env_vars: Optional[Dict[str, str]] = None
+
+
+class AgentProfileCreateRequest(AgentProfileBase):
+    name: str
+
+
+class AgentProfileUpdateRequest(AgentProfileBase):
+    pass
+
+
+class AgentSkillCapability(BaseModel):
+    folder: str
+    source: str = "bundled"
+    enabled: bool = False
+
+
+class AgentMcpServerCapability(BaseModel):
+    id: str
+    name: str
+    enabled: bool = False
+    tool_names: List[str] = Field(default_factory=list)
+
+
+class AgentCapabilitiesResponse(BaseModel):
+    tools: List[str] = Field(default_factory=list)
+    mcp_servers: List[AgentMcpServerCapability] = Field(default_factory=list)
+    skills: List[AgentSkillCapability] = Field(default_factory=list)
+    permission_modes: List[str] = Field(default_factory=list)
+
+
+class AgentProfile(BaseModel):
+    agent_id: str
+    name: str
+    description: str = ""
+    resolved_workdir: str = ""
+    system_prompt: str = ""
+    permission_mode: str = "inherit"
+    allowed_tools: List[str] = Field(default_factory=list)
+    mcp_server_ids: List[str] = Field(default_factory=list)
+    skill_folders: List[str] = Field(default_factory=list)
+    max_turns: int = 0
+    env_vars: Dict[str, str] = Field(default_factory=dict)
+    is_default: bool = False
+    created_at: str = ""
+    updated_at: str = ""
+
+
 class TopicMessage(BaseModel):
     message_id: str
     topic_id: str
@@ -388,6 +455,8 @@ class TopicSummary(BaseModel):
     title: str
     chat_topic_id: str
     chat_conversation_id: str
+    agent_id: str = ""
+    agent: Optional[AgentSummary] = None
     current_task_id: Optional[str] = None
     current_task_status: Optional[str] = None
     message_count: int = 0
@@ -401,6 +470,8 @@ class TopicDetail(BaseModel):
     title: str
     chat_topic_id: str
     chat_conversation_id: str
+    agent_id: str = ""
+    agent: Optional[AgentSummary] = None
     current_task_id: Optional[str] = None
     current_task_status: Optional[str] = None
     created_at: str = ""
@@ -428,6 +499,8 @@ class TaskSubmissionResponse(BaseModel):
 class TaskStatusResponse(BaseModel):
     task_id: str
     topic_id: str
+    agent_id: str = ""
+    agent: Optional[AgentSummary] = None
     from_task_id: Optional[str] = None
     task_status: str
     prompt: str = ""
@@ -477,6 +550,8 @@ class CancelTaskResponse(BaseModel):
 class MessageQueueRecord(BaseModel):
     queue_id: str
     topic_id: str
+    agent_id: str = ""
+    agent: Optional[AgentSummary] = None
     message_type: str
     message_content: Any = None
     status: str
@@ -498,6 +573,8 @@ class MessageQueuePageResponse(BaseModel):
 class MessageScheduleRecord(BaseModel):
     schedule_id: str
     topic_id: str
+    agent_id: str = ""
+    agent: Optional[AgentSummary] = None
     name: str
     message_type: str
     message_content: Any = None

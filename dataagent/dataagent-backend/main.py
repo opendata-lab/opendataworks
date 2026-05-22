@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.admin_routes import router as admin_router
 from api.routes import router
 from config import get_settings
+from core.agent_profile_service import bootstrap_default_agent_profile
 from core.skill_admin_service import bootstrap_admin_settings, reindex_documents_from_disk
 from core.skill_admin_store import get_skill_admin_store
 from core.skill_discovery import resolve_agent_project_cwd, resolve_skills_root_dir
@@ -86,6 +87,13 @@ async def startup():
         logger.info("Topic/task store ready for schema `%s`", cfg.session_mysql_database)
     except Exception as e:
         logger.exception("Topic/task store bootstrap failed: %s", e)
+        raise
+
+    try:
+        profile = bootstrap_default_agent_profile()
+        logger.info("Default agent profile ready agent_id=%s", profile.get("agent_id"))
+    except Exception as e:
+        logger.exception("Agent profile bootstrap failed: %s", e)
         raise
 
     try:

@@ -2,12 +2,20 @@
   <div class="query-workbench">
     <aside class="query-sidebar">
       <div class="query-sidebar-head">
-          <div>
-            <div class="query-brand">智能问数</div>
-            <div class="query-brand-meta">数据分析</div>
-          </div>
-          <button class="query-btn-new" @click="handleNewTopic">新建</button>
+        <div class="query-agent-panel">
+          <div class="query-brand">智能问数</div>
+          <select v-model="selectedAgentId" class="query-agent-select" :disabled="!agents.length">
+            <option
+              v-for="agent in agents"
+              :key="agent.agent_id"
+              :value="agent.agent_id"
+            >
+              {{ agent.name }}
+            </option>
+          </select>
         </div>
+        <button class="query-btn-new" @click="handleNewTopic">新建</button>
+      </div>
 
       <div class="query-sidebar-search">
         <input
@@ -41,7 +49,7 @@
           <div class="query-main-head">
             <div>
               <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
-              <p class="query-main-subtitle">围绕数据查询与分析开展连续对话。</p>
+              <p class="query-main-subtitle">{{ activeAgent?.description || '围绕数据查询与分析开展连续对话。' }}</p>
             </div>
             <div class="query-model-badge">
               <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
@@ -243,6 +251,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
@@ -258,10 +267,13 @@ import {
 marked.setOptions({ breaks: true, gfm: true })
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
-const { topicApi, taskApi, adminApi } = api
+const { topicApi, taskApi, adminApi, agentApi } = api
+const route = useRoute()
 
 const topics = ref([])
+const agents = ref([])
 const activeTopicId = ref('')
+const selectedAgentId = ref('')
 const inputText = ref('')
 const searchKeyword = ref('')
 const messagesScrollbarRef = ref(null)
@@ -278,6 +290,7 @@ const settings = reactive({
 
 const selectedProvider = ref(settings.default_provider_id)
 const selectedModel = ref(settings.default_model)
+const agentSelectionReady = ref(false)
 
 const suggestions = [
   '各数据层表数量对比',
@@ -287,6 +300,7 @@ const suggestions = [
 ]
 
 const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === activeTopicId.value) || null)
+const activeAgent = computed(() => agents.value.find((agent) => agent.agent_id === selectedAgentId.value) || agents.value[0] || null)
 const activeMessages = computed(() => activeTopic.value?.messages || [])
 const activeCancelableMessage = computed(() => [...activeMessages.value]
   .reverse()
@@ -351,6 +365,7 @@ const canSendMessage = computed(() => (
   && !activeCancelableMessage.value
   && Boolean(selectedProvider.value)
   && Boolean(selectedModel.value)
+  && Boolean(selectedAgentId.value)
 ))
 const composerActionDisabled = computed(() => (
   composerActionMode.value === 'cancel'
@@ -567,6 +582,8 @@ const sortTopics = () => {
 const normalizeTopicSummary = (topic) => ({
   topic_id: String(topic?.topic_id || ''),
   title: String(topic?.title || '新话题'),
+  agent_id: String(topic?.agent_id || topic?.agent?.agent_id || selectedAgentId.value || ''),
+  agent: topic?.agent || null,
   message_count: Number(topic?.message_count || 0),
   current_task_id: String(topic?.current_task_id || ''),
   current_task_status: String(topic?.current_task_status || ''),
@@ -914,6 +931,33 @@ const loadSettings = async () => {
   }
 }
 
+const normalizeAgent = (agent) => ({
+  agent_id: String(agent?.agent_id || ''),
+  name: String(agent?.name || '默认智能体'),
+  description: String(agent?.description || ''),
+  is_default: Boolean(agent?.is_default)
+})
+
+const loadAgents = async () => {
+  try {
+    const list = await agentApi.listAgents()
+    const normalized = (Array.isArray(list) ? list : []).map(normalizeAgent).filter((agent) => agent.agent_id)
+    agents.value = normalized.length
+      ? normalized
+      : [{ agent_id: 'agent_default', name: '默认智能问数助手', description: '', is_default: true }]
+    const routeAgentId = String(route.query.agent_id || '').trim()
+    if (routeAgentId && agents.value.some((agent) => agent.agent_id === routeAgentId)) {
+      selectedAgentId.value = routeAgentId
+    } else if (!agents.value.some((agent) => agent.agent_id === selectedAgentId.value)) {
+      selectedAgentId.value = (agents.value.find((agent) => agent.is_default) || agents.value[0])?.agent_id || ''
+    }
+  } catch (error) {
+    console.warn('load agents failed', error)
+    agents.value = [{ agent_id: 'agent_default', name: '默认智能问数助手', description: '', is_default: true }]
+    selectedAgentId.value = selectedAgentId.value || 'agent_default'
+  }
+}
+
 const hydrateTopic = async (topicId) => {
   if (!topicId || hydratedIds.has(topicId)) return
 
@@ -925,6 +969,8 @@ const hydrateTopic = async (topicId) => {
     const target = topics.value.find((topic) => topic.topic_id === topicId)
     if (target && detail) {
       target.title = String(detail.title || target.title)
+      target.agent_id = String(detail.agent_id || target.agent_id || '')
+      target.agent = detail.agent || target.agent || null
       target.updated_at = String(detail.updated_at || target.updated_at)
       target.current_task_id = String(detail.current_task_id || target.current_task_id || '')
       target.current_task_status = String(detail.current_task_status || target.current_task_status || '')
@@ -955,7 +1001,7 @@ const hydrateTopic = async (topicId) => {
 
 const loadTopics = async () => {
   try {
-    const list = await topicApi.listTopics()
+    const list = await topicApi.listTopics(selectedAgentId.value ? { agent_id: selectedAgentId.value } : {})
     topics.value = (Array.isArray(list) ? list : []).map(normalizeTopicSummary)
     sortTopics()
     if (!activeTopicId.value && topics.value.length) {
@@ -970,7 +1016,7 @@ const loadTopics = async () => {
 }
 
 const handleNewTopic = async () => {
-  const topic = normalizeTopicSummary(await topicApi.createTopic())
+  const topic = normalizeTopicSummary(await topicApi.createTopic('新话题', { agent_id: selectedAgentId.value }))
   topics.value.unshift(topic)
   hydratedIds.add(topic.topic_id)
   activeTopicId.value = topic.topic_id
@@ -1022,7 +1068,7 @@ const handleSend = async () => {
   try {
     if (!activeTopicId.value) {
       const title = deriveTopicTitle(text, 20)
-      const created = normalizeTopicSummary(await topicApi.createTopic(title))
+      const created = normalizeTopicSummary(await topicApi.createTopic(title, { agent_id: selectedAgentId.value }))
       topics.value.unshift(created)
       hydratedIds.add(created.topic_id)
       activeTopicId.value = created.topic_id
@@ -1057,6 +1103,7 @@ const handleSend = async () => {
     const response = await taskApi.deliverMessage({
       topic_id: submitTopicId,
       content: text,
+      agent_id: selectedAgentId.value,
       provider_id: selectedProvider.value,
       model: selectedModel.value,
       debug: true,
@@ -1146,9 +1193,20 @@ watch(
   }
 )
 
+watch(selectedAgentId, async (next, prev) => {
+  if (!agentSelectionReady.value || !next || next === prev) return
+  stopAllTaskSubscriptions()
+  hydratedIds.clear()
+  topics.value = []
+  activeTopicId.value = ''
+  await loadTopics()
+})
+
 onMounted(async () => {
   await loadSettings()
+  await loadAgents()
   await loadTopics()
+  agentSelectionReady.value = true
   scrollToBottom(true)
 })
 
@@ -1205,6 +1263,11 @@ onBeforeUnmount(() => {
   padding: 4px 8px 16px;
 }
 
+.query-agent-panel {
+  flex: 1;
+  min-width: 0;
+}
+
 .query-brand {
   font-size: 17px;
   font-weight: 700;
@@ -1212,10 +1275,22 @@ onBeforeUnmount(() => {
   color: #1F1F1F;
 }
 
-.query-brand-meta {
-  margin-top: 3px;
-  font-size: 12px;
-  color: #A0AABF;
+.query-agent-select {
+  width: 100%;
+  height: 32px;
+  margin-top: 8px;
+  padding: 0 9px;
+  border: 1px solid #d8e0ec;
+  border-radius: 8px;
+  background: #f9fafc;
+  color: #344054;
+  font-size: 13px;
+  outline: none;
+}
+
+.query-agent-select:focus {
+  border-color: #4F81FF;
+  background: #ffffff;
 }
 
 .query-btn-new {

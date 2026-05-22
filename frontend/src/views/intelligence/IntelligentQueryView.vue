@@ -14,6 +14,10 @@
           <el-icon><Collection /></el-icon>
           <span>Skills</span>
         </el-menu-item>
+        <el-menu-item index="agents">
+          <el-icon><User /></el-icon>
+          <span>智能体</span>
+        </el-menu-item>
         <el-menu-item index="models">
           <el-icon><Cpu /></el-icon>
           <span>模型管理</span>
@@ -23,6 +27,8 @@
 
     <main class="intelligent-query-content" :class="{ 'is-chat': activeMenu === 'chat' }">
       <SkillDetailView v-if="isSkillDetailRoute" />
+      <AgentDetailView v-else-if="isAgentDetailRoute" />
+      <AgentStudio v-else-if="activeTab === 'agents'" />
       <SkillStudio v-else-if="activeTab === 'skills'" />
       <DataAgentConfig v-else-if="activeTab === 'models'" />
       <NL2SqlChat v-else />
@@ -33,23 +39,32 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Collection, Cpu } from '@element-plus/icons-vue'
+import { ChatDotRound, Collection, Cpu, User } from '@element-plus/icons-vue'
 import NL2SqlChat from './NL2SqlChat.vue'
+import AgentStudio from './AgentStudio.vue'
+import AgentDetailView from './AgentDetailView.vue'
 import SkillStudio from '../settings/SkillStudio.vue'
 import DataAgentConfig from '../settings/DataAgentConfig.vue'
 import SkillDetailView from '../settings/SkillDetailView.vue'
 
 const route = useRoute()
 const router = useRouter()
-const validTabs = new Set(['chat', 'skills', 'models'])
+const validTabs = new Set(['chat', 'skills', 'agents', 'models'])
 
 const isSkillDetailRoute = computed(() => (
   route.name === 'IntelligentQuerySkillDetail' || route.path.startsWith('/intelligent-query/skills/')
 ))
 
+const isAgentDetailRoute = computed(() => (
+  route.name === 'IntelligentQueryAgentDetail' || route.path.startsWith('/intelligent-query/agents/')
+))
+
 const activeTab = computed(() => {
   if (isSkillDetailRoute.value) {
     return 'skills'
+  }
+  if (isAgentDetailRoute.value) {
+    return 'agents'
   }
   const tab = String(route.query.tab || 'chat')
   return validTabs.has(tab) ? tab : 'chat'

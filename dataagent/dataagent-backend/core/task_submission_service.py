@@ -64,6 +64,7 @@ async def submit_message_task(
     topic_id: str,
     message_type: str,
     message_content: Any,
+    agent_id: str | None = None,
     provider_id: str | None = None,
     model: str | None = None,
     database_hint: str | None = None,
@@ -83,6 +84,13 @@ async def submit_message_task(
     prompt = normalize_message_prompt(message_type, message_content)
     if not prompt:
         raise ValueError("message_content is required")
+    topic = store.get_topic(topic_id)
+    if not topic:
+        raise ValueError("topic not found")
+    bound_agent_id = str(topic.get("agent_id") or "").strip()
+    requested_agent_id = str(agent_id or "").strip()
+    if requested_agent_id and bound_agent_id and requested_agent_id != bound_agent_id:
+        raise ValueError("agent_id does not match topic agent")
 
     runtime_target = resolve_runtime_provider_selection(provider_id, model)
     timeouts = resolve_task_timeouts(execution_mode)

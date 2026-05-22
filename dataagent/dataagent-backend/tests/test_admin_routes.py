@@ -322,3 +322,94 @@ def test_skill_uninstall_route_rejects_service_errors(monkeypatch):
 
     assert response.status_code == 400
     assert response.json()["detail"] == "内置 Skill 不支持卸载"
+
+
+def test_agent_profile_routes_contract(monkeypatch):
+    profile = {
+        "agent_id": "agent_1",
+        "name": "营销分析智能体",
+        "description": "营销场景",
+        "resolved_workdir": "/tmp/dataagent/agents/agent_1",
+        "system_prompt": "只回答营销问题",
+        "permission_mode": "inherit",
+        "allowed_tools": ["Skill", "Read"],
+        "mcp_server_ids": ["portal"],
+        "skill_folders": ["marketing-insights"],
+        "max_turns": 12,
+        "env_vars": {"SAFE_FLAG": "1"},
+        "is_default": False,
+        "created_at": "2026-05-21T10:00:00",
+        "updated_at": "2026-05-21T10:00:00",
+    }
+    calls = {}
+
+    monkeypatch.setattr(
+        admin_routes,
+        "list_documents",
+        lambda: [
+            {
+                "folder": "marketing-insights",
+                "relative_path": "SKILL.md",
+                "source": "managed",
+                "enabled": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(admin_routes, "list_agent_profiles", lambda: [profile])
+    monkeypatch.setattr(admin_routes, "get_agent_profile", lambda agent_id: profile if agent_id == "agent_1" else None)
+    monkeypatch.setattr(admin_routes, "agent_capabilities", lambda documents: {
+        "tools": ["Skill", "Read"],
+        "mcp_servers": [{"id": "portal", "name": "Portal MCP", "enabled": True, "tool_names": ["portal_query_readonly"]}],
+        "skills": [{"folder": "marketing-insights", "source": "managed", "enabled": True}],
+        "permission_modes": ["inherit", "default", "bypassPermissions"],
+    })
+
+    def _create(payload, *, available_skill_folders):
+        calls["create"] = {"payload": payload, "available_skill_folders": available_skill_folders}
+        return profile
+
+    def _update(agent_id, payload, *, available_skill_folders):
+        calls["update"] = {"agent_id": agent_id, "payload": payload, "available_skill_folders": available_skill_folders}
+        return {**profile, **payload}
+
+    monkeypatch.setattr(admin_routes, "create_agent_profile", _create)
+    monkeypatch.setattr(admin_routes, "update_agent_profile", _update)
+    monkeypatch.setattr(admin_routes, "delete_agent_profile", lambda agent_id: agent_id == "agent_1")
+
+    client = TestClient(app)
+
+    capabilities = client.get("/api/v1/dataagent/agents/capabilities")
+    assert capabilities.status_code == 200
+    assert capabilities.json()["skills"][0]["folder"] == "marketing-insights"
+    assert capabilities.json()["mcp_servers"][0]["id"] == "portal"
+
+    listed = client.get("/api/v1/dataagent/agents")
+    assert listed.status_code == 200
+    assert listed.json()[0]["agent_id"] == "agent_1"
+
+    created = client.post(
+        "/api/v1/dataagent/agents",
+        json={
+            "name": "营销分析智能体",
+            "allowed_tools": ["Skill", "Read"],
+            "mcp_server_ids": ["portal"],
+            "skill_folders": ["marketing-insights"],
+            "env_vars": {"SAFE_FLAG": "1"},
+        },
+    )
+    assert created.status_code == 200
+    assert calls["create"]["payload"]["name"] == "营销分析智能体"
+    assert calls["create"]["available_skill_folders"] == {"marketing-insights"}
+
+    detail = client.get("/api/v1/dataagent/agents/agent_1")
+    assert detail.status_code == 200
+    assert detail.json()["resolved_workdir"] == "/tmp/dataagent/agents/agent_1"
+
+    updated = client.put("/api/v1/dataagent/agents/agent_1", json={"description": "更新后"})
+    assert updated.status_code == 200
+    assert calls["update"]["agent_id"] == "agent_1"
+    assert updated.json()["description"] == "更新后"
+
+    deleted = client.delete("/api/v1/dataagent/agents/agent_1")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "ok"

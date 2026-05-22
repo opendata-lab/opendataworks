@@ -84,6 +84,12 @@ const routes = [
         meta: { title: 'Skill 详情' }
       },
       {
+        path: '/intelligent-query/agents/:agentId',
+        name: 'IntelligentQueryAgentDetail',
+        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
+        meta: { title: '智能体详情' }
+      },
+      {
         path: '/nl2sql',
         redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },

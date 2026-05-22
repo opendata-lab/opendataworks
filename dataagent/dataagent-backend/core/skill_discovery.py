@@ -65,15 +65,24 @@ def resolve_agent_project_cwd() -> Path:
     return discovery_root.parent.parent
 
 
-def prepare_enabled_skills_project_cwd(enabled_folders: list[str] | tuple[str, ...]) -> Path:
+def prepare_enabled_skills_project_cwd(
+    enabled_folders: list[str] | tuple[str, ...],
+    *,
+    runtime_project_cwd: str | Path | None = None,
+    allow_empty: bool = False,
+) -> Path:
     discovery_root = resolve_skill_discovery_root_dir()
     cfg = get_settings()
-    runtime_root = _resolve_runtime_project_cwd(cfg.dataagent_runtime_project_cwd)
+    runtime_root = (
+        Path(runtime_project_cwd).expanduser().resolve()
+        if runtime_project_cwd
+        else _resolve_runtime_project_cwd(cfg.dataagent_runtime_project_cwd)
+    )
     runtime_skills_dir = runtime_root / ".claude" / "skills"
     runtime_skills_dir.mkdir(parents=True, exist_ok=True)
 
     enabled = [str(folder or "").strip() for folder in enabled_folders if str(folder or "").strip()]
-    if not enabled:
+    if not enabled and not allow_empty:
         raise SkillDiscoveryError("no enabled skills configured")
     enabled_set = set(enabled)
     for existing in runtime_skills_dir.iterdir():

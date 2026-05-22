@@ -15,6 +15,24 @@ import api.routes as routes
 import main
 
 
+DEFAULT_AGENT = {
+    "agent_id": "agent_default",
+    "name": "默认智能问数助手",
+    "description": "default",
+    "system_prompt": "",
+    "permission_mode": "inherit",
+    "allowed_tools": ["Skill", "Bash", "Read", "LS", "Glob", "Grep"],
+    "mcp_server_ids": ["portal"],
+    "skill_folders": [],
+    "max_turns": 0,
+    "env_vars": {},
+    "is_default": True,
+    "resolved_workdir": "/tmp/dataagent/default",
+    "created_at": "",
+    "updated_at": "",
+}
+
+
 def _now() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
@@ -62,13 +80,22 @@ class _FakeStore:
         self._schedule_log_seq += 1
         return f"schedule_log_{self._schedule_log_seq}"
 
-    def create_topic(self, *, title: str, context=None):
+    def create_topic(self, *, title: str, agent_snapshot=None, context=None):
         topic_id = self._new_topic()
+        snapshot = dict(agent_snapshot or DEFAULT_AGENT)
         self.topics[topic_id] = {
             "topic_id": topic_id,
             "title": title or "新话题",
             "chat_topic_id": f"chat_topic_{topic_id}",
             "chat_conversation_id": f"chat_conversation_{topic_id}",
+            "agent_id": snapshot["agent_id"],
+            "agent_snapshot": snapshot,
+            "agent": {
+                "agent_id": snapshot["agent_id"],
+                "name": snapshot["name"],
+                "description": snapshot.get("description", ""),
+                "is_default": bool(snapshot.get("is_default")),
+            },
             "current_task_id": None,
             "current_task_status": None,
             "message_count": 0,
@@ -79,8 +106,10 @@ class _FakeStore:
         self.topic_messages[topic_id] = []
         return self.get_topic(topic_id)
 
-    def list_topics(self, include_messages: bool = False, context=None):
+    def list_topics(self, include_messages: bool = False, context=None, agent_id=None):
         rows = [dict(self.get_topic(topic_id) or {}) for topic_id in self.topics]
+        if agent_id:
+            rows = [row for row in rows if row.get("agent_id") == agent_id]
         if include_messages:
             for row in rows:
                 row["messages"] = self.list_topic_messages(row["topic_id"])
@@ -143,6 +172,9 @@ class _FakeStore:
             "task_id": task_id,
             "topic_id": topic_id,
             "from_task_id": None,
+            "agent_id": self.topics[topic_id].get("agent_id", "agent_default"),
+            "agent_snapshot": self.topics[topic_id].get("agent_snapshot", DEFAULT_AGENT),
+            "agent": self.topics[topic_id].get("agent"),
             "task_status": "waiting",
             "prompt": prompt,
             "provider_id": provider_id,
@@ -495,6 +527,7 @@ def _build_client(monkeypatch):
 
     monkeypatch.setattr(routes, "get_topic_task_store", lambda: store)
     monkeypatch.setattr(routes, "get_task_coordinator", lambda: coordinator)
+    monkeypatch.setattr(routes, "get_agent_profile", lambda agent_id: DEFAULT_AGENT if agent_id == "agent_default" else None)
     monkeypatch.setattr(routes, "submit_message_task", _submit_message_task_factory(store, submit_calls))
     monkeypatch.setattr(routes, "compute_next_run_at", lambda cron_expr, timezone: datetime(2026, 3, 23, 4, 0, 0))
 
@@ -502,6 +535,7 @@ def _build_client(monkeypatch):
     monkeypatch.setattr(main, "get_task_coordinator", lambda: coordinator)
     monkeypatch.setattr(main, "get_skill_admin_store", lambda: SimpleNamespace(init_schema=lambda: None))
     monkeypatch.setattr(main, "bootstrap_admin_settings", lambda: None)
+    monkeypatch.setattr(main, "bootstrap_default_agent_profile", lambda: DEFAULT_AGENT)
     monkeypatch.setattr(main, "reindex_documents_from_disk", lambda: [])
 
     return TestClient(main.app), store, coordinator, submit_calls

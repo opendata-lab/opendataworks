@@ -10,6 +10,7 @@ from typing import Any
 import pymysql
 
 from config import get_settings
+from core.agent_profile_service import DEFAULT_AGENT_ID, agent_summary_from_snapshot, default_agent_payload, normalize_agent_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +27,19 @@ def _json_default(value):
     return str(value)
 
 
-def _safe_json_load(raw: str | None) -> Any:
+def _safe_json_load(raw: Any) -> Any:
     if not raw:
         return None
+    if isinstance(raw, (dict, list)):
+        return raw
     try:
         return json.loads(raw)
     except Exception:
         return None
+
+
+def _json_dump(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=_json_default)
 
 
 def _new_id(prefix: str) -> str:
@@ -315,9 +322,17 @@ class TopicTaskStore:
         row = cur.fetchone() or {}
         return int(row.get("last_event_seq") or 0)
 
-    def create_topic(self, *, title: str, context: dict[str, Any] | None = None) -> dict[str, Any]:
+    def create_topic(
+        self,
+        *,
+        title: str,
+        agent_snapshot: dict[str, Any] | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         self._ensure_ready()
         normalized_context = self._normalize_context(context)
+        snapshot = normalize_agent_snapshot(agent_snapshot or default_agent_payload())
+        agent_id = str(snapshot.get("agent_id") or DEFAULT_AGENT_ID)
         topic_id = _new_id("topic")
         chat_topic_id = _new_id("chat_topic")
         chat_conversation_id = _new_id("chat_conv")
@@ -329,14 +344,17 @@ class TopicTaskStore:
                     INSERT INTO da_agent_topic (
                         topic_id, title, chat_topic_id, chat_conversation_id,
                         current_task_id, current_task_status, last_message_seq,
+                        agent_id, agent_snapshot_json,
                         source, website_id, external_user_id, visitor_id
-                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         topic_id,
                         title or "新话题",
                         chat_topic_id,
                         chat_conversation_id,
+                        agent_id,
+                        _json_dump(snapshot),
                         normalized_context["source"],
                         normalized_context["website_id"],
                         normalized_context["external_user_id"],
@@ -348,9 +366,21 @@ class TopicTaskStore:
             conn.close()
         return self.get_topic(topic_id, context=normalized_context) or {}
 
-    def list_topics(self, include_messages: bool = False, context: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    def list_topics(
+        self,
+        include_messages: bool = False,
+        context: dict[str, Any] | None = None,
+        agent_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         self._ensure_ready()
         context_sql, context_params = self._topic_context_predicate(context, alias="t")
+        filters = [context_sql]
+        params: list[Any] = [*context_params]
+        safe_agent_id = str(agent_id or "").strip()
+        if safe_agent_id:
+            filters.append("t.agent_id = %s")
+            params.append(safe_agent_id)
+        where_sql = " AND ".join(filters)
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
@@ -358,7 +388,8 @@ class TopicTaskStore:
                     f"""
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
-                           t.external_user_id, t.visitor_id, t.created_at, t.updated_at,
+                           t.external_user_id, t.visitor_id, t.agent_id, t.agent_snapshot_json,
+                           t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
                     FROM da_agent_topic t
@@ -374,10 +405,10 @@ class TopicTaskStore:
                         WHERE show_in_ui = 1
                         GROUP BY topic_id
                     ) stats ON stats.topic_id = t.topic_id
-                    WHERE {context_sql}
+                    WHERE {where_sql}
                     ORDER BY t.updated_at DESC, t.created_at DESC
                     """,
-                    context_params,
+                    params,
                 )
                 rows = cur.fetchall() or []
         finally:
@@ -399,7 +430,8 @@ class TopicTaskStore:
                     f"""
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
-                           t.external_user_id, t.visitor_id, t.created_at, t.updated_at,
+                           t.external_user_id, t.visitor_id, t.agent_id, t.agent_snapshot_json,
+                           t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
                     FROM da_agent_topic t
@@ -746,8 +778,12 @@ class TopicTaskStore:
         source_queue_id: str | None = None,
         source_schedule_id: str | None = None,
         source_schedule_log_id: str | None = None,
+        agent_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._ensure_ready()
+        topic = self.get_topic(topic_id) or {}
+        snapshot = normalize_agent_snapshot(agent_snapshot or topic.get("agent_snapshot") or default_agent_payload())
+        agent_id = str(snapshot.get("agent_id") or DEFAULT_AGENT_ID)
         task_id = _new_id("task")
         conn = self._connect(database=self._schema_name())
         try:
@@ -756,10 +792,10 @@ class TopicTaskStore:
                     """
                     INSERT INTO da_agent_task (
                         task_id, topic_id, from_task_id, source_queue_id, source_schedule_id, source_schedule_log_id,
-                        task_status, prompt, provider_id, model_name,
+                        task_status, prompt, provider_id, model_name, agent_id, agent_snapshot_json,
                         database_hint, debug_enabled, timeout_seconds, sql_read_timeout_seconds,
                         sql_write_timeout_seconds, last_event_seq
-                    ) VALUES (%s, %s, %s, %s, %s, %s, 'waiting', %s, %s, %s, %s, %s, %s, %s, %s, 0)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, 'waiting', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
                     """,
                     (
                         task_id,
@@ -771,6 +807,8 @@ class TopicTaskStore:
                         prompt or "",
                         provider_id or "",
                         model or "",
+                        agent_id,
+                        _json_dump(snapshot),
                         database_hint,
                         1 if debug else 0,
                         int(timeout_seconds or 0),
@@ -804,6 +842,7 @@ class TopicTaskStore:
                     SELECT task.task_id, task.topic_id, task.from_task_id, task.source_queue_id,
                            task.source_schedule_id, task.source_schedule_log_id,
                            task.task_status, task.prompt, task.provider_id, task.model_name,
+                           task.agent_id, task.agent_snapshot_json,
                            task.database_hint, task.debug_enabled, task.timeout_seconds,
                            task.sql_read_timeout_seconds, task.sql_write_timeout_seconds,
                            task.last_event_seq, task.cancel_requested_at, task.started_at,
@@ -831,6 +870,7 @@ class TopicTaskStore:
                     """
                     SELECT task_id, topic_id, from_task_id, source_queue_id, source_schedule_id, source_schedule_log_id,
                            task_status, prompt, provider_id, model_name,
+                           agent_id, agent_snapshot_json,
                            database_hint, debug_enabled, timeout_seconds, sql_read_timeout_seconds,
                            sql_write_timeout_seconds, last_event_seq, cancel_requested_at, started_at,
                            heartbeat_at, finished_at, error_json, created_at, updated_at
@@ -856,6 +896,7 @@ class TopicTaskStore:
                     """
                     SELECT task_id, topic_id, from_task_id, source_queue_id, source_schedule_id, source_schedule_log_id,
                            task_status, prompt, provider_id, model_name,
+                           agent_id, agent_snapshot_json,
                            database_hint, debug_enabled, timeout_seconds, sql_read_timeout_seconds,
                            sql_write_timeout_seconds, last_event_seq, cancel_requested_at, started_at,
                            heartbeat_at, finished_at, error_json, created_at, updated_at
@@ -1336,7 +1377,7 @@ class TopicTaskStore:
                     f"""
                     SELECT q.queue_id, q.topic_id, q.source_schedule_id, q.source_schedule_log_id,
                            q.message_type, q.message_content_json, q.status, q.last_task_id,
-                           q.error_message, q.created_at, q.updated_at
+                           q.error_message, t.agent_id, t.agent_snapshot_json, q.created_at, q.updated_at
                     FROM da_agent_message_queue q
                     JOIN da_agent_topic t ON t.topic_id = q.topic_id
                     WHERE q.queue_id = %s
@@ -1386,7 +1427,7 @@ class TopicTaskStore:
                     f"""
                     SELECT q.queue_id, q.topic_id, q.source_schedule_id, q.source_schedule_log_id,
                            q.message_type, q.message_content_json, q.status, q.last_task_id,
-                           q.error_message, q.created_at, q.updated_at
+                           q.error_message, t.agent_id, t.agent_snapshot_json, q.created_at, q.updated_at
                     FROM da_agent_message_queue q
                     JOIN da_agent_topic t ON t.topic_id = q.topic_id
                     {where_sql}
@@ -1546,7 +1587,8 @@ class TopicTaskStore:
                     f"""
                     SELECT s.schedule_id, s.topic_id, s.name, s.message_type, s.message_content_json,
                            s.cron_expr, s.timezone, s.enabled, s.last_task_id, s.last_queue_id,
-                           s.last_run_at, s.next_run_at, s.last_error_message, s.created_at, s.updated_at
+                           s.last_run_at, s.next_run_at, s.last_error_message,
+                           t.agent_id, t.agent_snapshot_json, s.created_at, s.updated_at
                     FROM da_agent_message_schedule s
                     JOIN da_agent_topic t ON t.topic_id = s.topic_id
                     WHERE s.schedule_id = %s
@@ -1596,7 +1638,8 @@ class TopicTaskStore:
                     f"""
                     SELECT s.schedule_id, s.topic_id, s.name, s.message_type, s.message_content_json,
                            s.cron_expr, s.timezone, s.enabled, s.last_task_id, s.last_queue_id,
-                           s.last_run_at, s.next_run_at, s.last_error_message, s.created_at, s.updated_at
+                           s.last_run_at, s.next_run_at, s.last_error_message,
+                           t.agent_id, t.agent_snapshot_json, s.created_at, s.updated_at
                     FROM da_agent_message_schedule s
                     JOIN da_agent_topic t ON t.topic_id = s.topic_id
                     {where_sql}
@@ -1941,6 +1984,7 @@ class TopicTaskStore:
             source_queue_id=str(parent.get("source_queue_id") or "") or None,
             source_schedule_id=str(parent.get("source_schedule_id") or "") or None,
             source_schedule_log_id=str(parent.get("source_schedule_log_id") or "") or None,
+            agent_snapshot=parent.get("agent_snapshot"),
         )
         self.finish_task(
             task_id=parent_task_id,
@@ -1955,11 +1999,15 @@ class TopicTaskStore:
         return replacement
 
     def _normalize_topic_row(self, row: dict[str, Any], *, include_messages: bool) -> dict[str, Any]:
+        snapshot = normalize_agent_snapshot(row.get("agent_snapshot_json") or row.get("agent_snapshot") or default_agent_payload())
         topic = {
             "topic_id": str(row.get("topic_id") or ""),
             "title": str(row.get("title") or "新话题"),
             "chat_topic_id": str(row.get("chat_topic_id") or ""),
             "chat_conversation_id": str(row.get("chat_conversation_id") or ""),
+            "agent_id": str(row.get("agent_id") or snapshot.get("agent_id") or DEFAULT_AGENT_ID),
+            "agent_snapshot": snapshot,
+            "agent": agent_summary_from_snapshot(snapshot),
             "current_task_id": str(row.get("current_task_id") or "") or None,
             "current_task_status": str(row.get("current_task_status") or "") or None,
             "source": str(row.get("source") or "portal"),
@@ -2131,9 +2179,13 @@ class TopicTaskStore:
         return normalized
 
     def _normalize_task_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        snapshot = normalize_agent_snapshot(row.get("agent_snapshot_json") or row.get("agent_snapshot") or default_agent_payload())
         return {
             "task_id": str(row.get("task_id") or ""),
             "topic_id": str(row.get("topic_id") or ""),
+            "agent_id": str(row.get("agent_id") or snapshot.get("agent_id") or DEFAULT_AGENT_ID),
+            "agent_snapshot": snapshot,
+            "agent": agent_summary_from_snapshot(snapshot),
             "from_task_id": str(row.get("from_task_id") or "") or None,
             "source_queue_id": str(row.get("source_queue_id") or "") or None,
             "source_schedule_id": str(row.get("source_schedule_id") or "") or None,
@@ -2158,9 +2210,12 @@ class TopicTaskStore:
         }
 
     def _normalize_queue_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        snapshot = normalize_agent_snapshot(row.get("agent_snapshot_json") or row.get("agent_snapshot") or default_agent_payload())
         return {
             "queue_id": str(row.get("queue_id") or ""),
             "topic_id": str(row.get("topic_id") or ""),
+            "agent_id": str(row.get("agent_id") or snapshot.get("agent_id") or DEFAULT_AGENT_ID),
+            "agent": agent_summary_from_snapshot(snapshot),
             "source_schedule_id": str(row.get("source_schedule_id") or "") or None,
             "source_schedule_log_id": str(row.get("source_schedule_log_id") or "") or None,
             "message_type": str(row.get("message_type") or ""),
@@ -2173,9 +2228,12 @@ class TopicTaskStore:
         }
 
     def _normalize_schedule_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        snapshot = normalize_agent_snapshot(row.get("agent_snapshot_json") or row.get("agent_snapshot") or default_agent_payload())
         return {
             "schedule_id": str(row.get("schedule_id") or ""),
             "topic_id": str(row.get("topic_id") or ""),
+            "agent_id": str(row.get("agent_id") or snapshot.get("agent_id") or DEFAULT_AGENT_ID),
+            "agent": agent_summary_from_snapshot(snapshot),
             "name": str(row.get("name") or ""),
             "message_type": str(row.get("message_type") or ""),
             "message_content": _safe_json_load(row.get("message_content_json")),

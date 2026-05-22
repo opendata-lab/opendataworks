@@ -136,6 +136,7 @@ class TaskCoordinator:
                         timeout_seconds=int(task.get("timeout_seconds") or 0),
                         sql_read_timeout_seconds=int(task.get("sql_read_timeout_seconds") or 0),
                         sql_write_timeout_seconds=int(task.get("sql_write_timeout_seconds") or 0),
+                        agent_snapshot=task.get("agent_snapshot"),
                     ),
                     emit=writer.persist,
                     is_cancel_requested=lambda: self._should_stop_task(task_id, lease_lost),

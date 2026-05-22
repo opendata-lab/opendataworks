@@ -2,6 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from core.agent_profile_service import (
+    agent_capabilities,
+    create_agent_profile,
+    delete_agent_profile,
+    get_agent_profile,
+    list_agent_profiles,
+    skill_folders_from_documents,
+    update_agent_profile,
+)
 from core.skill_admin_service import (
     compare_document_versions,
     current_settings_payload,
@@ -20,6 +29,10 @@ from core.skill_discovery import resolve_skills_root_dir
 from models.schemas import (
     AdminSettingsResponse,
     AdminSettingsUpdateRequest,
+    AgentCapabilitiesResponse,
+    AgentProfile,
+    AgentProfileCreateRequest,
+    AgentProfileUpdateRequest,
     ModelDetectionRequest,
     ModelDetectionResponse,
     ProviderConfig,
@@ -97,6 +110,62 @@ async def create_model_detection(request: ModelDetectionRequest):
 @skills_router.get("/skills/documents", response_model=list[SkillDocumentSummary])
 async def get_skill_documents():
     return [SkillDocumentSummary.model_validate(item) for item in list_documents()]
+
+
+@skills_router.get("/agents/capabilities", response_model=AgentCapabilitiesResponse)
+async def get_agent_capabilities():
+    return AgentCapabilitiesResponse.model_validate(agent_capabilities(list_documents()))
+
+
+@skills_router.get("/agents", response_model=list[AgentProfile])
+async def get_agents():
+    return [AgentProfile.model_validate(item) for item in list_agent_profiles()]
+
+
+@skills_router.post("/agents", response_model=AgentProfile)
+async def create_agent(request: AgentProfileCreateRequest):
+    try:
+        profile = create_agent_profile(
+            request.model_dump(exclude_none=True, exclude_unset=True),
+            available_skill_folders=skill_folders_from_documents(list_documents()),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return AgentProfile.model_validate(profile)
+
+
+@skills_router.get("/agents/{agent_id}", response_model=AgentProfile)
+async def get_agent(agent_id: str):
+    profile = get_agent_profile(agent_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return AgentProfile.model_validate(profile)
+
+
+@skills_router.put("/agents/{agent_id}", response_model=AgentProfile)
+async def update_agent(agent_id: str, request: AgentProfileUpdateRequest):
+    try:
+        profile = update_agent_profile(
+            agent_id,
+            request.model_dump(exclude_none=True, exclude_unset=True),
+            available_skill_folders=skill_folders_from_documents(list_documents()),
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    return AgentProfile.model_validate(profile)
+
+
+@skills_router.delete("/agents/{agent_id}")
+async def delete_agent(agent_id: str):
+    try:
+        deleted = delete_agent_profile(agent_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not deleted:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return {"status": "ok"}
 
 
 @skills_router.get("/skills/documents/{document_id}", response_model=SkillDocumentDetail)
