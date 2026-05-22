@@ -3,6 +3,7 @@ import axios from 'axios'
 const DEFAULT_TIMEOUT = 120000
 const RUNTIME_PREFIX = '/api/v1/nl2sql'
 const ADMIN_PREFIX = '/api/v1/nl2sql-admin'
+const DATAAGENT_PREFIX = '/api/v1/dataagent'
 
 function getDefaultBaseUrl() {
   if (typeof window === 'undefined') {
@@ -109,6 +110,7 @@ export function createNl2SqlApiClient(options = {}) {
   const defaultHeaders = options.defaultHeaders || options.headers || {}
   const runtimeRequest = createAxiosClient(baseURL, RUNTIME_PREFIX, timeout, defaultHeaders)
   const adminRequest = createAxiosClient(baseURL, ADMIN_PREFIX, timeout, defaultHeaders)
+  const dataagentRequest = createAxiosClient(baseURL, DATAAGENT_PREFIX, timeout, defaultHeaders)
 
   const runtimeApi = {
     getConfig() {
@@ -117,11 +119,11 @@ export function createNl2SqlApiClient(options = {}) {
   }
 
   const topicApi = {
-    createTopic(title = '新话题') {
-      return runtimeRequest.post('/topics', { title })
+    createTopic(title = '新话题', data = {}) {
+      return runtimeRequest.post('/topics', { title, ...data })
     },
-    listTopics() {
-      return runtimeRequest.get('/topics')
+    listTopics(params = {}) {
+      return runtimeRequest.get('/topics', { params })
     },
     getTopic(topicId) {
       return runtimeRequest.get(`/topics/${topicId}`)
@@ -236,6 +238,27 @@ export function createNl2SqlApiClient(options = {}) {
     }
   }
 
+  const agentApi = {
+    listAgents() {
+      return dataagentRequest.get('/agents')
+    },
+    getAgent(agentId) {
+      return dataagentRequest.get(`/agents/${encodeURIComponent(agentId)}`)
+    },
+    createAgent(data) {
+      return dataagentRequest.post('/agents', data)
+    },
+    updateAgent(agentId, data) {
+      return dataagentRequest.put(`/agents/${encodeURIComponent(agentId)}`, data)
+    },
+    deleteAgent(agentId) {
+      return dataagentRequest.delete(`/agents/${encodeURIComponent(agentId)}`)
+    },
+    getCapabilities() {
+      return dataagentRequest.get('/agents/capabilities')
+    }
+  }
+
   return {
     runtimeApi,
     topicApi,
@@ -243,6 +266,7 @@ export function createNl2SqlApiClient(options = {}) {
     messageQueueApi,
     scheduleApi,
     adminApi,
+    agentApi,
     health() {
       return runtimeRequest.get('/health')
     }

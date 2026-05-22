@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from config import get_settings
+from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
 from core.magic_events import TERMINAL_TASK_STATUSES, encode_sse
 from core.skill_admin_service import resolved_chat_settings_payload
 from core.task_coordinator import get_task_coordinator
@@ -165,14 +166,19 @@ async def api_create_topic(http_request: Request, request: CreateTopicRequest | 
     store = _get_store()
     context = _request_context(http_request)
     payload = request or CreateTopicRequest()
-    topic = store.create_topic(title=str(payload.title or "").strip() or "新话题", context=context)
+    profile = _require_agent_profile(payload.agent_id)
+    topic = store.create_topic(
+        title=str(payload.title or "").strip() or "新话题",
+        agent_snapshot=build_agent_snapshot(profile),
+        context=context,
+    )
     return TopicDetail.model_validate(topic)
 
 
 @topic_router.get("", response_model=list[TopicSummary])
-async def api_list_topics(request: Request):
+async def api_list_topics(request: Request, agent_id: str | None = Query(default=None)):
     store = _get_store()
-    topics = store.list_topics(include_messages=False, context=_request_context(request))
+    topics = store.list_topics(include_messages=False, context=_request_context(request), agent_id=agent_id)
     return [TopicSummary.model_validate(item) for item in topics]
 
 
@@ -238,6 +244,7 @@ async def api_deliver_message(payload: DeliverMessageRequest, request: Request):
             database_hint=payload.database,
             debug=bool(payload.debug),
             execution_mode=payload.execution_mode,
+            agent_id=payload.agent_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -261,6 +268,7 @@ async def api_create_task(payload: CreateTaskRequest, request: Request):
             database_hint=payload.database,
             debug=bool(payload.debug),
             execution_mode=payload.execution_mode,
+            agent_id=payload.agent_id,
             source_queue_id=payload.source_queue_id,
             source_schedule_id=payload.source_schedule_id,
             source_schedule_log_id=payload.source_schedule_log_id,
@@ -578,3 +586,10 @@ def _require_topic(topic_id: str, context: dict[str, str] | None = None) -> dict
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
     return topic
+
+
+def _require_agent_profile(agent_id: str | None = None) -> dict:
+    profile = get_agent_profile(str(agent_id or "").strip() or DEFAULT_AGENT_ID)
+    if not profile:
+        raise HTTPException(status_code=400, detail="agent not found")
+    return profile

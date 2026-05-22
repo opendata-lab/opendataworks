@@ -63,5 +63,29 @@ export const dataagentApi = {
 
   rollbackSkillDocument(documentId, versionId) {
     return dataagentRequest.post(`/v1/dataagent/skills/documents/${documentId}/versions/${versionId}/rollback`)
+  },
+
+  listAgents() {
+    return dataagentRequest.get('/v1/dataagent/agents')
+  },
+
+  getAgent(agentId) {
+    return dataagentRequest.get(`/v1/dataagent/agents/${encodeURIComponent(agentId)}`)
+  },
+
+  createAgent(data) {
+    return dataagentRequest.post('/v1/dataagent/agents', data)
+  },
+
+  updateAgent(agentId, data) {
+    return dataagentRequest.put(`/v1/dataagent/agents/${encodeURIComponent(agentId)}`, data)
+  },
+
+  deleteAgent(agentId) {
+    return dataagentRequest.delete(`/v1/dataagent/agents/${encodeURIComponent(agentId)}`)
+  },
+
+  getAgentCapabilities() {
+    return dataagentRequest.get('/v1/dataagent/agents/capabilities')
   }
 }

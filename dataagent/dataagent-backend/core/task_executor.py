@@ -33,9 +33,11 @@ from core.agent_runtime import (
     _safe_base_url,
     _safe_stringify,
     prepare_enabled_skills_project_cwd,
+    resolve_agent_skill_runtime,
     resolve_enabled_skill_runtime,
     resolve_runtime_provider_selection,
 )
+from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, resolved_agent_workdir
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +61,7 @@ class TaskExecutionInput:
     sql_read_timeout_seconds: int | None = None
     sql_write_timeout_seconds: int | None = None
     execution_mode: str = "background"
+    agent_snapshot: dict[str, Any] | None = None
 
 
 @dataclass
@@ -763,8 +766,9 @@ async def execute_task_stream(
     adapter = ClaudeToMagicAdapter(params, provider_id=provider_id, model=model)
 
     prompt = str(params.question or "").strip() if params.resume_session_id else _build_prompt(params.history, params.question)
-    skill_runtime = resolve_enabled_skill_runtime()
-    system_prompt = _build_system_prompt(params.database_hint, skill_runtime)
+    agent_snapshot = normalize_agent_snapshot(params.agent_snapshot) if params.agent_snapshot else None
+    skill_runtime = resolve_agent_skill_runtime(agent_snapshot, resolve_enabled_skill_runtime())
+    system_prompt = _build_system_prompt(params.database_hint, skill_runtime, agent_snapshot)
 
     if params.debug:
         await _emit_records(
@@ -779,6 +783,7 @@ async def execute_task_stream(
                         "model": model,
                         "prompt_preview": _clip_text(prompt, 4000),
                         "system_prompt_preview": _clip_text(system_prompt, 1200),
+                        "agent_id": str((agent_snapshot or {}).get("agent_id") or DEFAULT_AGENT_ID),
                     },
                 }
             ],
@@ -824,12 +829,20 @@ async def execute_task_stream(
     for key, value in runtime_env.items():
         os.environ[key] = value
 
-    project_cwd = prepare_enabled_skills_project_cwd(skill_runtime.get("enabled_folders") or [])
-    permission_mode = _resolve_sdk_permission_mode()
-    max_turns = _resolve_max_turns(cfg, params.execution_mode)
+    enabled_folders = skill_runtime.get("enabled_folders") or []
+    if agent_snapshot and not bool(agent_snapshot.get("is_default")):
+        project_cwd = prepare_enabled_skills_project_cwd(
+            enabled_folders,
+            runtime_project_cwd=resolved_agent_workdir(str(agent_snapshot.get("agent_id") or ""), is_default=False),
+            allow_empty=True,
+        )
+    else:
+        project_cwd = prepare_enabled_skills_project_cwd(enabled_folders)
+    permission_mode = _resolve_sdk_permission_mode(str((agent_snapshot or {}).get("permission_mode") or "inherit"))
+    max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
     setting_sources = ["project"]
-    mcp_servers = _build_portal_mcp_servers(cfg)
-    allowed_tools = _build_allowed_tools(mcp_servers)
+    mcp_servers = _build_portal_mcp_servers(cfg, (agent_snapshot or {}).get("mcp_server_ids") if agent_snapshot else None)
+    allowed_tools = _build_allowed_tools(mcp_servers, (agent_snapshot or {}).get("allowed_tools") if agent_snapshot else None)
     options_kwargs = dict(
         system_prompt=system_prompt,
         model=model,

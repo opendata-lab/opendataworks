@@ -37,11 +37,23 @@ const apiMocks = vi.hoisted(() => ({
     getSettings: vi.fn(),
     updateSettings: vi.fn()
   },
+  agentApi: {
+    listAgents: vi.fn(),
+    getAgent: vi.fn(),
+    createAgent: vi.fn(),
+    updateAgent: vi.fn(),
+    deleteAgent: vi.fn(),
+    getCapabilities: vi.fn()
+  },
   health: vi.fn()
 }))
 
 vi.mock('@/api/nl2sql', () => ({
   createNl2SqlApiClient: () => apiMocks
+}))
+
+vi.mock('vue-router', () => ({
+  useRoute: () => ({ query: {}, params: {}, path: '/intelligent-query', name: 'IntelligentQuery' })
 }))
 
 vi.mock('element-plus', () => ({
@@ -90,6 +102,13 @@ const deferred = () => {
 const makeTopicSummary = (topicId, title) => ({
   topic_id: topicId,
   title,
+  agent_id: 'agent_default',
+  agent: {
+    agent_id: 'agent_default',
+    name: '默认智能问数助手',
+    description: '默认描述',
+    is_default: true
+  },
   chat_topic_id: `chat_${topicId}`,
   chat_conversation_id: `conversation_${topicId}`,
   current_task_id: '',
@@ -103,6 +122,13 @@ const makeTopicSummary = (topicId, title) => ({
 const makeTopicDetail = (topicId, title) => ({
   topic_id: topicId,
   title,
+  agent_id: 'agent_default',
+  agent: {
+    agent_id: 'agent_default',
+    name: '默认智能问数助手',
+    description: '默认描述',
+    is_default: true
+  },
   chat_topic_id: `chat_${topicId}`,
   chat_conversation_id: `conversation_${topicId}`,
   current_task_id: '',
@@ -118,6 +144,7 @@ describe('NL2SqlChat', () => {
     Object.values(apiMocks.messageQueueApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.scheduleApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.adminApi).forEach((fn) => fn.mockReset())
+    Object.values(apiMocks.agentApi).forEach((fn) => fn.mockReset())
     apiMocks.health.mockReset()
 
     apiMocks.adminApi.getSettings.mockResolvedValue({
@@ -134,6 +161,14 @@ describe('NL2SqlChat', () => {
         }
       ]
     })
+    apiMocks.agentApi.listAgents.mockResolvedValue([
+      {
+        agent_id: 'agent_default',
+        name: '默认智能问数助手',
+        description: '默认描述',
+        is_default: true
+      }
+    ])
     apiMocks.topicApi.createTopic.mockResolvedValue(makeTopicSummary('topic-new', '新话题'))
     apiMocks.topicApi.listTopics.mockResolvedValue([
       makeTopicSummary('topic-1', '流式话题')
@@ -667,6 +702,7 @@ describe('NL2SqlChat', () => {
     expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledTimes(2)
     const requestedTopicIds = apiMocks.taskApi.deliverMessage.mock.calls.map((call) => call[0].topic_id).sort()
     expect(requestedTopicIds).toEqual(['topic-1', 'topic-2'])
+    expect(apiMocks.taskApi.deliverMessage.mock.calls[0][0].agent_id).toBe('agent_default')
 
     firstPending.resolve({
       accepted: true,
@@ -723,6 +759,7 @@ describe('NL2SqlChat', () => {
       'topic-new',
       { title: '这是一个新的会话标题' }
     )
+    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('这是一个新的会话标题', { agent_id: 'agent_default' })
     expect(wrapper.text()).toContain('这是一个新的会话标题')
   })
 })

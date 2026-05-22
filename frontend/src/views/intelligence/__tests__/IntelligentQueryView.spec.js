@@ -21,6 +21,8 @@ import IntelligentQueryView from '../IntelligentQueryView.vue'
 
 const stubs = {
   NL2SqlChat: { template: '<div data-test="nl2sql-chat">智能问数聊天</div>' },
+  AgentStudio: { template: '<div data-test="agent-studio">智能体内容</div>' },
+  AgentDetailView: { template: '<div data-test="agent-detail">智能体详情</div>' },
   SkillStudio: { template: '<div data-test="skill-studio">Skills 内容</div>' },
   DataAgentConfig: { template: '<div data-test="dataagent-config">模型管理内容</div>' },
   SkillDetailView: { template: '<div data-test="skill-detail">Skill 详情</div>' },
@@ -56,6 +58,7 @@ describe('IntelligentQueryView', () => {
 
     expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="skill-studio"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="agent-studio"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="dataagent-config"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('chat')
   })
@@ -82,6 +85,14 @@ describe('IntelligentQueryView', () => {
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('models')
   })
 
+  it('renders agent studio from the tab query', () => {
+    const wrapper = mountView({ query: { tab: 'agents' } })
+
+    expect(wrapper.find('[data-test="agent-studio"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
+    expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('agents')
+  })
+
   it('keeps Skills selected when rendering the skill detail route', () => {
     const wrapper = mountView({
       path: '/intelligent-query/skills/marketing-insights',
@@ -92,5 +103,17 @@ describe('IntelligentQueryView', () => {
     expect(wrapper.find('[data-test="skill-detail"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="skill-studio"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('skills')
+  })
+
+  it('keeps agents selected when rendering the agent detail route', () => {
+    const wrapper = mountView({
+      path: '/intelligent-query/agents/agent_1',
+      name: 'IntelligentQueryAgentDetail',
+      params: { agentId: 'agent_1' }
+    })
+
+    expect(wrapper.find('[data-test="agent-detail"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="agent-studio"]').exists()).toBe(false)
+    expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('agents')
   })
 })
