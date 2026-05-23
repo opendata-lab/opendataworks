@@ -2096,6 +2096,17 @@ export const demoAdapter = async (config) => {
     return createResponse(config, clone(demoAgents))
   }
 
+  if (method === 'get' && pathname === '/v1/dataagent/agents/capabilities') {
+    return createResponse(config, {
+      tools: ['Skill', 'Read', 'Grep', 'Bash'],
+      mcp_servers: [],
+      skills: demoSkillDocuments
+        .filter((item) => item.file_name === 'SKILL.md')
+        .map((item) => ({ folder: item.folder, name: item.folder, enabled: item.enabled })),
+      permission_modes: ['inherit', 'allow_all', 'restricted']
+    })
+  }
+
   if (method === 'get' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+$/)) {
     const agentId = decodeURIComponent(pathname.split('/').pop())
     const agent = demoAgents.find((item) => item.agent_id === agentId)
@@ -2127,17 +2138,6 @@ export const demoAdapter = async (config) => {
 
   if (method === 'delete' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+$/)) {
     return createResponse(config, { status: 'ok' })
-  }
-
-  if (method === 'get' && pathname === '/v1/dataagent/agents/capabilities') {
-    return createResponse(config, {
-      tools: ['Skill', 'Read', 'Grep', 'Bash'],
-      mcp_servers: [],
-      skills: demoSkillDocuments
-        .filter((item) => item.file_name === 'SKILL.md')
-        .map((item) => ({ folder: item.folder, name: item.folder, enabled: item.enabled })),
-      permission_modes: ['inherit', 'allow_all', 'restricted']
-    })
   }
 
   if (method === 'get' && pathname === '/v1/dataagent/data-scope/options') {
