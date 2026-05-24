@@ -387,7 +387,6 @@
         0 10px 15px -3px rgba(0, 0, 0, 0.05),
         0 4px 6px -2px rgba(0, 0, 0, 0.03),
         0 0 0 1px rgba(0, 0, 0, 0.02);
-      cursor: pointer;
       transition: all 0.2s ease;
     }
 
@@ -400,7 +399,16 @@
 
     .bottom-input-text {
       flex: 1;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      font-family: inherit;
       font-size: 13px;
+      color: #0f172a;
+    }
+
+    .bottom-input-text::placeholder {
       color: #64748b;
     }
 
@@ -422,6 +430,7 @@
     .bottom-input-btn:hover {
       background: #059669;
     }
+
   </style>
 </head>
 <body>
@@ -521,7 +530,7 @@ GROUP BY 1 ORDER BY 1;
         <div class="docs-section">
           <h2>智能问数 Widget 的引入</h2>
           <p>
-            如果你想把这一套自然语言查询数据库的能力无缝引入到你们自有的 BI 系统、数据大屏、或是内部业务系统文档中，只需在你的 HTML 网页引入一个 `<script>` 标签包即可。
+            如果你想把这一套自然语言查询数据库的能力无缝引入到你们自有的 BI 系统、数据大屏、或是内部业务系统文档中，只需在你的 HTML 网页引入一个 <code>&lt;script&gt;</code> 标签包即可。
             它支持轻量的悬浮胶囊形态、侧边栏内嵌形态，或者如本页演示的“搜索对话框式”嵌入。
           </p>
         </div>
@@ -530,17 +539,23 @@ GROUP BY 1 ORDER BY 1;
   </div>
 
   <!-- Bottom Floating Input Bar Entry -->
-  <div class="bottom-input-bar-container" onclick="openBottomWidget()">
-    <div class="bottom-input-bar">
-      <span class="bottom-input-text">💡 提问 AI：例如“最近30天工作流发布次数趋势”</span>
-      <button class="bottom-input-btn">
+  <div class="bottom-input-bar-container">
+    <form class="bottom-input-bar" onsubmit="handleBottomSubmit(event)">
+      <input 
+        type="text" 
+        id="bottom-input-text"
+        class="bottom-input-text" 
+        placeholder="提问 AI：例如“最近30天工作流发布次数趋势”"
+        onkeydown="handleBottomInputKeydown(event)"
+      >
+      <button class="bottom-input-btn" type="submit">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <line x1="22" y1="2" x2="11" y2="13"></line>
           <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
         </svg>
         直接提问
       </button>
-    </div>
+    </form>
   </div>
 
   <!-- Dialog Modal (for Header Search Ask AI Modal) -->
@@ -570,35 +585,32 @@ GROUP BY 1 ORDER BY 1;
   <script src="http://localhost:3000/widget/opendataworks-widget.bundle.js?v=4"></script>
 
   <script>
-    let modalWidgetController = null;
-    let floatingWidgetController = null;
+    function askWidget(text) {
+      const question = String(text || '').trim();
+      if (!question) return;
+      if (window.OpenDataWorksWidget && typeof window.OpenDataWorksWidget.ask === 'function') {
+        window.OpenDataWorksWidget.ask(question);
+        return;
+      }
+      alert('Widget bundle 尚未加载完成，请稍后重试。');
+    }
 
-    // Open top search modal
     function openSearchModal() {
       const modal = document.getElementById('ai-search-modal');
       if (!modal) { console.error('[docs-search] #ai-search-modal not found'); return; }
       modal.classList.add('active');
+      modal.classList.remove('has-conversation');
+      const container = document.getElementById('modal-widget-container');
+      if (container) container.innerHTML = '';
       const input = document.getElementById('modal-search-bar-input');
       if (input) input.focus();
-
-      // Programmatically create an inline widget inside the modal if not done yet
-      if (!modalWidgetController && window.OpenDataWorksWidget && typeof window.OpenDataWorksWidget.installWidget === 'function') {
-        modalWidgetController = window.OpenDataWorksWidget.installWidget({
-          displayMode: 'inline',
-          containerId: 'modal-widget-container',
-          projectName: 'AI 知识问答',
-          projectColor: '#10b981',
-          websiteId: 'demo-modal',
-          agentId: 'demo',
-          apiBaseUrl: ''
-        });
-      }
     }
 
     function closeSearchModal() {
       const modal = document.getElementById('ai-search-modal');
       if (!modal) return;
       modal.classList.remove('active');
+      modal.classList.remove('has-conversation');
       const input = document.getElementById('modal-search-bar-input');
       if (input) input.value = '';
     }
@@ -612,36 +624,42 @@ GROUP BY 1 ORDER BY 1;
     // Submit question from top modal search bar
     function handleSearchSubmit(e) {
       if (e.key === 'Enter') {
+        e.preventDefault();
         const text = e.target.value.trim();
         if (!text) return;
-        
-        if (modalWidgetController) {
-          modalWidgetController.sendMessage(text);
-          e.target.value = '';
-        }
+
+        e.target.value = '';
+        closeSearchModal();
+        askWidget(text);
       }
     }
 
-    // Open Bottom floating widget
-    function openBottomWidget() {
-      if (floatingWidgetController) {
-        floatingWidgetController.open();
-        floatingWidgetController.sendMessage('最近30天工作流发布次数趋势');
-      } else if (window.OpenDataWorksWidget && typeof window.OpenDataWorksWidget.installWidget === 'function') {
-        floatingWidgetController = window.OpenDataWorksWidget.installWidget({
-          displayMode: 'floating',
-          position: 'bottom-right',
-          projectName: '智能问数助手',
-          projectColor: '#10b981',
-          websiteId: 'demo-floating-docs',
-          agentId: 'demo',
-          apiBaseUrl: ''
-        });
-        // Give it a tick to mount and load config before sending a message
-        setTimeout(function() {
-          floatingWidgetController.open();
-          floatingWidgetController.sendMessage('最近30天工作流发布次数趋势');
-        }, 300);
+    function openBottomWidget(text) {
+      const question = String(text || '').trim();
+      if (!question) {
+        const input = document.getElementById('bottom-input-text');
+        if (input) input.focus();
+        return;
+      }
+
+      askWidget(question);
+    }
+
+    function handleBottomSubmit(e) {
+      e.preventDefault();
+      const input = document.getElementById('bottom-input-text');
+      const text = input ? input.value.trim() : '';
+      if (!text) {
+        if (input) input.focus();
+        return;
+      }
+      openBottomWidget(text);
+      if (input) input.value = '';
+    }
+
+    function handleBottomInputKeydown(e) {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        handleBottomSubmit(e);
       }
     }
 

@@ -297,6 +297,7 @@ const defaultModel = ref('')
 const providers = ref([])
 const selectedProvider = ref('')
 const selectedModel = ref('')
+const pendingOutboundMessage = ref('')
 const hydratedTopicIds = new Set()
 const missingAgentMessage = 'Widget 缺少 data-agent-id 配置'
 
@@ -320,6 +321,13 @@ const availableModels = computed(() => {
 })
 const canSend = computed(() => (
   Boolean(inputText.value.trim())
+  && !isBusy.value
+  && hasAgentId.value
+  && Boolean(selectedProvider.value)
+  && Boolean(selectedModel.value)
+))
+const canDeliverPendingOutbound = computed(() => (
+  Boolean(pendingOutboundMessage.value)
   && !isBusy.value
   && hasAgentId.value
   && Boolean(selectedProvider.value)
@@ -765,6 +773,14 @@ const send = async () => {
   }
 }
 
+const sendPendingOutbound = () => {
+  const text = pendingOutboundMessage.value.trim()
+  if (!text || !canDeliverPendingOutbound.value) return
+  pendingOutboundMessage.value = ''
+  inputText.value = text
+  void send()
+}
+
 const cancel = async () => {
   const taskId = activeTaskId.value
   if (!taskId) return
@@ -901,11 +917,16 @@ watch(
   (value) => {
     const text = String(value || '').trim()
     if (!text) return
+    pendingOutboundMessage.value = text
     inputText.value = text
     emit('consumed-outbound')
-    void send()
+    sendPendingOutbound()
   }
 )
+
+watch(canDeliverPendingOutbound, (value) => {
+  if (value) sendPendingOutbound()
+})
 
 watch(
   () => props.state.cancelSignal,
