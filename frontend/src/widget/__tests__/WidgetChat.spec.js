@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 
 import WidgetChat from '../WidgetChat.vue'
 
@@ -198,6 +198,41 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.get('[data-testid="history-topic-topic-2"]').attributes('disabled')).toBeDefined()
 
     resolveStream()
+  })
+
+  it('queues outbound messages until runtime config is ready', async () => {
+    let resolveConfig
+    apiMocks.runtimeApi.getConfig.mockReturnValue(new Promise((resolve) => {
+      resolveConfig = resolve
+    }))
+    const { state } = mountChat({ config: { displayMode: 'inline' } })
+
+    state.outboundMessage = 'queued outbound question'
+    await nextTick()
+    await flushPromises()
+
+    expect(apiMocks.taskApi.deliverMessage).not.toHaveBeenCalled()
+
+    resolveConfig({
+      default_provider_id: 'anthropic_compatible',
+      default_model: 'claude-opus-4-6',
+      providers: [
+        {
+          provider_id: 'anthropic_compatible',
+          display_name: 'Anthropic Compatible',
+          models: ['claude-opus-4-6'],
+          default_model: 'claude-opus-4-6',
+          enabled: true
+        }
+      ]
+    })
+    await flushPromises()
+    await nextTick()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'queued outbound question',
+      agent_id: 'agent_widget'
+    }))
   })
 
   it('renders messageStream-style text deltas in the portal-style assistant body', async () => {

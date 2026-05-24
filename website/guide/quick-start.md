@@ -1,106 +1,69 @@
 # 快速开始
 
-## 环境要求
+OpenDataWorks 推荐使用 Docker Compose 进行本地一键启动。本指南将帮助您在 1 分钟内跑通整个一站式智能数据工作台。
 
-- **操作系统**: Linux / macOS / Windows
-- **JDK**: 8 或更高版本
-- **Maven**: 3.6+
-- **Node.js**: 20.19.0+（建议使用仓库根目录 `.nvmrc`）
-- **MySQL**: 8.0+
-- **DolphinScheduler**: 3.2.0+（可选，用于任务调度）
+---
 
-## 安装步骤
+## 1. 快速启动
 
-### 1. 克隆项目
+### 准备环境
+确保您的系统已安装了以下基础依赖：
+* **Docker**: 20.10+
+* **Docker Compose**: 2.0+
 
-```bash
-git clone https://github.com/opendata-lab/opendataworks.git
-cd opendataworks
-```
+### 一键部署运行
 
-### 2. 准备数据库
+1. **克隆项目并进入根目录**：
+   ```bash
+   git clone https://github.com/opendata-lab/opendataworks.git
+   cd opendataworks
+   ```
 
-项目集成了 Flyway，只需创建数据库和用户，无需手动导入表结构。
+2. **准备配置文件**：
+   ```bash
+   cp deploy/.env.example deploy/.env
+   ```
 
-::: tip Docker 部署
-如果使用 Docker Compose 部署，数据库和用户会自动创建，无需手动执行以下步骤。
-:::
+3. **拉取镜像并启动**：
+   ```bash
+   # 拉取最新的数据堆栈镜像（可选）
+   docker compose -f deploy/docker-compose.dev.yml pull
+   
+   # 后台启动所有容器服务
+   docker compose -f deploy/docker-compose.dev.yml up -d
+   ```
 
-```sql
--- 登录 MySQL 后执行
-CREATE DATABASE opendataworks
-  DEFAULT CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
+---
 
-CREATE USER 'opendataworks'@'%' IDENTIFIED BY 'opendataworks123';
-GRANT ALL PRIVILEGES ON opendataworks.* TO 'opendataworks'@'%';
-FLUSH PRIVILEGES;
-```
+## 2. 访问应用
 
-表结构和初始化数据将在后端服务首次启动时自动通过 Flyway 迁移。
+服务全部启动就绪后，打开浏览器直接访问：
 
-### 3. 启动 DolphinScheduler（可选）
-
-如果需要任务调度功能，请先安装并启动 DolphinScheduler。
-
-参考官方文档：[DolphinScheduler 单机部署](https://dolphinscheduler.apache.org/zh-cn/docs/3.2.0/guide/installation/standalone)
-
-### 4. 启动后端服务
-
-```bash
-# 编译并启动
-mvn -f pom.xml -pl backend -am clean install
-mvn -f pom.xml -pl backend -am spring-boot:run
-```
-
-服务启动后，Flyway 会自动执行迁移脚本，服务默认运行在 `http://localhost:8080`。
-
-### 5. 启动前端应用
-
-```bash
-cd frontend
-
-# 使用 nvm 切换 Node 版本
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
-nvm use || nvm install
-
-# 安装依赖并启动
-npm install
-npm run dev
-```
-
-应用将运行在 `http://localhost:3000`，当前默认开启匿名访问，本地开发无需登录。
-
-### 6. 访问应用
-
-打开浏览器访问：`http://localhost:3000`
-
-## Docker 一键部署
-
-使用 Docker Compose 部署时，数据库和用户会自动初始化。
-
-```bash
-# 1. 准备配置
-cp deploy/.env.example deploy/.env
-
-# 2. 拉取最新镜像
-docker compose -f deploy/docker-compose.dev.yml pull
-
-# 3. 启动服务
-docker compose -f deploy/docker-compose.dev.yml up -d
-```
-
-启动后访问：
-
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://localhost:8081 |
-| 后端 API | http://localhost:8080/api |
-| DataAgent | http://localhost:8900 |
-| Portal MCP | http://localhost:8801/mcp |
-| MySQL | 127.0.0.1:3316 |
+* **前端 Web UI**: [http://localhost:8081](http://localhost:8081)
+* **后端 API**: `http://localhost:8080/api`
+* **智能查询 DataAgent**: `http://localhost:8900`
+* **MySQL 物理库**: `127.0.0.1:3316`（用户 `dataagent`/`opendataworks`）
 
 ::: info 数据库自动初始化
-MySQL 容器首次启动时会自动执行初始化脚本，创建 `opendataworks` / `dataagent` 数据库与用户。表结构由后端 Flyway 自动创建，数据保存在 Docker volume 中，重启不丢失。
+首次启动时，MySQL 容器会自动执行初始化脚本，创建 `opendataworks` 与 `dataagent` 数据库与对应的服务用户。后端 Spring Boot 首次加载时会自动运行 Flyway 生成表结构，无需任何手动导数操作。
 :::
+
+---
+
+## 3. 功能验证 (Smoke Test)
+
+启动后，您可以进行以下快速验证以确保服务链路全线畅通：
+
+1. 浏览器打开 [http://localhost:8081](http://localhost:8081)，进入系统。
+2. 导航到 **「智能查询」** 模块。
+3. 新建一个会话，在对话框中输入问题：`你好，请直接回复 smoke-ok。`
+4. 看到 AI 助手流式返回回复后，说明 DataAgent 容器、Redis 异步任务队列、FastAPI 与前端 SSE 交互链路完全正常。
+
+---
+
+## 4. 深入阅读
+
+如果您需要了解如何通过源码在本地启动开发环境，或者在生产环境下部署，请参考以下指南：
+
+* **本地源码编译与生产环境部署**：参见 **[安装部署](file:///Users/guoruping/project/bigdata/opendataworks/website/guide/deployment.md)**。
+* **自定义配置属性详解**：参见 **[配置说明](file:///Users/guoruping/project/bigdata/opendataworks/website/guide/configuration.md)**。

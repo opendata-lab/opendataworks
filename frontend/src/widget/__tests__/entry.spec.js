@@ -1,9 +1,29 @@
+import { flushPromises } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick } from 'vue'
 
 import { installWidget } from '../entry'
 
+const apiMocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
+  runtimeApi: {
+    getConfig: vi.fn()
+  },
+  topicApi: {
+    listTopics: vi.fn()
+  }
+}))
+
+vi.mock('@/api/nl2sql', () => ({
+  createNl2SqlApiClient: apiMocks.createClient
+}))
+
 describe('installWidget', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.createClient.mockReturnValue(apiMocks)
+    apiMocks.runtimeApi.getConfig.mockRejectedValue(new Error('demo backend unavailable'))
+    apiMocks.topicApi.listTopics.mockResolvedValue([])
     Object.defineProperty(window, 'innerHeight', {
       configurable: true,
       writable: true,
@@ -32,7 +52,7 @@ describe('installWidget', () => {
     const controller = installWidget(script)
 
     expect(document.querySelector('[data-odw-widget-root]')).toBeTruthy()
-    expect(window.OpenDataWorksWidget).toBe(controller)
+    expect(window.OpenDataWorksWidget._lastController).toBe(controller)
     expect(controller.isOpen()).toBe(false)
     expect(typeof controller.toggle).toBe('function')
     expect(typeof controller.sendMessage).toBe('function')
@@ -61,6 +81,46 @@ describe('installWidget', () => {
 
     controller.destroy()
     expect(document.querySelector('[data-odw-widget-root]')).toBeNull()
+  })
+
+  it('delivers a message when sendMessage opens a closed floating panel', async () => {
+    const script = document.createElement('script')
+    script.dataset.websiteId = 'demo'
+    script.dataset.agentId = 'demo'
+    script.dataset.projectName = 'Demo'
+    document.body.appendChild(script)
+
+    const controller = installWidget(script)
+    const root = document.querySelector('[data-odw-widget-root]')
+
+    controller.sendMessage('hello from closed panel')
+    await nextTick()
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await flushPromises()
+    await nextTick()
+
+    expect(root.shadowRoot.textContent).toContain('hello from closed panel')
+  })
+
+  it('opens the built-in ask modal with a mock answer', async () => {
+    const script = document.createElement('script')
+    script.dataset.websiteId = 'demo'
+    script.dataset.agentId = 'demo'
+    script.dataset.projectName = 'Demo'
+    document.body.appendChild(script)
+
+    const controller = installWidget(script)
+
+    controller.ask('最近30天工作流发布次数趋势')
+    expect(document.querySelector('[data-odw-ask-modal]')).toBeTruthy()
+    expect(document.body.textContent).toContain('正在理解问题')
+
+    await new Promise((resolve) => setTimeout(resolve, 900))
+
+    expect(document.body.textContent).toContain('工作流发布趋势分析')
+    expect(document.body.textContent).toContain('Ask a follow-up')
+    expect(typeof window.OpenDataWorksWidget.ask).toBe('function')
   })
 
   it('mounts inline widgets into the configured container without a launcher', () => {

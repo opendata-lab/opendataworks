@@ -7,6 +7,8 @@ import { WIDGET_STYLES } from './styles'
 const GLOBAL_NAME = 'OpenDataWorksWidget'
 const MIN_INLINE_PARENT_HEIGHT = 320
 const INLINE_VIEWPORT_BOTTOM_GAP = 8
+const ASK_MODAL_STYLE_ID = 'odw-ask-modal-style'
+const ASK_MODAL_ATTR = 'data-odw-ask-modal'
 
 /** Registry of all live widget instances keyed by instanceId */
 const _instances = new Map()
@@ -88,6 +90,391 @@ const bindInlineHostSizing = (host, mountParent, config) => {
     window.visualViewport?.removeEventListener?.('resize', sync)
     rafIds.forEach((id) => window.cancelAnimationFrame?.(id))
   }
+}
+
+const scheduleOutboundMessage = (state, text) => {
+  const deliver = () => {
+    state.outboundMessage = text
+  }
+  if (typeof window.requestAnimationFrame === 'function') {
+    window.requestAnimationFrame(deliver)
+    return
+  }
+  window.setTimeout(deliver, 0)
+}
+
+const escapeHtml = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&#39;')
+
+const askDemoRows = [
+  ['05-21', '31', '较前一日 +10，发布活动明显增加'],
+  ['05-22', '28', '小幅回落，仍高于周均水平'],
+  ['05-23', '36', '进入发布高峰，主要来自工作流批量上线'],
+  ['05-24', '42', '样例周期最高值，建议关注失败率和回滚记录']
+]
+
+const askLayerRows = [
+  ['ODS 原始层', '128', '保留业务系统原始结构，适合审计与追溯'],
+  ['DWD 明细层', '86', '统一清洗口径，承载事实明细查询'],
+  ['DWS 汇总层', '42', '面向主题聚合，提升报表查询速度'],
+  ['ADS 应用层', '27', '服务看板、指标 API 和业务专题分析']
+]
+
+const getAskSql = (question) => {
+  if (question.includes('表') || question.includes('数据层')) {
+    return `SELECT
+  layer_name,
+  COUNT(*) AS table_count
+FROM metadata_table
+GROUP BY layer_name
+ORDER BY table_count DESC;`
+  }
+
+  return `SELECT
+  DATE(publish_time) AS date,
+  COUNT(*) AS publish_count
+FROM workflow_publish_record
+WHERE publish_time >= DATE_SUB(CURDATE(), INTERVAL 30 DAY)
+GROUP BY DATE(publish_time)
+ORDER BY date;`
+}
+
+const ensureAskModalStyle = () => {
+  if (document.getElementById(ASK_MODAL_STYLE_ID)) return
+  const style = document.createElement('style')
+  style.id = ASK_MODAL_STYLE_ID
+  style.textContent = `
+[${ASK_MODAL_ATTR}] {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483600;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.48);
+  backdrop-filter: blur(4px);
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
+}
+[${ASK_MODAL_ATTR}].active { display: flex; }
+.odw-ask-card {
+  width: min(980px, 94vw);
+  height: min(760px, 92vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+}
+.odw-ask-header {
+  min-height: 64px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.odw-ask-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  background: #10b981;
+  transform: rotate(45deg);
+}
+.odw-ask-title {
+  flex: 1;
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+}
+.odw-ask-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: #f1f5f9;
+  color: #475569;
+  cursor: pointer;
+  font-size: 22px;
+  line-height: 1;
+}
+.odw-ask-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 28px;
+}
+.odw-ask-process {
+  border-top: 1px solid #cbd5e1;
+  border-bottom: 1px solid #cbd5e1;
+  padding: 18px 0;
+  color: #0f172a;
+  font-size: 15px;
+  line-height: 1.8;
+}
+.odw-ask-process h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+.odw-ask-process ol {
+  margin: 8px 0 16px 22px;
+  padding: 0;
+}
+.odw-ask-link {
+  color: #059669;
+  font-weight: 800;
+}
+.odw-ask-thinking {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #475569;
+}
+.odw-ask-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: odw-ask-pulse 1s ease-in-out infinite;
+}
+.odw-ask-sql {
+  margin: 0;
+  overflow-x: auto;
+  font-family: "Fira Code", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre;
+  color: #334155;
+}
+.odw-ask-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.odw-ask-table th,
+.odw-ask-table td {
+  border: 1px solid #cbd5e1;
+  padding: 9px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.odw-ask-table th {
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 800;
+}
+.odw-ask-footer {
+  padding: 14px 18px 18px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+}
+.odw-ask-follow-box {
+  min-height: 118px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.odw-ask-input {
+  width: 100%;
+  min-height: 38px;
+  resize: none;
+  border: none;
+  outline: none;
+  font: inherit;
+  font-size: 15px;
+  color: #0f172a;
+}
+.odw-ask-input::placeholder { color: #94a3b8; }
+.odw-ask-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.odw-ask-deep {
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0 14px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+.odw-ask-submit {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: #10b981;
+  color: #fff;
+  cursor: pointer;
+  font-size: 18px;
+}
+@keyframes odw-ask-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+@media (max-width: 640px) {
+  .odw-ask-card {
+    width: calc(100vw - 20px);
+    height: calc(100vh - 20px);
+    border-radius: 14px;
+  }
+  .odw-ask-body { padding: 16px; }
+}
+`
+  document.head.appendChild(style)
+}
+
+const renderAskAnswer = (question) => {
+  const isLayerQuestion = question.includes('表') || question.includes('数据层')
+  const rows = (isLayerQuestion ? askLayerRows : askDemoRows).map((row) => `
+    <tr>
+      <td>${escapeHtml(row[0])}</td>
+      <td><strong>${escapeHtml(row[1])}</strong></td>
+      <td>${escapeHtml(row[2])}</td>
+    </tr>
+  `).join('')
+  const title = isLayerQuestion ? '数据层表数量分析' : '工作流发布趋势分析'
+  const intro = isLayerQuestion
+    ? '我将问题识别为元数据统计类查询，优先使用 metadata_table 按数据层聚合。'
+    : '我将问题识别为工作流发布趋势查询，优先使用 workflow_publish_record 按日期聚合。'
+  const insight = isLayerQuestion
+    ? 'DWD 明细层和 ODS 原始层表数量最多，说明当前平台样例数据更偏向资产接入和清洗建模阶段。'
+    : '最近 7 天发布次数整体上升，05-24 达到 42 次，是当前样例数据中的最高值。'
+
+  return `
+    <div class="odw-ask-process">
+      <h2>${title}</h2>
+      <p>${intro} <span class="odw-ask-link">Analysis Overview</span>:</p>
+      <ol>
+        <li><strong>理解问题：</strong>抽取时间范围、统计口径和目标指标。</li>
+        <li><strong>选择数据集：</strong>匹配工作流发布、任务实例或元数据表样例数据。</li>
+        <li><strong>生成查询：</strong>构造聚合 SQL，并限制结果按业务维度排序。</li>
+        <li><strong>组织结果：</strong>输出结论、SQL、趋势摘要和明细表。</li>
+      </ol>
+      <hr>
+      <h2>生成 SQL</h2>
+      <pre class="odw-ask-sql">${escapeHtml(getAskSql(question))}</pre>
+      <h2>结果解读</h2>
+      <p>${insight}</p>
+      <table class="odw-ask-table">
+        <thead>
+          <tr>
+            <th>${isLayerQuestion ? '数据层' : '日期'}</th>
+            <th>${isLayerQuestion ? '表数量' : '发布次数'}</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `
+}
+
+const ensureAskModal = () => {
+  ensureAskModalStyle()
+  let modal = document.querySelector(`[${ASK_MODAL_ATTR}]`)
+  if (modal) return modal
+
+  modal = document.createElement('div')
+  modal.setAttribute(ASK_MODAL_ATTR, '')
+  modal.innerHTML = `
+    <section class="odw-ask-card" role="dialog" aria-modal="true" aria-label="OpenDataWorks AI">
+      <header class="odw-ask-header">
+        <span class="odw-ask-mark" aria-hidden="true"></span>
+        <div class="odw-ask-title">OpenDataWorks AI</div>
+        <button class="odw-ask-close" type="button" aria-label="关闭">×</button>
+      </header>
+      <main class="odw-ask-body"></main>
+      <footer class="odw-ask-footer">
+        <div class="odw-ask-follow-box">
+          <textarea class="odw-ask-input" placeholder="Ask a follow-up"></textarea>
+          <div class="odw-ask-actions">
+            <button class="odw-ask-deep" type="button">Deep thinking</button>
+            <button class="odw-ask-submit" type="button" aria-label="发送追问">■</button>
+          </div>
+        </div>
+      </footer>
+    </section>
+  `
+  modal.querySelector('.odw-ask-close')?.addEventListener('click', () => modal.classList.remove('active'))
+  modal.querySelector('.odw-ask-submit')?.addEventListener('click', () => {
+    const input = modal.querySelector('.odw-ask-input')
+    const text = input?.value?.trim() || ''
+    if (!text) {
+      input?.focus()
+      return
+    }
+    input.value = ''
+    openAskModal(text)
+  })
+  modal.querySelector('.odw-ask-input')?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      modal.querySelector('.odw-ask-submit')?.click()
+    }
+  })
+  document.body.appendChild(modal)
+  return modal
+}
+
+const setAskModalBody = (modal, html) => {
+  const body = modal.querySelector('.odw-ask-body')
+  if (!body) return
+  body.innerHTML = html
+  body.scrollTop = body.scrollHeight
+}
+
+const openAskModal = (text = '') => {
+  if (typeof document === 'undefined') return
+  const modal = ensureAskModal()
+  const question = String(text || '').trim()
+  modal.classList.add('active')
+
+  if (!question) {
+    setAskModalBody(modal, '<div class="odw-ask-process"><h2>Ask OpenDataWorks AI</h2><p>在下方输入问题后按 Enter，查看本地演示对话过程。</p></div>')
+    modal.querySelector('.odw-ask-input')?.focus()
+    return
+  }
+
+  setAskModalBody(modal, `
+    <div class="odw-ask-process">
+      <div class="odw-ask-thinking">
+        <span class="odw-ask-dot"></span>
+        <span>正在理解问题：「${escapeHtml(question)}」...</span>
+      </div>
+    </div>
+  `)
+  window.setTimeout(() => {
+    if (!modal.classList.contains('active')) return
+    setAskModalBody(modal, `
+      <div class="odw-ask-process">
+        <div class="odw-ask-thinking">
+          <span class="odw-ask-dot"></span>
+          <span>已匹配到工作流发布记录、元数据表和任务实例等演示数据，正在生成 SQL...</span>
+        </div>
+      </div>
+    `)
+  }, 350)
+  window.setTimeout(() => {
+    if (!modal.classList.contains('active')) return
+    setAskModalBody(modal, renderAskAnswer(question))
+    modal.querySelector('.odw-ask-input')?.focus()
+  }, 700)
+}
+
+const closeAskModal = () => {
+  document.querySelector(`[${ASK_MODAL_ATTR}]`)?.classList.remove('active')
 }
 
 /**
@@ -184,8 +571,22 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
       return Boolean(state.isOpen)
     },
     sendMessage(text) {
+      const message = String(text || '').trim()
+      if (!message) return
       state.isOpen = true
-      state.outboundMessage = String(text || '')
+      scheduleOutboundMessage(state, message)
+    },
+    ask(text) {
+      openAskModal(text)
+      emit('ask:open', { text: String(text || '').trim() })
+    },
+    openAskModal(text) {
+      openAskModal(text)
+      emit('ask:open', { text: String(text || '').trim() })
+    },
+    closeAskModal() {
+      closeAskModal()
+      emit('ask:close')
     },
     cancel() {
       state.cancelSignal += 1
@@ -259,6 +660,9 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
       toggle() { this._lastController?.toggle() },
       isOpen() { return this._lastController?.isOpen() ?? false },
       sendMessage(text) { this._lastController?.sendMessage(text) },
+      ask(text) { this._lastController?.ask(text) ?? openAskModal(text) },
+      openAskModal(text) { this._lastController?.openAskModal(text) ?? openAskModal(text) },
+      closeAskModal() { this._lastController?.closeAskModal() ?? closeAskModal() },
       cancel() { this._lastController?.cancel() },
       openHistory() { this._lastController?.openHistory() },
       newConversation() { this._lastController?.newConversation() },
@@ -305,6 +709,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       toggle() { this._lastController?.toggle() },
       isOpen() { return this._lastController?.isOpen() ?? false },
       sendMessage(text) { this._lastController?.sendMessage(text) },
+      ask(text) { this._lastController?.ask(text) ?? openAskModal(text) },
+      openAskModal(text) { this._lastController?.openAskModal(text) ?? openAskModal(text) },
+      closeAskModal() { this._lastController?.closeAskModal() ?? closeAskModal() },
       cancel() { this._lastController?.cancel() },
       openHistory() { this._lastController?.openHistory() },
       newConversation() { this._lastController?.newConversation() },
@@ -315,4 +722,3 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     }
   }
 }
-
