@@ -118,8 +118,9 @@ describe('installWidget', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 900))
 
+    expect(document.body.textContent).toContain('最近30天工作流发布次数趋势')
     expect(document.body.textContent).toContain('工作流发布趋势分析')
-    expect(document.body.textContent).toContain('Ask a follow-up')
+    expect(document.querySelector('.odw-ask-input').getAttribute('placeholder')).toBe('Ask a follow-up')
     expect(typeof window.OpenDataWorksWidget.ask).toBe('function')
   })
 

@@ -13,6 +13,8 @@ const ASK_MODAL_ATTR = 'data-odw-ask-modal'
 /** Registry of all live widget instances keyed by instanceId */
 const _instances = new Map()
 let _instanceSeq = 0
+let _askRunSeq = 0
+let _askTurns = []
 
 const resolveWidgetStylesheetUrl = (script) => {
   const explicitUrl = String(script?.dataset?.stylesheetUrl || '').trim()
@@ -124,8 +126,10 @@ const askLayerRows = [
   ['ADS 应用层', '27', '服务看板、指标 API 和业务专题分析']
 ]
 
+const isLayerAskQuestion = (question) => /表|数据层|分层|层|ODS|DWD|DWS|ADS/i.test(question)
+
 const getAskSql = (question) => {
-  if (question.includes('表') || question.includes('数据层')) {
+  if (isLayerAskQuestion(question)) {
     return `SELECT
   layer_name,
   COUNT(*) AS table_count
@@ -207,6 +211,39 @@ const ensureAskModalStyle = () => {
   min-height: 0;
   overflow-y: auto;
   padding: 22px 28px;
+  background: #ffffff;
+}
+.odw-ask-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.odw-ask-turn {
+  display: flex;
+}
+.odw-ask-turn-user {
+  justify-content: flex-end;
+}
+.odw-ask-turn-assistant {
+  justify-content: flex-start;
+}
+.odw-ask-user-bubble {
+  max-width: min(680px, 82%);
+  border-radius: 16px 16px 4px 16px;
+  padding: 11px 14px;
+  background: #ecfdf5;
+  color: #065f46;
+  font-size: 15px;
+  line-height: 1.6;
+  border: 1px solid #a7f3d0;
+}
+.odw-ask-assistant-bubble {
+  width: 100%;
+}
+.odw-ask-empty {
+  color: #475569;
+  font-size: 15px;
+  line-height: 1.8;
 }
 .odw-ask-process {
   border-top: 1px solid #cbd5e1;
@@ -336,7 +373,7 @@ const ensureAskModalStyle = () => {
 }
 
 const renderAskAnswer = (question) => {
-  const isLayerQuestion = question.includes('表') || question.includes('数据层')
+  const isLayerQuestion = isLayerAskQuestion(question)
   const rows = (isLayerQuestion ? askLayerRows : askDemoRows).map((row) => `
     <tr>
       <td>${escapeHtml(row[0])}</td>
@@ -416,7 +453,7 @@ const ensureAskModal = () => {
       return
     }
     input.value = ''
-    openAskModal(text)
+    openAskModal(text, { reset: false })
   })
   modal.querySelector('.odw-ask-input')?.addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -428,47 +465,91 @@ const ensureAskModal = () => {
   return modal
 }
 
-const setAskModalBody = (modal, html) => {
+const scrollAskModalToBottom = (modal) => {
   const body = modal.querySelector('.odw-ask-body')
   if (!body) return
-  body.innerHTML = html
   body.scrollTop = body.scrollHeight
 }
 
-const openAskModal = (text = '') => {
+const renderAskThread = (modal) => {
+  const body = modal.querySelector('.odw-ask-body')
+  if (!body) return
+  if (!_askTurns.length) {
+    body.innerHTML = '<div class="odw-ask-empty">在下方输入问题后按 Enter，查看本地演示对话过程。</div>'
+    return
+  }
+  body.innerHTML = `
+    <div class="odw-ask-thread">
+      ${_askTurns.map((turn) => {
+        if (turn.role === 'user') {
+          return `
+            <div class="odw-ask-turn odw-ask-turn-user">
+              <div class="odw-ask-user-bubble">${escapeHtml(turn.text)}</div>
+            </div>
+          `
+        }
+        return `
+          <div class="odw-ask-turn odw-ask-turn-assistant">
+            <div class="odw-ask-assistant-bubble">${turn.html}</div>
+          </div>
+        `
+      }).join('')}
+    </div>
+  `
+  scrollAskModalToBottom(modal)
+}
+
+const renderAskThinking = (question, message) => `
+  <div class="odw-ask-process">
+    <div class="odw-ask-thinking">
+      <span class="odw-ask-dot"></span>
+      <span>${escapeHtml(message)}「${escapeHtml(question)}」...</span>
+    </div>
+  </div>
+`
+
+const openAskModal = (text = '', options = {}) => {
   if (typeof document === 'undefined') return
   const modal = ensureAskModal()
   const question = String(text || '').trim()
   modal.classList.add('active')
 
   if (!question) {
-    setAskModalBody(modal, '<div class="odw-ask-process"><h2>Ask OpenDataWorks AI</h2><p>在下方输入问题后按 Enter，查看本地演示对话过程。</p></div>')
+    renderAskThread(modal)
     modal.querySelector('.odw-ask-input')?.focus()
     return
   }
 
-  setAskModalBody(modal, `
-    <div class="odw-ask-process">
-      <div class="odw-ask-thinking">
-        <span class="odw-ask-dot"></span>
-        <span>正在理解问题：「${escapeHtml(question)}」...</span>
-      </div>
-    </div>
-  `)
+  if (options.reset !== false) {
+    _askTurns = []
+  }
+  const runSeq = ++_askRunSeq
+  _askTurns.push({ role: 'user', text: question })
+  _askTurns.push({ role: 'assistant', html: renderAskThinking(question, '正在理解问题：') })
+  renderAskThread(modal)
+
   window.setTimeout(() => {
-    if (!modal.classList.contains('active')) return
-    setAskModalBody(modal, `
-      <div class="odw-ask-process">
-        <div class="odw-ask-thinking">
-          <span class="odw-ask-dot"></span>
-          <span>已匹配到工作流发布记录、元数据表和任务实例等演示数据，正在生成 SQL...</span>
+    if (!modal.classList.contains('active') || runSeq !== _askRunSeq) return
+    const lastAssistant = _askTurns[_askTurns.length - 1]
+    if (lastAssistant?.role === 'assistant') {
+      lastAssistant.html = `
+        <div class="odw-ask-process">
+          <div class="odw-ask-thinking">
+            <span class="odw-ask-dot"></span>
+            <span>已匹配到工作流发布记录、元数据表和任务实例等演示数据，正在生成 SQL...</span>
+          </div>
         </div>
-      </div>
-    `)
+      `
+      renderAskThread(modal)
+    }
   }, 350)
   window.setTimeout(() => {
-    if (!modal.classList.contains('active')) return
-    setAskModalBody(modal, renderAskAnswer(question))
+    if (!modal.classList.contains('active') || runSeq !== _askRunSeq) return
+    const lastAssistant = _askTurns[_askTurns.length - 1]
+    if (lastAssistant?.role === 'assistant') {
+      lastAssistant.html = renderAskAnswer(question)
+      renderAskThread(modal)
+    }
     modal.querySelector('.odw-ask-input')?.focus()
   }, 700)
 }
