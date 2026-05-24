@@ -7,7 +7,7 @@
       'is-history-open': historyVisible
     }"
   >
-    <div v-if="historyVisible && !isInline" class="query-sidebar-backdrop" @click="closeHistory" />
+    <div v-if="historyVisible" class="query-sidebar-backdrop" @click="closeHistory" />
 
     <aside v-if="historyVisible" class="query-sidebar" aria-label="历史会话">
       <div class="query-sidebar-head">
@@ -48,9 +48,25 @@
       <div class="query-messages">
         <div class="query-messages-inner">
           <div class="query-main-head">
-            <div>
-              <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
-              <p class="query-main-subtitle">围绕数据查询与分析开展连续对话。</p>
+            <div class="query-main-head-left">
+              <button
+                v-if="isInline"
+                class="query-btn-history-toggle"
+                type="button"
+                aria-label="历史会话"
+                title="历史会话"
+                @click="toggleHistory"
+              >
+                <svg class="query-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <line x1="3" y1="12" x2="21" y2="12"></line>
+                  <line x1="3" y1="6" x2="21" y2="6"></line>
+                  <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+              </button>
+              <div>
+                <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
+                <p class="query-main-subtitle">围绕数据查询与分析开展连续对话。</p>
+              </div>
             </div>
             <div class="query-model-badge">
               <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
@@ -285,7 +301,7 @@ const hydratedTopicIds = new Set()
 const missingAgentMessage = 'Widget 缺少 data-agent-id 配置'
 
 const isInline = computed(() => props.config.displayMode === 'inline')
-const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
+const historyVisible = computed(() => Boolean(props.state.historyOpen))
 const isBusy = computed(() => isSubmitting.value || Boolean(activeTaskId.value))
 const agentId = computed(() => String(props.config.agentId || '').trim())
 const hasAgentId = computed(() => Boolean(agentId.value))
@@ -418,11 +434,19 @@ const loadTopicMessages = async (targetTopicId) => {
     messages.value = []
     return
   }
-  const page = await api.topicApi.getTopicMessages(targetTopicId, { page: 1, page_size: 200, order: 'asc' })
-  messages.value = (page?.items || [])
-    .filter((item) => item?.sender_type === 'user' || item?.sender_type === 'assistant')
-    .map(messageFromApi)
-  hydratedTopicIds.add(targetTopicId)
+  if (String(targetTopicId).startsWith('topic_mock_')) {
+    return
+  }
+  try {
+    const page = await api.topicApi.getTopicMessages(targetTopicId, { page: 1, page_size: 200, order: 'asc' })
+    messages.value = (page?.items || [])
+      .filter((item) => item?.sender_type === 'user' || item?.sender_type === 'assistant')
+      .map(messageFromApi)
+    hydratedTopicIds.add(targetTopicId)
+  } catch (error) {
+    console.warn('[OpenDataWorksWidget] failed to load messages:', error)
+    messages.value = []
+  }
 }
 
 const loadTopics = async () => {
@@ -462,6 +486,10 @@ const guardIdle = () => {
 
 const closeHistory = () => {
   props.state.historyOpen = false
+}
+
+const toggleHistory = () => {
+  props.state.historyOpen = !props.state.historyOpen
 }
 
 const selectTopic = async (targetTopicId) => {
@@ -523,8 +551,24 @@ const loadConfig = async () => {
       ? defaultModel.value
       : (resolvedProvider?.default_model || resolvedProvider?.models?.[0] || '')
   } catch (error) {
-    errorText.value = String(error?.message || '加载智能问数配置失败')
-    emit('event', { name: 'error', payload: errorText.value })
+    if (agentId.value === 'demo') {
+      const mockProviders = [{
+        provider_id: 'mock',
+        display_name: '演示模型 (Mock AI)',
+        models: ['mock-gpt-4o', 'mock-claude-3.5'],
+        default_model: 'mock-gpt-4o'
+      }]
+      providers.value = mockProviders
+      defaultProviderId.value = 'mock'
+      defaultModel.value = 'mock-gpt-4o'
+      selectedProvider.value = 'mock'
+      selectedModel.value = 'mock-gpt-4o'
+      errorText.value = ''
+      console.warn('[OpenDataWorksWidget] Running in DEMO Mock mode because backend is unreachable.')
+    } else {
+      errorText.value = String(error?.message || '加载智能问数配置失败')
+      emit('event', { name: 'error', payload: errorText.value })
+    }
   }
 }
 
@@ -592,6 +636,105 @@ const send = async () => {
   errorText.value = ''
   appendUserMessage(text)
   const assistant = appendAssistantMessage()
+
+  if (selectedProvider.value === 'mock') {
+    if (!topicId.value) {
+      const mockTopicId = `topic_mock_${uid()}`
+      const newTopic = {
+        topic_id: mockTopicId,
+        title: truncate(text, 30),
+        message_count: 2,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }
+      topics.value = [newTopic, ...topics.value]
+      topicId.value = mockTopicId
+      hydratedTopicIds.add(mockTopicId)
+    } else {
+      updateActiveTopicAfterSend(text, '')
+    }
+
+    activeTaskId.value = `task_mock_${uid()}`
+    activeAssistantId.value = assistant.id
+    assistant.task_id = activeTaskId.value
+    assistant.status = 'running'
+
+    emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
+
+    let replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
+
+这是模拟的 AI 回复：
+- 您提问的内容是：“${text}”
+- 智能小组件包含悬浮触发（Floating）、侧边栏内嵌（Inline）、API 控制等多种集成能力。
+- 接入真实后端服务时，请在引入小组件的 HTML 中指定正确的 \`data-api-base-url\`。
+
+如有其他疑问，请随时提问！`
+    
+    let blockIndex = 0
+    let currentText = ''
+    const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+    
+    const mockProgressSteps = [
+      '正在解析问题语义...',
+      '正在匹配数据库 Schema...',
+      '正在生成执行 SQL 语句...',
+      '已成功获取数据，正在整理报表...'
+    ]
+    
+    try {
+      processAssistantStreamEvent(assistant, { type: 'message_start', message: { id: assistant.id } })
+      
+      for (const step of mockProgressSteps) {
+        if (activeTaskId.value !== assistant.task_id) break
+        processAssistantStreamEvent(assistant, {
+          type: 'tool.pending',
+          payload: {
+            block_id: `tool-${blockIndex}`,
+            tool_name: 'text-to-sql',
+            input: `[Demo Input] ${step}`
+          }
+        })
+        await delay(500)
+        processAssistantStreamEvent(assistant, {
+          type: 'tool.complete',
+          payload: {
+            block_id: `tool-${blockIndex}`,
+            tool_name: 'text-to-sql',
+            output: `[Demo Output] 已完成: ${step}`
+          }
+        })
+        blockIndex++
+      }
+      
+      assistant.status = 'success'
+      for (let i = 0; i < replyText.length; i++) {
+        if (activeTaskId.value !== assistant.task_id) break
+        currentText += replyText[i]
+        processAssistantStreamEvent(assistant, {
+          type: 'text.delta',
+          payload: { text: replyText[i] }
+        })
+        await delay(15)
+      }
+
+      processAssistantStreamEvent(assistant, {
+        type: 'text.complete',
+        payload: { text: replyText }
+      })
+      processAssistantStreamEvent(assistant, {
+        type: 'done',
+        payload: { status: 'success' }
+      })
+
+      emit('event', { name: 'message', payload: { id: assistant.id, content: replyText } })
+    } catch (e) {
+      console.error(e)
+    } finally {
+      activeTaskId.value = ''
+      isSubmitting.value = false
+    }
+    return
+  }
 
   try {
     const currentTopicId = await ensureTopic(truncate(text, 30))
