@@ -663,9 +663,27 @@ const formatTime = (value) => {
   const dateKey = formatInShanghai(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
   const nowKey = formatInShanghai(now, { year: 'numeric', month: '2-digit', day: '2-digit' })
   if (dateKey === nowKey) {
+    const diffMs = now.getTime() - date.getTime()
+    const diffSeconds = Math.floor(diffMs / 1000)
+    const diffMinutes = Math.floor(diffSeconds / 60)
+    if (diffSeconds < 60) return '刚刚'
+    if (diffMinutes < 60) return `${diffMinutes}分钟前`
     return formatInShanghai(date, { hour: '2-digit', minute: '2-digit', hour12: false })
   }
-  return formatInShanghai(date, { month: '2-digit', day: '2-digit' })
+
+  const [y, m, d] = dateKey.split('/').map(Number)
+  const [ny, nm, nd] = nowKey.split('/').map(Number)
+  const diffDays = Math.floor((new Date(ny, nm - 1, nd) - new Date(y, m - 1, d)) / 86400000)
+
+  if (diffDays === 1) return '1天前'
+  if (diffDays <= 7) return `${diffDays}天前`
+
+  const dateYear = formatInShanghai(date, { year: 'numeric' })
+  const nowYear = formatInShanghai(now, { year: 'numeric' })
+  if (dateYear === nowYear) {
+    return formatInShanghai(date, { month: '2-digit', day: '2-digit' })
+  }
+  return formatInShanghai(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
 const formatMessageTime = (value) => {
