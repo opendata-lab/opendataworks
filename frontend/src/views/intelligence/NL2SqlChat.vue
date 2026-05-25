@@ -359,7 +359,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
@@ -377,6 +377,7 @@ marked.setOptions({ breaks: true, gfm: true })
 const api = createNl2SqlApiClient({ timeout: 300000 })
 const { topicApi, taskApi, adminApi, agentApi } = api
 const route = useRoute()
+const router = useRouter()
 
 const topics = ref([])
 const agents = ref([])
@@ -1275,7 +1276,7 @@ const loadSettings = async () => {
 
 const normalizeAgent = (agent) => ({
   agent_id: String(agent?.agent_id || ''),
-  name: String(agent?.name || '通用智能体'),
+  name: String(agent?.name || '默认助手'),
   description: String(agent?.description || ''),
   is_default: Boolean(agent?.is_default),
   is_builtin: Boolean(agent?.is_builtin)
@@ -1287,7 +1288,7 @@ const loadAgents = async () => {
     const normalized = (Array.isArray(list) ? list : []).map(normalizeAgent).filter((agent) => agent.agent_id)
     agents.value = normalized.length
       ? normalized
-      : [{ agent_id: 'agent_default', name: '通用智能体', description: '', is_default: true, is_builtin: true }]
+      : [{ agent_id: 'agent_default', name: '默认助手', description: '', is_default: true, is_builtin: true }]
     const routeAgentId = String(route.query.agent_id || '').trim()
     if (routeAgentId && agents.value.some((agent) => agent.agent_id === routeAgentId)) {
       selectedAgentId.value = routeAgentId
@@ -1296,8 +1297,28 @@ const loadAgents = async () => {
     }
   } catch (error) {
     console.warn('load agents failed', error)
-    agents.value = [{ agent_id: 'agent_default', name: '通用智能体', description: '', is_default: true, is_builtin: true }]
+    agents.value = [{ agent_id: 'agent_default', name: '默认助手', description: '', is_default: true, is_builtin: true }]
     selectedAgentId.value = selectedAgentId.value || 'agent_default'
+  }
+}
+
+const persistSelectedAgentInRoute = (agentId) => {
+  const value = String(agentId || '').trim()
+  if (String(route.query.agent_id || '').trim() === value) return
+
+  const query = { ...route.query }
+  if (value) {
+    query.agent_id = value
+  } else {
+    delete query.agent_id
+  }
+
+  const navigation = router.replace({
+    path: '/intelligent-query',
+    query
+  })
+  if (navigation && typeof navigation.catch === 'function') {
+    navigation.catch(() => {})
   }
 }
 
@@ -1557,6 +1578,7 @@ const handleAgentChange = async (nextValue) => {
         type: 'info'
       }
     ).then(async () => {
+      persistSelectedAgentInRoute(nextValue)
       selectedAgentId.value = nextValue
       await handleNewTopic()
     }).catch(() => {
@@ -1566,6 +1588,7 @@ const handleAgentChange = async (nextValue) => {
   } else {
     // Delete the old empty topic to avoid leaving clutter
     const oldTopicId = activeTopicId.value
+    persistSelectedAgentInRoute(nextValue)
     selectedAgentId.value = nextValue
     await handleNewTopic()
     if (oldTopicId) {

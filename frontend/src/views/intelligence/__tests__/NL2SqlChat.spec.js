@@ -48,13 +48,23 @@ const apiMocks = vi.hoisted(() => ({
   },
   health: vi.fn()
 }))
+const routeState = vi.hoisted(() => ({
+  query: {},
+  params: {},
+  path: '/intelligent-query',
+  name: 'IntelligentQuery'
+}))
+const routerReplace = vi.hoisted(() => vi.fn())
 
 vi.mock('@/api/nl2sql', () => ({
   createNl2SqlApiClient: () => apiMocks
 }))
 
 vi.mock('vue-router', () => ({
-  useRoute: () => ({ query: {}, params: {}, path: '/intelligent-query', name: 'IntelligentQuery' })
+  useRoute: () => routeState,
+  useRouter: () => ({
+    replace: routerReplace
+  })
 }))
 
 vi.mock('element-plus', () => ({
@@ -201,6 +211,11 @@ describe('NL2SqlChat', () => {
     Object.values(apiMocks.adminApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.agentApi).forEach((fn) => fn.mockReset())
     apiMocks.health.mockReset()
+    routerReplace.mockReset()
+    routeState.query = {}
+    routeState.params = {}
+    routeState.path = '/intelligent-query'
+    routeState.name = 'IntelligentQuery'
 
     apiMocks.adminApi.getSettings.mockResolvedValue({
       provider_id: 'anyrouter',
@@ -383,6 +398,49 @@ describe('NL2SqlChat', () => {
     await flushPromises()
 
     expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: 'agent_sales' })
+  })
+
+  it('persists the selected agent id in the route query for refresh recovery', async () => {
+    apiMocks.agentApi.listAgents.mockResolvedValue([
+      {
+        agent_id: 'agent_default',
+        name: '默认智能问数助手',
+        description: '默认描述',
+        is_default: true
+      },
+      {
+        agent_id: 'agent_sales',
+        name: '销售分析助手',
+        description: '销售分析',
+        is_default: false
+      }
+    ])
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 0,
+      items: []
+    })
+    apiMocks.topicApi.deleteTopic.mockResolvedValue({})
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    apiMocks.topicApi.listTopics.mockClear()
+    apiMocks.topicApi.listTopics.mockResolvedValue([])
+
+    await wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(routerReplace).toHaveBeenCalledWith({
+      path: '/intelligent-query',
+      query: { agent_id: 'agent_sales' }
+    })
   })
 
   it('keeps streamed main text visible while tools are still running', async () => {
@@ -839,6 +897,45 @@ describe('NL2SqlChat', () => {
     expect(ring.attributes('aria-label')).toContain('1,200 / 200,000')
     expect(ring.attributes('aria-label')).toContain('输入：1,000')
     expect(ring.attributes('aria-label')).toContain('输出：200')
+  })
+
+  it('estimates context window usage while assistant text is streaming', async () => {
+    const streamHold = deferred()
+    apiMocks.taskApi.streamTaskEvents.mockImplementation(async (_taskId, options = {}) => {
+      options.onEvent?.({
+        seq_id: 13,
+        type: 'message_start',
+        message: { id: 'stream-a1', usage: { input_tokens: 1000 } }
+      })
+      options.onEvent?.({
+        seq_id: 14,
+        type: 'content_block_start',
+        index: 0,
+        content_block: { type: 'text' }
+      })
+      options.onEvent?.({
+        seq_id: 15,
+        type: 'content_block_delta',
+        index: 0,
+        delta: { type: 'text_delta', text: 'abcdefghijklmnopqrst' }
+      })
+      await streamHold.promise
+    })
+
+    const wrapper = mountChat()
+
+    try {
+      await flushPromises()
+      await flushPromises()
+
+      const ring = wrapper.find('.query-context-ring-wrap')
+      expect(ring.attributes('aria-label')).toContain('1,005 / 200,000')
+      expect(ring.attributes('aria-label')).toContain('输入：1,000')
+      expect(ring.attributes('aria-label')).toContain('输出：约 5')
+    } finally {
+      streamHold.resolve()
+      wrapper.unmount()
+    }
   })
 
   it('shows message footer actions without an edit resend entry', async () => {

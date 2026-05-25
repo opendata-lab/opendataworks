@@ -23,7 +23,7 @@ OPENDATAWORKS_AGENT_ID = "agent_opendataworks"
 
 GENERAL_AGENT_SNAPSHOT = {
     "agent_id": DEFAULT_AGENT_ID,
-    "name": "通用智能体",
+    "name": "默认助手",
     "description": "通用对话与分析入口，不预置 OpenDataWorks 专属 Skills。",
     "system_prompt": "",
     "permission_mode": "default",
