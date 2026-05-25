@@ -534,6 +534,24 @@ const parseTokenNumber = (value) => {
 
 const formatTokenCount = (value) => tokenFormatter.format(Math.max(0, Math.round(Number(value) || 0)))
 
+const estimateTextTokens = (value) => {
+  const text = String(value || '').trim()
+  if (!text) return 0
+  return Math.max(1, Math.ceil(text.length / 4))
+}
+
+const estimateAssistantOutputTokens = (msg) => {
+  if (!msg) return 0
+  const directText = `${String(msg.thinkingText || '')}${String(msg.mainText || '')}`.trim()
+  if (directText) return estimateTextTokens(directText)
+  if (!Array.isArray(msg.renderBlocks)) return 0
+  const blockText = msg.renderBlocks
+    .filter((block) => block && ['thinking', 'main_text'].includes(block.kind))
+    .map((block) => String(block.text || ''))
+    .join('')
+  return estimateTextTokens(blockText)
+}
+
 const getContextWindowLimit = (model) => {
   const text = String(model || '').toLowerCase()
   if (text.includes('claude-3') || text.includes('claude-opus') || text.includes('claude-sonnet') || text.includes('claude-haiku')) {
@@ -545,16 +563,23 @@ const getContextWindowLimit = (model) => {
 }
 
 const contextWindowUsage = computed(() => {
-  const usage = latestAssistantMessage.value?.usage || latestAssistantMessage.value?.token_usage || null
+  const message = latestAssistantMessage.value
+  const usage = message?.usage || message?.token_usage || null
   const inputTokens = parseTokenNumber(usage?.input_tokens)
-  const outputTokens = parseTokenNumber(usage?.output_tokens)
-  const totalTokens = inputTokens + outputTokens || parseTokenNumber(usage?.total_tokens)
-  const limitTokens = getContextWindowLimit(selectedModel.value || latestAssistantMessage.value?.model || settings.default_model)
+  const actualOutputTokens = parseTokenNumber(usage?.output_tokens)
+  const estimatedOutputTokens = actualOutputTokens ? 0 : estimateAssistantOutputTokens(message)
+  const outputTokens = actualOutputTokens || estimatedOutputTokens
+  const outputEstimated = !actualOutputTokens && estimatedOutputTokens > 0
+  const summedTokens = inputTokens + outputTokens
+  const reportedTotalTokens = parseTokenNumber(usage?.total_tokens)
+  const totalTokens = Math.max(summedTokens, reportedTotalTokens)
+  const limitTokens = getContextWindowLimit(selectedModel.value || message?.model || settings.default_model)
   if (!totalTokens) {
     return {
       available: false,
       inputTokens,
       outputTokens,
+      outputEstimated: false,
       totalTokens: 0,
       limitTokens,
       percentage: 0,
@@ -569,6 +594,7 @@ const contextWindowUsage = computed(() => {
     available: true,
     inputTokens,
     outputTokens,
+    outputEstimated,
     totalTokens,
     limitTokens,
     percentage,
@@ -590,7 +616,9 @@ const contextWindowTooltip = computed(() => {
   const usage = contextWindowUsage.value
   if (!usage.available) return '暂无 Token 用量'
   const inputText = usage.inputTokens ? formatTokenCount(usage.inputTokens) : '未知'
-  const outputText = usage.outputTokens ? formatTokenCount(usage.outputTokens) : '未知'
+  const outputText = usage.outputTokens
+    ? `${usage.outputEstimated ? '约 ' : ''}${formatTokenCount(usage.outputTokens)}`
+    : '未知'
   return `上下文窗口使用情况：${formatTokenCount(usage.totalTokens)} / ${formatTokenCount(usage.limitTokens)} Tokens；输入：${inputText}；输出：${outputText}；占比：${usage.percentLabel}`
 })
 

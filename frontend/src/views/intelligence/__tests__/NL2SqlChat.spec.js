@@ -901,6 +901,27 @@ describe('NL2SqlChat', () => {
 
   it('estimates context window usage while assistant text is streaming', async () => {
     const streamHold = deferred()
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'running',
+          content: '',
+          resume_after_seq: 12,
+          blocks: [],
+          created_at: '2026-03-10T02:00:00Z'
+        }
+      ]
+    })
     apiMocks.taskApi.streamTaskEvents.mockImplementation(async (_taskId, options = {}) => {
       options.onEvent?.({
         seq_id: 13,
