@@ -228,6 +228,7 @@ class _FakeStore:
             "parent_correlation_id": None,
             "content_type": None,
             "usage": None,
+            "feedback": "",
             "show_in_ui": True,
             "error": None,
             "created_at": _now(),
@@ -260,6 +261,7 @@ class _FakeStore:
             "usage": None,
             "blocks": [],
             "resume_after_seq": 0,
+            "feedback": "",
             "show_in_ui": True,
             "error": None,
             "created_at": _now(),
@@ -273,6 +275,21 @@ class _FakeStore:
             for message in messages:
                 if message["task_id"] == task_id and message["sender_type"] == "assistant":
                     return message
+        return None
+
+    def get_message(self, message_id: str, context=None):
+        for messages in self.topic_messages.values():
+            for message in messages:
+                if message["message_id"] == message_id:
+                    return dict(message)
+        return None
+
+    def update_message_feedback(self, *, topic_id: str, message_id: str, feedback: str, context=None):
+        for message in self.topic_messages.get(topic_id, []):
+            if message["message_id"] == message_id and message.get("sender_type") == "assistant" and message.get("show_in_ui", True):
+                message["feedback"] = feedback
+                message["updated_at"] = _now()
+                return dict(message)
         return None
 
     def get_task(self, task_id: str, context=None):
@@ -586,6 +603,39 @@ def test_topics_tasks_and_legacy_routes(monkeypatch):
         assert history.json()["items"][1]["sender_type"] == "assistant"
         assert history.json()["items"][1]["blocks"] == []
         assert history.json()["items"][1]["resume_after_seq"] == 0
+        assistant_message_id = history.json()["items"][1]["message_id"]
+
+        feedback = client.put(
+            f"/api/v1/nl2sql/topics/{topic_id}/messages/{assistant_message_id}/feedback",
+            json={"feedback": "like"},
+        )
+        assert feedback.status_code == 200
+        assert feedback.json()["message_id"] == assistant_message_id
+        assert feedback.json()["feedback"] == "like"
+
+        hydrated_feedback = client.get(f"/api/v1/nl2sql/topics/{topic_id}/messages", params={"page": 1, "page_size": 50, "order": "asc"})
+        assert hydrated_feedback.status_code == 200
+        assert hydrated_feedback.json()["items"][1]["feedback"] == "like"
+
+        clear_feedback = client.put(
+            f"/api/v1/nl2sql/topics/{topic_id}/messages/{assistant_message_id}/feedback",
+            json={"feedback": ""},
+        )
+        assert clear_feedback.status_code == 200
+        assert clear_feedback.json()["feedback"] == ""
+
+        invalid_feedback = client.put(
+            f"/api/v1/nl2sql/topics/{topic_id}/messages/{assistant_message_id}/feedback",
+            json={"feedback": "star"},
+        )
+        assert invalid_feedback.status_code == 400
+
+        user_message_id = history.json()["items"][0]["message_id"]
+        user_feedback = client.put(
+            f"/api/v1/nl2sql/topics/{topic_id}/messages/{user_message_id}/feedback",
+            json={"feedback": "like"},
+        )
+        assert user_feedback.status_code == 400
 
         created_task = client.post(
             "/api/v1/nl2sql/tasks",

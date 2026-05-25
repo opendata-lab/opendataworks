@@ -825,9 +825,27 @@ const handleCopyMessage = async (msg) => {
   }
 }
 
-const toggleMessageFeedback = (msg, value) => {
+const toggleMessageFeedback = async (msg, value) => {
   if (!msg || typeof msg !== 'object') return
-  msg.feedback = msg.feedback === value ? '' : value
+  const previousFeedback = String(msg.feedback || '')
+  const nextFeedback = previousFeedback === value ? '' : value
+  const topicId = String(msg.topic_id || activeTopicId.value || '')
+  const messageId = String(msg.message_id || msg.id || '')
+
+  msg.feedback = nextFeedback
+  if (!topicId || !messageId) {
+    msg.feedback = previousFeedback
+    ElMessage.error('反馈保存失败，请稍后重试')
+    return
+  }
+
+  try {
+    const updated = await topicApi.updateMessageFeedback(topicId, messageId, nextFeedback)
+    msg.feedback = String(updated?.feedback ?? nextFeedback)
+  } catch (_error) {
+    msg.feedback = previousFeedback
+    ElMessage.error('反馈保存失败，请稍后重试')
+  }
 }
 
 const assistantAgentName = (msg) => String(

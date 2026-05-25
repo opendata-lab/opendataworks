@@ -8,7 +8,8 @@ const apiMocks = vi.hoisted(() => ({
     getTopic: vi.fn(),
     updateTopic: vi.fn(),
     deleteTopic: vi.fn(),
-    getTopicMessages: vi.fn()
+    getTopicMessages: vi.fn(),
+    updateMessageFeedback: vi.fn()
   },
   taskApi: {
     deliverMessage: vi.fn(),
@@ -765,6 +766,7 @@ describe('NL2SqlChat', () => {
           type: 'assistant',
           status: 'finished',
           content: '最近 30 天共发布 4 次。',
+          feedback: '',
           blocks: [
             {
               block_id: 'main-1',
@@ -897,10 +899,34 @@ describe('NL2SqlChat', () => {
     expect(likeButton.exists()).toBe(true)
     expect(dislikeButton.exists()).toBe(true)
 
+    apiMocks.topicApi.updateMessageFeedback.mockResolvedValue({
+      topic_id: 'topic-1',
+      message_id: 'a1',
+      sender_type: 'assistant',
+      type: 'assistant',
+      status: 'finished',
+      content: '最近 30 天共发布 4 次。',
+      feedback: 'like'
+    })
+
     await likeButton.trigger('click')
+    await flushPromises()
+    expect(apiMocks.topicApi.updateMessageFeedback).toHaveBeenCalledWith('topic-1', 'a1', 'like')
     expect(wrapper.find('.query-message-feedback-like').classes()).toContain('active')
 
+    apiMocks.topicApi.updateMessageFeedback.mockResolvedValue({
+      topic_id: 'topic-1',
+      message_id: 'a1',
+      sender_type: 'assistant',
+      type: 'assistant',
+      status: 'finished',
+      content: '最近 30 天共发布 4 次。',
+      feedback: 'dislike'
+    })
+
     await dislikeButton.trigger('click')
+    await flushPromises()
+    expect(apiMocks.topicApi.updateMessageFeedback).toHaveBeenLastCalledWith('topic-1', 'a1', 'dislike')
     expect(wrapper.find('.query-message-feedback-like').classes()).not.toContain('active')
     expect(wrapper.find('.query-message-feedback-dislike').classes()).toContain('active')
   })

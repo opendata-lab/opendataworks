@@ -456,6 +456,7 @@ class TopicMessage(BaseModel):
     blocks: Optional[List[Dict[str, Any]]] = None
     resume_after_seq: int = 0
     show_in_ui: bool = True
+    feedback: str = ""
     error: Optional[Dict[str, Any]] = None
     created_at: str = ""
     updated_at: str = ""
@@ -496,6 +497,10 @@ class TopicMessagePageResponse(BaseModel):
     order: str = "asc"
     total: int = 0
     items: List[TopicMessage] = Field(default_factory=list)
+
+
+class UpdateMessageFeedbackRequest(BaseModel):
+    feedback: str = ""
 
 
 class TaskSubmissionResponse(BaseModel):

@@ -261,6 +261,7 @@ export const createAssistantMessageState = (seed = {}) => ({
   stop_reason: textOrEmpty(seed.stop_reason),
   stop_sequence: textOrEmpty(seed.stop_sequence),
   usage: isPlainObject(seed.usage) ? { ...seed.usage } : null,
+  feedback: textOrEmpty(seed.feedback),
   provider_id: seed.provider_id || null,
   model: seed.model || null,
   created_at: seed.created_at || new Date().toISOString(),
@@ -287,6 +288,7 @@ export const hydrateAssistantMessageState = (message) => {
     provider_id: message?.provider_id || null,
     model: message?.model || null,
     usage: isPlainObject(message?.usage) ? message.usage : null,
+    feedback: textOrEmpty(message?.feedback),
     resume_after_seq: Number(message?.resume_after_seq || 0)
   })
 

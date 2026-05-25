@@ -51,7 +51,9 @@
   - 复制按钮：点击将消息文本拷贝到剪贴板，使用 SVG 复制图标。
 - **AI 回复特有动作**：
   - 点赞/点踩按钮：双态（选中与未选中），选中时激活高亮。
-  - 本期先作为前端本地交互状态，不持久化到后端；刷新页面或重新 hydrate 后状态重置。后续如果要用于反馈闭环，需要单独设计反馈 API、数据表和权限规则。
+  - 点赞/点踩状态需要持久化到 DataAgent 后端，刷新页面或重新 hydrate 后继续显示上次反馈。
+  - 反馈只绑定 assistant 消息，允许值为 `like`、`dislike` 或空字符串。再次点击同一按钮清空反馈，点击另一按钮切换反馈。
+  - 前端乐观更新按钮状态；若后端保存失败，回滚到点击前状态并提示错误。
 - **暂缓动作**：
   - “编辑最后一条用户消息并重新发送”本期不实现。原因是该能力涉及前端消息截断、后端持久化历史、任务事件流取消和刷新后一致性，单纯前端截断会产生状态不一致风险。
   - 本期消息工具栏不展示编辑入口；后续如需实现，必须先补充 DataAgent 后端消息裁剪接口和端到端 smoke 验证。
@@ -79,7 +81,12 @@
 ## 3. 技术设计与状态管理
 - **键盘事件劫持**：在 `<textarea>` 绑定 `@keydown.enter.exact.prevent` 触发发送，配合 `@keydown.shift.enter` 维持默认的换行逻辑。
 - **复制交互状态**：优先使用 `navigator.clipboard.writeText`；失败时降级提示“复制失败，请手动复制”，不引入额外依赖。
-- **点赞/点踩状态**：本期挂载在消息对象的本地字段（如 `msg.feedback = 'like' | 'dislike' | ''`），不写入后端。
+- **点赞/点踩状态**：前端仍使用消息对象上的 `msg.feedback = 'like' | 'dislike' | ''` 驱动按钮选中态，但该字段来自后端消息响应，并通过反馈接口写回后端。
+- **点赞/点踩持久化**：
+  - DataAgent 在 `da_agent_message` 增加 `feedback VARCHAR(16) NOT NULL DEFAULT ''` 字段。
+  - `GET /api/v1/nl2sql/topics/{topic_id}/messages` 返回每条消息的 `feedback` 字段；用户消息固定为空字符串。
+  - 新增 `PUT /api/v1/nl2sql/topics/{topic_id}/messages/{message_id}/feedback`，请求体为 `{ "feedback": "like" | "dislike" | "" }`，响应返回更新后的 `TopicMessage`。
+  - 后端必须先按当前 request context 校验 topic 归属，再校验 message 属于该 topic，且只允许更新 `sender_type='assistant'` 且 `show_in_ui=1` 的消息。非法反馈值返回 400，消息不存在或不属于当前上下文返回 404，非 assistant 消息返回 400。
 - **Token 用量状态**：新增 `latestAssistantUsage` / `contextWindowUsage` 计算属性，读取 `activeMessages` 中最新 assistant 消息的 `usage`，并基于 `selectedModel` 推断上下文上限。
 - **样式方案**：继续在 `<style scoped>` 中编写纯粹的 CSS / Sass 样式。配合弹性布局与 Hover 触发器，提供平滑的过度动画。
 
@@ -91,3 +98,4 @@
 - **图表渲染性能**：外置图表直接在对话区域渲染，随着历史消息变多，页面中的 ECharts 实例可能增多。须确保每个 `ToolOutputRenderer` 实例在销毁（`onBeforeUnmount`）时能够正确释放 ECharts 内存。
 - **快捷键行为变化风险**：从 `Ctrl/Meta + Enter` 发送改为 `Enter` 发送会改变既有用户肌肉记忆。需要保留 `Shift + Enter` 换行，并在测试中覆盖空输入、禁用态和运行中任务的 Enter 行为。
 - **空态与异常数据风险**：usage 缺失、provider/model 未配置、消息缺少 `created_at`、剪贴板权限被拒绝时，UI 必须优雅降级，不阻塞发送主链路。
+- **反馈持久化失败风险**：点赞/点踩保存失败时，前端需要回滚乐观状态，避免 UI 显示与后端历史不一致。反馈接口不影响发送、流式事件或任务取消主链路。

@@ -533,7 +533,7 @@ class TopicTaskStore:
                     """
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE topic_id = %s AND show_in_ui = 1
                     ORDER BY seq_id ASC, created_at ASC
@@ -585,7 +585,7 @@ class TopicTaskStore:
                     f"""
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE topic_id = %s AND show_in_ui = 1
                     ORDER BY seq_id {sort_direction}, created_at {sort_direction}
@@ -716,7 +716,7 @@ class TopicTaskStore:
                     """
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE task_id = %s AND sender_type = 'assistant' AND show_in_ui = 1
                     ORDER BY seq_id ASC
@@ -739,7 +739,7 @@ class TopicTaskStore:
                     """
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE message_id = %s
                     LIMIT 1
@@ -761,6 +761,59 @@ class TopicTaskStore:
             if row
             else None
         )
+
+    def update_message_feedback(
+        self,
+        *,
+        topic_id: str,
+        message_id: str,
+        feedback: str,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        self._ensure_ready()
+        safe_feedback = str(feedback or "").strip()
+        if safe_feedback not in {"", "like", "dislike"}:
+            raise ValueError("feedback must be like, dislike, or empty")
+
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT m.message_id
+                    FROM da_agent_message m
+                    JOIN da_agent_topic t ON t.topic_id = m.topic_id
+                    WHERE m.topic_id = %s
+                      AND m.message_id = %s
+                      AND m.sender_type = 'assistant'
+                      AND m.show_in_ui = 1
+                      AND {context_sql}
+                    LIMIT 1
+                    """,
+                    [topic_id, message_id, *context_params],
+                )
+                if not cur.fetchone():
+                    conn.commit()
+                    return None
+
+                cur.execute(
+                    """
+                    UPDATE da_agent_message
+                    SET feedback = %s,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE topic_id = %s
+                      AND message_id = %s
+                      AND sender_type = 'assistant'
+                      AND show_in_ui = 1
+                    LIMIT 1
+                    """,
+                    (safe_feedback, topic_id, message_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return self.get_message(message_id)
 
     def create_task(
         self,
@@ -2168,6 +2221,7 @@ class TopicTaskStore:
             "parent_correlation_id": str(row.get("parent_correlation_id") or "") or None,
             "content_type": str(row.get("content_type") or "") or None,
             "usage": _safe_json_load(row.get("usage_json")),
+            "feedback": str(row.get("feedback") or ""),
             "show_in_ui": bool(row.get("show_in_ui")),
             "error": _safe_json_load(row.get("error_json")),
             "created_at": _to_iso(row.get("created_at")),

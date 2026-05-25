@@ -1213,6 +1213,7 @@ const demoTopics = [
         role: 'assistant',
         content: 'demo_order_detail 上游来自 demo_order_event_raw 与 demo_member_profile，下游产出 demo_store_sales_daily 和 demo_order_risk_alert。',
         status: 'finished',
+        feedback: '',
         blocks: [
           {
             block_id: 'main-text',
@@ -2257,6 +2258,25 @@ export const demoAdapter = async (config) => {
     })
   }
 
+  if (method === 'put' && pathname.match(/^\/v1\/nl2sql\/topics\/[^/]+\/messages\/[^/]+\/feedback$/)) {
+    const parts = pathname.split('/')
+    const topicId = decodeURIComponent(parts[4])
+    const messageId = decodeURIComponent(parts[6])
+    const feedback = String(body.feedback || '').trim()
+    if (!['', 'like', 'dislike'].includes(feedback)) {
+      return createRejectedResponse(config, 'feedback must be like, dislike, or empty', 400)
+    }
+    const topic = findDemoTopic(topicId)
+    const message = topic?.messages?.find((item) => String(item.message_id) === messageId)
+    if (!message) return createRejectedResponse(config, '消息不存在', 404)
+    if (String(message.sender_type || message.role || '') !== 'assistant') {
+      return createRejectedResponse(config, '仅支持反馈 AI 消息', 400)
+    }
+    message.feedback = feedback
+    topic.updated_at = demoNow()
+    return createResponse(config, clone(message))
+  }
+
   if (method === 'post' && pathname === '/v1/nl2sql/tasks/deliver-message') {
     const topic = findDemoTopic(body.topic_id)
     const now = demoNow()
@@ -2276,6 +2296,7 @@ export const demoAdapter = async (config) => {
         role: 'assistant',
         content: '',
         status: 'waiting',
+        feedback: '',
         task_id: taskId,
         created_at: now
       })

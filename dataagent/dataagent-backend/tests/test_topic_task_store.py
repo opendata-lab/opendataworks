@@ -141,6 +141,7 @@ def test_normalize_message_row_only_attaches_history_to_assistant():
             "parent_correlation_id": None,
             "content_type": None,
             "usage_json": None,
+            "feedback": "like",
             "error_json": None,
             "show_in_ui": 1,
             "created_at": None,
@@ -175,5 +176,7 @@ def test_normalize_message_row_only_attaches_history_to_assistant():
 
     assert assistant["blocks"][0]["type"] == "main_text"
     assert assistant["resume_after_seq"] == 12
+    assert assistant["feedback"] == "like"
     assert "blocks" not in user
     assert "resume_after_seq" not in user
+    assert user["feedback"] == ""
