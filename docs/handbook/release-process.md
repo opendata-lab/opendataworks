@@ -88,6 +88,7 @@ git push origin v1.0.0
 2. **生成离线部署包**：调用 `scripts/create-offline-package.sh --tag 1.0.0`
 3. **生成 Opendataagent 离线部署包**：调用 `opendataagent/scripts/create-offline-package.sh --tag 1.0.0`
 4. **创建 GitHub Release**：上传两份离线包为 Release 附件，并自动生成 Release Notes（含提交记录）
+5. **同步 Gitee Release**：上传同一组离线包附件，并在附件上传完成后用 Gitee 附件 id 回写下载链接
 
 ---
 
@@ -115,6 +116,8 @@ GitHub Release 中应包含：
   - 可选：`opendataworks-deployment-1.0.0.tar.gz.sha256`（校验和）
   - 可选：`opendataagent-deployment-1.0.0.tar.gz.sha256`（校验和）
 
+Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL。同步步骤会先创建占位正文，上传附件后根据 Gitee 返回的 `attach_files/{id}/download` 地址生成最终正文并 PATCH 回 Release。
+
 ### 4.3 用户下载方式
 
 1. **Docker 镜像**：
@@ -136,6 +139,7 @@ GitHub Release 中应包含：
 
 - [ ] 在 GitHub Releases 页面检查附件是否上传成功
 - [ ] 验证 Release Notes 中的下载链接可用
+- [ ] 在 Gitee Releases 页面检查附件是否上传成功，并确认正文下载链接指向 `gitee.com/.../attach_files/.../download`
 - [ ] 如有文档站，更新「最新版本」等说明
 
 ---

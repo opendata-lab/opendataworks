@@ -211,18 +211,24 @@ jobs:
       - name: Sync release artifacts to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ secrets.GITEE_REPO }}
         run: |
           set -euo pipefail
           TAG="${{ github.ref_name }}"
           NAME="OpenDataWorks ${TAG}"
-          GITEE_API="https://gitee.com/api/v5/repos/${{ secrets.GITEE_REPO }}"
+          GITEE_API="https://gitee.com/api/v5/repos/${GITEE_REPO}"
           existing=$(curl -sS --retry 3 -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/tags/${TAG}" || echo '{}')
           existing_id=$(echo "${existing}" | jq -r '.id // empty')
           if [ -n "${existing_id}" ] && [ "${existing_id}" != "null" ]; then
             echo "Deleting existing Gitee release id=${existing_id}"
-            curl -sS -X DELETE -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/${existing_id}"
+            curl -fsS -X DELETE -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/${existing_id}"
           fi
-          body_json=$(jq -Rs '.' release_body.md)
+          {
+            echo "## ${NAME}"
+            echo ""
+            echo "Gitee 附件上传中，完成后会自动回写下载链接。"
+          } > gitee_release_body.pending.md
+          body_json=$(jq -Rs '.' gitee_release_body.pending.md)
           response=$(curl -sS --retry 3 -X POST \
             -H "Authorization: token ${GITEE_TOKEN}" \
             -H "Content-Type: application/json" \
@@ -234,17 +240,30 @@ jobs:
             exit 1
           fi
           echo "Created Gitee release id=${release_id}"
+          : > gitee_attach_files.jsonl
           for f in "$PACKAGE_PATH" "$PACKAGE_SHA" "$ODA_PACKAGE_PATH" "$ODA_PACKAGE_SHA"; do
             if [ -f "$f" ]; then
               echo "Uploading ${f} ..."
-              curl -sS --retry 3 -X POST \
+              upload_response=$(curl -fsS --retry 3 -X POST \
                 -H "Authorization: token ${GITEE_TOKEN}" \
                 -F "file=@${f}" \
-                "${GITEE_API}/releases/${release_id}/attach_files"
+                "${GITEE_API}/releases/${release_id}/attach_files")
+              echo "${upload_response}" | jq -e '.id' >/dev/null
+              echo "${upload_response}" >> gitee_attach_files.jsonl
               echo ""
             fi
           done
-          echo "Synced to https://gitee.com/${{ secrets.GITEE_REPO }}/releases/tag/${TAG}"
+          bash scripts/release/render-gitee-release-body.sh \
+            release_body.md \
+            gitee_attach_files.jsonl \
+            "${GITEE_REPO}" > gitee_release_body.md
+          gitee_body_json=$(jq -Rs '.' gitee_release_body.md)
+          curl -fsS --retry 3 -X PATCH \
+            -H "Authorization: token ${GITEE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\":${gitee_body_json}}" \
+            "${GITEE_API}/releases/${release_id}" >/dev/null
+          echo "Synced to https://gitee.com/${GITEE_REPO}/releases/tag/${TAG}"
 
   create-latest-release:
     needs: build-and-push
@@ -359,18 +378,24 @@ jobs:
       - name: Sync latest release artifacts to Gitee
         env:
           GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+          GITEE_REPO: ${{ secrets.GITEE_REPO }}
         run: |
           set -euo pipefail
           TAG="${RELEASE_TAG}"
           NAME="${RELEASE_NAME}"
-          GITEE_API="https://gitee.com/api/v5/repos/${{ secrets.GITEE_REPO }}"
+          GITEE_API="https://gitee.com/api/v5/repos/${GITEE_REPO}"
           existing=$(curl -sS --retry 3 -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/tags/${TAG}" || echo '{}')
           existing_id=$(echo "${existing}" | jq -r '.id // empty')
           if [ -n "${existing_id}" ] && [ "${existing_id}" != "null" ]; then
             echo "Deleting existing Gitee release id=${existing_id}"
-            curl -sS -X DELETE -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/${existing_id}"
+            curl -fsS -X DELETE -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/${existing_id}"
           fi
-          body_json=$(jq -Rs '.' latest_release_body.md)
+          {
+            echo "## ${NAME}"
+            echo ""
+            echo "Gitee 附件上传中，完成后会自动回写下载链接。"
+          } > gitee_release_body.pending.md
+          body_json=$(jq -Rs '.' gitee_release_body.pending.md)
           response=$(curl -sS --retry 3 -X POST \
             -H "Authorization: token ${GITEE_TOKEN}" \
             -H "Content-Type: application/json" \
@@ -382,17 +407,30 @@ jobs:
             exit 1
           fi
           echo "Created Gitee release id=${release_id}"
+          : > gitee_attach_files.jsonl
           for f in "$PACKAGE_PATH" "$PACKAGE_SHA" "$ODA_PACKAGE_PATH" "$ODA_PACKAGE_SHA"; do
             if [ -f "$f" ]; then
               echo "Uploading ${f} ..."
-              curl -sS --retry 3 -X POST \
+              upload_response=$(curl -fsS --retry 3 -X POST \
                 -H "Authorization: token ${GITEE_TOKEN}" \
                 -F "file=@${f}" \
-                "${GITEE_API}/releases/${release_id}/attach_files"
+                "${GITEE_API}/releases/${release_id}/attach_files")
+              echo "${upload_response}" | jq -e '.id' >/dev/null
+              echo "${upload_response}" >> gitee_attach_files.jsonl
               echo ""
             fi
           done
-          echo "Synced to https://gitee.com/${{ secrets.GITEE_REPO }}/releases/tag/${TAG}"
+          bash scripts/release/render-gitee-release-body.sh \
+            latest_release_body.md \
+            gitee_attach_files.jsonl \
+            "${GITEE_REPO}" > gitee_release_body.md
+          gitee_body_json=$(jq -Rs '.' gitee_release_body.md)
+          curl -fsS --retry 3 -X PATCH \
+            -H "Authorization: token ${GITEE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"body\":${gitee_body_json}}" \
+            "${GITEE_API}/releases/${release_id}" >/dev/null
+          echo "Synced to https://gitee.com/${GITEE_REPO}/releases/tag/${TAG}"
 
   summary:
     needs: build-and-push
