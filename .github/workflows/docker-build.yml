@@ -226,7 +226,7 @@ jobs:
           response=$(curl -sS --retry 3 -X POST \
             -H "Authorization: token ${GITEE_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${NAME}\",\"body\":${body_json}}" \
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${NAME}\",\"body\":${body_json},\"target_commitish\":\"${{ github.sha }}\"}" \
             "${GITEE_API}/releases")
           release_id=$(echo "${response}" | jq -r '.id')
           if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
@@ -374,7 +374,7 @@ jobs:
           response=$(curl -sS --retry 3 -X POST \
             -H "Authorization: token ${GITEE_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${NAME}\",\"body\":${body_json}}" \
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${NAME}\",\"body\":${body_json},\"target_commitish\":\"${{ github.sha }}\"}" \
             "${GITEE_API}/releases")
           release_id=$(echo "${response}" | jq -r '.id')
           if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
