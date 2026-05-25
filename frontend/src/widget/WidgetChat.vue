@@ -365,13 +365,34 @@ const truncate = (value, max) => {
 const formatTime = (value) => {
   const date = value ? new Date(value) : null
   if (!date || Number.isNaN(date.getTime())) return ''
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  })
+
+  const fmtDate = (d, options) => d.toLocaleString('zh-CN', { hour12: false, ...options })
+  const now = new Date()
+  const dateKey = fmtDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
+  const nowKey = fmtDate(now, { year: 'numeric', month: '2-digit', day: '2-digit' })
+
+  if (dateKey === nowKey) {
+    const diffMs = now.getTime() - date.getTime()
+    const diffSeconds = Math.floor(diffMs / 1000)
+    const diffMinutes = Math.floor(diffSeconds / 60)
+    if (diffSeconds < 60) return '刚刚'
+    if (diffMinutes < 60) return `${diffMinutes}分钟前`
+    return fmtDate(date, { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const [y, m, d] = dateKey.split('/').map(Number)
+  const [ny, nm, nd] = nowKey.split('/').map(Number)
+  const diffDays = Math.floor((new Date(ny, nm - 1, nd) - new Date(y, m - 1, d)) / 86400000)
+
+  if (diffDays === 1) return '1天前'
+  if (diffDays <= 7) return `${diffDays}天前`
+
+  const dateYear = fmtDate(date, { year: 'numeric' })
+  const nowYear = fmtDate(now, { year: 'numeric' })
+  if (dateYear === nowYear) {
+    return fmtDate(date, { month: '2-digit', day: '2-digit' })
+  }
+  return fmtDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
 const normalizeTopic = (topic) => ({
