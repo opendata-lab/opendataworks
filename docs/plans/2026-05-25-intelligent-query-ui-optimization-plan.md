@@ -45,9 +45,32 @@
   2. 样式上使用 `opacity: 0` 隐藏，当 `.query-message-row:hover` 时设为 `opacity: 1` 渐显。
   3. 增加 `formatMessageTime(value)`，复用现有 `parseDisplayDate` 与 `formatInShanghai`，输出 `YYYY-MM-DD HH:mm`；无时间时隐藏时间文本。
   4. 渲染一键复制图标与复制函数 `handleCopyMessage(msg)`。复制内容优先使用 `msg.content`，assistant 消息为空时拼接 `main_text` block 的可见文本；调用 `navigator.clipboard.writeText`，失败时 `ElMessage.error('复制失败，请手动复制')`。
-  5. 对于 AI 消息，展示点赞和点踩按钮，绑定响应动作改变 `msg.feedback`：再次点击同一按钮清空，点击另一按钮切换。该状态仅本地保存，不持久化。
+  5. 对于 AI 消息，展示点赞和点踩按钮，绑定响应动作改变 `msg.feedback`：再次点击同一按钮清空，点击另一按钮切换。状态通过 DataAgent 反馈接口持久化；保存失败时回滚到点击前状态并提示。
   6. 不实现“编辑最后一条用户消息并重新发送”：不展示编辑按钮，不新增 `editingMessageId` / `editingMessageText`，不截断前端消息，也不调用重发逻辑。
   7. 若后续恢复该能力，先新增 DataAgent 后端“从指定 message_id 裁剪话题消息”接口和对应测试，再补前端交互。
+
+### 1.5.1 消息反馈持久化
+- **修改文件**：
+  - `dataagent/dataagent-backend/alembic/versions/20260525_000010_add_message_feedback.py`
+  - `dataagent/dataagent-backend/models/schemas.py`
+  - `dataagent/dataagent-backend/core/topic_task_store.py`
+  - `dataagent/dataagent-backend/api/routes.py`
+  - `dataagent/dataagent-backend/tests/test_routes_contract.py`
+  - `dataagent/dataagent-backend/tests/test_topic_task_store.py`
+  - `frontend/src/api/nl2sql.js`
+  - `frontend/src/demo/mockServer.js`
+  - `frontend/src/views/intelligence/NL2SqlChat.vue`
+  - `frontend/src/views/intelligence/__tests__/NL2SqlChat.spec.js`
+- **步骤**：
+  1. 新增 Alembic migration，在 `da_agent_message` 上增加 `feedback VARCHAR(16) NOT NULL DEFAULT ''`；降级时删除该字段。
+  2. 在 `TopicMessage` schema 增加 `feedback: str = ""`，并在消息归一化、列表查询、单条查询中返回该字段。
+  3. 在 `TopicTaskStore` 增加 `update_message_feedback(topic_id, message_id, feedback, context=None)`：只更新当前上下文可访问话题下的 `assistant` + `show_in_ui=1` 消息，返回更新后的消息；无匹配返回 `None`，非法消息类型由路由转换为 400。
+  4. 新增 `UpdateMessageFeedbackRequest`，校验反馈值只允许 `like`、`dislike`、空字符串。
+  5. 新增 `PUT /api/v1/nl2sql/topics/{topic_id}/messages/{message_id}/feedback`，先 `_require_topic(topic_id, context)`，再校验消息存在、属于该 topic、为 assistant 消息，最后调用 store 更新并返回 `TopicMessage`。
+  6. 前端 `topicApi` 增加 `updateMessageFeedback(topicId, messageId, feedback)`。
+  7. `toggleMessageFeedback` 改为异步乐观更新：计算 next feedback，先更新 UI，再调用 API；失败时恢复 previous feedback 并 `ElMessage.error('反馈保存失败，请稍后重试')`。
+  8. demo adapter 支持同一反馈接口，更新 `demoTopics[].messages[].feedback` 后返回消息，避免演示模式下点击反馈失败。
+  9. 按 TDD 先补失败测试，再实现后端和前端逻辑。
 
 ### 1.6 猜你想问 (Follow-up Suggestions)
 - **修改文件**：`frontend/src/views/intelligence/NL2SqlChat.vue`
@@ -75,7 +98,7 @@
 - **步骤**：
   1. 增加 Context Ring 用例：hydrate 一条 assistant 消息，`usage: { input_tokens: 1000, output_tokens: 200 }`，断言圆环或 Tooltip 文案包含 `1,200` 和模型上限。
   2. 增加 Enter 发送用例：输入文本后触发 textarea 的 `keydown.enter`，断言 `taskApi.deliverMessage` 调用一次；触发 `keydown.shift.enter` 时不调用发送。
-  3. 增加消息工具栏用例：断言用户和 assistant 消息 footer 存在，复制按钮调用 clipboard，点赞/点踩会切换本地状态。
+  3. 增加消息工具栏用例：断言用户和 assistant 消息 footer 存在，复制按钮调用 clipboard，点赞/点踩会调用反馈持久化 API 并切换状态。
   4. 增加消息工具栏不含编辑入口用例：最后一条用户消息 footer 只展示时间与复制，不展示编辑按钮。
   5. 增加智能体选择器用例：断言顶部栏渲染 Element Plus select，切换 `selectedAgentId` 后会清空当前话题并调用 `topicApi.listTopics({ agent_id })`。
 
@@ -106,8 +129,8 @@
 7. 对话完成后，检查对话底部是否出现「猜你想问」气泡，点击是否能直接提交。
 
 ### 2.4 智能问数本地 Smoke 边界
-- 本次计划默认只改 `frontend/src/views/intelligence/NL2SqlChat.vue` 和前端测试，不改变 DataAgent 后端 API、任务协调、持久化或部署行为时，可不强制运行完整 DataAgent smoke。
-- 如果实施过程中新增后端消息裁剪 API、修改 `/tasks/deliver-message` 请求/响应、修改事件流处理协议，必须按仓库 AGENTS 规则补充本地智能问数 smoke，至少覆盖：
+- 本次新增消息反馈字段和反馈接口，不改变任务协调、`/tasks/deliver-message` 请求/响应或事件流处理协议。验证以后端路由/存储测试、前端 API/组件测试和前端构建为主。
+- 如果实施过程中进一步新增后端消息裁剪 API、修改 `/tasks/deliver-message` 请求/响应、修改事件流处理协议，必须按仓库 AGENTS 规则补充本地智能问数 smoke，至少覆盖：
   1. `POST /api/v1/nl2sql/tasks/deliver-message` 返回 `accepted=true` 和 `task_id`。
   2. 任务状态从 `waiting -> running -> success|failed|suspended`。
   3. `/api/v1/nl2sql/tasks/{task_id}/events/stream` 能消费终态事件。

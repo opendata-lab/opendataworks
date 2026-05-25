@@ -143,6 +143,9 @@ export function createNl2SqlApiClient(options = {}) {
     },
     getTopicMessages(topicId, params = {}) {
       return runtimeRequest.get(`/topics/${topicId}/messages`, { params })
+    },
+    updateMessageFeedback(topicId, messageId, feedback = '') {
+      return runtimeRequest.put(`/topics/${topicId}/messages/${messageId}/feedback`, { feedback })
     }
   }
 

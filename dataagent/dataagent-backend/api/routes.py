@@ -37,8 +37,10 @@ from models.schemas import (
     TaskStatusResponse,
     TaskSubmissionResponse,
     TopicDetail,
+    TopicMessage,
     TopicMessagePageResponse,
     TopicSummary,
+    UpdateMessageFeedbackRequest,
     UpdateTopicRequest,
 )
 
@@ -224,6 +226,33 @@ async def api_list_topic_messages(
     _require_topic(topic_id, context)
     payload = _get_store().list_topic_messages_page(topic_id=topic_id, page=page, page_size=page_size, order=order, context=context)
     return TopicMessagePageResponse.model_validate(payload)
+
+
+@topic_router.put("/{topic_id}/messages/{message_id}/feedback", response_model=TopicMessage)
+async def api_update_message_feedback(
+    topic_id: str,
+    message_id: str,
+    payload: UpdateMessageFeedbackRequest,
+    request: Request,
+):
+    context = _request_context(request)
+    _require_topic(topic_id, context)
+
+    feedback = str(payload.feedback or "").strip().lower()
+    if feedback not in {"", "like", "dislike"}:
+        raise HTTPException(status_code=400, detail="feedback must be like, dislike, or empty")
+
+    store = _get_store()
+    message = store.get_message(message_id)
+    if not message or str(message.get("topic_id") or "") != topic_id or not message.get("show_in_ui", True):
+        raise HTTPException(status_code=404, detail="Message not found")
+    if str(message.get("sender_type") or "") != "assistant":
+        raise HTTPException(status_code=400, detail="feedback is only supported for assistant messages")
+
+    updated = store.update_message_feedback(topic_id=topic_id, message_id=message_id, feedback=feedback, context=context)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return TopicMessage.model_validate(updated)
 
 
 @task_router.post("/deliver-message", response_model=TaskSubmissionResponse)

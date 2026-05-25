@@ -87,4 +87,15 @@ describe('createNl2SqlApiClient', () => {
 
     expect(clients[0].get).toHaveBeenCalledWith('/runtime-config')
   })
+
+  it('updates assistant message feedback through the topic API', () => {
+    const client = createNl2SqlApiClient()
+
+    client.topicApi.updateMessageFeedback('topic-1', 'message-1', 'like')
+
+    expect(clients[0].put).toHaveBeenCalledWith(
+      '/topics/topic-1/messages/message-1/feedback',
+      { feedback: 'like' }
+    )
+  })
 })
