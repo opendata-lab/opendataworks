@@ -16,6 +16,8 @@ Add an embeddable intelligent-query widget that uses unified DataAgent runtime A
    - Support history list, search, new conversation, switch conversation, portal-style message rendering, and running-task guards.
 6. Update `frontend/Dockerfile`, `frontend/nginx.conf`, and package scripts so the widget bundle is built and served at `/widget/opendataworks-widget.bundle.js`.
 7. Run focused backend and frontend tests, then run frontend portal and widget builds. Run local smoke only when DataAgent dependencies and provider credentials are available.
+8. Support programmatic multi-instance API (`installWidget(config)`) and registry management in `entry.js` to support multiple simultaneous widget mounts (e.g., inline inside a modal and floating on the same page).
+9. Add CSS Container Queries for container-width responsiveness. Build and deploy `docs-search.html` demo to verify multi-instance integration and mock response modes.
 
 ## Files
 
@@ -35,6 +37,7 @@ Expected primary changes:
 - `deploy/.env.example`
 - `deploy/docker-compose.dev.yml`
 - `deploy/docker-compose.prod.yml`
+- `frontend/examples/widget/*` (including `docs-search.html`, `floating.html`, `inline.html`, `api-demo.html`, `README.md`)
 
 ## Verification
 
@@ -44,6 +47,7 @@ Expected primary changes:
 - `nvm use && npm --prefix frontend run build`
 - `nvm use && npm --prefix frontend run build:widget`
 - Browser smoke for a floating host page, an inline host menu page, and an inline no-explicit-height host page, covering bottom-aligned input, history list, topic switch, new topic, no delete UI, streaming reply, and widget isolation headers.
+- Verify programmatic multi-instance capabilities and local mock response fallback using `docs-search.html`, `floating.html`, and `inline.html` examples under `http://localhost:3000/examples/widget/`.
 
 ## Backout
 

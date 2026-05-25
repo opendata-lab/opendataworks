@@ -64,14 +64,22 @@ Out of scope:
 
 ### Widget Runtime
 
-The widget is a separate frontend entrypoint under `frontend/src/widget`. It mounts into a Shadow DOM container created by `entry.js` and exposes `window.OpenDataWorksWidget` with `open`, `close`, `toggle`, `destroy`, `sendMessage`, `openHistory`, `newConversation`, `selectConversation`, `deleteConversation`, and `on`.
+The widget is a separate frontend entrypoint under `frontend/src/widget`. It supports two integration paths:
+1. **Auto-mounting**: Reads configuration from the loading script's `data-*` attributes. To prevent premature mounting, the script tag must contain either `data-website-id` or `data-agent-id` to trigger auto-installation. If these attributes are missing, the script serves strictly as a library loader.
+2. **Programmatic Multi-instance API**: Exposes `window.OpenDataWorksWidget.installWidget(config)` to programmatically create and mount one or more widget instances. This enables different instances (e.g., an inline modal widget and a floating bottom-right widget) to co-exist on the same page.
 
-The widget reads configuration from the current script's `data-*` attributes. For SPA hosts, the project frontend dynamically creates the script after fetching the current user from its Spring Boot backend.
+The global registry manages active instances:
+- Each instance receives a unique `instanceId` (e.g. `odw_1`, `odw_2`).
+- Users can retrieve instances via `window.OpenDataWorksWidget.getInstance(id)` or `getInstances()`.
+- Legacy single-instance control methods (e.g., `window.OpenDataWorksWidget.open()`, `sendMessage()`) proxy calls to the last-installed instance (`_lastController`) for backward compatibility.
+- Script stylesheet loading is enhanced to support programmatic configurations: if no script element is associated with the configuration, the entry script resolves the CSS URL using other loaded script tags in the DOM.
 
 Supported display modes:
 
 - `floating` is the default. It renders a bottom-corner launcher, a compact chat panel, and an overlay history drawer.
-- `inline` mounts into `data-container-id`, opens immediately, hides the launcher and close button, and fills the remaining viewport height from the mount point. The container acts as the anchor in the host menu page; the widget keeps a small bottom gap so the input area stays near the visible page bottom without sticking to the viewport edge. The widget recalculates this height on viewport changes so Vue host layouts that settle after script injection do not leave the composer in the middle of the page.
+- `inline` mounts into `data-container-id` (or the config's container), opens immediately, hides the launcher and close button, and fills the remaining viewport height from the mount point. The container acts as the anchor in the host menu page; the widget keeps a small bottom gap so the input area stays near the visible page bottom without sticking to the viewport edge. The widget recalculates this height on viewport changes so Vue host layouts that settle after script injection do not leave the composer in the middle of the page.
+
+To ensure the widget is responsive regardless of where it is embedded (e.g., in a narrow sidebar modal versus a full-width page), the layout uses CSS Container Queries (`@container (max-width: 600px)`) rather than traditional viewport Media Queries. The container type is defined on the workbench wrapper (`container-type: inline-size`), allowing the history sidebar to collapse into a sliding menu or hide responsively based on the widget's actual width.
 
 Both modes use the portal intelligent-query visual language: left topic history, search, new conversation, topic switching, model info, portal-style message rendering, deep-thinking blocks, tool output rendering, sending, streaming, and cancellation. The widget UI does not expose topic deletion so it stays aligned with the portal page. While an answer is running, history switching, creation, and sending are disabled; the user can stop the task first.
 
