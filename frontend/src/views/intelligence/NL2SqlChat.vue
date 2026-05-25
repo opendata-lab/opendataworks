@@ -24,8 +24,14 @@
             :class="{ active: topic.topic_id === activeTopicId }"
             @click="handleSelectTopic(topic.topic_id)"
           >
-            <div class="query-session-title">{{ truncate(topic.title, 26) }}</div>
-            <div class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</div>
+            <span class="query-session-title">{{ topic.title || '新话题' }}</span>
+            <span v-if="isTopicWorking(topic)" class="query-session-loading" title="正在分析中...">
+              <svg class="query-session-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle class="query-session-spinner-track" cx="12" cy="12" r="10" stroke-width="3" />
+                <path class="query-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
+              </svg>
+            </span>
+            <span v-else class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</span>
           </button>
           <div v-if="!filteredTopics.length" class="query-empty-sessions">暂无话题</div>
         </div>
@@ -226,31 +232,7 @@
 
       <div class="query-composer-wrap">
         <div class="query-composer">
-          <div class="query-composer-top">
-            <div class="query-composer-control">
-              <el-select
-                v-model="combinedModelKey"
-                class="query-composer-select"
-                :disabled="!settings.providers.length"
-                placeholder="选择模型"
-              >
-                <el-option-group
-                  v-for="provider in settings.providers"
-                  :key="provider.provider_id"
-                  :label="provider.display_name"
-                >
-                  <el-option
-                    v-for="model in getProviderModels(provider)"
-                    :key="provider.provider_id + '::' + model"
-                    :label="model"
-                    :value="provider.provider_id + '::' + model"
-                  />
-                </el-option-group>
-              </el-select>
-            </div>
-          </div>
-
-          <div class="query-composer-input-row">
+          <div class="query-composer-textarea-wrap">
             <textarea
               v-model="inputText"
               class="query-textarea"
@@ -261,7 +243,49 @@
               @keydown.ctrl.enter.prevent="handleSend"
               @keydown.meta.enter.prevent="handleSend"
             />
-            <div class="query-composer-actions">
+          </div>
+
+          <div class="query-composer-bottom-bar">
+            <div class="query-composer-left-actions">
+              <el-tooltip content="上传文件 (预留)" placement="top">
+                <button
+                  type="button"
+                  class="query-composer-attach-btn"
+                  aria-label="上传文件"
+                >
+                  <svg class="query-composer-attach-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              </el-tooltip>
+            </div>
+
+            <div class="query-composer-right-actions">
+              <el-dropdown trigger="click" @command="handleModelSelectCommand">
+                <div class="query-model-selector-trigger" :class="{ disabled: !settings.providers.length }">
+                  <span class="query-model-selector-name">{{ selectedModel || '选择模型' }}</span>
+                  <svg class="query-chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M6 9l6 6 6-6" />
+                  </svg>
+                </div>
+                <template #dropdown>
+                  <el-dropdown-menu class="query-model-dropdown-menu">
+                    <template v-for="provider in settings.providers" :key="provider.provider_id">
+                      <div class="query-dropdown-group-title">{{ provider.display_name }}</div>
+                      <el-dropdown-item
+                        v-for="model in getProviderModels(provider)"
+                        :key="provider.provider_id + '::' + model"
+                        :command="provider.provider_id + '::' + model"
+                        :class="{ active: selectedProvider === provider.provider_id && selectedModel === model }"
+                      >
+                        {{ model }}
+                      </el-dropdown-item>
+                    </template>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+
               <el-tooltip :content="contextWindowTooltip" placement="top">
                 <button
                   type="button"
@@ -271,12 +295,12 @@
                   title="上下文窗口使用情况"
                 >
                   <svg class="query-context-ring" viewBox="0 0 36 36" aria-hidden="true">
-                    <circle class="query-context-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+                    <circle class="query-context-ring-track" cx="18" cy="18" r="16.5" pathLength="100" />
                     <circle
                       class="query-context-ring-value"
                       cx="18"
                       cy="18"
-                      r="14"
+                      r="16.5"
                       pathLength="100"
                       :class="contextRingColorClass"
                       :stroke-dasharray="contextRingDashArray"
@@ -285,12 +309,12 @@
                   <span class="query-context-ring-text">{{ contextWindowUsage.available ? contextWindowUsage.percentLabel : '--' }}</span>
                 </button>
               </el-tooltip>
+
               <button
                 type="button"
                 class="query-composer-action"
                 :class="[
-                  composerActionMode === 'cancel' ? 'query-btn-cancel' : 'query-btn-send',
-                  { 'query-composer-action-labeled': composerActionMode === 'cancel' }
+                  composerActionMode === 'cancel' ? 'query-btn-cancel' : 'query-btn-send'
                 ]"
                 :disabled="composerActionDisabled"
                 :aria-label="composerActionTitle"
@@ -324,7 +348,6 @@
                   <path d="M5 12h12" />
                   <path d="M13 6l6 6-6 6" />
                 </svg>
-                <span v-if="composerActionMode === 'cancel'" class="query-composer-action-text">停止回答</span>
               </button>
             </div>
           </div>
@@ -439,11 +462,26 @@ const combinedModelKey = computed({
   }
 })
 
+const handleModelSelectCommand = (command) => {
+  if (!command) return
+  const [providerId, ...modelParts] = command.split('::')
+  const model = modelParts.join('::')
+  selectedProvider.value = providerId
+  selectedModel.value = model
+}
+
 const NEW_TOPIC_PENDING_KEY = '__new_topic__'
 
 const normalizePendingTopicKey = (topicId) => String(topicId || NEW_TOPIC_PENDING_KEY)
 
 const isTopicSubmitting = (topicId) => pendingSubmitKeys.value.has(normalizePendingTopicKey(topicId))
+
+const isTopicWorking = (topic) => {
+  if (!topic) return false
+  if (isTopicSubmitting(topic.topic_id)) return true
+  const msgs = topic.messages || []
+  return msgs.some((msg) => msg && msg.role === 'assistant' && isActiveTaskStatus(msg.status))
+}
 
 const markTopicSubmitting = (topicId) => {
   const key = normalizePendingTopicKey(topicId)
@@ -1717,9 +1755,13 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: transparent;
   color: var(--sidebar-text);
-  text-align: left;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease;
+  
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .query-session-item:hover {
@@ -1733,10 +1775,16 @@ onBeforeUnmount(() => {
 }
 
 .query-session-title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
   line-height: 1.3;
   color: #595959;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
 .query-session-item.active .query-session-title {
@@ -1744,9 +1792,33 @@ onBeforeUnmount(() => {
 }
 
 .query-session-meta {
-  margin-top: 4px;
+  flex-shrink: 0;
   font-size: 12px;
   color: #A0AABF;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.query-session-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.query-session-spinner {
+  width: 14px;
+  height: 14px;
+  color: #4F81FF;
+  animation: query-spin 1s linear infinite;
+}
+
+.query-session-spinner-track {
+  stroke: rgba(0, 0, 0, 0.05);
+}
+
+.query-session-spinner-head {
+  stroke: currentColor;
 }
 
 .query-empty-sessions {
@@ -2756,52 +2828,13 @@ onBeforeUnmount(() => {
   border-color: #C0D3FF;
 }
 
-.query-composer-top {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 12px 14px 0;
-}
-
-.query-composer-control {
-  display: flex;
-  align-items: center;
-}
-
-.query-composer-select {
-  width: 260px;
-}
-
-.query-composer-select :deep(.el-select__wrapper) {
-  min-height: 28px;
-  height: 28px;
-  border-radius: 999px;
-  background: var(--surface-muted);
-  box-shadow: 0 0 0 1px var(--line) inset !important;
-  transition: all 0.2s ease;
-  padding: 0 12px;
-  font-size: 11px;
-}
-
-.query-composer-select :deep(.el-select__wrapper.is-focused) {
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #4F81FF inset, 0 0 0 3px rgba(79, 129, 255, 0.1) inset !important;
-}
-
-.query-composer-select :deep(.el-select__wrapper:hover:not(.is-focused)) {
-  background: #f1f5f9;
-  box-shadow: 0 0 0 1px #cbd5e1 inset !important;
-}
-
-.query-composer-input-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 12px;
-  padding: 8px 14px 14px;
+.query-composer-textarea-wrap {
+  padding: 14px 16px 4px;
 }
 
 .query-textarea {
-  flex: 1;
+  display: block;
+  width: 100%;
   min-height: 46px;
   max-height: 140px;
   border: none;
@@ -2809,21 +2842,123 @@ onBeforeUnmount(() => {
   resize: none;
   background: transparent;
   color: var(--text);
-  font-size: 14px;
+  font-size: 14.5px;
   line-height: 1.75;
   font-family: inherit;
+  padding: 0;
+  box-shadow: none !important;
 }
 
 .query-textarea::placeholder {
   color: var(--text-soft);
 }
 
-.query-composer-actions {
+.query-composer-bottom-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
+  justify-content: space-between;
+  padding: 6px 14px 12px;
+  background: transparent;
+}
+
+.query-composer-left-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.query-composer-attach-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.query-composer-attach-btn:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.query-composer-attach-icon {
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
+}
+
+.query-composer-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.query-model-selector-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.query-model-selector-trigger:hover {
+  background: #f1f5f9;
+}
+
+.query-model-selector-trigger.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.query-model-selector-name {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.query-chevron-icon {
+  width: 12px;
+  height: 12px;
+  color: #94a3b8;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.query-model-dropdown-menu {
+  padding: 6px 0;
+  min-width: 160px;
+}
+
+.query-dropdown-group-title {
+  padding: 6px 16px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.query-model-dropdown-menu :deep(.el-dropdown-menu__item) {
+  font-size: 13px;
+  color: #334155;
+  padding: 8px 16px;
+}
+
+.query-model-dropdown-menu :deep(.el-dropdown-menu__item.active) {
+  color: #4F81FF;
+  background: rgba(79, 129, 255, 0.06);
+  font-weight: 600;
 }
 
 .query-context-ring-wrap {
@@ -2900,8 +3035,9 @@ onBeforeUnmount(() => {
 }
 
 .query-composer-action {
-  min-width: 44px;
-  height: 44px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -2923,22 +3059,9 @@ onBeforeUnmount(() => {
 }
 
 .query-composer-action-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-}
-
-.query-composer-action-labeled {
-  width: auto;
-  gap: 8px;
-  padding: 0 16px;
-}
-
-.query-composer-action-text {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
 }
 
 .query-btn-send {
