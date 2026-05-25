@@ -67,8 +67,8 @@ vi.mock('element-plus', () => ({
   ElSelect: {
     name: 'ElSelect',
     props: ['modelValue', 'disabled'],
-    emits: ['update:modelValue'],
-    template: '<button type="button" class="el-select-stub" :class="$attrs.class" :disabled="disabled" @click="$emit(\'update:modelValue\', \'agent_sales\')"><slot /></button>'
+    emits: ['update:modelValue', 'change'],
+    template: '<button type="button" class="el-select-stub" :class="$attrs.class" :disabled="disabled" @click="$emit(\'update:modelValue\', \'agent_sales\'); $emit(\'change\', \'agent_sales\')"><slot /></button>'
   },
   ElOption: {
     name: 'ElOption',
@@ -79,6 +79,20 @@ vi.mock('element-plus', () => ({
     name: 'ElTooltip',
     props: ['content'],
     template: '<div class="el-tooltip-stub" :data-content="content"><slot /></div>'
+  },
+  ElDropdown: {
+    name: 'ElDropdown',
+    emits: ['command'],
+    template: '<div class="el-dropdown-stub"><slot /><slot name="dropdown" /></div>'
+  },
+  ElDropdownMenu: {
+    name: 'ElDropdownMenu',
+    template: '<div class="el-dropdown-menu-stub"><slot /></div>'
+  },
+  ElDropdownItem: {
+    name: 'ElDropdownItem',
+    props: ['command'],
+    template: '<button type="button" class="el-dropdown-item-stub" :data-command="command"><slot /></button>'
   }
 }))
 
@@ -94,8 +108,8 @@ const mountChat = () => shallowMount(NL2SqlChat, {
       },
       ElSelect: {
         props: ['modelValue', 'disabled'],
-        emits: ['update:modelValue'],
-        template: '<button type="button" class="el-select-stub" :class="$attrs.class" :disabled="disabled" @click="$emit(\'update:modelValue\', \'agent_sales\')"><slot /></button>'
+        emits: ['update:modelValue', 'change'],
+        template: '<button type="button" class="el-select-stub" :class="$attrs.class" :disabled="disabled" @click="$emit(\'update:modelValue\', \'agent_sales\'); $emit(\'change\', \'agent_sales\')"><slot /></button>'
       },
       ElOption: {
         props: ['label', 'value'],
@@ -104,6 +118,17 @@ const mountChat = () => shallowMount(NL2SqlChat, {
       ElTooltip: {
         props: ['content'],
         template: '<div class="el-tooltip-stub" :data-content="content"><slot /></div>'
+      },
+      ElDropdown: {
+        emits: ['command'],
+        template: '<div class="el-dropdown-stub"><slot /><slot name="dropdown" /></div>'
+      },
+      ElDropdownMenu: {
+        template: '<div class="el-dropdown-menu-stub"><slot /></div>'
+      },
+      ElDropdownItem: {
+        props: ['command'],
+        template: '<button type="button" class="el-dropdown-item-stub" :data-command="command"><slot /></button>'
       },
       ToolOutputRenderer: {
         props: {
@@ -310,7 +335,8 @@ describe('NL2SqlChat', () => {
     await flushPromises()
 
     expect(wrapper.find('.query-config-empty').exists()).toBe(true)
-    expect(wrapper.find('.query-model-badge').text()).toContain('未配置')
+    expect(wrapper.find('.query-model-selector-trigger.disabled').exists()).toBe(true)
+    expect(wrapper.find('.query-model-selector-name').text()).toContain('选择模型')
   })
 
   it('moves the agent selector into the top bar as an Element Plus select', async () => {
@@ -328,6 +354,15 @@ describe('NL2SqlChat', () => {
         is_default: false
       }
     ])
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 0,
+      items: []
+    })
+    apiMocks.topicApi.deleteTopic.mockResolvedValue({})
 
     const wrapper = mountChat()
 
@@ -510,7 +545,7 @@ describe('NL2SqlChat', () => {
     const cancelButton = wrapper.find('.query-btn-cancel')
     expect(cancelButton.exists()).toBe(true)
     expect(cancelButton.attributes('aria-label')).toBe('取消当前任务')
-    expect(cancelButton.text()).toContain('停止回答')
+    expect(cancelButton.attributes('title')).toBe('取消当前任务')
 
     await cancelButton.trigger('click')
     await flushPromises()
@@ -549,8 +584,8 @@ describe('NL2SqlChat', () => {
 
     const cancelButton = wrapper.find('.query-btn-cancel')
     expect(cancelButton.exists()).toBe(true)
-    expect(cancelButton.text()).toContain('停止回答')
     expect(cancelButton.attributes('aria-label')).toBe('取消当前任务')
+    expect(cancelButton.attributes('title')).toBe('取消当前任务')
   })
 
   it('submits with Enter while Shift Enter keeps the textarea draft', async () => {
