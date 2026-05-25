@@ -24,8 +24,14 @@
             :class="{ active: topic.topic_id === activeTopicId }"
             @click="handleSelectTopic(topic.topic_id)"
           >
-            <div class="query-session-title">{{ truncate(topic.title, 26) }}</div>
-            <div class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</div>
+            <span class="query-session-title">{{ topic.title || '新话题' }}</span>
+            <span v-if="isTopicWorking(topic)" class="query-session-loading" title="正在分析中...">
+              <svg class="query-session-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle class="query-session-spinner-track" cx="12" cy="12" r="10" stroke-width="3" />
+                <path class="query-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
+              </svg>
+            </span>
+            <span v-else class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</span>
           </button>
           <div v-if="!filteredTopics.length" class="query-empty-sessions">暂无话题</div>
         </div>
@@ -444,6 +450,13 @@ const NEW_TOPIC_PENDING_KEY = '__new_topic__'
 const normalizePendingTopicKey = (topicId) => String(topicId || NEW_TOPIC_PENDING_KEY)
 
 const isTopicSubmitting = (topicId) => pendingSubmitKeys.value.has(normalizePendingTopicKey(topicId))
+
+const isTopicWorking = (topic) => {
+  if (!topic) return false
+  if (isTopicSubmitting(topic.topic_id)) return true
+  const msgs = topic.messages || []
+  return msgs.some((msg) => msg && msg.role === 'assistant' && isActiveTaskStatus(msg.status))
+}
 
 const markTopicSubmitting = (topicId) => {
   const key = normalizePendingTopicKey(topicId)
@@ -1717,9 +1730,13 @@ onBeforeUnmount(() => {
   border-radius: 12px;
   background: transparent;
   color: var(--sidebar-text);
-  text-align: left;
   cursor: pointer;
   transition: background-color 0.2s ease, border-color 0.2s ease;
+  
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .query-session-item:hover {
@@ -1733,10 +1750,16 @@ onBeforeUnmount(() => {
 }
 
 .query-session-title {
+  flex: 1;
+  min-width: 0;
   font-size: 14px;
   font-weight: 500;
   line-height: 1.3;
   color: #595959;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
 }
 
 .query-session-item.active .query-session-title {
@@ -1744,9 +1767,33 @@ onBeforeUnmount(() => {
 }
 
 .query-session-meta {
-  margin-top: 4px;
+  flex-shrink: 0;
   font-size: 12px;
   color: #A0AABF;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.query-session-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.query-session-spinner {
+  width: 14px;
+  height: 14px;
+  color: #4F81FF;
+  animation: query-spin 1s linear infinite;
+}
+
+.query-session-spinner-track {
+  stroke: rgba(0, 0, 0, 0.05);
+}
+
+.query-session-spinner-head {
+  stroke: currentColor;
 }
 
 .query-empty-sessions {
