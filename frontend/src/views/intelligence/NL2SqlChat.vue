@@ -34,13 +34,27 @@
 
     <main class="query-main">
       <div class="query-main-top-bar">
+        <div class="query-topic-info">
+          <h4 class="query-topic-title">{{ activeTopic ? activeTopic.title : '开始一次新的数据分析' }}</h4>
+        </div>
+
         <div class="query-agent-switch">
           <span class="query-agent-switch-label">当前智能体</span>
           <el-select
-            v-model="selectedAgentId"
+            v-model="agentSelectValue"
             class="query-agent-select"
             :disabled="!agents.length"
+            @change="handleAgentChange"
           >
+            <template #prefix>
+              <svg class="query-agent-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2V4" />
+                <rect x="4" y="6" width="16" height="12" rx="2" />
+                <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+                <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+                <path d="M9 16c1.5 1 4.5 1 6 0" />
+              </svg>
+            </template>
             <el-option
               v-for="agent in agents"
               :key="agent.agent_id"
@@ -49,21 +63,10 @@
             />
           </el-select>
         </div>
-
-        <div class="query-model-badge query-model-badge-top">
-          <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
-          <strong>{{ selectedModel || settings.default_model || '默认模型' }}</strong>
-        </div>
       </div>
 
       <el-scrollbar ref="messagesScrollbarRef" class="query-messages" @scroll="handleScroll">
         <div class="query-messages-inner">
-          <div class="query-main-head">
-            <div>
-              <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
-              <p class="query-main-subtitle">{{ activeAgent?.description || '围绕数据查询与分析开展连续对话。' }}</p>
-            </div>
-          </div>
 
           <div v-if="!settings.providers.length" class="query-config-empty">
             <div class="query-config-empty-title">还没有可用的智能问数模型</div>
@@ -101,7 +104,6 @@
 
             <div v-else class="query-message-row query-message-assistant">
               <div class="query-assistant-body">
-                <div class="query-assistant-name">{{ assistantAgentName(msg) }}</div>
                 <div
                   v-if="hasProcessPanel(msg)"
                   class="query-process-panel"
@@ -196,15 +198,25 @@
                 </div>
 
                 <div v-if="shouldShowFollowupForMessage(msg)" class="query-followup-suggestions">
-                  <button
-                    v-for="suggestion in followupSuggestions"
-                    :key="suggestion"
-                    type="button"
-                    class="query-followup-suggestion"
-                    @click="handleSuggestion(suggestion)"
-                  >
-                    {{ suggestion }}
-                  </button>
+                  <div class="query-followup-label">
+                    <svg class="query-followup-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    猜你想问
+                  </div>
+                  <div class="query-followup-list">
+                    <button
+                      v-for="suggestion in followupSuggestions"
+                      :key="suggestion"
+                      type="button"
+                      class="query-followup-suggestion"
+                      @click="handleSuggestion(suggestion)"
+                    >
+                      {{ suggestion }}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -216,22 +228,25 @@
         <div class="query-composer">
           <div class="query-composer-top">
             <div class="query-composer-control">
-              <select v-model="selectedProvider" class="query-select" :disabled="!settings.providers.length">
-                <option
+              <el-select
+                v-model="combinedModelKey"
+                class="query-composer-select"
+                :disabled="!settings.providers.length"
+                placeholder="选择模型"
+              >
+                <el-option-group
                   v-for="provider in settings.providers"
                   :key="provider.provider_id"
-                  :value="provider.provider_id"
+                  :label="provider.display_name"
                 >
-                  {{ provider.display_name }}
-                </option>
-              </select>
-            </div>
-            <div class="query-composer-control">
-              <select v-model="selectedModel" class="query-select" :disabled="!availableModels.length">
-                <option v-for="model in availableModels" :key="model" :value="model">
-                  {{ model }}
-                </option>
-              </select>
+                  <el-option
+                    v-for="model in getProviderModels(provider)"
+                    :key="provider.provider_id + '::' + model"
+                    :label="model"
+                    :value="provider.provider_id + '::' + model"
+                  />
+                </el-option-group>
+              </el-select>
             </div>
           </div>
 
@@ -263,6 +278,7 @@
                       cy="18"
                       r="14"
                       pathLength="100"
+                      :class="contextRingColorClass"
                       :stroke-dasharray="contextRingDashArray"
                     />
                   </svg>
@@ -321,7 +337,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
@@ -396,6 +412,31 @@ const availableModels = computed(() => {
     models.unshift(fallbackModel)
   }
   return models
+})
+
+const getProviderModels = (provider) => {
+  const models = Array.isArray(provider?.models) ? [...provider.models] : []
+  const fallbackModel = provider?.default_model || settings.default_model
+  if (fallbackModel && !models.includes(fallbackModel)) {
+    models.unshift(fallbackModel)
+  }
+  return models
+}
+
+const combinedModelKey = computed({
+  get() {
+    if (!selectedProvider.value || !selectedModel.value) {
+      return ''
+    }
+    return `${selectedProvider.value}::${selectedModel.value}`
+  },
+  set(val) {
+    if (!val) return
+    const [providerId, ...modelParts] = val.split('::')
+    const model = modelParts.join('::')
+    selectedProvider.value = providerId
+    selectedModel.value = model
+  }
 })
 
 const NEW_TOPIC_PENDING_KEY = '__new_topic__'
@@ -497,6 +538,14 @@ const contextWindowUsage = computed(() => {
 })
 
 const contextRingDashArray = computed(() => `${contextWindowUsage.value.available ? contextWindowUsage.value.percentage : 0} 100`)
+
+const contextRingColorClass = computed(() => {
+  if (!contextWindowUsage.value.available) return 'is-muted'
+  const pct = contextWindowUsage.value.percentage
+  if (pct > 90) return 'is-danger'
+  if (pct > 70) return 'is-warning'
+  return 'is-primary'
+})
 
 const contextWindowTooltip = computed(() => {
   const usage = contextWindowUsage.value
@@ -1431,6 +1480,49 @@ watch(
   }
 )
 
+const agentSelectValue = ref('')
+
+watch(selectedAgentId, (val) => {
+  agentSelectValue.value = val
+}, { immediate: true })
+
+const handleAgentChange = async (nextValue) => {
+  if (!agentSelectionReady.value) return
+  
+  const hasMessages = activeMessages.value && activeMessages.value.length > 0
+  
+  if (hasMessages) {
+    ElMessageBox.confirm(
+      '切换智能体需开启新会话。是否继续？',
+      '提示',
+      {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info'
+      }
+    ).then(async () => {
+      selectedAgentId.value = nextValue
+      await handleNewTopic()
+    }).catch(() => {
+      // Revert dropdown value
+      agentSelectValue.value = selectedAgentId.value
+    })
+  } else {
+    // Delete the old empty topic to avoid leaving clutter
+    const oldTopicId = activeTopicId.value
+    selectedAgentId.value = nextValue
+    await handleNewTopic()
+    if (oldTopicId) {
+      try {
+        await topicApi.deleteTopic(oldTopicId)
+        topics.value = topics.value.filter(t => t.topic_id !== oldTopicId)
+      } catch (e) {
+        console.warn('Failed to delete old empty topic:', e)
+      }
+    }
+  }
+}
+
 watch(selectedAgentId, async (next, prev) => {
   if (!agentSelectionReady.value || !next || next === prev) return
   stopAllTaskSubscriptions()
@@ -1509,21 +1601,53 @@ onBeforeUnmount(() => {
 }
 
 .query-agent-select {
-  width: min(280px, 34vw);
-  min-width: 180px;
+  width: min(240px, 30vw);
+  min-width: 160px;
 }
 
 .query-agent-select :deep(.el-select__wrapper) {
-  min-height: 34px;
-  border-radius: 8px;
-  background: #ffffff;
-  box-shadow: 0 0 0 1px #d8e0ec inset;
-  transition: box-shadow 0.18s ease, background-color 0.18s ease;
+  min-height: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: #f8fafc;
+  box-shadow: 0 0 0 1px #e2e8f0 inset !important;
+  transition: all 0.2s ease;
+  padding: 0 12px;
 }
 
-.query-agent-select :deep(.el-select__wrapper.is-focused),
-.query-agent-select :deep(.el-select__wrapper:hover) {
-  box-shadow: 0 0 0 1px #4F81FF inset;
+.query-agent-select :deep(.el-select__wrapper.is-focused) {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px #4F81FF inset, 0 0 0 3px rgba(79, 129, 255, 0.1) inset !important;
+}
+
+.query-agent-select :deep(.el-select__wrapper:hover:not(.is-focused)) {
+  background: #f1f5f9;
+  box-shadow: 0 0 0 1px #cbd5e1 inset !important;
+}
+
+.query-topic-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  margin-right: 24px;
+}
+
+.query-topic-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.query-agent-select-icon {
+  width: 15px;
+  height: 15px;
+  color: #64748b;
+  flex-shrink: 0;
 }
 
 .query-btn-new {
@@ -1872,20 +1996,6 @@ onBeforeUnmount(() => {
   max-width: 100%;
 }
 
-.query-assistant-name {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  margin-bottom: 8px;
-  padding: 0 9px;
-  border: 1px solid #E5EAF1;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #607185;
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .query-message-footer {
   min-height: 26px;
   margin-top: 6px;
@@ -1939,7 +2049,32 @@ onBeforeUnmount(() => {
 }
 
 .query-followup-suggestions {
-  margin-top: 12px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px dashed var(--line);
+  padding-top: 14px;
+}
+
+.query-followup-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.query-followup-icon {
+  width: 13px;
+  height: 13px;
+  color: #4F81FF;
+  flex-shrink: 0;
+}
+
+.query-followup-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -2633,16 +2768,29 @@ onBeforeUnmount(() => {
   align-items: center;
 }
 
-.query-select {
-  min-width: 180px;
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
+.query-composer-select {
+  width: 260px;
+}
+
+.query-composer-select :deep(.el-select__wrapper) {
+  min-height: 28px;
+  height: 28px;
   border-radius: 999px;
   background: var(--surface-muted);
-  color: var(--text);
-  font-size: 12px;
-  outline: none;
+  box-shadow: 0 0 0 1px var(--line) inset !important;
+  transition: all 0.2s ease;
+  padding: 0 12px;
+  font-size: 11px;
+}
+
+.query-composer-select :deep(.el-select__wrapper.is-focused) {
+  background: #ffffff;
+  box-shadow: 0 0 0 1px #4F81FF inset, 0 0 0 3px rgba(79, 129, 255, 0.1) inset !important;
+}
+
+.query-composer-select :deep(.el-select__wrapper:hover:not(.is-focused)) {
+  background: #f1f5f9;
+  box-shadow: 0 0 0 1px #cbd5e1 inset !important;
 }
 
 .query-composer-input-row {
@@ -2680,41 +2828,61 @@ onBeforeUnmount(() => {
 
 .query-context-ring-wrap {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #DDE5F3;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #425466;
-  cursor: default;
+  border: none;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  outline: none;
+  transition: transform 0.2s ease;
+}
+
+.query-context-ring-wrap:hover {
+  transform: scale(1.06);
 }
 
 .query-context-ring {
   position: absolute;
-  inset: 5px;
-  width: 32px;
-  height: 32px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   transform: rotate(-90deg);
 }
 
 .query-context-ring-track,
 .query-context-ring-value {
   fill: none;
-  stroke-width: 3;
+  stroke-width: 2.5;
 }
 
 .query-context-ring-track {
-  stroke: #EDF2FA;
+  stroke: rgba(0, 0, 0, 0.05);
 }
 
 .query-context-ring-value {
-  stroke: #4F81FF;
   stroke-linecap: round;
-  transition: stroke-dasharray 0.18s ease;
+  transition: stroke-dasharray 0.3s cubic-bezier(0.4, 0, 0.2, 1), stroke 0.3s ease;
+}
+
+.query-context-ring-value.is-primary {
+  stroke: #1f1f1f;
+}
+
+.query-context-ring-value.is-warning {
+  stroke: #F59E0B;
+}
+
+.query-context-ring-value.is-danger {
+  stroke: #EF4444;
+}
+
+.query-context-ring-value.is-muted {
+  stroke: transparent;
 }
 
 .query-context-ring-wrap.is-empty .query-context-ring-value {
@@ -2723,8 +2891,10 @@ onBeforeUnmount(() => {
 
 .query-context-ring-text {
   position: relative;
-  font-size: 10px;
+  font-size: 8.5px;
   font-weight: 700;
+  color: #1f1f1f;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1;
   white-space: nowrap;
 }
