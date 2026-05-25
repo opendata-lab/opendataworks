@@ -295,8 +295,7 @@
                 type="button"
                 class="query-composer-action"
                 :class="[
-                  composerActionMode === 'cancel' ? 'query-btn-cancel' : 'query-btn-send',
-                  { 'query-composer-action-labeled': composerActionMode === 'cancel' }
+                  composerActionMode === 'cancel' ? 'query-btn-cancel' : 'query-btn-send'
                 ]"
                 :disabled="composerActionDisabled"
                 :aria-label="composerActionTitle"
@@ -330,7 +329,6 @@
                   <path d="M5 12h12" />
                   <path d="M13 6l6 6-6 6" />
                 </svg>
-                <span v-if="composerActionMode === 'cancel'" class="query-composer-action-text">停止回答</span>
               </button>
             </div>
           </div>
@@ -2947,8 +2945,9 @@ onBeforeUnmount(() => {
 }
 
 .query-composer-action {
-  min-width: 44px;
-  height: 44px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
   padding: 0;
   display: inline-flex;
   align-items: center;
@@ -2970,22 +2969,9 @@ onBeforeUnmount(() => {
 }
 
 .query-composer-action-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
-}
-
-.query-composer-action-labeled {
-  width: auto;
-  gap: 8px;
-  padding: 0 16px;
-}
-
-.query-composer-action-text {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
 }
 
 .query-btn-send {
