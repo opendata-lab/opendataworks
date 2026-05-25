@@ -247,7 +247,18 @@
 
           <div class="query-composer-bottom-bar">
             <div class="query-composer-left-actions">
-              <!-- Left actions empty / reserved for future tools -->
+              <el-tooltip content="上传文件 (预留)" placement="top">
+                <button
+                  type="button"
+                  class="query-composer-attach-btn"
+                  aria-label="上传文件"
+                >
+                  <svg class="query-composer-attach-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
+              </el-tooltip>
             </div>
 
             <div class="query-composer-right-actions">
@@ -2854,6 +2865,33 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.query-composer-attach-btn {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  outline: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.query-composer-attach-btn:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.query-composer-attach-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .query-composer-right-actions {
