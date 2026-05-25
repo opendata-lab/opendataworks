@@ -247,29 +247,7 @@
 
           <div class="query-composer-bottom-bar">
             <div class="query-composer-left-actions">
-              <el-tooltip :content="contextWindowTooltip" placement="top">
-                <button
-                  type="button"
-                  class="query-context-ring-wrap"
-                  :class="{ 'is-empty': !contextWindowUsage.available }"
-                  :aria-label="contextWindowTooltip"
-                  title="上下文窗口使用情况"
-                >
-                  <svg class="query-context-ring" viewBox="0 0 36 36" aria-hidden="true">
-                    <circle class="query-context-ring-track" cx="18" cy="18" r="14" pathLength="100" />
-                    <circle
-                      class="query-context-ring-value"
-                      cx="18"
-                      cy="18"
-                      r="14"
-                      pathLength="100"
-                      :class="contextRingColorClass"
-                      :stroke-dasharray="contextRingDashArray"
-                    />
-                  </svg>
-                  <span class="query-context-ring-text">{{ contextWindowUsage.available ? contextWindowUsage.percentLabel : '--' }}</span>
-                </button>
-              </el-tooltip>
+              <!-- Left actions empty / reserved for future tools -->
             </div>
 
             <div class="query-composer-right-actions">
@@ -296,6 +274,30 @@
                   </el-dropdown-menu>
                 </template>
               </el-dropdown>
+
+              <el-tooltip :content="contextWindowTooltip" placement="top">
+                <button
+                  type="button"
+                  class="query-context-ring-wrap"
+                  :class="{ 'is-empty': !contextWindowUsage.available }"
+                  :aria-label="contextWindowTooltip"
+                  title="上下文窗口使用情况"
+                >
+                  <svg class="query-context-ring" viewBox="0 0 36 36" aria-hidden="true">
+                    <circle class="query-context-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+                    <circle
+                      class="query-context-ring-value"
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      pathLength="100"
+                      :class="contextRingColorClass"
+                      :stroke-dasharray="contextRingDashArray"
+                    />
+                  </svg>
+                  <span class="query-context-ring-text">{{ contextWindowUsage.available ? contextWindowUsage.percentLabel : '--' }}</span>
+                </button>
+              </el-tooltip>
 
               <button
                 type="button"
