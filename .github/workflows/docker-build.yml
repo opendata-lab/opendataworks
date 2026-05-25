@@ -19,9 +19,6 @@ on:
 permissions:
   contents: write
 
-env:
-  DOCKER_NAMESPACE: mikefan2019
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -91,7 +88,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.DOCKER_NAMESPACE }}/${{ matrix.service.image }}
+          images: ${{ secrets.DOCKER_USERNAME }}/${{ matrix.service.image }}
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -141,7 +138,7 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           chmod +x scripts/create-offline-package.sh
           scripts/create-offline-package.sh \
-            --namespace "${{ env.DOCKER_NAMESPACE }}" \
+            --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "$VERSION" \
             --output "opendataworks-deployment-${VERSION}.tar.gz" \
             --platform linux/amd64
@@ -165,7 +162,7 @@ jobs:
           VERSION=${GITHUB_REF_NAME#v}
           REPO="${{ github.repository }}"
           TAG="${{ github.ref_name }}"
-          NS="${{ env.DOCKER_NAMESPACE }}"
+          NS="${{ secrets.DOCKER_USERNAME }}"
           {
             echo "## OpenDataWorks v${VERSION}"
             echo ""
@@ -211,6 +208,44 @@ jobs:
             ${{ env.ODA_PACKAGE_PATH }}
             ${{ env.ODA_PACKAGE_SHA }}
 
+      - name: Sync release artifacts to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          NAME="OpenDataWorks ${TAG}"
+          GITEE_API="https://gitee.com/api/v5/repos/${{ secrets.GITEE_REPO }}"
+          existing=$(curl -sS --retry 3 -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/tags/${TAG}" || echo '{}')
+          existing_id=$(echo "${existing}" | jq -r '.id // empty')
+          if [ -n "${existing_id}" ] && [ "${existing_id}" != "null" ]; then
+            echo "Deleting existing Gitee release id=${existing_id}"
+            curl -sS -X DELETE -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/${existing_id}"
+          fi
+          body_json=$(jq -Rs '.' release_body.md)
+          response=$(curl -sS --retry 3 -X POST \
+            -H "Authorization: token ${GITEE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${NAME}\",\"body\":${body_json}}" \
+            "${GITEE_API}/releases")
+          release_id=$(echo "${response}" | jq -r '.id')
+          if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
+            echo "Failed to create Gitee release: ${response}"
+            exit 1
+          fi
+          echo "Created Gitee release id=${release_id}"
+          for f in "$PACKAGE_PATH" "$PACKAGE_SHA" "$ODA_PACKAGE_PATH" "$ODA_PACKAGE_SHA"; do
+            if [ -f "$f" ]; then
+              echo "Uploading ${f} ..."
+              curl -sS --retry 3 -X POST \
+                -H "Authorization: token ${GITEE_TOKEN}" \
+                -F "file=@${f}" \
+                "${GITEE_API}/releases/${release_id}/attach_files"
+              echo ""
+            fi
+          done
+          echo "Synced to https://gitee.com/${{ secrets.GITEE_REPO }}/releases/tag/${TAG}"
+
   create-latest-release:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -236,7 +271,7 @@ jobs:
         run: |
           chmod +x scripts/create-offline-package.sh
           scripts/create-offline-package.sh \
-            --namespace "${{ env.DOCKER_NAMESPACE }}" \
+            --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "${IMAGE_TAG}" \
             --output "opendataworks-deployment-${RELEASE_TAG}.tar.gz" \
             --platform linux/amd64
@@ -258,7 +293,7 @@ jobs:
         run: |
           REPO="${{ github.repository }}"
           TAG="${RELEASE_TAG}"
-          NS="${{ env.DOCKER_NAMESPACE }}"
+          NS="${{ secrets.DOCKER_USERNAME }}"
           {
             echo "## OpenDataWorks ${TAG}"
             echo ""
@@ -321,6 +356,44 @@ jobs:
             ${{ env.ODA_PACKAGE_PATH }}
             ${{ env.ODA_PACKAGE_SHA }}
 
+      - name: Sync latest release artifacts to Gitee
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${RELEASE_TAG}"
+          NAME="${RELEASE_NAME}"
+          GITEE_API="https://gitee.com/api/v5/repos/${{ secrets.GITEE_REPO }}"
+          existing=$(curl -sS --retry 3 -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/tags/${TAG}" || echo '{}')
+          existing_id=$(echo "${existing}" | jq -r '.id // empty')
+          if [ -n "${existing_id}" ] && [ "${existing_id}" != "null" ]; then
+            echo "Deleting existing Gitee release id=${existing_id}"
+            curl -sS -X DELETE -H "Authorization: token ${GITEE_TOKEN}" "${GITEE_API}/releases/${existing_id}"
+          fi
+          body_json=$(jq -Rs '.' latest_release_body.md)
+          response=$(curl -sS --retry 3 -X POST \
+            -H "Authorization: token ${GITEE_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"tag_name\":\"${TAG}\",\"name\":\"${NAME}\",\"body\":${body_json}}" \
+            "${GITEE_API}/releases")
+          release_id=$(echo "${response}" | jq -r '.id')
+          if [ -z "${release_id}" ] || [ "${release_id}" = "null" ]; then
+            echo "Failed to create Gitee latest release: ${response}"
+            exit 1
+          fi
+          echo "Created Gitee release id=${release_id}"
+          for f in "$PACKAGE_PATH" "$PACKAGE_SHA" "$ODA_PACKAGE_PATH" "$ODA_PACKAGE_SHA"; do
+            if [ -f "$f" ]; then
+              echo "Uploading ${f} ..."
+              curl -sS --retry 3 -X POST \
+                -H "Authorization: token ${GITEE_TOKEN}" \
+                -F "file=@${f}" \
+                "${GITEE_API}/releases/${release_id}/attach_files"
+              echo ""
+            fi
+          done
+          echo "Synced to https://gitee.com/${{ secrets.GITEE_REPO }}/releases/tag/${TAG}"
+
   summary:
     needs: build-and-push
     runs-on: ubuntu-latest
@@ -331,14 +404,14 @@ jobs:
           echo "## 🐳 Docker Images Built Successfully!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Images pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-frontend\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-backend\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-backend\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-portal-mcp\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-builtin\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-deepeval\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataagent-server\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ env.DOCKER_NAMESPACE }}/opendataagent-web\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-backend\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-backend\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-portal-mcp\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-builtin\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-deepeval\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataagent-server\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataagent-web\`" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Platforms supported:" >> $GITHUB_STEP_SUMMARY
@@ -347,13 +420,13 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Pull commands:" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-frontend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-backend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-backend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-portal-mcp:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-builtin:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataworks-dataagent-evals-deepeval:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataagent-server:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.DOCKER_NAMESPACE }}/opendataagent-web:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-backend:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-backend:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-portal-mcp:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-builtin:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-deepeval:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataagent-server:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataagent-web:latest" >> $GITHUB_STEP_SUMMARY
 
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
