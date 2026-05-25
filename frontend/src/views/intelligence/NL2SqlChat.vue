@@ -284,12 +284,12 @@
                   title="上下文窗口使用情况"
                 >
                   <svg class="query-context-ring" viewBox="0 0 36 36" aria-hidden="true">
-                    <circle class="query-context-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+                    <circle class="query-context-ring-track" cx="18" cy="18" r="16.5" pathLength="100" />
                     <circle
                       class="query-context-ring-value"
                       cx="18"
                       cy="18"
-                      r="14"
+                      r="16.5"
                       pathLength="100"
                       :class="contextRingColorClass"
                       :stroke-dasharray="contextRingDashArray"
