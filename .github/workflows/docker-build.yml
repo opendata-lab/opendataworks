@@ -77,13 +77,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -102,22 +95,44 @@ jobs:
           chmod +x opendataagent/scripts/sync-root-skills.sh
           opendataagent/scripts/sync-root-skills.sh
 
-      - name: Build and push
+      - name: Build
         id: build
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           build-args: ${{ matrix.service.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ runner.os }}-buildx-${{ matrix.service.name }}
           cache-to: type=gha,mode=max,scope=${{ runner.os }}-buildx-${{ matrix.service.name }},sharing=locked
 
+      - name: Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_TOKEN }}
+
+      - name: Push
+        id: push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: ${{ matrix.service.build_args }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ runner.os }}-buildx-${{ matrix.service.name }}
+
       - name: Image digest
-        run: echo "Image digest ${{ steps.build.outputs.digest }}"
+        if: github.event_name != 'pull_request'
+        run: echo "Image digest ${{ steps.push.outputs.digest }}"
 
   create-release:
     needs: build-and-push
