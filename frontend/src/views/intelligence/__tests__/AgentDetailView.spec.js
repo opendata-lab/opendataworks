@@ -21,32 +21,13 @@ vi.mock('@/api/dataagent', () => ({
   dataagentApi
 }))
 
-vi.mock('element-plus', () => ({
-  ElButton: { template: '<button @click="$emit(\'click\')"><slot /></button>' },
-  ElSkeleton: { template: '<div />' },
-  ElForm: { template: '<form><slot /></form>' },
-  ElFormItem: { template: '<label><slot /></label>' },
-  ElInput: {
-    props: ['modelValue'],
-    emits: ['update:modelValue'],
-    template: '<textarea :value="modelValue" @input="$emit(\'update:modelValue\', $event.target.value)" />'
-  },
-  ElSelect: {
-    props: ['modelValue'],
-    emits: ['update:modelValue'],
-    template: '<select :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><slot /></select>'
-  },
-  ElOption: { props: ['label', 'value'], template: '<option :value="value">{{ label }}</option>' },
-  ElInputNumber: {
-    props: ['modelValue'],
-    emits: ['update:modelValue'],
-    template: '<input type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />'
-  },
-  ElCheckboxGroup: { template: '<div><slot /></div>' },
-  ElCheckbox: { props: ['label'], template: '<label>{{ label }}</label>' },
-  ElCheckboxButton: { props: ['label'], template: '<button type="button">{{ label }}</button>' },
-  ElMessage: { success: vi.fn(), error: vi.fn() }
-}))
+vi.mock('element-plus', async (importOriginal) => {
+  const actual = await importOriginal()
+  return {
+    ...actual,
+    ElMessage: { success: vi.fn(), error: vi.fn() }
+  }
+})
 
 import AgentDetailView from '../AgentDetailView.vue'
 

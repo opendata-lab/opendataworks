@@ -30,7 +30,7 @@ cp deploy/.env.example deploy/.env
 # 启动服务
 docker compose -f deploy/docker-compose.dev.yml up -d
 ```
-启动后访问地址参见 **[快速开始](file:///Users/guoruping/project/bigdata/opendataworks/website/guide/quick-start.md)**。
+启动后访问地址参见 **[快速开始](./quick-start.md)**。
 
 ### 生产环境容器启动
 1. **配置环境变量**：
