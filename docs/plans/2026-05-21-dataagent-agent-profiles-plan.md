@@ -17,7 +17,7 @@
 3. Add backend profile store/service with default bootstrap, validation, snapshot creation, delete guards, and capability discovery.
 4. Add agent profile API routes under `/api/v1/dataagent/agents`.
 5. Extend topic/task store and submission flow so topics and tasks carry immutable agent snapshots.
-6. Extend runtime helpers and task execution to apply agent prompt, tools, MCP services, skills, max turns, env vars, and managed cwd.
+6. Extend runtime helpers and task execution to apply agent prompt, tools, MCP services, skills, max turns, env vars, and managed workspace cwd.
 7. Add frontend API helpers for agents.
 8. Add `AgentStudio.vue` and `AgentDetailView.vue`; register intelligent-query routes and menu item.
 9. Update `NL2SqlChat.vue` to load/select agents, filter topics by `agent_id`, create topics with active agent, and submit `agent_id`.
@@ -29,7 +29,7 @@
 This follow-up keeps the profile architecture from the original plan and adjusts the built-in seed data:
 
 1. Add `is_builtin` to `da_agent_profile` with a new Alembic migration.
-2. Treat `agent_default` as `通用智能体`; it is `is_default=true`, `is_builtin=true`, has no skills/MCP services, and uses the minimal read-only tool set.
+2. Treat `agent_default` as `默认助手`; it is `is_default=true`, `is_builtin=true`, has no skills/MCP services, and uses the minimal read-only tool set.
 3. Add `agent_opendataworks` as `OpenDataWorks助手智能体`; it is `is_default=false`, `is_builtin=true`, and carries the OpenDataWorks skills, safe tools, and Portal MCP.
 4. Backfill only missing topic/task agent bindings to `agent_default` so old records without an agent map to the general agent.
 5. Expose `is_builtin` in agent summaries and profiles; hide delete actions for built-in profiles in the frontend.

@@ -1128,7 +1128,7 @@ const demoAgents = [
         { cluster_id: DEMO_CLUSTER_ID, source_type: 'DORIS', database: DEMO_DATABASE }
       ]
     },
-    resolved_workdir: '/demo/opendataworks',
+    resolved_workdir: '/demo/workspaces/opendataworks',
     is_default: true,
     is_builtin: true
   }
@@ -2123,7 +2123,7 @@ export const demoAdapter = async (config) => {
       agent_id: `agent_demo_${demoAgents.length + 1}`,
       is_default: false,
       is_builtin: false,
-      resolved_workdir: '/demo/opendataworks'
+      resolved_workdir: '/demo/workspaces/opendataworks'
     }
     demoAgents.push(next)
     return createResponse(config, clone(next))

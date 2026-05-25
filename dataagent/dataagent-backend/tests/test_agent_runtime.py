@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -211,6 +212,101 @@ def test_build_allowed_tools_includes_portal_mcp_tools_once():
     assert "mcp__portal__portal_search_tables" in allowed_tools
     assert "mcp__portal__portal_query_readonly" in allowed_tools
     assert len(allowed_tools) == len(set(allowed_tools))
+
+
+def test_workspace_boundary_denies_parent_directory_file_lookup(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
+
+    denial = agent_runtime._validate_workspace_tool_boundary(
+        "Read",
+        {"file_path": "../secret.md"},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+
+    assert denial is not None
+    assert "parent directory" in denial
+
+
+def test_workspace_boundary_allows_workspace_and_enabled_skill_roots(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_opendataworks"
+    workspace.mkdir(parents=True)
+    local_doc = workspace / "notes.md"
+    local_doc.write_text("ok", encoding="utf-8")
+    skill_root = tmp_path / "skills" / "opendataworks-platform-tools"
+    skill_root.mkdir(parents=True)
+    skill_doc = skill_root / "SKILL.md"
+    skill_doc.write_text("# skill\n", encoding="utf-8")
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(
+        workspace,
+        {"enabled_roots": {"opendataworks-platform-tools": str(skill_root)}},
+    )
+
+    assert agent_runtime._validate_workspace_tool_boundary(
+        "Read",
+        {"file_path": str(local_doc)},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    ) is None
+    assert agent_runtime._validate_workspace_tool_boundary(
+        "Read",
+        {"file_path": str(skill_doc)},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    ) is None
+    denial = agent_runtime._validate_workspace_tool_boundary(
+        "Read",
+        {"file_path": str(tmp_path / "outside.md")},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+    assert denial is not None
+    assert "outside workspace" in denial
+
+
+def test_workspace_boundary_denies_bash_parent_directory_lookup(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
+
+    denial = agent_runtime._validate_workspace_tool_boundary(
+        "Bash",
+        {"command": "find .. -name '*.md'"},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+
+    assert denial is not None
+    assert "parent directory" in denial
+
+
+def test_workspace_boundary_hook_returns_pretooluse_denial(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    hooks = agent_runtime._build_workspace_boundary_hooks(
+        workspace,
+        {"enabled_roots": {}},
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+    hook = hooks["PreToolUse"][0].hooks[0]
+
+    result = asyncio.run(
+        hook(
+            {"tool_name": "Read", "tool_input": {"path": "../secret.md"}},
+            "tool-read-1",
+            {"signal": None},
+        )
+    )
+
+    assert result["decision"] == "block"
+    assert result["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_system_prompt_template_is_markdown_file():

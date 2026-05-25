@@ -61,7 +61,7 @@ Add `da_agent_profile` in the DataAgent session schema. Each profile stores:
 - `is_builtin`
 - timestamps
 
-The backend resolves `resolved_workdir` from runtime configuration instead of storing arbitrary paths. The default profile is the built-in `通用智能体`, which has no skills or MCP services and uses only a minimal read-only tool set. The built-in `OpenDataWorks助手智能体` preserves the OpenDataWorks-specific intelligent-query behavior by enabling the OpenDataWorks skill folders, safe tool set, and Portal MCP service. User-created profiles use a managed cwd under the DataAgent runtime home.
+The backend resolves `resolved_workdir` from runtime configuration instead of storing arbitrary paths. The default profile is the built-in `默认助手`, which has no skills or MCP services and uses only a minimal read-only tool set. The built-in `OpenDataWorks助手智能体` preserves the OpenDataWorks-specific intelligent-query behavior by enabling the OpenDataWorks skill folders, safe tool set, and Portal MCP service. Each profile uses a managed workspace under the DataAgent runtime home.
 
 ### Topic And Task Binding
 
@@ -81,7 +81,7 @@ Existing topics are backfilled to the default general agent. Existing tasks can 
 - MCP servers = only selected existing MCP services; v1 includes current `portal`
 - max turns = agent `max_turns` when positive, otherwise existing interactive/background defaults
 - env vars = validated agent env merged after provider/runtime env, excluding reserved runtime keys
-- cwd = default agent uses existing enabled-skills cwd; custom agents use managed per-agent cwd
+- cwd = every agent profile uses a managed per-agent workspace with its own `.claude/skills`
 
 Root execution still downgrades `bypassPermissions` to SDK-compatible default behavior.
 
@@ -104,7 +104,7 @@ The chat view adds an agent selector in the upper-left. Selecting an agent reloa
 
 Two profiles are owned by the system:
 
-- `agent_default` / `通用智能体`: default selector target and backfill target for records that had no agent before profiles existed. It is intentionally broad but not all-powerful: no skill folders, no MCP services, and only `Read`, `LS`, `Glob`, and `Grep` tools.
+- `agent_default` / `默认助手`: default selector target and backfill target for records that had no agent before profiles existed. It is intentionally broad but not all-powerful: no skill folders, no MCP services, and only `Read`, `LS`, `Glob`, and `Grep` tools.
 - `agent_opendataworks` / `OpenDataWorks助手智能体`: OpenDataWorks-specific assistant with the current business-knowledge and platform-tools skill folders, the safe tool set, and Portal MCP.
 
 Both built-in agents are visible and can start chats. They cannot be deleted. User-created agents are always non-built-in.

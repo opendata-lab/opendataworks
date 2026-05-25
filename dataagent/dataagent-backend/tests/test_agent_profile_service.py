@@ -9,6 +9,7 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from config import get_settings, update_settings
 from core import agent_profile_service
 
 
@@ -16,7 +17,7 @@ def test_default_agent_payload_is_general_builtin_agent():
     payload = agent_profile_service.default_agent_payload()
 
     assert payload["agent_id"] == "agent_default"
-    assert payload["name"] == "通用智能体"
+    assert payload["name"] == "默认助手"
     assert payload["description"] == "通用对话与分析入口，不预置 OpenDataWorks 专属 Skills。"
     assert payload["allowed_tools"] == ["Read", "LS", "Glob", "Grep"]
     assert payload["mcp_server_ids"] == []
@@ -35,6 +36,21 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     assert payload["skill_folders"] == ["opendataworks-business-knowledge", "opendataworks-platform-tools"]
     assert payload["is_default"] is False
     assert payload["is_builtin"] is True
+
+
+def test_resolved_agent_workdir_uses_managed_workspace_root_for_all_profiles(monkeypatch, tmp_path: Path):
+    original_runtime_cwd = get_settings().dataagent_runtime_project_cwd
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    update_settings({"dataagent_runtime_project_cwd": ""})
+    try:
+        default_workdir = agent_profile_service.resolved_agent_workdir("agent_default", is_default=True)
+        custom_workdir = agent_profile_service.resolved_agent_workdir("agent unsafe/id", is_default=False)
+    finally:
+        update_settings({"dataagent_runtime_project_cwd": original_runtime_cwd})
+
+    runtime_root = tmp_path / "home" / ".dataagent" / "runtime"
+    assert default_workdir == str(runtime_root / "workspaces" / "agent_default")
+    assert custom_workdir == str(runtime_root / "workspaces" / "agent-unsafe-id")
 
 
 def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
