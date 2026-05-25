@@ -426,8 +426,8 @@ curl -X POST http://localhost:8080/v1/data-query/execute \
 - 完整文档: `backend/RBAC_IMPLEMENTATION_COMPLETE.md`
 - 快速开始: `backend/RBAC_QUICK_START.md`
 - 进度跟踪: `backend/RBAC_IMPLEMENTATION_PROGRESS.md`
-- 设计文档: `.kiro/specs/data-platform-rbac/design.md`
-- 任务列表: `.kiro/specs/data-platform-rbac/tasks.md`
+- 设计文档: `../design/2025-12-12-data-platform-rbac-design.md`
+- 任务列表: `../plans/2025-12-12-data-platform-rbac-plan.md`
 
 ### 技术支持
 如有问题，请参考上述文档或联系开发团队。

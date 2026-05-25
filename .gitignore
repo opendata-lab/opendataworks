@@ -37,11 +37,7 @@ dolphinscheduler-service/*.egg-info/
 # Editor
 .vscode/
 .codex/
-/.claude/*
-!/.claude/skills/
-/.claude/skills/*
-!/.claude/skills/opendata-frontend-skill/
-!/.claude/skills/opendata-frontend-skill/SKILL.md
+.claude/
 /dataagent/.claude/skills/*/
 !/dataagent/.claude/skills/dataagent-nl2sql/
 !/dataagent/.claude/skills/dataagent-nl2sql/**
@@ -104,3 +100,6 @@ website/node_modules/
 website/.vitepress/dist/
 website/.vitepress/cache/
 .superpowers/
+.stitch/
+
+

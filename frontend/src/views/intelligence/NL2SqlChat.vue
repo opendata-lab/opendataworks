@@ -2,18 +2,7 @@
   <div class="query-workbench">
     <aside class="query-sidebar">
       <div class="query-sidebar-head">
-        <div class="query-agent-panel">
-          <div class="query-brand">智能问数</div>
-          <select v-model="selectedAgentId" class="query-agent-select" :disabled="!agents.length">
-            <option
-              v-for="agent in agents"
-              :key="agent.agent_id"
-              :value="agent.agent_id"
-            >
-              {{ agent.name }}
-            </option>
-          </select>
-        </div>
+        <div class="query-brand">智能问数</div>
         <button class="query-btn-new" @click="handleNewTopic">新建</button>
       </div>
 
@@ -44,16 +33,35 @@
     </aside>
 
     <main class="query-main">
+      <div class="query-main-top-bar">
+        <div class="query-agent-switch">
+          <span class="query-agent-switch-label">当前智能体</span>
+          <el-select
+            v-model="selectedAgentId"
+            class="query-agent-select"
+            :disabled="!agents.length"
+          >
+            <el-option
+              v-for="agent in agents"
+              :key="agent.agent_id"
+              :label="agent.name"
+              :value="agent.agent_id"
+            />
+          </el-select>
+        </div>
+
+        <div class="query-model-badge query-model-badge-top">
+          <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
+          <strong>{{ selectedModel || settings.default_model || '默认模型' }}</strong>
+        </div>
+      </div>
+
       <el-scrollbar ref="messagesScrollbarRef" class="query-messages" @scroll="handleScroll">
         <div class="query-messages-inner">
           <div class="query-main-head">
             <div>
               <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
               <p class="query-main-subtitle">{{ activeAgent?.description || '围绕数据查询与分析开展连续对话。' }}</p>
-            </div>
-            <div class="query-model-badge">
-              <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
-              <strong>{{ selectedModel || settings.default_model || '默认模型' }}</strong>
             </div>
           </div>
 
@@ -80,11 +88,20 @@
 
           <template v-for="msg in activeMessages" :key="msg.id">
             <div v-if="msg.role === 'user'" class="query-message-row query-message-user">
-              <div class="query-user-bubble">{{ msg.content }}</div>
+              <div class="query-user-message-shell">
+                <div class="query-user-bubble">{{ msg.content }}</div>
+                <div class="query-message-footer query-message-footer-user">
+                  <span v-if="formatMessageTime(msg.created_at)" class="query-message-time">{{ formatMessageTime(msg.created_at) }}</span>
+                  <button type="button" class="query-message-tool query-message-copy" title="复制" aria-label="复制消息" @click.stop="handleCopyMessage(msg)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div v-else class="query-message-row query-message-assistant">
               <div class="query-assistant-body">
+                <div class="query-assistant-name">{{ assistantAgentName(msg) }}</div>
                 <div
                   v-if="hasProcessPanel(msg)"
                   class="query-process-panel"
@@ -140,6 +157,10 @@
                     <span class="query-error-label">错误</span>
                     <span>{{ block.text }}</span>
                   </div>
+
+                  <div v-else-if="block.kind === 'tool' && block.tool" class="query-final-chart">
+                    <ToolOutputRenderer :tool="block.tool" />
+                  </div>
                 </div>
 
                 <div v-if="msg.citations.length" class="query-citations">
@@ -159,6 +180,31 @@
                 <div v-if="msg.error && !hasErrorBlock(msg)" class="query-error-card">
                   <span class="query-error-label">错误</span>
                   <span>{{ errorMessage(msg.error) }}</span>
+                </div>
+
+                <div class="query-message-footer query-message-footer-assistant">
+                  <span v-if="formatMessageTime(msg.created_at)" class="query-message-time">{{ formatMessageTime(msg.created_at) }}</span>
+                  <button type="button" class="query-message-tool query-message-copy" title="复制" aria-label="复制消息" @click.stop="handleCopyMessage(msg)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                  <button type="button" class="query-message-tool query-message-feedback query-message-feedback-like" :class="{ active: msg.feedback === 'like' }" title="有帮助" aria-label="有帮助" @click.stop="toggleMessageFeedback(msg, 'like')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M7 11v10H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3Z" /><path d="M7 11 12 2a3 3 0 0 1 3 3v4h4a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7" /></svg>
+                  </button>
+                  <button type="button" class="query-message-tool query-message-feedback query-message-feedback-dislike" :class="{ active: msg.feedback === 'dislike' }" title="没帮助" aria-label="没帮助" @click.stop="toggleMessageFeedback(msg, 'dislike')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M17 13V3h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3Z" /><path d="M17 13 12 22a3 3 0 0 1-3-3v-4H5a2 2 0 0 1-2-2l1-8a2 2 0 0 1 2-2h11" /></svg>
+                  </button>
+                </div>
+
+                <div v-if="shouldShowFollowupForMessage(msg)" class="query-followup-suggestions">
+                  <button
+                    v-for="suggestion in followupSuggestions"
+                    :key="suggestion"
+                    type="button"
+                    class="query-followup-suggestion"
+                    @click="handleSuggestion(suggestion)"
+                  >
+                    {{ suggestion }}
+                  </button>
                 </div>
               </div>
             </div>
@@ -196,10 +242,33 @@
               rows="2"
               :disabled="!settings.providers.length || !availableModels.length"
               placeholder="例如：查询最近 30 天工作流发布次数趋势"
+              @keydown.enter.exact.prevent="handleSend"
               @keydown.ctrl.enter.prevent="handleSend"
               @keydown.meta.enter.prevent="handleSend"
             />
             <div class="query-composer-actions">
+              <el-tooltip :content="contextWindowTooltip" placement="top">
+                <button
+                  type="button"
+                  class="query-context-ring-wrap"
+                  :class="{ 'is-empty': !contextWindowUsage.available }"
+                  :aria-label="contextWindowTooltip"
+                  title="上下文窗口使用情况"
+                >
+                  <svg class="query-context-ring" viewBox="0 0 36 36" aria-hidden="true">
+                    <circle class="query-context-ring-track" cx="18" cy="18" r="14" pathLength="100" />
+                    <circle
+                      class="query-context-ring-value"
+                      cx="18"
+                      cy="18"
+                      r="14"
+                      pathLength="100"
+                      :stroke-dasharray="contextRingDashArray"
+                    />
+                  </svg>
+                  <span class="query-context-ring-text">{{ contextWindowUsage.available ? contextWindowUsage.percentLabel : '--' }}</span>
+                </button>
+              </el-tooltip>
               <button
                 type="button"
                 class="query-composer-action"
@@ -256,7 +325,7 @@ import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
-import { stripChartSpecsFromText } from './chartSpec'
+import { parseChartSpec, stripChartSpecsFromText } from './chartSpec'
 import { describeToolAction, extractToolSkillName, formatSkillBootstrapLabel, isSkillBootstrapPlaceholder } from './toolPresentation'
 import {
   createAssistantMessageState,
@@ -302,6 +371,9 @@ const suggestions = [
 const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === activeTopicId.value) || null)
 const activeAgent = computed(() => agents.value.find((agent) => agent.agent_id === selectedAgentId.value) || agents.value[0] || null)
 const activeMessages = computed(() => activeTopic.value?.messages || [])
+const latestAssistantMessage = computed(() => [...activeMessages.value]
+  .reverse()
+  .find((msg) => msg?.role === 'assistant') || null)
 const activeCancelableMessage = computed(() => [...activeMessages.value]
   .reverse()
   .find((msg) => msg?.role === 'assistant' && msg?.task_id && isActiveTaskStatus(msg?.status)) || null)
@@ -373,6 +445,67 @@ const composerActionDisabled = computed(() => (
     : !canSendMessage.value
 ))
 
+const tokenFormatter = new Intl.NumberFormat('en-US')
+
+const parseTokenNumber = (value) => {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : 0
+}
+
+const formatTokenCount = (value) => tokenFormatter.format(Math.max(0, Math.round(Number(value) || 0)))
+
+const getContextWindowLimit = (model) => {
+  const text = String(model || '').toLowerCase()
+  if (text.includes('claude-3') || text.includes('claude-opus') || text.includes('claude-sonnet') || text.includes('claude-haiku')) {
+    return 200000
+  }
+  if (text.includes('gpt-4o')) return 128000
+  if (text.includes('deepseek')) return 64000
+  return 128000
+}
+
+const contextWindowUsage = computed(() => {
+  const usage = latestAssistantMessage.value?.usage || latestAssistantMessage.value?.token_usage || null
+  const inputTokens = parseTokenNumber(usage?.input_tokens)
+  const outputTokens = parseTokenNumber(usage?.output_tokens)
+  const totalTokens = inputTokens + outputTokens || parseTokenNumber(usage?.total_tokens)
+  const limitTokens = getContextWindowLimit(selectedModel.value || latestAssistantMessage.value?.model || settings.default_model)
+  if (!totalTokens) {
+    return {
+      available: false,
+      inputTokens,
+      outputTokens,
+      totalTokens: 0,
+      limitTokens,
+      percentage: 0,
+      percentLabel: '--'
+    }
+  }
+  const percentage = Math.min(100, Math.max(0, (totalTokens / limitTokens) * 100))
+  const percentLabel = percentage > 0 && percentage < 1
+    ? '<1%'
+    : `${Math.round(percentage)}%`
+  return {
+    available: true,
+    inputTokens,
+    outputTokens,
+    totalTokens,
+    limitTokens,
+    percentage,
+    percentLabel
+  }
+})
+
+const contextRingDashArray = computed(() => `${contextWindowUsage.value.available ? contextWindowUsage.value.percentage : 0} 100`)
+
+const contextWindowTooltip = computed(() => {
+  const usage = contextWindowUsage.value
+  if (!usage.available) return '暂无 Token 用量'
+  const inputText = usage.inputTokens ? formatTokenCount(usage.inputTokens) : '未知'
+  const outputText = usage.outputTokens ? formatTokenCount(usage.outputTokens) : '未知'
+  return `上下文窗口使用情况：${formatTokenCount(usage.totalTokens)} / ${formatTokenCount(usage.limitTokens)} Tokens；输入：${inputText}；输出：${outputText}；占比：${usage.percentLabel}`
+})
+
 const truncate = (value, max) => {
   const text = String(value || '新话题')
   return text.length > max ? `${text.slice(0, max)}...` : text
@@ -417,6 +550,24 @@ const formatTime = (value) => {
     return formatInShanghai(date, { hour: '2-digit', minute: '2-digit', hour12: false })
   }
   return formatInShanghai(date, { month: '2-digit', day: '2-digit' })
+}
+
+const formatMessageTime = (value) => {
+  const date = parseDisplayDate(value)
+  if (!date) return ''
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: DISPLAY_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(date).reduce((result, part) => {
+    if (part.type !== 'literal') result[part.type] = part.value
+    return result
+  }, {})
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`
 }
 
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -497,6 +648,22 @@ const shouldRenderToolBlock = (tool) => {
   return Boolean(detail || hasMeaningfulToolPayload(tool.output))
 }
 
+const extractChartSpecFromToolOutput = (value) => {
+  const parsed = parseChartSpec(value)
+  if (parsed) return parsed
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const itemParsed = extractChartSpecFromToolOutput(item)
+      if (itemParsed) return itemParsed
+    }
+  }
+  return null
+}
+
+const isChartBlock = (block) => block?.kind === 'tool'
+  && block.tool
+  && Boolean(extractChartSpecFromToolOutput(block.tool.output))
+
 const renderBlocksForMessage = (msg) => (Array.isArray(msg?.renderBlocks) ? msg.renderBlocks : []).filter((block) => {
   if (!block || typeof block !== 'object') return false
   if (block.kind === 'tool') {
@@ -541,16 +708,86 @@ const markFollowupToolWithSkillContext = (blocks) => {
 }
 
 const processBlocksForMessage = (msg) => markFollowupToolWithSkillContext(renderBlocksForMessage(msg))
-  .filter((block) => ['thinking', 'tool'].includes(block.kind))
+  .filter((block) => ['thinking', 'tool'].includes(block.kind) && !isChartBlock(block))
 
 const finalBlocksForMessage = (msg) => renderBlocksForMessage(msg)
-  .filter((block) => ['main_text', 'error'].includes(block.kind))
+  .filter((block) => ['main_text', 'error'].includes(block.kind) || isChartBlock(block))
 
 const displayTextBlock = (block, msg) => {
   const text = stripChartSpecsFromText(cleanTextContent(block?.text)).trim()
   if (!text) return ''
   return text
 }
+
+const visibleMessageText = (msg) => {
+  if (msg?.role === 'user') return String(msg.content || '')
+  const textBlocks = renderBlocksForMessage(msg)
+    .filter((block) => block.kind === 'main_text')
+    .map((block) => displayTextBlock(block, msg))
+    .filter(Boolean)
+  return textBlocks.join('\n\n') || String(msg?.content || '')
+}
+
+const handleCopyMessage = async (msg) => {
+  const text = visibleMessageText(msg).trim()
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch (_error) {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+const toggleMessageFeedback = (msg, value) => {
+  if (!msg || typeof msg !== 'object') return
+  msg.feedback = msg.feedback === value ? '' : value
+}
+
+const assistantAgentName = (msg) => String(
+  msg?.agent?.name
+  || activeTopic.value?.agent?.name
+  || activeAgent.value?.name
+  || '智能问数'
+)
+
+const latestVisibleMessage = computed(() => [...activeMessages.value].reverse().find((msg) => msg?.role) || null)
+
+const latestSuccessfulAssistantMessage = computed(() => {
+  const latest = latestVisibleMessage.value
+  if (!latest || latest.role !== 'assistant') return null
+  if (latest.status !== 'success') return null
+  if (activeCancelableMessage.value || activeTopicSubmitting.value) return null
+  return latest
+})
+
+const followupSuggestions = computed(() => {
+  const msg = latestSuccessfulAssistantMessage.value
+  if (!msg) return []
+  const text = visibleMessageText(msg)
+  if (!text.trim()) return []
+  if (/错误|失败|error/i.test(text)) return []
+  if (/sql|select|from|where/i.test(text)) {
+    return [
+      '解释一下这个 SQL 的逻辑',
+      '这个查询还能按哪些维度继续分析？',
+      '帮我检查这个 SQL 是否有优化空间'
+    ]
+  }
+  if (/图表|趋势|chart|折线|柱状|饼图/i.test(text)) {
+    return [
+      '对图表展现的趋势做个深度解读',
+      '按业务维度拆解这个趋势',
+      '查看异常波动对应的明细'
+    ]
+  }
+  return [
+    '按核心维度做进一步对比',
+    '查看这个结果的明细数据',
+    '总结一下可能的业务原因'
+  ]
+})
+
+const shouldShowFollowupForMessage = (msg) => latestSuccessfulAssistantMessage.value === msg && followupSuggestions.value.length > 0
 
 const hasErrorBlock = (msg) => renderBlocksForMessage(msg).some((block) => block.kind === 'error' && String(block.text || '').trim())
 
@@ -1264,11 +1501,6 @@ onBeforeUnmount(() => {
   padding: 4px 8px 16px;
 }
 
-.query-agent-panel {
-  flex: 1;
-  min-width: 0;
-}
-
 .query-brand {
   font-size: 17px;
   font-weight: 700;
@@ -1277,21 +1509,21 @@ onBeforeUnmount(() => {
 }
 
 .query-agent-select {
-  width: 100%;
-  height: 32px;
-  margin-top: 8px;
-  padding: 0 9px;
-  border: 1px solid #d8e0ec;
-  border-radius: 8px;
-  background: #f9fafc;
-  color: #344054;
-  font-size: 13px;
-  outline: none;
+  width: min(280px, 34vw);
+  min-width: 180px;
 }
 
-.query-agent-select:focus {
-  border-color: #4F81FF;
+.query-agent-select :deep(.el-select__wrapper) {
+  min-height: 34px;
+  border-radius: 8px;
   background: #ffffff;
+  box-shadow: 0 0 0 1px #d8e0ec inset;
+  transition: box-shadow 0.18s ease, background-color 0.18s ease;
+}
+
+.query-agent-select :deep(.el-select__wrapper.is-focused),
+.query-agent-select :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px #4F81FF inset;
 }
 
 .query-btn-new {
@@ -1408,6 +1640,31 @@ onBeforeUnmount(() => {
   background: #F4F5F7;
 }
 
+.query-main-top-bar {
+  min-height: 64px;
+  padding: 12px 26px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.query-agent-switch {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.query-agent-switch-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 .query-messages {
   flex: 1;
   min-height: 0;
@@ -1456,6 +1713,13 @@ onBeforeUnmount(() => {
   box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
 }
 
+.query-model-badge-top {
+  min-width: 180px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  box-shadow: none;
+}
+
 .query-model-badge span {
   display: block;
   color: var(--text-muted);
@@ -1471,6 +1735,10 @@ onBeforeUnmount(() => {
   font-size: 14px;
   line-height: 1.5;
   word-break: break-all;
+}
+
+.query-model-badge-top strong {
+  margin-top: 3px;
 }
 
 .query-model-badge-note {
@@ -1576,8 +1844,15 @@ onBeforeUnmount(() => {
   justify-content: flex-end;
 }
 
-.query-user-bubble {
+.query-user-message-shell {
   max-width: 72%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.query-user-bubble {
+  max-width: 100%;
   padding: 14px 18px;
   border-radius: 16px 16px 4px 16px;
   background: #4F81FF;
@@ -1595,6 +1870,97 @@ onBeforeUnmount(() => {
 .query-assistant-body {
   width: 100%;
   max-width: 100%;
+}
+
+.query-assistant-name {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-bottom: 8px;
+  padding: 0 9px;
+  border: 1px solid #E5EAF1;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #607185;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.query-message-footer {
+  min-height: 26px;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #A0AABF;
+  font-size: 12px;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+}
+
+.query-message-row:hover .query-message-footer,
+.query-message-footer:focus-within {
+  opacity: 1;
+}
+
+.query-message-footer-user {
+  justify-content: flex-end;
+}
+
+.query-message-time {
+  white-space: nowrap;
+}
+
+.query-message-tool {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #A0AABF;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.query-message-tool svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 1.8;
+}
+
+.query-message-tool:hover,
+.query-message-tool.active {
+  border-color: #D9E2F2;
+  background: #ffffff;
+  color: #4F81FF;
+}
+
+.query-followup-suggestions {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.query-followup-suggestion {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid #DDE5F3;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #425466;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.query-followup-suggestion:hover {
+  border-color: #4F81FF;
+  color: #2F5BD5;
+  box-shadow: 0 4px 16px rgba(79, 129, 255, 0.10);
 }
 
 .query-step-row {
@@ -1897,6 +2263,14 @@ onBeforeUnmount(() => {
   color: var(--text);
   font-size: 14.5px;
   line-height: 1.8;
+}
+
+.query-final-chart {
+  margin-top: 12px;
+}
+
+.query-final-chart :deep(.tool-output) {
+  background: #ffffff;
 }
 
 .query-main-text :deep(p) {
@@ -2300,7 +2674,59 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 10px;
   flex-shrink: 0;
+}
+
+.query-context-ring-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #DDE5F3;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #425466;
+  cursor: default;
+}
+
+.query-context-ring {
+  position: absolute;
+  inset: 5px;
+  width: 32px;
+  height: 32px;
+  transform: rotate(-90deg);
+}
+
+.query-context-ring-track,
+.query-context-ring-value {
+  fill: none;
+  stroke-width: 3;
+}
+
+.query-context-ring-track {
+  stroke: #EDF2FA;
+}
+
+.query-context-ring-value {
+  stroke: #4F81FF;
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.18s ease;
+}
+
+.query-context-ring-wrap.is-empty .query-context-ring-value {
+  stroke: transparent;
+}
+
+.query-context-ring-text {
+  position: relative;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .query-composer-action {

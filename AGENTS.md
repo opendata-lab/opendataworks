@@ -95,6 +95,7 @@ When working in this repository, optimize for:
 - `docs/plans`: execution plans paired with design documents
 - `docs/handbook`: long-lived handbook and feature documentation
 - `docs/reports`: reports, validation notes, and post-change summaries
+- For architecture governance, business semantics mapping, and metric caliber rules, follow the standards in [Architecture Governance and Caliber Guide](file:///Users/guoruping/project/bigdata/opendataworks/docs/handbook/architecture-governance.md).
 
 ## Working Rules
 

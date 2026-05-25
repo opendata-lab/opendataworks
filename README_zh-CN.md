@@ -62,19 +62,19 @@ OpenDataWorks 是一个面向数据平台团队的开源统一数据门户，提
 
 ### 任务调度
 
-![OpenDataWorks 任务调度界面](docs/assets/screenshots/readme-workflows.png)
+![OpenDataWorks 任务调度界面](website/public/readme-workflows.png)
 
 工作流列表、发布状态与常用操作入口。
 
 ### 数据血缘
 
-![OpenDataWorks 数据血缘界面](docs/assets/screenshots/readme-lineage.png)
+![OpenDataWorks 数据血缘界面](website/public/readme-lineage.png)
 
 围绕中心表查看上下游链路与层级关系。
 
 ### Data Studio
 
-![OpenDataWorks Data Studio 界面](docs/assets/screenshots/readme-datastudio.png)
+![OpenDataWorks Data Studio 界面](website/public/readme-datastudio.png)
 
 目录浏览、SQL 编辑与表级元数据联动分析。
 

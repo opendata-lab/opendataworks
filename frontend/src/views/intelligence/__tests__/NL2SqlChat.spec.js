@@ -63,6 +63,22 @@ vi.mock('element-plus', () => ({
   ElScrollbar: {
     name: 'ElScrollbar',
     template: '<div class="el-scrollbar-stub"><slot /></div>'
+  },
+  ElSelect: {
+    name: 'ElSelect',
+    props: ['modelValue', 'disabled'],
+    emits: ['update:modelValue'],
+    template: '<button type="button" class="el-select-stub" :class="$attrs.class" :disabled="disabled" @click="$emit(\'update:modelValue\', \'agent_sales\')"><slot /></button>'
+  },
+  ElOption: {
+    name: 'ElOption',
+    props: ['label', 'value'],
+    template: '<span class="el-option-stub" :data-value="value">{{ label }}</span>'
+  },
+  ElTooltip: {
+    name: 'ElTooltip',
+    props: ['content'],
+    template: '<div class="el-tooltip-stub" :data-content="content"><slot /></div>'
   }
 }))
 
@@ -76,6 +92,19 @@ const mountChat = () => shallowMount(NL2SqlChat, {
       ElScrollbar: {
         template: '<div class="el-scrollbar-stub"><slot /></div>'
       },
+      ElSelect: {
+        props: ['modelValue', 'disabled'],
+        emits: ['update:modelValue'],
+        template: '<button type="button" class="el-select-stub" :class="$attrs.class" :disabled="disabled" @click="$emit(\'update:modelValue\', \'agent_sales\')"><slot /></button>'
+      },
+      ElOption: {
+        props: ['label', 'value'],
+        template: '<span class="el-option-stub" :data-value="value">{{ label }}</span>'
+      },
+      ElTooltip: {
+        props: ['content'],
+        template: '<div class="el-tooltip-stub" :data-content="content"><slot /></div>'
+      },
       ToolOutputRenderer: {
         props: {
           tool: {
@@ -83,7 +112,7 @@ const mountChat = () => shallowMount(NL2SqlChat, {
             default: () => ({})
           }
         },
-        template: '<div class="tool-output-renderer-stub" :data-skill-name="tool?._skillBootstrapName || \'\'" :data-tool-name="tool?.name || \'\'"></div>'
+        template: '<div class="tool-output-renderer-stub" :data-output-kind="tool?.output?.kind || \'\'" :data-skill-name="tool?._skillBootstrapName || \'\'" :data-tool-name="tool?.name || \'\'"></div>'
       }
     }
   }
@@ -282,6 +311,42 @@ describe('NL2SqlChat', () => {
 
     expect(wrapper.find('.query-config-empty').exists()).toBe(true)
     expect(wrapper.find('.query-model-badge').text()).toContain('未配置')
+  })
+
+  it('moves the agent selector into the top bar as an Element Plus select', async () => {
+    apiMocks.agentApi.listAgents.mockResolvedValue([
+      {
+        agent_id: 'agent_default',
+        name: '默认智能问数助手',
+        description: '默认描述',
+        is_default: true
+      },
+      {
+        agent_id: 'agent_sales',
+        name: '销售分析助手',
+        description: '销售分析',
+        is_default: false
+      }
+    ])
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.find('.query-sidebar-head .query-agent-select').exists()).toBe(false)
+    expect(wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').exists()).toBe(true)
+    expect(wrapper.find('.query-main-top-bar').text()).toContain('当前智能体')
+    expect(wrapper.find('.query-main-top-bar').text()).toContain('默认智能问数助手')
+
+    apiMocks.topicApi.listTopics.mockClear()
+    apiMocks.topicApi.listTopics.mockResolvedValue([])
+
+    await wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: 'agent_sales' })
   })
 
   it('keeps streamed main text visible while tools are still running', async () => {
@@ -488,6 +553,43 @@ describe('NL2SqlChat', () => {
     expect(cancelButton.attributes('aria-label')).toBe('取消当前任务')
   })
 
+  it('submits with Enter while Shift Enter keeps the textarea draft', async () => {
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 0,
+      items: []
+    })
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({
+      accepted: true,
+      topic_id: 'topic-1',
+      task_id: 'task-new',
+      task_status: 'waiting',
+      user_message_id: 'u-new',
+      assistant_message_id: 'a-new'
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    const textarea = wrapper.find('.query-textarea')
+    await textarea.setValue('最近 30 天工作流发布次数趋势')
+    await textarea.trigger('keydown', { key: 'Enter', shiftKey: true })
+
+    expect(apiMocks.taskApi.deliverMessage).not.toHaveBeenCalled()
+
+    await textarea.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledTimes(1)
+    expect(apiMocks.taskApi.deliverMessage.mock.calls[0][0].content).toBe('最近 30 天工作流发布次数趋势')
+  })
+
   it('collapses the process panel after the final answer is ready', async () => {
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
       topic_id: 'topic-1',
@@ -655,6 +757,233 @@ describe('NL2SqlChat', () => {
     expect(wrapper.text()).not.toContain('<chart_spec>')
     expect(wrapper.text()).not.toContain('发布趋势')
     expect(wrapper.find('.tool-output-renderer-stub').exists()).toBe(false)
+  })
+
+  it('shows context window usage from the latest assistant usage', async () => {
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: '最近 30 天共发布 4 次。',
+          usage: {
+            input_tokens: 1000,
+            output_tokens: 200
+          },
+          blocks: [
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: '最近 30 天共发布 4 次。'
+            }
+          ],
+          created_at: '2026-03-10T02:00:00Z'
+        }
+      ]
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    const ring = wrapper.find('.query-context-ring-wrap')
+    expect(ring.exists()).toBe(true)
+    expect(ring.attributes('aria-label')).toContain('1,200 / 200,000')
+    expect(ring.attributes('aria-label')).toContain('输入：1,000')
+    expect(ring.attributes('aria-label')).toContain('输出：200')
+  })
+
+  it('shows message footer actions without an edit resend entry', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    })
+
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 2,
+      items: [
+        {
+          message_id: 'u1',
+          topic_id: 'topic-1',
+          sender_type: 'user',
+          content: '最近 30 天工作流发布次数趋势',
+          created_at: '2026-03-10T02:00:00Z'
+        },
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: '最近 30 天共发布 4 次。',
+          blocks: [
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: '最近 30 天共发布 4 次。'
+            }
+          ],
+          created_at: '2026-03-10T02:01:00Z'
+        }
+      ]
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.findAll('.query-message-footer').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.find('.query-message-edit').exists()).toBe(false)
+
+    await wrapper.find('.query-message-copy').trigger('click')
+    expect(writeText).toHaveBeenCalledWith('最近 30 天工作流发布次数趋势')
+
+    const likeButton = wrapper.find('.query-message-feedback-like')
+    const dislikeButton = wrapper.find('.query-message-feedback-dislike')
+    expect(likeButton.exists()).toBe(true)
+    expect(dislikeButton.exists()).toBe(true)
+
+    await likeButton.trigger('click')
+    expect(wrapper.find('.query-message-feedback-like').classes()).toContain('active')
+
+    await dislikeButton.trigger('click')
+    expect(wrapper.find('.query-message-feedback-like').classes()).not.toContain('active')
+    expect(wrapper.find('.query-message-feedback-dislike').classes()).toContain('active')
+  })
+
+  it('renders follow-up suggestions for the latest successful assistant answer and submits one when clicked', async () => {
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: 'SQL 查询如下：select count(*) from workflow_publish_record;',
+          blocks: [
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: 'SQL 查询如下：select count(*) from workflow_publish_record;'
+            }
+          ],
+          created_at: '2026-03-10T02:01:00Z'
+        }
+      ]
+    })
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({
+      accepted: true,
+      topic_id: 'topic-1',
+      task_id: 'task-new',
+      task_status: 'waiting',
+      user_message_id: 'u-new',
+      assistant_message_id: 'a-new'
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    const suggestions = wrapper.findAll('.query-followup-suggestion')
+    expect(suggestions.length).toBeGreaterThanOrEqual(2)
+    expect(suggestions[0].text()).toContain('SQL')
+
+    await suggestions[0].trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      topic_id: 'topic-1',
+      content: suggestions[0].text()
+    }))
+  })
+
+  it('renders tool chart_spec blocks in the conclusion area instead of the process panel', async () => {
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: '最近 30 天共发布 4 次。',
+          blocks: [
+            {
+              block_id: 'think-1',
+              type: 'thinking',
+              status: 'success',
+              text: '生成趋势图。'
+            },
+            {
+              block_id: 'tool-chart',
+              type: 'tool',
+              status: 'success',
+              tool_id: 'tool-chart',
+              tool_name: 'build_chart_spec.py',
+              output: {
+                kind: 'chart_spec',
+                chart_type: 'line',
+                title: '发布趋势',
+                x_field: 'stat_day',
+                series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+                dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }]
+              }
+            },
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: '最近 30 天共发布 4 次。'
+            }
+          ],
+          created_at: '2026-03-10T02:00:00Z'
+        }
+      ]
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    expect(wrapper.find('.query-process-content').exists()).toBe(false)
+    expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').exists()).toBe(true)
+    expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').attributes('data-output-kind')).toBe('chart_spec')
   })
 
   it('allows another topic to submit while the current topic is still awaiting acceptance', async () => {

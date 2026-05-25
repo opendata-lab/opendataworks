@@ -270,4 +270,4 @@ Headers:
 如有问题，请查看：
 - 完整文档: `RBAC_IMPLEMENTATION_COMPLETE.md`
 - 实施进度: `RBAC_IMPLEMENTATION_PROGRESS.md`
-- 设计文档: `.kiro/specs/data-platform-rbac/design.md`
+- 设计文档: `../docs/design/2025-12-12-data-platform-rbac-design.md`

@@ -1,10 +1,94 @@
-# 数据中台权限管理系统设计文档
+# 数据中台权限管理系统设计
 
-## 概述
+**Date:** 2025-12-12
+**Goal:** 为数据中台实现基于角色的访问控制（RBAC）系统，通过规范化Doris用户方案实现细粒度的数据访问控制。
+**Tech Stack:** Java 8, Spring Boot 2.7, Apache Doris, Vue 3, MySQL
 
-数据中台权限管理系统旨在为现有的数据平台提供统一的访问控制能力。系统将集成现有的OAuth认证体系，通过多种权限管理方案实现对Doris数据库和工作流资源的细粒度访问控制。
+## Scope
 
-本设计提供了四种不同的权限管理方案，每种方案都有其适用场景和优缺点，可以根据实际需求选择最合适的方案。
+- **统一的访问控制**: 集成现有的 OAuth 认证体系，提供统一的用户身份管理。
+- **细粒度资源控制**: 控制用户对 Doris 数据库、工作流等资源的访问与操作权限。
+- **规范化用户映射**: 平台用户到 Doris 只读 / 读写标准用户的映射机制。
+- **无侵入式切面拦截**: 使用 AOP 切面和 ThreadLocal 管理用户上下文。
+
+## Current State
+
+现有的数据中台缺乏细粒度的权限控制，大部分 Doris 数据库可以直接通过全局共享的管理员或默认凭据连接，工作流及查询历史也没有按用户进行隔离。
+
+## Problem
+
+随着平台用户和数据量增加，数据越权访问、危险数据误删改以及缺乏安全审计日志等问题逐渐显现，亟需引入细粒度的访问控制（RBAC）来保障数据安全与合规性。
+
+## 业务需求与验收标准
+
+### 术语表
+
+- **权限管理系统**: 负责管理平台用户与规范化Doris用户映射关系的核心系统。
+- **规范化Doris用户**: 每个数据库标准配置的读写用户和只读用户。
+- **数据库读写用户**: 对特定数据库具有完整读写权限的Doris用户。
+- **数据库只读用户**: 对特定数据库仅具有查询权限的Doris用户。
+- **用户权限映射**: 平台用户ID与数据库访问权限级别的对应关系。
+- **工作流资源**: DataTask数据处理和调度相关的工作流程。
+- **OAuth集成**: 与现有OAuth认证系统的集成接口。
+- **DorisConnectionService**: 现有的Doris数据库连接服务组件。
+
+### 需求列表
+
+#### 需求 1: 用户角色和权限管理
+**用户故事:** 作为系统管理员，我希望能够管理用户角色和权限，以便控制不同用户对数据资源的访问范围。
+**验收标准:**
+1. WHEN 管理员创建新用户角色 THEN 权限管理系统 SHALL 允许定义该角色的权限范围并持久化存储
+2. WHEN 管理员为用户分配角色 THEN 权限管理系统 SHALL 更新用户权限映射并立即生效
+3. WHEN 管理员修改角色权限 THEN 权限管理系统 SHALL 更新所有拥有该角色用户的权限并记录变更日志
+4. WHEN 管理员删除用户角色 THEN 权限管理系统 SHALL 检查角色使用情况并安全移除未使用的角色
+5. WHEN 管理员查看权限配置 THEN 权限管理系统 SHALL 显示完整的用户-角色-权限映射关系
+
+#### 需求 2: 授权访问控制
+**用户故事:** 作为普通用户，我希望只能访问被授权的数据库和工作流，以便在权限范围内安全地使用系统功能。
+**验收标准:**
+1. WHEN 用户登录系统 THEN 权限管理系统 SHALL 基于OAuth用户信息获取用户权限并建立会话
+2. WHEN 用户访问数据库列表 THEN 权限管理系统 SHALL 仅返回用户有权限访问的数据库
+3. WHEN 用户查询数据库内容 THEN 权限管理系统 SHALL 验证用户对该数据库的访问权限
+4. WHEN 用户访问工作流列表 THEN 权限管理系统 SHALL 仅显示用户有权限查看的工作流
+5. WHEN 用户尝试执行未授权操作 THEN 权限管理系统 SHALL 拒绝访问并返回权限不足错误
+
+#### 需求 3: OAuth 认证集成
+**用户故事:** 作为系统架构师，我希望权限系统能够与现有OAuth体系无缝集成，以便复用现有的用户认证基础设施。
+**验收标准:**
+1. WHEN OAuth系统提供用户信息 THEN 权限管理系统 SHALL 解析用户ID和用户名并映射到内部用户模型
+2. WHEN 用户首次登录 THEN 权限管理系统 SHALL 自动创建用户记录并分配默认权限
+3. WHEN OAuth令牌过期 THEN 权限管理系统 SHALL 清理相关会话并要求重新认证
+4. WHEN 系统需要验证用户身份 THEN 权限管理系统 SHALL 通过OAuth接口验证令牌有效性
+5. WHEN 用户信息发生变更 THEN 权限管理系统 SHALL 同步更新用户基本信息
+
+#### 需求 4: 规范化 Doris 权限控制
+**用户故事:** 作为数据库管理员，我希望能够基于规范化的Doris用户体系管理平台用户权限，以便实现标准化的数据访问控制。
+**验收标准:**
+1. WHEN 管理员配置数据库权限规范 THEN 权限管理系统 SHALL 为每个数据库维护标准的读写用户和只读用户
+2. WHEN 管理员为平台用户分配数据库权限 THEN 权限管理系统 SHALL 将用户映射到相应数据库的读写用户或只读用户
+3. WHEN 用户通过DorisConnectionService访问数据 THEN 权限管理系统 SHALL 根据用户权限选择对应的Doris用户凭据建立连接
+4. WHEN 用户查询数据库列表 THEN 权限管理系统 SHALL 仅返回用户有权限访问的数据库
+5. WHEN 用户执行数据操作 THEN 权限管理系统 SHALL 通过对应的Doris用户权限自动控制操作范围
+
+#### 需求 5: 工作流访问与操作权限
+**用户故事:** 作为工作流管理员，我希望能够控制用户对DataTask工作流的访问和操作权限，以便确保工作流的安全执行。
+**验收标准:**
+1. WHEN 管理员设置工作流权限 THEN 权限管理系统 SHALL 支持查看、创建、编辑、执行、删除等不同级别权限
+2. WHEN 用户访问工作流列表 THEN 权限管理系统 SHALL 根据用户权限和owner字段过滤可见的工作流
+3. WHEN 用户尝试编辑工作流 THEN 权限管理系统 SHALL 验证用户是否为owner或具有编辑权限
+4. WHEN 用户执行工作流 THEN 权限管理系统 SHALL 检查用户的执行权限 and 相关DolphinScheduler数据源权限
+5. WHEN 工作流涉及多个Doris数据源 THEN 权限管理系统 SHALL 验证用户对所有相关数据源的访问权限
+
+#### 需求 6: DolphinScheduler 集成
+**用户故事:** 作为系统集成者，我希望权限系统能够与现有的DolphinScheduler数据源管理无缝集成，以便统一管理数据访问权限。
+**验收标准:**
+1. WHEN 用户创建使用Doris数据源的任务 THEN 权限管理系统 SHALL 验证用户对该数据源的访问权限
+2. WHEN 系统查询DolphinDatasourceOption列表 THEN 权限管理系统 SHALL 仅返回用户有权限访问的数据源
+3. WHEN 用户选择数据源创建任务 THEN 权限管理系统 SHALL 确保用户对目标数据库具有相应操作权限
+4. WHEN 任务执行时访问数据源 THEN 权限管理系统 SHALL 使用统一的权限验证机制
+5. WHEN 数据源权限发生变更 THEN 权限管理系统 SHALL 同步更新相关任务的可执行状态
+
+---
 
 ## 架构
 
@@ -43,6 +127,8 @@ graph TB
     DataTaskService --> DolphinSchedulerService
     DolphinSchedulerService --> DolphinScheduler
 ```
+
+---
 
 ## 组件和接口
 
@@ -117,6 +203,8 @@ public interface OperationApprovalService {
 }
 ```
 
+---
+
 ## 数据模型
 
 ### 简化的权限数据模型
@@ -162,6 +250,8 @@ CREATE TABLE user_database_permissions (
     UNIQUE KEY uk_user_database (user_id, cluster_id, database_name)
 );
 ```
+
+---
 
 ## 行业调研：标准数据中台权限管理
 
@@ -299,17 +389,185 @@ CREATE TABLE permission_inheritance_rules (
 );
 ```
 
+---
+
 ## 权限管理方案
 
 ### 方案一：规范化Doris用户方案（推荐，简单实用）
 
-基于你的思路设计的最简单实用的方案。
+基于数据中台的现有特性设计的简单实用方案。
 
 #### 设计思路
 - 每个数据库维护标准的读写用户和只读用户
 - 平台用户通过权限配置映射到相应的Doris用户
 - 充分利用Doris原生权限体系控制数据访问范围
 - 在平台层控制用户能看到哪些数据库和表
+
+#### 方案优点
+- **简单实用**：每个数据库只需要 2 个标准 Doris 用户（只读、读写）
+- **权限精确**：利用 Doris 原生权限控制数据访问范围
+- **易于管理**：平台层只需维护用户与数据库的权限映射关系
+- **性能优秀**：权限验证逻辑简单，性能开销小
+- **易于实现**：基于现有架构，改动量小
+
+#### 实施要点
+- **初始化工作**：为每个数据库创建标准的 readonly 和 readwrite 用户。
+- **权限管理**：管理员通过平台界面为用户分配数据库权限。
+- **权限验证**：所有数据访问都通过权限验证，使用对应的 Doris 用户凭据。
+
+### 方案二：企业级数据域管理方案（借鉴华为云DataArts）
+
+#### 设计思路
+- 按业务域划分数据权限管理
+- 每个数据域有独立的权限管理体系
+- 支持跨域数据访问的权限控制
+- 基于数据目录的可视化权限管理
+
+### 方案三：基于角色的共享用户方案
+
+#### 设计思路
+- 创建少量共享的Doris用户，每个用户对应不同的权限级别
+- 平台用户通过角色映射到共享的Doris用户
+- 在应用层进行更细粒度的权限控制
+
+#### 数据模型
+```sql
+-- Doris共享用户配置表
+CREATE TABLE doris_shared_users (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    cluster_id BIGINT NOT NULL,
+    user_type ENUM('admin', 'analyst', 'viewer') NOT NULL,
+    username VARCHAR(64) NOT NULL,
+    password VARCHAR(128) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
+    UNIQUE KEY uk_cluster_usertype (cluster_id, user_type)
+);
+
+-- 角色权限配置表
+CREATE TABLE role_permissions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    role_id BIGINT NOT NULL,
+    resource_type ENUM('database', 'table', 'workflow') NOT NULL,
+    resource_name VARCHAR(128) NOT NULL,
+    action ENUM('read', 'write', 'execute', 'manage') NOT NULL,
+    FOREIGN KEY (role_id) REFERENCES user_roles(id),
+    UNIQUE KEY uk_role_resource_action (role_id, resource_type, resource_name, action)
+);
+
+-- 角色Doris用户映射表
+CREATE TABLE role_doris_user_mapping (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    role_id BIGINT NOT NULL,
+    cluster_id BIGINT NOT NULL,
+    doris_user_type ENUM('admin', 'analyst', 'viewer') NOT NULL,
+    FOREIGN KEY (role_id) REFERENCES user_roles(id),
+    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
+    UNIQUE KEY uk_role_cluster (role_id, cluster_id)
+);
+```
+
+#### 优点
+- Doris用户数量少，易于管理
+- 角色权限灵活，可以精细控制
+- 支持复杂的权限组合
+
+#### 缺点
+- 应用层权限控制复杂
+- 共享用户可能存在安全风险
+- 权限验证性能开销较大
+
+### 方案四：混合映射方案
+
+#### 设计思路
+- 结合规范化用户和共享用户的优点
+- 对于标准权限使用规范化用户，对于特殊权限使用专用用户
+- 提供灵活的权限管理策略
+
+#### 数据模型
+```sql
+-- 用户权限策略表
+CREATE TABLE user_permission_strategies (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    cluster_id BIGINT NOT NULL,
+    database_name VARCHAR(64),
+    strategy_type ENUM('standard', 'custom', 'shared') NOT NULL,
+    doris_username VARCHAR(64),
+    doris_password VARCHAR(128),
+    permission_level VARCHAR(32),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id),
+    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id)
+);
+
+-- 权限策略规则表
+CREATE TABLE permission_strategy_rules (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    strategy_id BIGINT NOT NULL,
+    resource_pattern VARCHAR(128) NOT NULL,
+    allowed_actions JSON NOT NULL,
+    priority INT DEFAULT 0,
+    FOREIGN KEY (strategy_id) REFERENCES user_permission_strategies(id)
+);
+```
+
+#### 优点
+- 灵活性最高，可以适应各种权限需求
+- 可以根据实际情况选择最优策略
+- 支持权限的动态调整
+
+#### 缺点
+- 实现复杂度高
+- 配置和维护成本高
+- 可能存在权限冲突的风险
+
+### 方案五：代理用户方案
+
+#### 设计思路
+- 使用单一的高权限Doris用户作为代理
+- 在应用层实现完整的权限控制逻辑
+- 通过SQL重写和结果过滤实现权限控制
+
+#### 数据模型
+```sql
+-- 权限规则表
+CREATE TABLE permission_rules (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    resource_type ENUM('database', 'table', 'column') NOT NULL,
+    resource_pattern VARCHAR(128) NOT NULL,
+    allowed_operations JSON NOT NULL,
+    conditions JSON,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id)
+);
+
+-- 访问日志表
+CREATE TABLE access_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    resource_type VARCHAR(32) NOT NULL,
+    resource_name VARCHAR(128) NOT NULL,
+    action VARCHAR(32) NOT NULL,
+    result ENUM('allowed', 'denied') NOT NULL,
+    access_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id)
+);
+```
+
+#### 优点
+- Doris用户管理最简单
+- 权限控制最灵活
+- 可以实现行级和列级权限控制
+
+#### 缺点
+- 应用层实现复杂
+- 性能开销最大
+- 安全风险相对较高
+
+---
 
 ## 需要权限控制的功能点梳理
 
@@ -482,6 +740,111 @@ CREATE TABLE dangerous_operation_approvals (
 );
 ```
 
+##### 4. 实时操作监控
+```sql
+-- 用户操作日志表
+CREATE TABLE user_operation_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    database_name VARCHAR(64) NOT NULL,
+    table_name VARCHAR(64),
+    operation_type VARCHAR(32) NOT NULL,
+    sql_statement TEXT,
+    affected_rows INT DEFAULT 0,
+    execution_time_ms INT DEFAULT 0,
+    status ENUM('success', 'failed', 'blocked') NOT NULL,
+    error_message TEXT,
+    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id),
+    INDEX idx_user_time (user_id, executed_at),
+    INDEX idx_db_table_time (database_name, table_name, executed_at)
+);
+
+-- 操作频率统计表
+CREATE TABLE operation_rate_stats (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    database_name VARCHAR(64) NOT NULL,
+    operation_type VARCHAR(32) NOT NULL,
+    hour_window TIMESTAMP NOT NULL, -- 小时级别的时间窗口
+    operation_count INT DEFAULT 0,
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id),
+    UNIQUE KEY uk_user_db_op_hour (user_id, database_name, operation_type, hour_window)
+);
+```
+
+#### 优化后的数据模型（融合行业最佳实践）
+
+```sql
+-- 1. 基础权限模型（保持原有设计）
+-- Doris数据库用户配置表
+CREATE TABLE doris_database_users (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    cluster_id BIGINT NOT NULL,
+    database_name VARCHAR(64) NOT NULL,
+    readonly_username VARCHAR(64) NOT NULL,
+    readonly_password VARCHAR(128) NOT NULL,
+    readwrite_username VARCHAR(64) NOT NULL,
+    readwrite_password VARCHAR(128) NOT NULL,
+    admin_username VARCHAR(64), -- 管理员用户，可执行DDL操作
+    admin_password VARCHAR(128),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
+    UNIQUE KEY uk_cluster_database (cluster_id, database_name)
+);
+
+-- 2. 基于现有data_table的权限管理（无需新建表，直接利用现有元数据）
+-- 用户数据库权限表
+CREATE TABLE user_database_permissions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    cluster_id BIGINT NOT NULL,
+    database_name VARCHAR(64) NOT NULL,
+    permission_level ENUM('readonly', 'readwrite', 'admin') NOT NULL,
+    allowed_operations JSON, -- 允许的具体操作列表
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    granted_by VARCHAR(64), -- 授权人
+    expires_at TIMESTAMP NULL, -- 权限过期时间
+    FOREIGN KEY (user_id) REFERENCES platform_users(id),
+    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
+    FOREIGN KEY (granted_by) REFERENCES platform_users(id),
+    UNIQUE KEY uk_user_database (user_id, cluster_id, database_name)
+);
+
+-- 基于业务域/数据域的权限表
+CREATE TABLE user_domain_permissions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    domain_type ENUM('business_domain', 'data_domain', 'layer') NOT NULL,
+    domain_value VARCHAR(64) NOT NULL, -- 具体的域值，如'finance', 'ODS'等
+    permission_level ENUM('readonly', 'readwrite', 'admin') NOT NULL,
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    granted_by VARCHAR(64),
+    expires_at TIMESTAMP NULL,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id),
+    FOREIGN KEY (granted_by) REFERENCES platform_users(id),
+    UNIQUE KEY uk_user_domain (user_id, domain_type, domain_value)
+);
+
+-- 基于表owner的权限表（表负责人自动拥有权限）
+CREATE TABLE user_table_permissions (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(64) NOT NULL,
+    table_id BIGINT NOT NULL, -- 关联到现有的data_table.id
+    permission_level ENUM('readonly', 'readwrite', 'admin') NOT NULL,
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    granted_by VARCHAR(64),
+    expires_at TIMESTAMP NULL,
+    FOREIGN KEY (user_id) REFERENCES platform_users(id),
+    FOREIGN KEY (table_id) REFERENCES data_table(id),
+    FOREIGN KEY (granted_by) REFERENCES platform_users(id),
+    UNIQUE KEY uk_user_table (user_id, table_id)
+);
+```
+
+---
+
 ## 权限控制实现逻辑
 
 ### 核心权限判断逻辑
@@ -546,287 +909,7 @@ public class SimplePermissionService {
 }
 ```
 
-##### 5. 实时操作监控
-```sql
--- 用户操作日志表
-CREATE TABLE user_operation_logs (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    database_name VARCHAR(64) NOT NULL,
-    table_name VARCHAR(64),
-    operation_type VARCHAR(32) NOT NULL,
-    sql_statement TEXT,
-    affected_rows INT DEFAULT 0,
-    execution_time_ms INT DEFAULT 0,
-    status ENUM('success', 'failed', 'blocked') NOT NULL,
-    error_message TEXT,
-    executed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id),
-    INDEX idx_user_time (user_id, executed_at),
-    INDEX idx_db_table_time (database_name, table_name, executed_at)
-);
-
--- 操作频率统计表
-CREATE TABLE operation_rate_stats (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    database_name VARCHAR(64) NOT NULL,
-    operation_type VARCHAR(32) NOT NULL,
-    hour_window TIMESTAMP NOT NULL, -- 小时级别的时间窗口
-    operation_count INT DEFAULT 0,
-    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id),
-    UNIQUE KEY uk_user_db_op_hour (user_id, database_name, operation_type, hour_window)
-);
-```
-
-#### 优化后的数据模型（融合行业最佳实践）
-
-```sql
--- 1. 基础权限模型（保持原有设计）
--- Doris数据库用户配置表
-CREATE TABLE doris_database_users (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    cluster_id BIGINT NOT NULL,
-    database_name VARCHAR(64) NOT NULL,
-    readonly_username VARCHAR(64) NOT NULL,
-    readonly_password VARCHAR(128) NOT NULL,
-    readwrite_username VARCHAR(64) NOT NULL,
-    readwrite_password VARCHAR(128) NOT NULL,
-    admin_username VARCHAR(64), -- 管理员用户，可执行DDL操作
-    admin_password VARCHAR(128),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
-    UNIQUE KEY uk_cluster_database (cluster_id, database_name)
-);
-
--- 2. 基于现有data_table的权限管理（无需新建表，直接利用现有元数据）
--- 现有的data_table表已包含：
--- - table_name, db_name: 表和数据库信息
--- - layer: 数据层级 (ODS, DWD, DIM, DWS, ADS)
--- - business_domain, data_domain: 业务域和数据域
--- - owner: 数据负责人
--- - status: 表状态
-
--- 只需新增权限相关的关联表：
-
-
-
--- 3. 基于现有元数据的权限管理表
-
--- 用户数据库权限表
-CREATE TABLE user_database_permissions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    cluster_id BIGINT NOT NULL,
-    database_name VARCHAR(64) NOT NULL,
-    permission_level ENUM('readonly', 'readwrite', 'admin') NOT NULL,
-    allowed_operations JSON, -- 允许的具体操作列表
-    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    granted_by VARCHAR(64), -- 授权人
-    expires_at TIMESTAMP NULL, -- 权限过期时间
-    FOREIGN KEY (user_id) REFERENCES platform_users(id),
-    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
-    FOREIGN KEY (granted_by) REFERENCES platform_users(id),
-    UNIQUE KEY uk_user_database (user_id, cluster_id, database_name)
-);
-
--- 基于业务域/数据域的权限表
-CREATE TABLE user_domain_permissions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    domain_type ENUM('business_domain', 'data_domain', 'layer') NOT NULL,
-    domain_value VARCHAR(64) NOT NULL, -- 具体的域值，如'finance', 'ODS'等
-    permission_level ENUM('readonly', 'readwrite', 'admin') NOT NULL,
-    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    granted_by VARCHAR(64),
-    expires_at TIMESTAMP NULL,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id),
-    FOREIGN KEY (granted_by) REFERENCES platform_users(id),
-    UNIQUE KEY uk_user_domain (user_id, domain_type, domain_value)
-);
-
--- 基于表owner的权限表（表负责人自动拥有权限）
-CREATE TABLE user_table_permissions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    table_id BIGINT NOT NULL, -- 关联到现有的data_table.id
-    permission_level ENUM('readonly', 'readwrite', 'admin') NOT NULL,
-    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    granted_by VARCHAR(64),
-    expires_at TIMESTAMP NULL,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id),
-    FOREIGN KEY (table_id) REFERENCES data_table(id),
-    FOREIGN KEY (granted_by) REFERENCES platform_users(id),
-    UNIQUE KEY uk_user_table (user_id, table_id)
-);
-
-
-```
-
-#### 方案优点
-- **简单实用**：每个数据库只需要2个标准Doris用户（只读、读写）
-- **权限精确**：利用Doris原生权限控制数据访问范围
-- **易于管理**：平台层只需维护用户与数据库的权限映射关系
-- **性能优秀**：权限验证逻辑简单，性能开销小
-- **易于实现**：基于现有架构，改动量小
-
-#### 实施要点
-- **初始化工作**：为每个数据库创建标准的readonly和readwrite用户
-- **权限管理**：管理员通过平台界面为用户分配数据库权限
-- **权限验证**：所有数据访问都通过权限验证，使用对应的Doris用户凭据
-
-### 方案二：企业级数据域管理方案（借鉴华为云DataArts）
-
-#### 设计思路
-- 按业务域划分数据权限管理
-- 每个数据域有独立的权限管理体系
-- 支持跨域数据访问的权限控制
-- 基于数据目录的可视化权限管理
-
-### 方案三：基于角色的共享用户方案
-
-#### 设计思路
-- 创建少量共享的Doris用户，每个用户对应不同的权限级别
-- 平台用户通过角色映射到共享的Doris用户
-- 在应用层进行更细粒度的权限控制
-
-#### 数据模型
-```sql
--- Doris共享用户配置表
-CREATE TABLE doris_shared_users (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    cluster_id BIGINT NOT NULL,
-    user_type ENUM('admin', 'analyst', 'viewer') NOT NULL,
-    username VARCHAR(64) NOT NULL,
-    password VARCHAR(128) NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
-    UNIQUE KEY uk_cluster_usertype (cluster_id, user_type)
-);
-
--- 角色权限配置表
-CREATE TABLE role_permissions (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    role_id BIGINT NOT NULL,
-    resource_type ENUM('database', 'table', 'workflow') NOT NULL,
-    resource_name VARCHAR(128) NOT NULL,
-    action ENUM('read', 'write', 'execute', 'manage') NOT NULL,
-    FOREIGN KEY (role_id) REFERENCES user_roles(id),
-    UNIQUE KEY uk_role_resource_action (role_id, resource_type, resource_name, action)
-);
-
--- 角色Doris用户映射表
-CREATE TABLE role_doris_user_mapping (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    role_id BIGINT NOT NULL,
-    cluster_id BIGINT NOT NULL,
-    doris_user_type ENUM('admin', 'analyst', 'viewer') NOT NULL,
-    FOREIGN KEY (role_id) REFERENCES user_roles(id),
-    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id),
-    UNIQUE KEY uk_role_cluster (role_id, cluster_id)
-);
-```
-
-#### 优点
-- Doris用户数量少，易于管理
-- 角色权限灵活，可以精细控制
-- 支持复杂的权限组合
-
-#### 缺点
-- 应用层权限控制复杂
-- 共享用户可能存在安全风险
-- 权限验证性能开销较大
-
-### 方案三：混合映射方案
-
-#### 设计思路
-- 结合规范化用户和共享用户的优点
-- 对于标准权限使用规范化用户，对于特殊权限使用专用用户
-- 提供灵活的权限管理策略
-
-#### 数据模型
-```sql
--- 用户权限策略表
-CREATE TABLE user_permission_strategies (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    cluster_id BIGINT NOT NULL,
-    database_name VARCHAR(64),
-    strategy_type ENUM('standard', 'custom', 'shared') NOT NULL,
-    doris_username VARCHAR(64),
-    doris_password VARCHAR(128),
-    permission_level VARCHAR(32),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id),
-    FOREIGN KEY (cluster_id) REFERENCES doris_cluster(id)
-);
-
--- 权限策略规则表
-CREATE TABLE permission_strategy_rules (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    strategy_id BIGINT NOT NULL,
-    resource_pattern VARCHAR(128) NOT NULL,
-    allowed_actions JSON NOT NULL,
-    priority INT DEFAULT 0,
-    FOREIGN KEY (strategy_id) REFERENCES user_permission_strategies(id)
-);
-```
-
-#### 优点
-- 灵活性最高，可以适应各种权限需求
-- 可以根据实际情况选择最优策略
-- 支持权限的动态调整
-
-#### 缺点
-- 实现复杂度高
-- 配置和维护成本高
-- 可能存在权限冲突的风险
-
-### 方案四：代理用户方案
-
-#### 设计思路
-- 使用单一的高权限Doris用户作为代理
-- 在应用层实现完整的权限控制逻辑
-- 通过SQL重写和结果过滤实现权限控制
-
-#### 数据模型
-```sql
--- 权限规则表
-CREATE TABLE permission_rules (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    resource_type ENUM('database', 'table', 'column') NOT NULL,
-    resource_pattern VARCHAR(128) NOT NULL,
-    allowed_operations JSON NOT NULL,
-    conditions JSON,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id)
-);
-
--- 访问日志表
-CREATE TABLE access_logs (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id VARCHAR(64) NOT NULL,
-    resource_type VARCHAR(32) NOT NULL,
-    resource_name VARCHAR(128) NOT NULL,
-    action VARCHAR(32) NOT NULL,
-    result ENUM('allowed', 'denied') NOT NULL,
-    access_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES platform_users(id)
-);
-```
-
-#### 优点
-- Doris用户管理最简单
-- 权限控制最灵活
-- 可以实现行级和列级权限控制
-
-#### 缺点
-- 应用层实现复杂
-- 性能开销最大
-- 安全风险相对较高
+---
 
 ## 正确性属性
 
@@ -844,80 +927,83 @@ CREATE TABLE access_logs (
 **合并后的属性：**
 
 #### 属性1：角色权限一致性
-*对于任何*用户和角色，当管理员修改角色权限时，所有拥有该角色的用户权限应该立即反映这些变更
+*对于任何*用户和角色，当管理员修改角色权限时，所有拥有该角色的用户权限应该立即反映这些变更。
 **验证：需求 1.3**
 
 #### 属性2：权限映射正确性
-*对于任何*平台用户和数据库，当用户被分配特定权限级别时，系统应该映射到正确的Doris用户凭据
+*对于任何*平台用户和数据库，当用户被分配特定权限级别时，系统应该映射到正确的Doris用户凭据。
 **验证：需求 4.2, 4.3**
 
 #### 属性3：资源访问过滤一致性
-*对于任何*用户，系统返回的可访问资源列表（数据库、工作流）应该与用户的实际权限完全一致
+*对于任何*用户，系统返回的可访问资源列表（数据库、工作流）应该与用户的实际权限完全一致。
 **验证：需求 2.2, 2.4, 4.4, 5.2**
 
 #### 属性4：权限验证完整性
-*对于任何*用户和受保护操作，当用户没有相应权限时，系统应该拒绝访问并返回适当的错误信息
+*对于任何*用户和受保护操作，当用户没有相应权限时，系统应该拒绝访问并返回适当的错误信息。
 **验证：需求 2.5, 2.3, 5.3, 6.1**
 
 #### 属性5：OAuth集成一致性
-*对于任何*OAuth用户信息，系统应该正确解析并映射到内部用户模型，保持信息的一致性
+*对于任何*OAuth用户信息，系统应该正确解析并映射到内部用户模型，保持信息的一致性。
 **验证：需求 3.1, 3.2, 3.5**
 
 #### 属性6：会话管理正确性
-*对于任何*用户会话，当OAuth令牌过期时，系统应该清理相关会话并要求重新认证
+*对于任何*用户会话，当OAuth令牌过期时，系统应该清理相关会话并要求重新认证。
 **验证：需求 3.3, 3.4**
 
 #### 属性7：多数据源权限传播
-*对于任何*涉及多个数据源的工作流，系统应该验证用户对所有相关数据源的访问权限
+*对于任何*涉及多个数据源的工作流，系统应该验证用户对所有相关数据源的访问权限。
 **验证：需求 5.5, 6.4**
 
 #### 属性8：权限变更同步性
-*对于任何*权限变更，系统应该同步更新所有相关组件的状态，确保权限的一致性
+*对于任何*权限变更，系统应该同步更新所有相关组件的状态，确保权限的一致性。
 **验证：需求 6.5, 1.3**
+
+---
 
 ## 错误处理
 
 ### 权限验证失败
-- 返回统一的权限不足错误码
-- 记录访问尝试日志
-- 提供友好的错误信息
+- 返回统一的权限不足错误码。
+- 记录访问尝试日志。
+- 提供友好的错误信息。
 
 ### OAuth集成错误
-- 处理令牌过期和无效令牌
-- 提供重新认证机制
-- 维护会话状态一致性
+- 处理令牌过期和无效令牌。
+- 提供重新认证机制。
+- 维护会话状态一致性。
 
 ### Doris连接错误
-- 处理凭据错误和连接超时
-- 提供降级服务机制
-- 记录连接失败日志
+- 处理凭据错误和连接超时。
+- 提供降级服务机制。
+- 记录连接失败日志。
+
+---
 
 ## 测试策略
 
 ### 单元测试
-- 权限验证逻辑测试
-- 用户映射功能测试
-- OAuth集成测试
-- 错误处理测试
+- 权限验证逻辑测试。
+- 用户映射功能测试。
+- OAuth集成测试。
+- 错误处理测试。
 
 ### 属性基础测试
 使用TestContainers和JUnit 5进行属性基础测试，每个属性测试运行最少100次迭代。
 
-**属性测试库：** jqwik (Java)
-
-**测试配置：**
-- 最小迭代次数：100
-- 测试数据生成：随机用户、角色、权限组合
-- 测试环境：TestContainers + MySQL + Mock OAuth
+- **属性测试库**：jqwik (Java)
+- **测试配置**：
+  - 最小迭代次数：100
+  - 测试数据生成：随机用户、角色、权限组合
+  - 测试环境：TestContainers + MySQL + Mock OAuth
 
 ### 集成测试
-- 端到端权限流程测试
-- 多用户并发访问测试
-- 权限变更传播测试
-- 性能压力测试
+- 端到端权限流程测试。
+- 多用户并发访问测试。
+- 权限变更传播测试。
+- 性能压力测试。
 
 ### 安全测试
-- 权限绕过尝试测试
-- SQL注入防护测试
-- 会话劫持防护测试
-- 敏感信息泄露测试
+- 权限绕过尝试测试。
+- SQL注入防护测试。
+- 会话劫持防护测试。
+- 敏感信息泄露测试。
