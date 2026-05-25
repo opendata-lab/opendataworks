@@ -15,7 +15,7 @@ from config import get_settings
 from core.data_scope import normalize_data_scope
 
 DEFAULT_AGENT_ID = "agent_default"
-DEFAULT_AGENT_NAME = "通用智能体"
+DEFAULT_AGENT_NAME = "默认助手"
 OPENDATAWORKS_AGENT_ID = "agent_opendataworks"
 OPENDATAWORKS_AGENT_NAME = "OpenDataWorks助手智能体"
 PERMISSION_MODES = {"inherit", "default", "bypassPermissions"}
@@ -305,10 +305,10 @@ def _runtime_root() -> Path:
 
 
 def resolved_agent_workdir(agent_id: str, *, is_default: bool = False) -> str:
-    if is_default:
-        return str(_runtime_root())
     safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(agent_id or "").strip()) or "agent"
-    return str((_runtime_root().parent / "agents" / safe_id).resolve())
+    if is_default and not str(agent_id or "").strip():
+        safe_id = DEFAULT_AGENT_ID
+    return str((_runtime_root().parent / "workspaces" / safe_id).resolve())
 
 
 def _new_agent_id() -> str:

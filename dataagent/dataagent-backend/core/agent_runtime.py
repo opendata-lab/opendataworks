@@ -6,8 +6,11 @@ Shared DataAgent Claude runtime helpers.
 
 import json
 import os
+import re
+import shlex
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from core.provider_runtime import build_provider_env as _build_provider_env
@@ -33,6 +36,14 @@ PORTAL_MCP_TOOL_NAMES = [
 ]
 PLATFORM_TOOLS_SKILL_FOLDER = "opendataworks-platform-tools"
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "data_agent_system_prompt.md"
+_FILE_BOUNDARY_PATH_KEYS = {
+    "Read": ("file_path", "path"),
+    "LS": ("path",),
+    "Glob": ("path", "pattern"),
+    "Grep": ("path", "glob"),
+}
+_BASH_PARENT_SEGMENT_RE = re.compile(r"(^|[\s;&|()])\.\.(?=$|[/\s;&|()])")
+_URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 
 
 def _build_prompt(history: list[dict[str, str]], question: str) -> str:
@@ -66,6 +77,159 @@ def _dedupe_strings(values: Any) -> list[str]:
         result.append(text)
         seen.add(text)
     return result
+
+
+def _path_has_parent_segment(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return any(part == ".." for part in text.replace("\\", "/").split("/"))
+
+
+def _resolve_workspace_candidate(raw: Any, workspace: Path) -> Path:
+    text = os.path.expandvars(str(raw or "").strip())
+    path = Path(text).expanduser()
+    if not path.is_absolute():
+        path = workspace / path
+    return path.resolve(strict=False)
+
+
+def _path_is_under(path: Path, root: Path) -> bool:
+    return path == root or path.is_relative_to(root)
+
+
+def _path_is_allowed(path: Path, allowed_roots: list[Path]) -> bool:
+    return any(_path_is_under(path, root) for root in allowed_roots)
+
+
+def _build_workspace_allowed_roots(project_cwd: str | Path, skill_runtime: dict[str, Any] | None) -> list[Path]:
+    roots = [Path(project_cwd).expanduser().resolve(strict=False)]
+    enabled_folders = set(_dedupe_strings((skill_runtime or {}).get("enabled_folders")))
+    enabled_roots = dict((skill_runtime or {}).get("enabled_roots") or {})
+    for root in enabled_roots.values():
+        if str(root or "").strip():
+            roots.append(Path(str(root)).expanduser().resolve(strict=False))
+
+    primary_root = str((skill_runtime or {}).get("primary_root") or "").strip()
+    if enabled_folders and primary_root:
+        roots.append(Path(primary_root).expanduser().resolve(strict=False))
+
+    if PLATFORM_TOOLS_SKILL_FOLDER in enabled_folders and primary_root:
+        sibling_platform_root = Path(primary_root).expanduser().resolve(strict=False).parent / PLATFORM_TOOLS_SKILL_FOLDER
+        if sibling_platform_root.exists():
+            roots.append(sibling_platform_root.resolve(strict=False))
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = str(root)
+        if key in seen:
+            continue
+        deduped.append(root)
+        seen.add(key)
+    return deduped
+
+
+def _iter_tool_path_inputs(tool_name: str, tool_input: dict[str, Any]) -> list[tuple[str, str]]:
+    keys = _FILE_BOUNDARY_PATH_KEYS.get(tool_name, ())
+    results: list[tuple[str, str]] = []
+    for key in keys:
+        value = tool_input.get(key)
+        if value is None:
+            continue
+        if isinstance(value, (list, tuple, set)):
+            results.extend((key, str(item)) for item in value if str(item or "").strip())
+        else:
+            text = str(value or "").strip()
+            if text:
+                results.append((key, text))
+    return results
+
+
+def _normalize_bash_token(token: str) -> str:
+    return str(token or "").strip().strip("'\"").rstrip(",;")
+
+
+def _validate_bash_workspace_boundary(
+    command: str,
+    allowed_roots: list[Path],
+    runtime_env: dict[str, str] | None,
+) -> str | None:
+    if _BASH_PARENT_SEGMENT_RE.search(command.replace("\\", "/")):
+        return "Bash command uses a parent directory segment; stay inside the current agent workspace."
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        tokens = command.split()
+
+    python_bin = str((runtime_env or {}).get("DATAAGENT_PYTHON_BIN") or "").strip()
+    allowed_executable = Path(python_bin).expanduser().resolve(strict=False) if python_bin else None
+    for token in tokens:
+        normalized = _normalize_bash_token(token)
+        if not normalized or normalized.startswith("$") or _URL_SCHEME_RE.match(normalized):
+            continue
+        if _path_has_parent_segment(normalized):
+            return "Bash command uses a parent directory segment; stay inside the current agent workspace."
+        if not normalized.startswith("/"):
+            continue
+        candidate = Path(normalized).expanduser().resolve(strict=False)
+        if allowed_executable and candidate == allowed_executable:
+            continue
+        if not _path_is_allowed(candidate, allowed_roots):
+            return f"Bash command references absolute path outside workspace: {normalized}"
+    return None
+
+
+def _validate_workspace_tool_boundary(
+    tool_name: str,
+    tool_input: dict[str, Any] | None,
+    project_cwd: str | Path,
+    allowed_roots: list[Path],
+    runtime_env: dict[str, str] | None,
+) -> str | None:
+    normalized_tool = str(tool_name or "").strip()
+    input_payload = tool_input or {}
+    workspace = Path(project_cwd).expanduser().resolve(strict=False)
+    if normalized_tool == "Bash":
+        command = str(input_payload.get("command") or "").strip()
+        if command:
+            return _validate_bash_workspace_boundary(command, allowed_roots, runtime_env)
+        return None
+
+    for key, value in _iter_tool_path_inputs(normalized_tool, input_payload):
+        if _path_has_parent_segment(value):
+            return f"{normalized_tool} {key} uses a parent directory segment; stay inside the current agent workspace."
+        candidate = _resolve_workspace_candidate(value, workspace)
+        if not _path_is_allowed(candidate, allowed_roots):
+            return f"{normalized_tool} {key} is outside workspace or enabled Skill roots: {value}"
+    return None
+
+
+def _build_workspace_boundary_hooks(
+    project_cwd: str | Path,
+    skill_runtime: dict[str, Any] | None,
+    runtime_env: dict[str, str] | None,
+) -> dict[str, list[Any]]:
+    workspace = Path(project_cwd).expanduser().resolve(strict=False)
+    allowed_roots = _build_workspace_allowed_roots(workspace, skill_runtime)
+
+    async def _pre_tool_use(input_data: dict[str, Any], tool_use_id: str | None, context: dict[str, Any]) -> dict[str, Any]:
+        tool_name = str((input_data or {}).get("tool_name") or "")
+        tool_input = (input_data or {}).get("tool_input") or {}
+        reason = _validate_workspace_tool_boundary(tool_name, tool_input, workspace, allowed_roots, runtime_env)
+        if not reason:
+            return {"continue_": True, "suppressOutput": True}
+        return {
+            "decision": "block",
+            "reason": reason,
+            "hookSpecificOutput": {
+                "hookEventName": "PreToolUse",
+                "permissionDecision": "deny",
+                "permissionDecisionReason": reason,
+            },
+        }
+
+    return {"PreToolUse": [SimpleNamespace(matcher=None, hooks=[_pre_tool_use])]}
 
 
 def _build_system_prompt(

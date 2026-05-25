@@ -329,7 +329,7 @@ def test_agent_profile_routes_contract(monkeypatch):
         "agent_id": "agent_1",
         "name": "营销分析智能体",
         "description": "营销场景",
-        "resolved_workdir": "/tmp/dataagent/agents/agent_1",
+        "resolved_workdir": "/tmp/dataagent/workspaces/agent_1",
         "system_prompt": "只回答营销问题",
         "permission_mode": "inherit",
         "allowed_tools": ["Skill", "Read"],
@@ -405,7 +405,7 @@ def test_agent_profile_routes_contract(monkeypatch):
 
     detail = client.get("/api/v1/dataagent/agents/agent_1")
     assert detail.status_code == 200
-    assert detail.json()["resolved_workdir"] == "/tmp/dataagent/agents/agent_1"
+    assert detail.json()["resolved_workdir"] == "/tmp/dataagent/workspaces/agent_1"
 
     updated = client.put("/api/v1/dataagent/agents/agent_1", json={"description": "更新后"})
     assert updated.status_code == 200

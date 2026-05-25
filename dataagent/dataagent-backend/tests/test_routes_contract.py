@@ -17,7 +17,7 @@ import main
 
 DEFAULT_AGENT = {
     "agent_id": "agent_default",
-    "name": "通用智能体",
+    "name": "默认助手",
     "description": "default",
     "system_prompt": "",
     "permission_mode": "default",
@@ -28,7 +28,7 @@ DEFAULT_AGENT = {
     "env_vars": {},
     "is_default": True,
     "is_builtin": True,
-    "resolved_workdir": "/tmp/dataagent/default",
+    "resolved_workdir": "/tmp/dataagent/workspaces/agent_default",
     "created_at": "",
     "updated_at": "",
 }

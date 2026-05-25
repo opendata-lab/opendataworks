@@ -7,7 +7,7 @@
           返回智能体
         </el-button>
         <h2>{{ form.name || '智能体详情' }}</h2>
-        <p class="agent-detail-workdir">{{ form.resolved_workdir || '托管工作目录将在保存后生成' }}</p>
+        <p class="agent-detail-workdir">{{ form.resolved_workdir || '托管工作空间将在保存后生成' }}</p>
       </div>
       <div class="agent-detail-actions">
         <el-button :icon="ChatLineRound" @click="openChat">开启对话</el-button>

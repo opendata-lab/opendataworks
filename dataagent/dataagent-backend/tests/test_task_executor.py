@@ -290,7 +290,7 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
         },
     )
     _patch_skill_runtime(monkeypatch, tmp_path)
-    agent_cwd = tmp_path / "agents" / "agent_1"
+    agent_cwd = tmp_path / "workspaces" / "agent_1"
     captured: dict[str, object] = {}
 
     def fake_prepare_enabled_skills_project_cwd(folders, **kwargs):
@@ -335,6 +335,17 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     assert ClaudeAgentOptions.last_kwargs["permission_mode"] == "default"
     assert ClaudeAgentOptions.last_kwargs["env"]["SAFE_FLAG"] == "1"
     assert "只返回自定义智能体结果。" in ClaudeAgentOptions.last_kwargs["system_prompt"]
+    assert "PreToolUse" in ClaudeAgentOptions.last_kwargs["hooks"]
+    hook = ClaudeAgentOptions.last_kwargs["hooks"]["PreToolUse"][0].hooks[0]
+    blocked = asyncio.run(
+        hook(
+            {"tool_name": "Read", "tool_input": {"file_path": "../secret.md"}},
+            "tool-read-escape",
+            {"signal": None},
+        )
+    )
+    assert blocked["decision"] == "block"
+    assert blocked["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
 def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tmp_path: Path):

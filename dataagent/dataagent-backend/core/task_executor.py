@@ -20,6 +20,7 @@ from core.agent_runtime import (
     _build_provider_env,
     _build_runtime_env,
     _build_system_prompt,
+    _build_workspace_boundary_hooks,
     _clip_text,
     _default_model_for_provider,
     _extract_block,
@@ -860,6 +861,7 @@ async def execute_task_stream(
         mcp_servers=mcp_servers,
         include_partial_messages=supports_partial_messages,
         env=runtime_env,
+        hooks=_build_workspace_boundary_hooks(project_cwd, skill_runtime, runtime_env),
         stderr=lambda line: logger.error(
             "sdk.stderr task_id=%s provider=%s model=%s %s",
             params.task_id,
