@@ -503,6 +503,13 @@ class UpdateMessageFeedbackRequest(BaseModel):
     feedback: str = ""
 
 
+class FollowupSuggestionsResponse(BaseModel):
+    topic_id: str
+    message_id: str
+    suggestions: List[str] = Field(default_factory=list)
+    source: str = "empty"
+
+
 class TaskSubmissionResponse(BaseModel):
     accepted: bool = True
     topic_id: str

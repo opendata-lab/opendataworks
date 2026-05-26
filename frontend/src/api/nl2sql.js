@@ -146,6 +146,9 @@ export function createNl2SqlApiClient(options = {}) {
     },
     updateMessageFeedback(topicId, messageId, feedback = '') {
       return runtimeRequest.put(`/topics/${topicId}/messages/${messageId}/feedback`, { feedback })
+    },
+    generateFollowupSuggestions(topicId, messageId) {
+      return runtimeRequest.post(`/topics/${topicId}/messages/${messageId}/followup-suggestions`, {})
     }
   }
 

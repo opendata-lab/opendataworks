@@ -9,7 +9,8 @@ const apiMocks = vi.hoisted(() => ({
     updateTopic: vi.fn(),
     deleteTopic: vi.fn(),
     getTopicMessages: vi.fn(),
-    updateMessageFeedback: vi.fn()
+    updateMessageFeedback: vi.fn(),
+    generateFollowupSuggestions: vi.fn()
   },
   taskApi: {
     deliverMessage: vi.fn(),
@@ -245,6 +246,12 @@ describe('NL2SqlChat', () => {
     ])
     apiMocks.topicApi.getTopic.mockImplementation(async (topicId) => makeTopicDetail(topicId, topicId === 'topic-1' ? '流式话题' : '新话题'))
     apiMocks.topicApi.updateTopic.mockImplementation(async (topicId, data) => makeTopicDetail(topicId, data?.title || '新话题'))
+    apiMocks.topicApi.generateFollowupSuggestions.mockResolvedValue({
+      topic_id: 'topic-1',
+      message_id: 'a1',
+      suggestions: [],
+      source: 'empty'
+    })
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
       topic_id: 'topic-1',
       page: 1,
@@ -1049,7 +1056,7 @@ describe('NL2SqlChat', () => {
     expect(wrapper.find('.query-message-feedback-dislike').classes()).toContain('active')
   })
 
-  it('renders follow-up suggestions for the latest successful assistant answer and submits one when clicked', async () => {
+  it('renders API follow-up suggestions for the latest successful assistant answer and submits one when clicked', async () => {
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
       topic_id: 'topic-1',
       page: 1,
@@ -1085,15 +1092,23 @@ describe('NL2SqlChat', () => {
       user_message_id: 'u-new',
       assistant_message_id: 'a-new'
     })
+    apiMocks.topicApi.generateFollowupSuggestions.mockResolvedValue({
+      topic_id: 'topic-1',
+      message_id: 'a1',
+      suggestions: ['查看异常峰值对应的明细', '按发布操作类型拆解这个趋势'],
+      source: 'generated'
+    })
 
     const wrapper = mountChat()
 
     await flushPromises()
     await flushPromises()
+    await flushPromises()
 
+    expect(apiMocks.topicApi.generateFollowupSuggestions).toHaveBeenCalledWith('topic-1', 'a1')
     const suggestions = wrapper.findAll('.query-followup-suggestion')
-    expect(suggestions.length).toBeGreaterThanOrEqual(2)
-    expect(suggestions[0].text()).toContain('SQL')
+    expect(suggestions).toHaveLength(2)
+    expect(suggestions[0].text()).toBe('查看异常峰值对应的明细')
 
     await suggestions[0].trigger('click')
     await flushPromises()
@@ -1103,6 +1118,51 @@ describe('NL2SqlChat', () => {
       topic_id: 'topic-1',
       content: suggestions[0].text()
     }))
+  })
+
+  it('does not render follow-up suggestions when the API returns an empty list', async () => {
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: '最近 30 天共发布 4 次。',
+          blocks: [
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: '最近 30 天共发布 4 次。'
+            }
+          ],
+          created_at: '2026-03-10T02:01:00Z'
+        }
+      ]
+    })
+    apiMocks.topicApi.generateFollowupSuggestions.mockResolvedValue({
+      topic_id: 'topic-1',
+      message_id: 'a1',
+      suggestions: [],
+      source: 'empty'
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMocks.topicApi.generateFollowupSuggestions).toHaveBeenCalledWith('topic-1', 'a1')
+    expect(wrapper.find('.query-followup-suggestion').exists()).toBe(false)
   })
 
   it('renders tool chart_spec blocks in the conclusion area instead of the process panel', async () => {
