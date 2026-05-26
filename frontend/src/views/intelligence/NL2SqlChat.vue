@@ -1981,6 +1981,12 @@ onBeforeUnmount(() => {
   stroke: currentColor;
 }
 
+@keyframes query-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .query-empty-sessions {
   padding: 30px 8px;
   color: #8C8C8C;
