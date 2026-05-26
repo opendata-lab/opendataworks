@@ -5,6 +5,7 @@ BASE_URL="${ODW_BACKEND_BASE_URL:-}"
 SERVICE_TOKEN="${ODW_AGENT_SERVICE_TOKEN:-}"
 TIMEOUT_SECONDS="${ODW_BACKEND_TIMEOUT_SECONDS:-30}"
 TOKEN_HEADER_NAME="${ODW_AGENT_SERVICE_TOKEN_HEADER_NAME:-X-Agent-Service-Token}"
+DATA_SCOPE_HEADER="${ODW_AGENT_DATA_SCOPE_HEADER:-${DATAAGENT_DATA_SCOPE_HEADER:-}}"
 AI_BASE_URL=""
 METADATA_BASE_URL=""
 
@@ -76,12 +77,22 @@ run_get_request() {
   body_file="$(mktemp)"
   trap 'rm -f "$body_file"' EXIT INT TERM
 
-  http_code="$(curl -sS -o "$body_file" -w '%{http_code}' \
-    -H "Accept: application/json" \
-    -H "${TOKEN_HEADER_NAME}: ${SERVICE_TOKEN}" \
-    --max-time "$TIMEOUT_SECONDS" \
-    -G "${base_url%/}/${endpoint}" \
-    "$@")"
+  if [ -n "$DATA_SCOPE_HEADER" ]; then
+    http_code="$(curl -sS -o "$body_file" -w '%{http_code}' \
+      -H "Accept: application/json" \
+      -H "${TOKEN_HEADER_NAME}: ${SERVICE_TOKEN}" \
+      -H "X-Agent-Data-Scope: ${DATA_SCOPE_HEADER}" \
+      --max-time "$TIMEOUT_SECONDS" \
+      -G "${base_url%/}/${endpoint}" \
+      "$@")"
+  else
+    http_code="$(curl -sS -o "$body_file" -w '%{http_code}' \
+      -H "Accept: application/json" \
+      -H "${TOKEN_HEADER_NAME}: ${SERVICE_TOKEN}" \
+      --max-time "$TIMEOUT_SECONDS" \
+      -G "${base_url%/}/${endpoint}" \
+      "$@")"
+  fi
 
   handle_response "$body_file" "$http_code"
 }
@@ -94,13 +105,24 @@ run_post_json() {
   body_file="$(mktemp)"
   trap 'rm -f "$body_file"' EXIT INT TERM
 
-  http_code="$(curl -sS -o "$body_file" -w '%{http_code}' \
-    -H "Accept: application/json" \
-    -H "Content-Type: application/json" \
-    -H "${TOKEN_HEADER_NAME}: ${SERVICE_TOKEN}" \
-    --max-time "$TIMEOUT_SECONDS" \
-    -X POST "${base_url%/}/${endpoint}" \
-    --data-binary "$payload")"
+  if [ -n "$DATA_SCOPE_HEADER" ]; then
+    http_code="$(curl -sS -o "$body_file" -w '%{http_code}' \
+      -H "Accept: application/json" \
+      -H "Content-Type: application/json" \
+      -H "${TOKEN_HEADER_NAME}: ${SERVICE_TOKEN}" \
+      -H "X-Agent-Data-Scope: ${DATA_SCOPE_HEADER}" \
+      --max-time "$TIMEOUT_SECONDS" \
+      -X POST "${base_url%/}/${endpoint}" \
+      --data-binary "$payload")"
+  else
+    http_code="$(curl -sS -o "$body_file" -w '%{http_code}' \
+      -H "Accept: application/json" \
+      -H "Content-Type: application/json" \
+      -H "${TOKEN_HEADER_NAME}: ${SERVICE_TOKEN}" \
+      --max-time "$TIMEOUT_SECONDS" \
+      -X POST "${base_url%/}/${endpoint}" \
+      --data-binary "$payload")"
+  fi
 
   handle_response "$body_file" "$http_code"
 }

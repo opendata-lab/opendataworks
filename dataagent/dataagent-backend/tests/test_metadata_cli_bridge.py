@@ -158,11 +158,36 @@ def test_query_readonly_uses_backend_cli(monkeypatch):
     assert result["duration_ms"] == 12
 
 
+def test_call_metadata_cli_exports_runtime_data_scope_header(monkeypatch):
+    runtime = _load_runtime_module()
+    _bind_existing_cli(monkeypatch, runtime)
+    captured = {}
+    monkeypatch.setenv(
+        "DATAAGENT_DATA_SCOPE_JSON",
+        '{"allowed_scopes":[{"cluster_id":3,"source_type":"DORIS","database":"ads_user"}]}',
+    )
+    monkeypatch.delenv("ODW_AGENT_DATA_SCOPE_HEADER", raising=False)
+
+    def fake_run(command, check, capture_output, text, env=None):
+        captured["scope_header"] = (env or {}).get("ODW_AGENT_DATA_SCOPE_HEADER")
+        return SimpleNamespace(returncode=0, stdout='{"kind":"ok"}', stderr="")
+
+    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
+
+    runtime.call_metadata_cli("query-readonly", database="ads_user", sql="SELECT 1")
+
+    assert (
+        captured["scope_header"]
+        == "eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19"
+    )
+    assert os.environ.get("ODW_AGENT_DATA_SCOPE_HEADER") is None
+
+
 def test_call_metadata_cli_rejects_invalid_json(monkeypatch):
     runtime = _load_runtime_module()
     _bind_existing_cli(monkeypatch, runtime)
 
-    def fake_run(command, check, capture_output, text):
+    def fake_run(command, check, capture_output, text, env=None):
         return SimpleNamespace(returncode=0, stdout="not-json", stderr="")
 
     monkeypatch.setattr(runtime.subprocess, "run", fake_run)
@@ -175,7 +200,7 @@ def test_call_metadata_cli_surfaces_non_zero_exit(monkeypatch):
     runtime = _load_runtime_module()
     _bind_existing_cli(monkeypatch, runtime)
 
-    def fake_run(command, check, capture_output, text):
+    def fake_run(command, check, capture_output, text, env=None):
         return SimpleNamespace(returncode=22, stdout="", stderr="agent api token 无效")
 
     monkeypatch.setattr(runtime.subprocess, "run", fake_run)
@@ -220,7 +245,7 @@ def test_call_metadata_cli_non_executable_bin_falls_back_to_sh(monkeypatch):
             return False
         return os.access(path, mode)
 
-    def fake_run(command, check, capture_output, text):
+    def fake_run(command, check, capture_output, text, env=None):
         captured["command"] = command
         return SimpleNamespace(returncode=0, stdout='{"kind":"ok"}', stderr="")
 
@@ -240,7 +265,7 @@ def test_call_metadata_cli_permission_denied_falls_back_to_sh(monkeypatch):
     cli_path = Path(runtime.metadata_cli_bin())
     captured = {"calls": 0}
 
-    def fake_run(command, check, capture_output, text):
+    def fake_run(command, check, capture_output, text, env=None):
         captured["calls"] += 1
         captured["command"] = command
         if captured["calls"] == 1:
