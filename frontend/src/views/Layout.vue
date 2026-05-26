@@ -54,7 +54,7 @@ const menuItems = computed(() => {
     { index: '/lineage', label: '数据血缘', icon: Connection },
     { index: '/inspection', label: '数据质量', icon: Warning },
     { index: '/integration', label: '数据集成', icon: Link },
-    { index: '/intelligent-query', label: '智能问数', icon: ChatDotRound },
+    { index: '/intelligent-query', label: 'Agent问答', icon: ChatDotRound },
     { index: '/settings', label: '设置', icon: Setting }
   ]
   if (!isDemoMode) {
