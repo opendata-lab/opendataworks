@@ -346,6 +346,58 @@ def test_deepeval_poll_task_retries_transient_event_error(monkeypatch):
     assert errors == []
 
 
+def test_deepeval_run_case_uses_recovered_task_answer(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+
+    def fake_http_json(method, url, payload=None, **kwargs):
+        if url.endswith("/api/v1/nl2sql/topics") and method == "POST":
+            return {"topic_id": "topic_1"}
+        if url.endswith("/api/v1/nl2sql/tasks/deliver-message"):
+            return {"task_id": "task_1", "accepted": True}
+        if url == "http://dataagent/api/v1/nl2sql/tasks/task_1":
+            return {
+                "task_id": "task_1",
+                "topic_id": "topic_1",
+                "task_status": "suspended",
+                "error": {"code": "task_recovered", "message": "任务租约已过期，已转移到 task_2"},
+            }
+        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_1/events"):
+            return {"task_id": "task_1", "task_status": "suspended", "next_after_seq": 0, "events": []}
+        if url == "http://dataagent/api/v1/nl2sql/topics/topic_1":
+            return {"topic_id": "topic_1", "current_task_id": "task_2", "current_task_status": "finished"}
+        if url == "http://dataagent/api/v1/nl2sql/tasks/task_2":
+            return {"task_id": "task_2", "topic_id": "topic_1", "task_status": "finished"}
+        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_2/events"):
+            return {
+                "task_id": "task_2",
+                "task_status": "finished",
+                "next_after_seq": 1,
+                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
+            }
+        if url.startswith("http://dataagent/api/v1/nl2sql/topics/topic_1/messages"):
+            return {
+                "items": [
+                    {"sender_type": "assistant", "task_id": "task_1", "content": ""},
+                    {"sender_type": "assistant", "task_id": "task_2", "content": "recovered answer"},
+                ]
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    monkeypatch.setattr(runner, "http_json", fake_http_json)
+
+    result = runner.run_case(
+        "http://dataagent",
+        _sample_case(),
+        types.SimpleNamespace(agent_id="agent_eval", provider_id="", model="", timeout_seconds=5),
+    )
+
+    assert result["task_id"] == "task_2"
+    assert result["task_status"] == "finished"
+    assert result["final_answer"] == "recovered answer"
+    assert result["errors"] == []
+
+
 def test_deepeval_auto_rule_check_adds_generic_failure_attribution(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()

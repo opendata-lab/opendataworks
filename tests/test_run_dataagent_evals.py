@@ -520,16 +520,57 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
         if self.path == "/api/v1/nl2sql-admin/settings":
             self._send(200, {"provider_id": "openrouter", "model": "anthropic/claude-sonnet-4.5"})
             return
+        if self.path == "/api/v1/nl2sql/topics/topic-1":
+            self._send(
+                200,
+                {
+                    "topic_id": "topic-1",
+                    "title": "eval",
+                    "chat_topic_id": "chat-1",
+                    "chat_conversation_id": "conv-1",
+                    "current_task_id": "task-2" if self.scenario == "recovered" else "task-1",
+                    "current_task_status": "success" if self.scenario == "recovered" else "running",
+                },
+            )
+            return
+        if self.path.startswith("/api/v1/nl2sql/tasks/task-2/events"):
+            self._send(
+                200,
+                {
+                    "task_id": "task-2",
+                    "task_status": "success",
+                    "after_seq": 0,
+                    "next_after_seq": 1,
+                    "has_more": False,
+                    "events": [
+                        {
+                            "record_type": "event",
+                            "seq_id": 1,
+                            "event_type": "AFTER_TOOL_CALL",
+                            "data": {
+                                "tool_name": "run_sql",
+                                "output": {
+                                    "rows": [{"cnt": 1}],
+                                    "sql": "select count(1) from opendataworks.workflow_publish_record",
+                                },
+                            },
+                        },
+                    ],
+                },
+            )
+            return
         if self.path.startswith("/api/v1/nl2sql/tasks/task-1/events"):
             self._send(
                 200,
                 {
                     "task_id": "task-1",
-                    "task_status": "success",
+                    "task_status": "suspended" if self.scenario == "recovered" else "success",
                     "after_seq": 0,
-                    "next_after_seq": 2,
+                    "next_after_seq": 0 if self.scenario == "recovered" else 2,
                     "has_more": False,
-                    "events": [
+                    "events": []
+                    if self.scenario == "recovered"
+                    else [
                         {
                             "record_type": "event",
                             "seq_id": 1,
@@ -562,9 +603,57 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                     },
                 )
                 return
+            if self.scenario == "recovered":
+                self._send(
+                    200,
+                    {
+                        "task_id": "task-1",
+                        "topic_id": "topic-1",
+                        "task_status": "suspended",
+                        "error": {"code": "task_recovered", "message": "任务租约已过期，已转移到 task-2"},
+                    },
+                )
+                return
             self._send(200, {"task_id": "task-1", "topic_id": "topic-1", "task_status": "success", "usage": {"input_tokens": 1}})
             return
+        if self.path == "/api/v1/nl2sql/tasks/task-2":
+            self._send(200, {"task_id": "task-2", "topic_id": "topic-1", "task_status": "success", "usage": {"input_tokens": 1}})
+            return
         if self.path.startswith("/api/v1/nl2sql/topics/topic-1/messages"):
+            if self.scenario == "recovered":
+                self._send(
+                    200,
+                    {
+                        "topic_id": "topic-1",
+                        "page": 1,
+                        "page_size": 200,
+                        "order": "asc",
+                        "total": 3,
+                        "items": [
+                            {"message_id": "m1", "topic_id": "topic-1", "sender_type": "user", "type": "chat", "status": "success", "content": "q"},
+                            {
+                                "message_id": "m2",
+                                "topic_id": "topic-1",
+                                "task_id": "task-1",
+                                "sender_type": "assistant",
+                                "type": "assistant",
+                                "status": "suspended",
+                                "content": "",
+                            },
+                            {
+                                "message_id": "m3",
+                                "topic_id": "topic-1",
+                                "task_id": "task-2",
+                                "sender_type": "assistant",
+                                "type": "assistant",
+                                "status": "success",
+                                "content": "answer with opendataworks.workflow_publish_record",
+                                "usage": {"input_tokens": 1, "output_tokens": 2},
+                            },
+                        ],
+                    },
+                )
+                return
             self._send(
                 200,
                 {
@@ -758,6 +847,17 @@ def test_task_failure_generates_report_and_exit_1(tmp_path):
     result = json.loads((tmp_path / "cases.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert result["case_passed"] is False
     assert result["task_status"] == "failed"
+
+
+def test_recovered_task_follows_replacement_and_scores_final_answer(tmp_path):
+    code = _run_fake_scenario(tmp_path, "recovered")
+
+    assert code == 0
+    result = json.loads((tmp_path / "cases.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert result["task_id"] == "task-2"
+    assert result["task_status"] == "success"
+    assert result["final_answer"] == "answer with opendataworks.workflow_publish_record"
+    assert result["errors"] == []
 
 
 def test_timeout_generates_case_error_and_exit_1(tmp_path):

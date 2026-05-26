@@ -442,8 +442,44 @@ def _submit_task(base_url: str, topic_id: str, case: dict[str, Any], args: argpa
     return task_id
 
 
-def _poll_task(base_url: str, task_id: str, timeout_seconds: int) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+def _is_recovered_task(task: dict[str, Any]) -> bool:
+    error = task.get("error") if isinstance(task.get("error"), dict) else {}
+    return str(task.get("task_status") or "").lower() == "suspended" and str(error.get("code") or "") == "task_recovered"
+
+
+def _task_id_from_recovery_message(task: dict[str, Any]) -> str:
+    error = task.get("error") if isinstance(task.get("error"), dict) else {}
+    message = str(error.get("message") or "")
+    match = re.search(r"\btask[-_][A-Za-z0-9]+\b", message)
+    return match.group(0) if match else ""
+
+
+def _resolve_recovered_task_id(base_url: str, topic_id: str, task: dict[str, Any]) -> str:
+    parent_task_id = str(task.get("task_id") or "").strip()
+    if topic_id:
+        try:
+            topic = http_json("GET", f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}", timeout=30)
+        except EvalRunnerError:
+            topic = {}
+        current_task_id = str(topic.get("current_task_id") or "").strip()
+        if current_task_id and current_task_id != parent_task_id:
+            return current_task_id
+    recovered_task_id = _task_id_from_recovery_message(task)
+    if recovered_task_id and recovered_task_id != parent_task_id:
+        return recovered_task_id
+    return ""
+
+
+def _poll_task(
+    base_url: str,
+    task_id: str,
+    timeout_seconds: int,
+    *,
+    topic_id: str = "",
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
     deadline = time.time() + max(1, timeout_seconds)
+    current_task_id = task_id
+    seen_task_ids = {task_id}
     after_seq = 0
     all_events: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
@@ -451,7 +487,7 @@ def _poll_task(base_url: str, task_id: str, timeout_seconds: int) -> tuple[dict[
     last_poll_error = ""
     while time.time() < deadline:
         try:
-            last_task = http_json("GET", f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(task_id)}", timeout=30)
+            last_task = http_json("GET", f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(current_task_id)}", timeout=30)
         except EvalRunnerError as exc:
             last_poll_error = str(exc)
             time.sleep(1.0)
@@ -461,7 +497,7 @@ def _poll_task(base_url: str, task_id: str, timeout_seconds: int) -> tuple[dict[
         try:
             page = http_json(
                 "GET",
-                f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(task_id)}/events?after_seq={after_seq}&limit=1000",
+                f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(current_task_id)}/events?after_seq={after_seq}&limit=1000",
                 timeout=60,
             )
             events = [item for item in page.get("events") or [] if isinstance(item, dict)]
@@ -472,12 +508,19 @@ def _poll_task(base_url: str, task_id: str, timeout_seconds: int) -> tuple[dict[
             last_poll_error = str(exc)
 
         if status in TERMINAL_STATUSES:
+            if _is_recovered_task(last_task):
+                recovered_task_id = _resolve_recovered_task_id(base_url, topic_id, last_task)
+                if recovered_task_id and recovered_task_id not in seen_task_ids:
+                    current_task_id = recovered_task_id
+                    seen_task_ids.add(recovered_task_id)
+                    after_seq = 0
+                    continue
             return last_task, all_events, errors
         time.sleep(0.2)
     errors.append({"code": "timeout", "message": f"task did not finish within {timeout_seconds}s"})
     if last_poll_error:
         errors.append({"code": "poll_error", "message": last_poll_error})
-    last_task = dict(last_task or {"task_id": task_id})
+    last_task = dict(last_task or {"task_id": current_task_id})
     last_task["task_status"] = str(last_task.get("task_status") or "timeout")
     return last_task, all_events, errors
 
@@ -495,14 +538,15 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
         task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, events, poll_errors = _poll_task(base_url, task_id, case_timeout)
+        task, events, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
         errors.extend(poll_errors)
+        final_task_id = str(task.get("task_id") or task_id).strip() or task_id
         messages = http_json(
             "GET",
             f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
             timeout=30,
         )
-        final_answer = _final_assistant_answer(messages, task_id)
+        final_answer = _final_assistant_answer(messages, final_task_id)
         status = str(task.get("task_status") or "").lower()
         if status and status not in SUCCESS_STATUSES:
             errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
@@ -520,7 +564,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         "question": case.get("question"),
         "agent_id": str(args.agent_id or "").strip(),
         "topic_id": topic_id,
-        "task_id": task_id,
+        "task_id": str(task.get("task_id") or task_id),
         "task_status": str(task.get("task_status") or ""),
         "final_answer": final_answer,
         "tool_names": tool_names,
