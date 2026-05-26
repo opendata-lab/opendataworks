@@ -98,4 +98,15 @@ describe('createNl2SqlApiClient', () => {
       { feedback: 'like' }
     )
   })
+
+  it('requests follow-up suggestions through the additive topic API', () => {
+    const client = createNl2SqlApiClient()
+
+    client.topicApi.generateFollowupSuggestions('topic-1', 'message-1')
+
+    expect(clients[0].post).toHaveBeenCalledWith(
+      '/topics/topic-1/messages/message-1/followup-suggestions',
+      {}
+    )
+  })
 })

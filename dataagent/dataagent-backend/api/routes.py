@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import json
-from typing import AsyncIterator
+from typing import Any, AsyncIterator
 
 import anyio
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
+from core.followup_suggestions import generate_followup_suggestions
 from core.magic_events import TERMINAL_TASK_STATUSES, encode_sse
 from core.skill_admin_service import resolved_chat_settings_payload
 from core.task_coordinator import get_task_coordinator
@@ -20,6 +21,7 @@ from models.schemas import (
     CreateTaskRequest,
     CreateTopicRequest,
     DeliverMessageRequest,
+    FollowupSuggestionsResponse,
     MessageQueuePageResponse,
     MessageQueueQueryRequest,
     MessageQueueRecord,
@@ -46,6 +48,8 @@ from models.schemas import (
 
 logger = logging.getLogger(__name__)
 
+SUCCESS_MESSAGE_STATUSES = {"finished", "success", "completed"}
+
 router = APIRouter(prefix="/api/v1/nl2sql")
 topic_router = APIRouter(prefix="/topics")
 task_router = APIRouter(prefix="/tasks")
@@ -58,6 +62,52 @@ def _clean_header(value: str | None, max_length: int = 255) -> str:
     if len(text) > max_length:
         return text[:max_length]
     return text
+
+
+def _message_answer_text(message: dict[str, Any]) -> str:
+    blocks = message.get("blocks")
+    if isinstance(blocks, list):
+        parts = [
+            str(block.get("text") or "").strip()
+            for block in blocks
+            if isinstance(block, dict) and str(block.get("type") or "") == "main_text" and str(block.get("text") or "").strip()
+        ]
+        if parts:
+            return "\n\n".join(parts).strip()
+    return str(message.get("content") or "").strip()
+
+
+def _message_result_summary(message: dict[str, Any]) -> str:
+    blocks = message.get("blocks")
+    if not isinstance(blocks, list):
+        return ""
+    summaries: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_type = str(block.get("type") or "").strip()
+        if block_type not in {"tool", "chart_spec"}:
+            continue
+        output = block.get("output")
+        if output is None and isinstance(block.get("payload"), dict):
+            output = block["payload"].get("output") or block["payload"].get("content")
+        text = str(output or "").strip()
+        if text:
+            summaries.append(text[:500])
+    return "\n\n".join(summaries)[:1200]
+
+
+def _previous_user_question(messages: list[dict[str, Any]], assistant_message: dict[str, Any]) -> str:
+    assistant_seq = int(assistant_message.get("seq_id") or 0)
+    for message in reversed(messages):
+        if str(message.get("sender_type") or "") != "user":
+            continue
+        if assistant_seq and int(message.get("seq_id") or 0) >= assistant_seq:
+            continue
+        content = str(message.get("content") or "").strip()
+        if content:
+            return content
+    return ""
 
 
 def _allowed_widget_sites() -> list[dict]:
@@ -253,6 +303,44 @@ async def api_update_message_feedback(
     if not updated:
         raise HTTPException(status_code=404, detail="Message not found")
     return TopicMessage.model_validate(updated)
+
+
+@topic_router.post("/{topic_id}/messages/{message_id}/followup-suggestions", response_model=FollowupSuggestionsResponse)
+async def api_generate_followup_suggestions(topic_id: str, message_id: str, request: Request):
+    context = _request_context(request)
+    _require_topic(topic_id, context)
+    store = _get_store()
+    message = store.get_message(message_id, context=context)
+    if not message or str(message.get("topic_id") or "") != topic_id or not bool(message.get("show_in_ui", True)):
+        raise HTTPException(status_code=404, detail="Message not found")
+    if str(message.get("sender_type") or "") != "assistant":
+        raise HTTPException(status_code=400, detail="follow-up suggestions are only supported for assistant messages")
+    if str(message.get("status") or "").strip().lower() not in SUCCESS_MESSAGE_STATUSES:
+        raise HTTPException(status_code=400, detail="follow-up suggestions require a finished assistant message")
+
+    answer_text = _message_answer_text(message)
+    if not answer_text:
+        raise HTTPException(status_code=400, detail="assistant message content is empty")
+
+    topic_messages = store.list_topic_messages(topic_id)
+    previous_question = _previous_user_question(topic_messages, message)
+    task = store.get_task(str(message.get("task_id") or ""), context=context) if message.get("task_id") else {}
+    generated = await generate_followup_suggestions(
+        previous_question=previous_question,
+        answer_text=answer_text,
+        result_summary=_message_result_summary(message),
+        provider_id=str((task or {}).get("provider_id") or ""),
+        model=str((task or {}).get("model") or ""),
+        timeout_seconds=int(getattr(get_settings(), "followup_suggestions_timeout_seconds", 20) or 20),
+    )
+    return FollowupSuggestionsResponse.model_validate(
+        {
+            "topic_id": topic_id,
+            "message_id": message_id,
+            "suggestions": list(generated.get("suggestions") or []),
+            "source": str(generated.get("source") or "empty"),
+        }
+    )
 
 
 @task_router.post("/deliver-message", response_model=TaskSubmissionResponse)

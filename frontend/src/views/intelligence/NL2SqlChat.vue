@@ -390,6 +390,8 @@ const autoScroll = ref(true)
 const hydratedIds = new Set()
 const taskSubscriptions = new Map()
 const pendingSubmitKeys = ref(new Set())
+const followupSuggestionsByMessage = ref({})
+const followupSuggestionStateByMessage = ref({})
 
 const settings = reactive({
   default_provider_id: '',
@@ -912,31 +914,56 @@ const latestSuccessfulAssistantMessage = computed(() => {
   return latest
 })
 
+const followupMessageKey = (msg) => String(msg?.message_id || msg?.id || '').trim()
+
+const normalizeFollowupSuggestions = (values) => {
+  if (!Array.isArray(values)) return []
+  const seen = new Set()
+  return values
+    .map((value) => String(value || '').trim())
+    .filter((value) => {
+      if (!value || seen.has(value)) return false
+      seen.add(value)
+      return true
+    })
+    .slice(0, 3)
+}
+
+const setFollowupSuggestionState = (messageKey, state, suggestions = []) => {
+  if (!messageKey) return
+  followupSuggestionStateByMessage.value = {
+    ...followupSuggestionStateByMessage.value,
+    [messageKey]: state
+  }
+  followupSuggestionsByMessage.value = {
+    ...followupSuggestionsByMessage.value,
+    [messageKey]: suggestions
+  }
+}
+
+const loadFollowupSuggestionsForMessage = async (msg) => {
+  const messageKey = followupMessageKey(msg)
+  const topicId = String(activeTopicId.value || '').trim()
+  if (!topicId || !messageKey) return
+  const currentState = followupSuggestionStateByMessage.value[messageKey]
+  if (currentState === 'loading' || currentState === 'loaded') return
+  setFollowupSuggestionState(messageKey, 'loading', [])
+  try {
+    const response = await topicApi.generateFollowupSuggestions(topicId, messageKey)
+    setFollowupSuggestionState(
+      messageKey,
+      'loaded',
+      normalizeFollowupSuggestions(response?.suggestions)
+    )
+  } catch (_error) {
+    setFollowupSuggestionState(messageKey, 'error', [])
+  }
+}
+
 const followupSuggestions = computed(() => {
   const msg = latestSuccessfulAssistantMessage.value
-  if (!msg) return []
-  const text = visibleMessageText(msg)
-  if (!text.trim()) return []
-  if (/错误|失败|error/i.test(text)) return []
-  if (/sql|select|from|where/i.test(text)) {
-    return [
-      '解释一下这个 SQL 的逻辑',
-      '这个查询还能按哪些维度继续分析？',
-      '帮我检查这个 SQL 是否有优化空间'
-    ]
-  }
-  if (/图表|趋势|chart|折线|柱状|饼图/i.test(text)) {
-    return [
-      '对图表展现的趋势做个深度解读',
-      '按业务维度拆解这个趋势',
-      '查看异常波动对应的明细'
-    ]
-  }
-  return [
-    '按核心维度做进一步对比',
-    '查看这个结果的明细数据',
-    '总结一下可能的业务原因'
-  ]
+  const messageKey = followupMessageKey(msg)
+  return messageKey ? (followupSuggestionsByMessage.value[messageKey] || []) : []
 })
 
 const shouldShowFollowupForMessage = (msg) => latestSuccessfulAssistantMessage.value === msg && followupSuggestions.value.length > 0
@@ -1656,6 +1683,19 @@ watch(selectedAgentId, async (next, prev) => {
   activeTopicId.value = ''
   await loadTopics()
 })
+
+watch(
+  () => [
+    activeTopicId.value,
+    followupMessageKey(latestSuccessfulAssistantMessage.value),
+    latestSuccessfulAssistantMessage.value?.status
+  ],
+  () => {
+    const msg = latestSuccessfulAssistantMessage.value
+    if (!msg) return
+    void loadFollowupSuggestionsForMessage(msg)
+  }
+)
 
 onMounted(async () => {
   await loadSettings()

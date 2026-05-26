@@ -679,6 +679,88 @@ def test_topics_tasks_and_legacy_routes(monkeypatch):
         assert store.get_topic(topic_id) is None
 
 
+def test_followup_suggestions_route_generates_without_changing_message_contract(monkeypatch):
+    client, store, _coordinator, _submit_calls = _build_client(monkeypatch)
+    captured: dict = {}
+
+    async def fake_generate_followup_suggestions(**kwargs):
+        captured.update(kwargs)
+        return {
+            "suggestions": ["查看异常波动对应的明细", "按业务维度拆解这个趋势"],
+            "source": "generated",
+        }
+
+    monkeypatch.setattr(routes, "generate_followup_suggestions", fake_generate_followup_suggestions, raising=False)
+
+    with client:
+        topic_id = client.post("/api/v1/nl2sql/topics", json={"title": "追问测试"}).json()["topic_id"]
+        delivered = client.post(
+            "/api/v1/nl2sql/tasks/deliver-message",
+            json={
+                "topic_id": topic_id,
+                "content": "最近 30 天工作流发布次数趋势",
+                "provider_id": "openrouter",
+                "model": "anthropic/claude-sonnet-4.5",
+            },
+        )
+        task_id = delivered.json()["task_id"]
+        assistant_message_id = delivered.json()["assistant_message_id"]
+
+        assistant = store.get_assistant_message(task_id)
+        assistant["status"] = "finished"
+        assistant["content"] = "最近 30 天工作流发布次数整体上升，5 月 20 日出现异常峰值。"
+
+        response = client.post(f"/api/v1/nl2sql/topics/{topic_id}/messages/{assistant_message_id}/followup-suggestions")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "topic_id": topic_id,
+            "message_id": assistant_message_id,
+            "suggestions": ["查看异常波动对应的明细", "按业务维度拆解这个趋势"],
+            "source": "generated",
+        }
+        assert captured["previous_question"] == "最近 30 天工作流发布次数趋势"
+        assert captured["answer_text"] == "最近 30 天工作流发布次数整体上升，5 月 20 日出现异常峰值。"
+        assert captured["provider_id"] == "openrouter"
+        assert captured["model"] == "anthropic/claude-sonnet-4.5"
+
+        history = client.get(f"/api/v1/nl2sql/topics/{topic_id}/messages", params={"page": 1, "page_size": 50, "order": "asc"})
+        assert history.status_code == 200
+        assert "followup_suggestions" not in history.json()["items"][1]
+
+
+def test_followup_suggestions_route_rejects_invalid_message_states(monkeypatch):
+    client, store, _coordinator, _submit_calls = _build_client(monkeypatch)
+    calls = []
+
+    async def fake_generate_followup_suggestions(**kwargs):
+        calls.append(kwargs)
+        return {"suggestions": ["不应生成"], "source": "generated"}
+
+    monkeypatch.setattr(routes, "generate_followup_suggestions", fake_generate_followup_suggestions, raising=False)
+
+    with client:
+        topic_id = client.post("/api/v1/nl2sql/topics", json={"title": "追问校验"}).json()["topic_id"]
+        other_topic_id = client.post("/api/v1/nl2sql/topics", json={"title": "其他话题"}).json()["topic_id"]
+        delivered = client.post(
+            "/api/v1/nl2sql/tasks/deliver-message",
+            json={"topic_id": topic_id, "content": "各数据层表数量对比"},
+        )
+        user_message_id = delivered.json()["user_message_id"]
+        assistant_message_id = delivered.json()["assistant_message_id"]
+
+        assert client.post(f"/api/v1/nl2sql/topics/{topic_id}/messages/missing/followup-suggestions").status_code == 404
+        assert client.post(f"/api/v1/nl2sql/topics/{other_topic_id}/messages/{assistant_message_id}/followup-suggestions").status_code == 404
+        assert client.post(f"/api/v1/nl2sql/topics/{topic_id}/messages/{user_message_id}/followup-suggestions").status_code == 400
+        assert client.post(f"/api/v1/nl2sql/topics/{topic_id}/messages/{assistant_message_id}/followup-suggestions").status_code == 400
+
+        assistant = store.get_assistant_message(delivered.json()["task_id"])
+        assistant["status"] = "finished"
+        assistant["content"] = ""
+        assert client.post(f"/api/v1/nl2sql/topics/{topic_id}/messages/{assistant_message_id}/followup-suggestions").status_code == 400
+        assert calls == []
+
+
 def test_message_queue_and_schedule_routes(monkeypatch):
     client, store, _coordinator, submit_calls = _build_client(monkeypatch)
     with client:
