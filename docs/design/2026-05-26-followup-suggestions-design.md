@@ -23,7 +23,7 @@ Add an independent follow-up suggestion endpoint:
 
 The endpoint validates that the target message belongs to the topic, is visible, is an assistant message, is finished, and has non-empty visible answer content. It then locates the previous user message in the same topic and asks a lightweight generator for 2-3 Chinese follow-up questions.
 
-The generator uses the same provider/model recorded on the original task, disables tools, uses `max_turns=1`, and applies a short timeout. Model output is parsed as JSON and normalized by trimming bullets, removing duplicates, limiting length, and filtering the original question. If generation fails, the endpoint returns backend fallback suggestions or an empty list with a non-error source.
+The generator uses the same provider/model recorded on the original task, disables tools, uses a bounded 2-turn SDK budget, and applies a short timeout. Model output is parsed as JSON and normalized by trimming bullets, removing duplicates, limiting length, and filtering the original question. If generation fails, the endpoint returns backend fallback suggestions or an empty list with a non-error source.
 
 ## Interfaces
 

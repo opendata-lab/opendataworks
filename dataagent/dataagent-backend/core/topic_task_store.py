@@ -730,21 +730,24 @@ class TopicTaskStore:
             conn.close()
         return self._normalize_message_row(row, history=history_by_task_id.get(task_id)) if row else None
 
-    def get_message(self, message_id: str) -> dict[str, Any] | None:
+    def get_message(self, message_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
+        context_sql, context_params = self._topic_context_predicate(context, alias="t")
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
-                    SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
-                           steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
-                    FROM da_agent_message
-                    WHERE message_id = %s
+                    f"""
+                    SELECT m.message_id, m.topic_id, m.task_id, m.sender_type, m.type, m.status, m.content, m.event,
+                           m.steps_json, m.tool_json, m.seq_id, m.correlation_id, m.parent_correlation_id,
+                           m.content_type, m.usage_json, m.feedback, m.error_json, m.show_in_ui, m.created_at, m.updated_at
+                    FROM da_agent_message m
+                    JOIN da_agent_topic t ON t.topic_id = m.topic_id
+                    WHERE m.message_id = %s
+                      AND {context_sql}
                     LIMIT 1
                     """,
-                    (message_id,),
+                    [message_id, *context_params],
                 )
                 row = cur.fetchone()
                 history_by_task_id = {}
@@ -813,7 +816,7 @@ class TopicTaskStore:
             conn.commit()
         finally:
             conn.close()
-        return self.get_message(message_id)
+        return self.get_message(message_id, context=context)
 
     def create_task(
         self,

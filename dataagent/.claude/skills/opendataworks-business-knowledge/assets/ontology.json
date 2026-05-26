@@ -1,13 +1,14 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "items": [
     {
       "entity": "数据表元数据",
       "tables": [
         "data_table",
-        "data_field"
+        "data_field",
+        "table_statistics_history"
       ],
-      "description": "记录数据表基础属性、分层、状态、库表归属和字段定义。"
+      "description": "记录平台管理的数据表、字段定义、Doris 同步属性和表统计快照。"
     },
     {
       "entity": "表血缘与任务关系",
@@ -15,7 +16,7 @@
         "data_lineage",
         "table_task_relation"
       ],
-      "description": "记录上下游表关系，以及数据表与任务之间的读写关系。"
+      "description": "记录上下游表关系，以及数据表与任务之间的 read/write 关系。"
     },
     {
       "entity": "调度任务",
@@ -23,7 +24,7 @@
         "data_task",
         "task_execution_log"
       ],
-      "description": "记录任务定义、执行引擎、调度状态和执行日志。"
+      "description": "记录任务定义、任务 SQL、执行引擎、调度状态和执行日志。"
     },
     {
       "entity": "工作流治理",
@@ -41,7 +42,1479 @@
         "doris_cluster",
         "doris_database_users"
       ],
-      "description": "记录 Doris 集群元信息以及数据库级只读/读写账号。"
+      "description": "记录 Doris/MySQL 数据源元信息以及数据库级只读/读写账号。"
+    }
+  ],
+  "object_types": [
+    {
+      "id": "platform_table",
+      "name": "平台管理数据表",
+      "description": "平台表管理中的一张数据表元数据记录，不等同于该表的真实业务数据行。",
+      "aliases": [
+        "表",
+        "数据表",
+        "平台表",
+        "表管理记录",
+        "元数据表"
+      ],
+      "identity_keys": [
+        "id",
+        "cluster_id",
+        "db_name",
+        "table_name"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.data_table",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "平台表 ID，关联字段、任务关系、血缘和统计快照时优先使用。"
+        },
+        {
+          "column": "cluster_id",
+          "meaning": "数据源/集群 ID，用于区分同库同表名在不同数据源中的记录。"
+        },
+        {
+          "column": "table_name",
+          "meaning": "当前平台记录中的表名。"
+        },
+        {
+          "column": "table_type",
+          "meaning": "表类型，例如 BASE TABLE、VIEW、MATERIALIZED VIEW。"
+        },
+        {
+          "column": "origin_table_name",
+          "meaning": "软删除前原始表名。"
+        },
+        {
+          "column": "table_comment",
+          "meaning": "表中文或业务描述。"
+        },
+        {
+          "column": "layer",
+          "meaning": "数仓分层：ODS、DWD、DIM、DWS、ADS。"
+        },
+        {
+          "column": "business_domain",
+          "meaning": "业务域，偏组织或系统视角。"
+        },
+        {
+          "column": "data_domain",
+          "meaning": "数据域，偏主题域视角。"
+        },
+        {
+          "column": "custom_identifier",
+          "meaning": "自定义表标识。"
+        },
+        {
+          "column": "statistics_cycle",
+          "meaning": "统计周期，例如 10m、1h、1d。"
+        },
+        {
+          "column": "update_type",
+          "meaning": "更新类型，例如 di、df、hi、hf、ri。"
+        },
+        {
+          "column": "table_model",
+          "meaning": "Doris 表模型，例如 DUPLICATE、AGGREGATE、UNIQUE。"
+        },
+        {
+          "column": "bucket_num",
+          "meaning": "分桶数。"
+        },
+        {
+          "column": "replica_num",
+          "meaning": "副本数。"
+        },
+        {
+          "column": "partition_column",
+          "meaning": "分区字段。"
+        },
+        {
+          "column": "distribution_column",
+          "meaning": "分桶字段。"
+        },
+        {
+          "column": "key_columns",
+          "meaning": "主键列或 Key 列，逗号分隔。"
+        },
+        {
+          "column": "doris_ddl",
+          "meaning": "平台生成或保存的 Doris DDL。实时结构仍以平台工具查询 DDL 为准。"
+        },
+        {
+          "column": "is_synced",
+          "meaning": "是否已同步到 Doris。"
+        },
+        {
+          "column": "sync_time",
+          "meaning": "Doris 同步时间。"
+        },
+        {
+          "column": "db_name",
+          "meaning": "真实数据表所在数据库/schema。"
+        },
+        {
+          "column": "owner",
+          "meaning": "表负责人。"
+        },
+        {
+          "column": "status",
+          "meaning": "平台元数据状态：active、inactive、deprecated。"
+        },
+        {
+          "column": "deprecated_at",
+          "meaning": "软删除时间。"
+        },
+        {
+          "column": "purge_at",
+          "meaning": "预计物理删除时间。"
+        },
+        {
+          "column": "lifecycle_days",
+          "meaning": "生命周期天数。"
+        },
+        {
+          "column": "storage_size",
+          "meaning": "平台记录的存储大小，单位字节。"
+        },
+        {
+          "column": "row_count",
+          "meaning": "平台记录的行数快照。"
+        },
+        {
+          "column": "doris_create_time",
+          "meaning": "Doris 中的表创建时间。"
+        },
+        {
+          "column": "doris_update_time",
+          "meaning": "Doris 中的表最后更新时间。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "平台记录创建时间。"
+        },
+        {
+          "column": "updated_at",
+          "meaning": "平台记录更新时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "平台逻辑删除标记。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "find_table_metadata",
+          "purpose": "按平台表 ID 或 cluster_id + db_name + table_name 定位唯一表记录。",
+          "output_fields": [
+            "id",
+            "cluster_id",
+            "db_name",
+            "table_name",
+            "table_comment",
+            "table_type",
+            "layer",
+            "status",
+            "owner",
+            "row_count",
+            "storage_size",
+            "doris_update_time"
+          ],
+          "sql_template_mysql": "SELECT id, cluster_id, db_name, table_name, table_comment, table_type, layer, status, owner, row_count, storage_size, doris_update_time FROM opendataworks.data_table WHERE deleted = 0 AND status <> 'deprecated' AND table_name = {table_name} LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": "platform_table_field",
+      "name": "平台表字段",
+      "description": "平台保存的一张表的字段定义和字段属性。",
+      "aliases": [
+        "字段",
+        "列",
+        "字段定义",
+        "表字段"
+      ],
+      "identity_keys": [
+        "table_id",
+        "field_name"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.data_field",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "字段 ID。"
+        },
+        {
+          "column": "table_id",
+          "meaning": "所属平台表 ID，对应 data_table.id。"
+        },
+        {
+          "column": "field_name",
+          "meaning": "字段名。"
+        },
+        {
+          "column": "field_type",
+          "meaning": "字段类型。"
+        },
+        {
+          "column": "field_comment",
+          "meaning": "字段描述。"
+        },
+        {
+          "column": "is_nullable",
+          "meaning": "是否可为空。"
+        },
+        {
+          "column": "is_partition",
+          "meaning": "是否分区字段。"
+        },
+        {
+          "column": "is_primary",
+          "meaning": "是否主键或 Key 字段。"
+        },
+        {
+          "column": "default_value",
+          "meaning": "默认值。"
+        },
+        {
+          "column": "field_order",
+          "meaning": "字段排序。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "字段记录创建时间。"
+        },
+        {
+          "column": "updated_at",
+          "meaning": "字段记录更新时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "list_table_fields",
+          "purpose": "查看某张平台表已登记的字段、类型、注释、分区和主键信息。",
+          "output_fields": [
+            "field_name",
+            "field_type",
+            "field_comment",
+            "is_partition",
+            "is_primary",
+            "field_order"
+          ],
+          "sql_template_mysql": "SELECT field_name, field_type, field_comment, is_partition, is_primary, field_order FROM opendataworks.data_field WHERE deleted = 0 AND table_id = {table_id} ORDER BY field_order, id"
+        }
+      ]
+    },
+    {
+      "id": "platform_table_statistics_snapshot",
+      "name": "平台表统计快照",
+      "description": "平台保存的表行数、数据大小、分区数等统计历史，不等同于直接扫描业务表得到的实时数据。",
+      "aliases": [
+        "表统计",
+        "行数快照",
+        "数据量快照",
+        "统计历史"
+      ],
+      "identity_keys": [
+        "table_id",
+        "statistics_time"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.table_statistics_history",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "统计记录 ID。"
+        },
+        {
+          "column": "table_id",
+          "meaning": "关联平台表 ID。"
+        },
+        {
+          "column": "cluster_id",
+          "meaning": "Doris 集群 ID。"
+        },
+        {
+          "column": "database_name",
+          "meaning": "数据库名。"
+        },
+        {
+          "column": "table_name",
+          "meaning": "表名。"
+        },
+        {
+          "column": "row_count",
+          "meaning": "数据行数快照。"
+        },
+        {
+          "column": "data_size",
+          "meaning": "数据大小快照，单位字节。"
+        },
+        {
+          "column": "partition_count",
+          "meaning": "分区数量。"
+        },
+        {
+          "column": "replication_num",
+          "meaning": "副本数量。"
+        },
+        {
+          "column": "bucket_num",
+          "meaning": "分桶数量。"
+        },
+        {
+          "column": "table_last_update_time",
+          "meaning": "来自 Doris 的表最后更新时间。"
+        },
+        {
+          "column": "statistics_time",
+          "meaning": "统计采集时间。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "记录创建时间。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "latest_table_statistics",
+          "purpose": "查看某张平台表最近一次统计快照。",
+          "output_fields": [
+            "row_count",
+            "data_size",
+            "partition_count",
+            "statistics_time"
+          ],
+          "sql_template_mysql": "SELECT row_count, data_size, partition_count, replication_num, bucket_num, table_last_update_time, statistics_time FROM opendataworks.table_statistics_history WHERE table_id = {table_id} ORDER BY statistics_time DESC LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": "platform_task",
+      "name": "平台调度任务",
+      "description": "平台中管理的任务定义，包含任务 SQL、引擎、Dolphin/Dinky 映射和运行配置。",
+      "aliases": [
+        "任务",
+        "调度任务",
+        "加工任务",
+        "任务 SQL",
+        "任务脚本"
+      ],
+      "identity_keys": [
+        "id",
+        "task_code",
+        "task_name"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.data_task",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "平台任务 ID。"
+        },
+        {
+          "column": "task_name",
+          "meaning": "任务名称。"
+        },
+        {
+          "column": "task_code",
+          "meaning": "任务编码。"
+        },
+        {
+          "column": "task_type",
+          "meaning": "任务类型：batch 或 stream。"
+        },
+        {
+          "column": "engine",
+          "meaning": "执行引擎：dolphin 或 dinky。"
+        },
+        {
+          "column": "dolphin_node_type",
+          "meaning": "Dolphin 节点类型，例如 SHELL、SQL、PYTHON、SPARK、FLINK。"
+        },
+        {
+          "column": "datasource_name",
+          "meaning": "SQL 节点数据源名称。"
+        },
+        {
+          "column": "datasource_type",
+          "meaning": "SQL 节点数据源类型。"
+        },
+        {
+          "column": "task_group_name",
+          "meaning": "Dolphin 任务组名称，空值表示继承工作流默认任务组。"
+        },
+        {
+          "column": "target_datasource_name",
+          "meaning": "DataX 目标数据源名称。"
+        },
+        {
+          "column": "source_table",
+          "meaning": "DataX 源表名。"
+        },
+        {
+          "column": "target_table",
+          "meaning": "DataX 目标表名。"
+        },
+        {
+          "column": "column_mapping",
+          "meaning": "DataX 字段映射 JSON。"
+        },
+        {
+          "column": "task_sql",
+          "meaning": "任务 SQL 或脚本正文，排查任务逻辑时优先查看。"
+        },
+        {
+          "column": "task_desc",
+          "meaning": "任务描述。"
+        },
+        {
+          "column": "schedule_cron",
+          "meaning": "旧任务级调度 CRON；当前调度通常以工作流配置为主。"
+        },
+        {
+          "column": "priority",
+          "meaning": "优先级。"
+        },
+        {
+          "column": "timeout_seconds",
+          "meaning": "任务超时时间。"
+        },
+        {
+          "column": "retry_times",
+          "meaning": "重试次数。"
+        },
+        {
+          "column": "retry_interval",
+          "meaning": "重试间隔。"
+        },
+        {
+          "column": "owner",
+          "meaning": "任务负责人。"
+        },
+        {
+          "column": "status",
+          "meaning": "任务状态：draft、published、running、paused、failed。"
+        },
+        {
+          "column": "dolphin_process_code",
+          "meaning": "DolphinScheduler 流程编码。"
+        },
+        {
+          "column": "dolphin_schedule_id",
+          "meaning": "DolphinScheduler 调度 ID。"
+        },
+        {
+          "column": "dolphin_task_code",
+          "meaning": "DolphinScheduler 任务编码。"
+        },
+        {
+          "column": "dolphin_task_version",
+          "meaning": "DolphinScheduler 任务版本。"
+        },
+        {
+          "column": "dolphin_flag",
+          "meaning": "Dolphin 任务执行标记，YES 表示正常执行，NO 表示禁止执行。"
+        },
+        {
+          "column": "dinky_job_id",
+          "meaning": "Dinky 作业 ID。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "任务创建时间。"
+        },
+        {
+          "column": "updated_at",
+          "meaning": "任务更新时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "read_task_sql",
+          "purpose": "查看与目标表相关任务的 SQL 或脚本正文。",
+          "output_fields": [
+            "id",
+            "task_name",
+            "task_code",
+            "engine",
+            "dolphin_node_type",
+            "datasource_name",
+            "status",
+            "task_sql"
+          ],
+          "sql_template_mysql": "SELECT id, task_name, task_code, engine, dolphin_node_type, datasource_name, status, task_sql FROM opendataworks.data_task WHERE deleted = 0 AND id = {task_id}"
+        }
+      ]
+    },
+    {
+      "id": "platform_task_table_relation",
+      "name": "表任务读写关系",
+      "description": "表与任务之间的 read/write 关系。read 表示任务读取该表，write 表示任务写入该表。",
+      "aliases": [
+        "关联任务",
+        "读写关系",
+        "读取任务",
+        "写入任务"
+      ],
+      "identity_keys": [
+        "table_id",
+        "task_id",
+        "relation_type"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.table_task_relation",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "关系 ID。"
+        },
+        {
+          "column": "table_id",
+          "meaning": "平台表 ID。"
+        },
+        {
+          "column": "task_id",
+          "meaning": "平台任务 ID。"
+        },
+        {
+          "column": "relation_type",
+          "meaning": "关系类型：read 表示任务读取该表，write 表示任务写入该表。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "关系创建时间。"
+        },
+        {
+          "column": "updated_at",
+          "meaning": "关系更新时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "list_table_related_tasks",
+          "purpose": "列出某张表的读取任务和写入任务。",
+          "output_fields": [
+            "relation_type",
+            "task_id",
+            "task_name",
+            "task_code",
+            "engine",
+            "status"
+          ],
+          "sql_template_mysql": "SELECT r.relation_type, t.id AS task_id, t.task_name, t.task_code, t.engine, t.status FROM opendataworks.table_task_relation r JOIN opendataworks.data_task t ON t.id = r.task_id AND t.deleted = 0 WHERE r.deleted = 0 AND r.table_id = {table_id} ORDER BY r.relation_type, t.updated_at DESC"
+        }
+      ]
+    },
+    {
+      "id": "platform_lineage_edge",
+      "name": "表级血缘边",
+      "description": "任务解析或绑定得到的表级上下游边，upstream_table_id 指向上游表，downstream_table_id 指向下游表。",
+      "aliases": [
+        "血缘",
+        "上下游",
+        "上游表",
+        "下游表",
+        "血缘边"
+      ],
+      "identity_keys": [
+        "task_id",
+        "upstream_table_id",
+        "downstream_table_id"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.data_lineage",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "血缘边 ID。"
+        },
+        {
+          "column": "task_id",
+          "meaning": "产生或关联该血缘边的任务 ID。"
+        },
+        {
+          "column": "upstream_table_id",
+          "meaning": "上游输入表 ID。"
+        },
+        {
+          "column": "downstream_table_id",
+          "meaning": "下游输出表 ID。"
+        },
+        {
+          "column": "lineage_type",
+          "meaning": "血缘类型：input/output。排查上下游时优先使用 upstream_table_id/downstream_table_id。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "血缘边创建时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "list_direct_upstream_tables",
+          "purpose": "查看目标表的直接上游表及产生血缘的任务。",
+          "output_fields": [
+            "upstream_table_id",
+            "upstream_db_name",
+            "upstream_table_name",
+            "task_id",
+            "task_name"
+          ],
+          "sql_template_mysql": "SELECT u.id AS upstream_table_id, u.db_name AS upstream_db_name, u.table_name AS upstream_table_name, t.id AS task_id, t.task_name FROM opendataworks.data_lineage l JOIN opendataworks.data_table u ON u.id = l.upstream_table_id AND u.deleted = 0 JOIN opendataworks.data_task t ON t.id = l.task_id AND t.deleted = 0 WHERE l.deleted = 0 AND l.downstream_table_id = {table_id}"
+        },
+        {
+          "id": "list_direct_downstream_tables",
+          "purpose": "查看目标表的直接下游表及产生血缘的任务。",
+          "output_fields": [
+            "downstream_table_id",
+            "downstream_db_name",
+            "downstream_table_name",
+            "task_id",
+            "task_name"
+          ],
+          "sql_template_mysql": "SELECT d.id AS downstream_table_id, d.db_name AS downstream_db_name, d.table_name AS downstream_table_name, t.id AS task_id, t.task_name FROM opendataworks.data_lineage l JOIN opendataworks.data_table d ON d.id = l.downstream_table_id AND d.deleted = 0 JOIN opendataworks.data_task t ON t.id = l.task_id AND t.deleted = 0 WHERE l.deleted = 0 AND l.upstream_table_id = {table_id}"
+        }
+      ]
+    },
+    {
+      "id": "platform_task_execution_log",
+      "name": "任务执行日志",
+      "description": "任务最近执行状态、执行耗时、产出行数、错误信息和外部日志入口。",
+      "aliases": [
+        "执行日志",
+        "运行日志",
+        "任务实例",
+        "最近执行"
+      ],
+      "identity_keys": [
+        "task_id",
+        "execution_id"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.task_execution_log",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "执行日志 ID。"
+        },
+        {
+          "column": "task_id",
+          "meaning": "平台任务 ID。"
+        },
+        {
+          "column": "execution_id",
+          "meaning": "外部执行 ID。"
+        },
+        {
+          "column": "status",
+          "meaning": "执行状态：pending、running、success、failed、killed。"
+        },
+        {
+          "column": "start_time",
+          "meaning": "开始时间。"
+        },
+        {
+          "column": "end_time",
+          "meaning": "结束时间。"
+        },
+        {
+          "column": "duration_seconds",
+          "meaning": "执行时长秒数。"
+        },
+        {
+          "column": "rows_output",
+          "meaning": "输出行数。"
+        },
+        {
+          "column": "error_message",
+          "meaning": "错误信息。"
+        },
+        {
+          "column": "log_url",
+          "meaning": "外部日志链接。"
+        },
+        {
+          "column": "trigger_type",
+          "meaning": "触发方式：manual、schedule、api。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "记录创建时间。"
+        },
+        {
+          "column": "updated_at",
+          "meaning": "记录更新时间。"
+        }
+      ],
+      "query_functions": [
+        {
+          "id": "latest_task_execution_log",
+          "purpose": "查看任务最近一次执行状态和错误信息。",
+          "output_fields": [
+            "status",
+            "start_time",
+            "end_time",
+            "duration_seconds",
+            "rows_output",
+            "error_message",
+            "log_url"
+          ],
+          "sql_template_mysql": "SELECT status, start_time, end_time, duration_seconds, rows_output, error_message, log_url FROM opendataworks.task_execution_log WHERE task_id = {task_id} ORDER BY start_time DESC, id DESC LIMIT 1"
+        }
+      ]
+    },
+    {
+      "id": "platform_workflow",
+      "name": "平台工作流",
+      "description": "平台侧工作流定义和调度配置。",
+      "aliases": [
+        "工作流",
+        "流程",
+        "Dolphin 工作流"
+      ],
+      "identity_keys": [
+        "id",
+        "workflow_code",
+        "workflow_name"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.data_workflow",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "平台工作流 ID。"
+        },
+        {
+          "column": "dolphin_config_id",
+          "meaning": "绑定的 Dolphin 环境 ID。"
+        },
+        {
+          "column": "workflow_code",
+          "meaning": "DolphinScheduler 工作流编码。"
+        },
+        {
+          "column": "project_code",
+          "meaning": "DolphinScheduler 项目编码。"
+        },
+        {
+          "column": "workflow_name",
+          "meaning": "工作流名称。"
+        },
+        {
+          "column": "status",
+          "meaning": "平台工作流状态。"
+        },
+        {
+          "column": "publish_status",
+          "meaning": "平台当前发布状态。"
+        },
+        {
+          "column": "current_version_id",
+          "meaning": "当前版本 ID。"
+        },
+        {
+          "column": "last_published_version_id",
+          "meaning": "最后发布版本 ID。"
+        },
+        {
+          "column": "definition_json",
+          "meaning": "平台工作流定义 JSON。"
+        },
+        {
+          "column": "entry_task_ids",
+          "meaning": "入口任务 ID 列表。"
+        },
+        {
+          "column": "exit_task_ids",
+          "meaning": "出口任务 ID 列表。"
+        },
+        {
+          "column": "schedule_cron",
+          "meaning": "工作流级调度 CRON。"
+        },
+        {
+          "column": "schedule_state",
+          "meaning": "工作流级调度状态。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "工作流创建时间。"
+        },
+        {
+          "column": "updated_at",
+          "meaning": "工作流更新时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ]
+    },
+    {
+      "id": "platform_workflow_task_relation",
+      "name": "工作流任务关系",
+      "description": "任务归属到工作流的关系，以及入口/出口和上下游计数。",
+      "aliases": [
+        "任务所属工作流",
+        "工作流任务",
+        "任务编排关系"
+      ],
+      "identity_keys": [
+        "workflow_id",
+        "task_id",
+        "version_id"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.workflow_task_relation",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "关系 ID。"
+        },
+        {
+          "column": "workflow_id",
+          "meaning": "平台工作流 ID。"
+        },
+        {
+          "column": "task_id",
+          "meaning": "平台任务 ID。"
+        },
+        {
+          "column": "node_attrs",
+          "meaning": "节点属性 JSON。"
+        },
+        {
+          "column": "is_entry",
+          "meaning": "是否入口任务。"
+        },
+        {
+          "column": "is_exit",
+          "meaning": "是否出口任务。"
+        },
+        {
+          "column": "version_id",
+          "meaning": "关联版本 ID。"
+        },
+        {
+          "column": "upstream_task_count",
+          "meaning": "上游任务数量。"
+        },
+        {
+          "column": "downstream_task_count",
+          "meaning": "下游任务数量。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ]
+    },
+    {
+      "id": "platform_workflow_version",
+      "name": "工作流版本快照",
+      "description": "工作流结构快照和版本变更摘要。",
+      "aliases": [
+        "版本快照",
+        "工作流版本"
+      ],
+      "identity_keys": [
+        "workflow_id",
+        "version_no"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.workflow_version",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "版本 ID。"
+        },
+        {
+          "column": "workflow_id",
+          "meaning": "平台工作流 ID。"
+        },
+        {
+          "column": "version_no",
+          "meaning": "版本号。"
+        },
+        {
+          "column": "snapshot_schema_version",
+          "meaning": "快照结构版本。"
+        },
+        {
+          "column": "structure_snapshot",
+          "meaning": "工作流结构快照 JSON。"
+        },
+        {
+          "column": "change_summary",
+          "meaning": "版本变更摘要。"
+        },
+        {
+          "column": "rollback_from_version_id",
+          "meaning": "回退来源版本 ID。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "版本创建时间。"
+        }
+      ]
+    },
+    {
+      "id": "platform_workflow_publish_record",
+      "name": "工作流发布记录",
+      "description": "工作流发布到目标引擎的历史流水。",
+      "aliases": [
+        "发布记录",
+        "发布流水",
+        "发布结果"
+      ],
+      "identity_keys": [
+        "workflow_id",
+        "version_id",
+        "created_at"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.workflow_publish_record",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "发布记录 ID。"
+        },
+        {
+          "column": "workflow_id",
+          "meaning": "平台工作流 ID。"
+        },
+        {
+          "column": "version_id",
+          "meaning": "发布版本 ID。"
+        },
+        {
+          "column": "target_engine",
+          "meaning": "目标引擎。"
+        },
+        {
+          "column": "dolphin_config_id",
+          "meaning": "发布目标 Dolphin 环境 ID。"
+        },
+        {
+          "column": "operation",
+          "meaning": "发布操作类型。"
+        },
+        {
+          "column": "status",
+          "meaning": "发布结果状态。"
+        },
+        {
+          "column": "engine_workflow_code",
+          "meaning": "引擎侧工作流编码。"
+        },
+        {
+          "column": "log",
+          "meaning": "发布日志。"
+        },
+        {
+          "column": "operator",
+          "meaning": "操作人。"
+        },
+        {
+          "column": "created_at",
+          "meaning": "发布时间。"
+        }
+      ]
+    },
+    {
+      "id": "platform_datasource",
+      "name": "平台数据源",
+      "description": "平台保存的 Doris/MySQL 数据源连接元信息。密码字段只用于平台运行，不应在回答中暴露。",
+      "aliases": [
+        "数据源",
+        "Doris 集群",
+        "查询引擎"
+      ],
+      "identity_keys": [
+        "id",
+        "cluster_name"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.doris_cluster",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "数据源 ID。"
+        },
+        {
+          "column": "cluster_name",
+          "meaning": "集群或数据源名称。"
+        },
+        {
+          "column": "source_type",
+          "meaning": "数据源类型：DORIS 或 MYSQL。"
+        },
+        {
+          "column": "fe_host",
+          "meaning": "连接主机，回答时不要暴露敏感连接细节。"
+        },
+        {
+          "column": "fe_port",
+          "meaning": "连接端口，回答时不要暴露敏感连接细节。"
+        },
+        {
+          "column": "username",
+          "meaning": "平台连接用户名，回答时不要暴露。"
+        },
+        {
+          "column": "password",
+          "meaning": "平台连接密码，禁止在回答中暴露。"
+        },
+        {
+          "column": "is_default",
+          "meaning": "是否默认数据源。"
+        },
+        {
+          "column": "status",
+          "meaning": "数据源状态。"
+        },
+        {
+          "column": "auto_sync",
+          "meaning": "是否开启元数据自动同步。"
+        },
+        {
+          "column": "sync_cron",
+          "meaning": "元数据同步 CRON。"
+        },
+        {
+          "column": "last_sync_time",
+          "meaning": "最近一次自动同步时间。"
+        },
+        {
+          "column": "deleted",
+          "meaning": "逻辑删除标记。"
+        }
+      ]
+    },
+    {
+      "id": "platform_database_user",
+      "name": "数据库级账号配置",
+      "description": "数据库级只读/读写账号配置，只用于平台路由和权限，不应在回答中暴露密码。",
+      "aliases": [
+        "只读账号",
+        "读写账号",
+        "数据库账号"
+      ],
+      "identity_keys": [
+        "cluster_id",
+        "database_name"
+      ],
+      "physical_sources": [
+        {
+          "table": "opendataworks.doris_database_users",
+          "role": "primary"
+        }
+      ],
+      "properties": [
+        {
+          "column": "id",
+          "meaning": "账号配置 ID。"
+        },
+        {
+          "column": "cluster_id",
+          "meaning": "数据源 ID。"
+        },
+        {
+          "column": "database_name",
+          "meaning": "数据库名。"
+        },
+        {
+          "column": "readonly_username",
+          "meaning": "只读用户名，回答时不要暴露。"
+        },
+        {
+          "column": "readonly_password",
+          "meaning": "只读用户密码，禁止暴露。"
+        },
+        {
+          "column": "readwrite_username",
+          "meaning": "读写用户名，回答时不要暴露。"
+        },
+        {
+          "column": "readwrite_password",
+          "meaning": "读写用户密码，禁止暴露。"
+        }
+      ]
+    }
+  ],
+  "object_relations": [
+    {
+      "id": "table_has_fields",
+      "name": "表拥有字段",
+      "from_object": "platform_table",
+      "to_object": "platform_table_field",
+      "description": "通过 data_table.id = data_field.table_id 获取字段定义。",
+      "join_keys": [
+        {
+          "from": "id",
+          "to": "table_id"
+        }
+      ],
+      "join_or_calc_path": [
+        {
+          "table": "opendataworks.data_table",
+          "from_column": "id",
+          "to_column": "id"
+        },
+        {
+          "table": "opendataworks.data_field",
+          "from_column": "table_id",
+          "to_column": "id"
+        }
+      ]
+    },
+    {
+      "id": "table_has_statistics_snapshot",
+      "name": "表拥有统计快照",
+      "from_object": "platform_table",
+      "to_object": "platform_table_statistics_snapshot",
+      "description": "通过 data_table.id = table_statistics_history.table_id 获取行数、数据大小和统计时间。"
+    },
+    {
+      "id": "table_read_by_task",
+      "name": "表被任务读取",
+      "from_object": "platform_table",
+      "to_object": "platform_task",
+      "description": "table_task_relation.relation_type = 'read' 表示任务读取目标表，目标表是该任务的输入表。",
+      "filters": [
+        {
+          "column": "relation_type",
+          "operator": "=",
+          "value": "read"
+        }
+      ],
+      "join_keys": [
+        {
+          "from": "data_table.id",
+          "to": "table_task_relation.table_id"
+        },
+        {
+          "from": "table_task_relation.task_id",
+          "to": "data_task.id"
+        }
+      ],
+      "join_or_calc_path": [
+        {
+          "table": "opendataworks.table_task_relation",
+          "from_column": "table_id",
+          "to_column": "id"
+        },
+        {
+          "table": "opendataworks.data_task",
+          "from_column": "id",
+          "to_column": "task_id"
+        }
+      ]
+    },
+    {
+      "id": "table_written_by_task",
+      "name": "表被任务写入",
+      "from_object": "platform_table",
+      "to_object": "platform_task",
+      "description": "table_task_relation.relation_type = 'write' 表示任务写入目标表，目标表是该任务的输出表。",
+      "filters": [
+        {
+          "column": "relation_type",
+          "operator": "=",
+          "value": "write"
+        }
+      ],
+      "join_keys": [
+        {
+          "from": "data_table.id",
+          "to": "table_task_relation.table_id"
+        },
+        {
+          "from": "table_task_relation.task_id",
+          "to": "data_task.id"
+        }
+      ],
+      "join_or_calc_path": [
+        {
+          "table": "opendataworks.table_task_relation",
+          "from_column": "table_id",
+          "to_column": "id"
+        },
+        {
+          "table": "opendataworks.data_task",
+          "from_column": "id",
+          "to_column": "task_id"
+        }
+      ]
+    },
+    {
+      "id": "task_reads_table",
+      "name": "任务读取表",
+      "from_object": "platform_task",
+      "to_object": "platform_table",
+      "description": "任务通过 read 关系读取输入表。"
+    },
+    {
+      "id": "task_writes_table",
+      "name": "任务写入表",
+      "from_object": "platform_task",
+      "to_object": "platform_table",
+      "description": "任务通过 write 关系写入输出表。"
+    },
+    {
+      "id": "table_upstream_lineage",
+      "name": "表的上游血缘",
+      "from_object": "platform_table",
+      "to_object": "platform_table",
+      "description": "data_lineage.downstream_table_id = 目标表 ID 时，upstream_table_id 指向直接上游表。",
+      "join_keys": [
+        {
+          "from": "data_table.id",
+          "to": "data_lineage.downstream_table_id"
+        },
+        {
+          "from": "data_lineage.upstream_table_id",
+          "to": "data_table.id"
+        }
+      ],
+      "join_or_calc_path": [
+        {
+          "table": "opendataworks.data_lineage",
+          "from_column": "downstream_table_id",
+          "to_column": "id"
+        },
+        {
+          "table": "opendataworks.data_table",
+          "from_column": "id",
+          "to_column": "upstream_table_id"
+        }
+      ]
+    },
+    {
+      "id": "table_downstream_lineage",
+      "name": "表的下游血缘",
+      "from_object": "platform_table",
+      "to_object": "platform_table",
+      "description": "data_lineage.upstream_table_id = 目标表 ID 时，downstream_table_id 指向直接下游表。",
+      "join_keys": [
+        {
+          "from": "data_table.id",
+          "to": "data_lineage.upstream_table_id"
+        },
+        {
+          "from": "data_lineage.downstream_table_id",
+          "to": "data_table.id"
+        }
+      ],
+      "join_or_calc_path": [
+        {
+          "table": "opendataworks.data_lineage",
+          "from_column": "upstream_table_id",
+          "to_column": "id"
+        },
+        {
+          "table": "opendataworks.data_table",
+          "from_column": "id",
+          "to_column": "downstream_table_id"
+        }
+      ]
+    },
+    {
+      "id": "task_latest_execution_log",
+      "name": "任务最近执行日志",
+      "from_object": "platform_task",
+      "to_object": "platform_task_execution_log",
+      "description": "通过 task_execution_log.task_id 查看任务最近执行状态、耗时、产出行数和错误信息。"
+    },
+    {
+      "id": "task_in_workflow",
+      "name": "任务所属工作流",
+      "from_object": "platform_task",
+      "to_object": "platform_workflow",
+      "description": "通过 workflow_task_relation.task_id 关联 data_workflow.id。"
+    },
+    {
+      "id": "workflow_has_task",
+      "name": "工作流包含任务",
+      "from_object": "platform_workflow",
+      "to_object": "platform_task",
+      "description": "通过 workflow_task_relation.workflow_id 关联工作流下的任务。"
+    },
+    {
+      "id": "workflow_has_version",
+      "name": "工作流拥有版本",
+      "from_object": "platform_workflow",
+      "to_object": "platform_workflow_version",
+      "description": "通过 workflow_version.workflow_id 查看工作流版本快照。"
+    },
+    {
+      "id": "workflow_has_publish_record",
+      "name": "工作流拥有发布记录",
+      "from_object": "platform_workflow",
+      "to_object": "platform_workflow_publish_record",
+      "description": "通过 workflow_publish_record.workflow_id 查看工作流发布历史。"
+    },
+    {
+      "id": "table_belongs_to_datasource",
+      "name": "表归属数据源",
+      "from_object": "platform_table",
+      "to_object": "platform_datasource",
+      "description": "通过 data_table.cluster_id = doris_cluster.id 判断表所属数据源。"
+    },
+    {
+      "id": "datasource_has_database_user",
+      "name": "数据源拥有数据库账号配置",
+      "from_object": "platform_datasource",
+      "to_object": "platform_database_user",
+      "description": "通过 cluster_id + database_name 找到数据库只读/读写账号配置；账号密码禁止在回答中暴露。"
+    }
+  ],
+  "troubleshooting_playbooks": [
+    {
+      "id": "platform_table_problem_diagnosis",
+      "name": "平台管理表问题排查",
+      "description": "当用户要求排查某张平台管理的数据表字段、数据、关联任务、任务 SQL、上下游表时使用。",
+      "required_identity": [
+        "table_id",
+        "或 cluster_id + db_name + table_name"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "goal": "定位唯一平台表记录",
+          "ontology_object": "platform_table",
+          "evidence": "data_table.id、cluster_id、db_name、table_name、status、owner、row_count、doris_update_time",
+          "notes": "若同名表跨库或跨数据源重复，先要求补充 db_name 或 cluster_id。"
+        },
+        {
+          "order": 2,
+          "goal": "检查字段定义",
+          "ontology_object": "platform_table_field",
+          "evidence": "data_field.field_name、field_type、field_comment、is_partition、is_primary、field_order"
+        },
+        {
+          "order": 3,
+          "goal": "区分平台统计快照与真实业务数据",
+          "ontology_object": "platform_table_statistics_snapshot",
+          "evidence": "data_table.row_count、table_statistics_history 最新快照",
+          "notes": "用户问真实表数据时，不把 data_table 当业务数据表；应转到平台工具解析数据源、查 DDL 并执行只读预览查询。"
+        },
+        {
+          "order": 4,
+          "goal": "列出关联任务",
+          "ontology_object": "platform_task_table_relation",
+          "evidence": "relation_type=write 的写入任务、relation_type=read 的读取任务",
+          "notes": "write 表示任务写入当前表；read 表示任务读取当前表。"
+        },
+        {
+          "order": 5,
+          "goal": "查看任务 SQL 与调度状态",
+          "ontology_object": "platform_task",
+          "evidence": "data_task.task_sql、engine、dolphin_node_type、datasource_name、status、dolphin_flag"
+        },
+        {
+          "order": 6,
+          "goal": "检查最近执行情况",
+          "ontology_object": "platform_task_execution_log",
+          "evidence": "task_execution_log.status、start_time、end_time、duration_seconds、rows_output、error_message"
+        },
+        {
+          "order": 7,
+          "goal": "还原上下游表",
+          "ontology_object": "platform_lineage_edge",
+          "evidence": "data_lineage.upstream_table_id、downstream_table_id 以及产生血缘的 task_id",
+          "notes": "直接血缘优先用 data_lineage；任务读写派生上下游可用 table_task_relation 补充解释。"
+        }
+      ]
+    }
+  ],
+  "semantic_rules": [
+    {
+      "id": "platform_metadata_vs_real_table_data",
+      "description": "data_table/data_field 是平台元数据；用户问真实业务数据样例或数据异常时，应使用 db_name/table_name 和平台工具访问真实数据源，不要查询 opendataworks.data_table 当作业务数据。"
+    },
+    {
+      "id": "relation_type_direction",
+      "description": "table_task_relation.relation_type='read' 表示任务读取该表；relation_type='write' 表示任务写入该表。当前表的上游通常来自写入当前表的任务读取的表；当前表的下游通常来自读取当前表的任务写入的表。"
+    },
+    {
+      "id": "lineage_direction",
+      "description": "data_lineage.upstream_table_id 指向上游表，downstream_table_id 指向下游表。查询目标表上游时过滤 downstream_table_id=目标表 ID；查询下游时过滤 upstream_table_id=目标表 ID。"
+    },
+    {
+      "id": "task_sql_priority",
+      "description": "排查任务逻辑时优先查看 data_task.task_sql；DataX 任务还需要查看 source_table、target_table、column_mapping、target_datasource_name。"
+    },
+    {
+      "id": "sensitive_datasource_fields",
+      "description": "doris_cluster.password、doris_database_users.readonly_password、doris_database_users.readwrite_password 等敏感字段只用于平台内部路由，不应在回答中展示。"
     }
   ]
 }

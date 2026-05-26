@@ -53,6 +53,7 @@ class _FakeStore:
         self._queue_seq = 0
         self._schedule_seq = 0
         self._schedule_log_seq = 0
+        self.get_message_contexts: list[dict | None] = []
 
     def init_schema(self):
         return None
@@ -278,6 +279,7 @@ class _FakeStore:
         return None
 
     def get_message(self, message_id: str, context=None):
+        self.get_message_contexts.append(context)
         for messages in self.topic_messages.values():
             for message in messages:
                 if message["message_id"] == message_id:
@@ -723,6 +725,12 @@ def test_followup_suggestions_route_generates_without_changing_message_contract(
         assert captured["answer_text"] == "最近 30 天工作流发布次数整体上升，5 月 20 日出现异常峰值。"
         assert captured["provider_id"] == "openrouter"
         assert captured["model"] == "anthropic/claude-sonnet-4.5"
+        assert store.get_message_contexts[-1] == {
+            "source": "portal",
+            "website_id": "",
+            "external_user_id": "",
+            "visitor_id": "",
+        }
 
         history = client.get(f"/api/v1/nl2sql/topics/{topic_id}/messages", params={"page": 1, "page_size": 50, "order": "asc"})
         assert history.status_code == 200

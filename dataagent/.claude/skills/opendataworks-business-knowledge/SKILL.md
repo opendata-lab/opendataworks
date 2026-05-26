@@ -18,6 +18,7 @@ OpenDataWorks Business Knowledge Skill。业务知识 Skill。
 
 - 平台术语和别名。
 - 平台对象映射和表归属提示。
+- 平台管理表排查语义路径，包括字段、数据快照、关联任务、任务 SQL、执行日志和上下游表。
 - 指标定义和默认时间字段。
 - 从业务名称到候选物理字段的语义映射。
 - 歧义和澄清建议。
@@ -58,7 +59,7 @@ OpenDataWorks Business Knowledge Skill。业务知识 Skill。
 - [`assets/semantic_mappings.json`](assets/semantic_mappings.json) — 别名和候选表字段映射。
 - [`assets/metrics.json`](assets/metrics.json) — 指标 key、公式和默认时间字段。
 - [`assets/business_rules.json`](assets/business_rules.json) — 业务规则例外。
-- [`assets/ontology.json`](assets/ontology.json) — OpenDataWorks 平台对象映射和相关物理表。
+- [`assets/ontology.json`](assets/ontology.json) — OpenDataWorks 平台对象、字段、关系和平台管理表排查语义路径。
 
 ## 最终输出
 

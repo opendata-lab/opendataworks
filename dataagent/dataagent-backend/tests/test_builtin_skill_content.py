@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 
@@ -161,3 +162,48 @@ def test_business_knowledge_skill_contains_semantics_without_execution_scripts()
     assert "dataagent-nl2sql" not in snapshot
     assert "run_sql.py" not in snapshot
     assert "validate_sql.py" not in snapshot
+
+
+def test_business_ontology_supports_platform_table_troubleshooting():
+    ontology = json.loads((BUSINESS_SKILL_ROOT / "assets" / "ontology.json").read_text(encoding="utf-8"))
+
+    object_types = {item["id"]: item for item in ontology["object_types"]}
+    required_types = {
+        "platform_table",
+        "platform_table_field",
+        "platform_task",
+        "platform_task_table_relation",
+        "platform_lineage_edge",
+        "platform_task_execution_log",
+        "platform_table_statistics_snapshot",
+    }
+    assert required_types <= set(object_types)
+
+    task_columns = {prop["column"] for prop in object_types["platform_task"]["properties"]}
+    assert {"id", "task_name", "task_code", "task_sql", "status"} <= task_columns
+
+    registered_sources = {
+        source["table"]
+        for item in object_types.values()
+        for source in item.get("physical_sources", [])
+    }
+    assert {
+        "opendataworks.data_table",
+        "opendataworks.data_field",
+        "opendataworks.data_task",
+        "opendataworks.table_task_relation",
+        "opendataworks.data_lineage",
+        "opendataworks.task_execution_log",
+    } <= registered_sources
+
+    relations = {item["id"]: item for item in ontology["object_relations"]}
+    assert {
+        "table_has_fields",
+        "table_read_by_task",
+        "table_written_by_task",
+        "task_reads_table",
+        "task_writes_table",
+        "table_upstream_lineage",
+        "table_downstream_lineage",
+        "task_latest_execution_log",
+    } <= set(relations)
