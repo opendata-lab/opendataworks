@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import inspect
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -8,6 +9,77 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from core.topic_task_store import TopicTaskStore, _project_task_history
+
+
+def test_get_message_accepts_request_context_for_scoped_callers():
+    signature = inspect.signature(TopicTaskStore.get_message)
+
+    assert "context" in signature.parameters
+
+
+def test_get_message_applies_topic_context_predicate(monkeypatch):
+    class FakeCursor:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params):
+            self.conn.executed.append((sql, list(params)))
+
+        def fetchone(self):
+            return self.conn.rows.pop(0)
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+            self.rows = [
+                {
+                    "message_id": "msg_1",
+                    "topic_id": "topic_1",
+                    "task_id": "task_1",
+                    "sender_type": "user",
+                    "type": "chat",
+                    "status": "success",
+                    "content": "问题",
+                    "event": "",
+                    "steps_json": None,
+                    "tool_json": None,
+                    "seq_id": 1,
+                    "correlation_id": None,
+                    "parent_correlation_id": None,
+                    "content_type": None,
+                    "usage_json": None,
+                    "feedback": "",
+                    "error_json": None,
+                    "show_in_ui": 1,
+                    "created_at": None,
+                    "updated_at": None,
+                }
+            ]
+
+        def cursor(self):
+            return FakeCursor(self)
+
+        def close(self):
+            return None
+
+    store = TopicTaskStore()
+    conn = FakeConnection()
+    monkeypatch.setattr(store, "_ensure_ready", lambda: None)
+    monkeypatch.setattr(store, "_connect", lambda database: conn)
+
+    message = store.get_message("msg_1", context={"source": "portal"})
+
+    assert message["message_id"] == "msg_1"
+    sql, params = conn.executed[0]
+    assert "JOIN da_agent_topic t ON t.topic_id = m.topic_id" in sql
+    assert "COALESCE(t.source, 'portal') = %s" in sql
+    assert params == ["msg_1", "portal"]
 
 
 def test_project_task_history_rebuilds_finished_blocks():

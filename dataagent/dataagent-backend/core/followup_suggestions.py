@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 MAX_SUGGESTIONS = 3
 MAX_SUGGESTION_LENGTH = 64
 DEFAULT_TIMEOUT_SECONDS = 20
+DEFAULT_MAX_TURNS = 2
 
 ModelRunner = Callable[..., Awaitable[str]]
 
@@ -165,7 +166,7 @@ async def _default_model_runner(
         "model": resolved_model,
         "cwd": str(resolve_agent_project_cwd()),
         "setting_sources": ["project"],
-        "max_turns": 1,
+        "max_turns": DEFAULT_MAX_TURNS,
         "allowed_tools": [],
         "mcp_servers": {},
         "include_partial_messages": bool(runtime_target.get("supports_partial_messages", True)),

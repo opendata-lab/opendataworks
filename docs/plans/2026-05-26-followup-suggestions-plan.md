@@ -7,7 +7,7 @@ Replace frontend keyword-based "猜你想问" suggestions with an additive backe
 ## Backend Tasks
 
 1. Add a `FollowupSuggestionsResponse` schema with `topic_id`, `message_id`, `suggestions`, and `source`.
-2. Add `core/followup_suggestions.py` to build the prompt, run a one-turn no-tool model call, parse JSON suggestions, normalize output, and return fallback or empty results on failure.
+2. Add `core/followup_suggestions.py` to build the prompt, run a bounded 2-turn no-tool model call, parse JSON suggestions, normalize output, and return fallback or empty results on failure.
 3. Add `POST /topics/{topic_id}/messages/{message_id}/followup-suggestions`.
 4. Validate topic ownership, assistant sender type, finished status, visible message state, and non-empty answer content before calling the generator.
 5. Reuse the original task provider/model for generation.
