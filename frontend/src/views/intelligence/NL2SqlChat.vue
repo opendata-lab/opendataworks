@@ -891,7 +891,21 @@ const handleCopyMessage = async (msg) => {
   const text = visibleMessageText(msg).trim()
   if (!text) return
   try {
-    await navigator.clipboard.writeText(text)
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      ta.style.top = '-9999px'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    ElMessage.success('已复制')
   } catch (_error) {
     ElMessage.error('复制失败，请手动复制')
   }
@@ -2271,11 +2285,16 @@ onBeforeUnmount(() => {
   stroke-width: 1.8;
 }
 
-.query-message-tool:hover,
-.query-message-tool.active {
+.query-message-tool:hover {
   border-color: #D9E2F2;
   background: #ffffff;
   color: #4F81FF;
+}
+
+.query-message-tool.active {
+  border-color: #D9E2F2;
+  background: #ffffff;
+  color: #1a1a1a;
 }
 
 .query-followup-suggestions {
