@@ -70,6 +70,7 @@ vi.mock('vue-router', () => ({
 
 vi.mock('element-plus', () => ({
   ElMessage: {
+    success: vi.fn(),
     error: vi.fn()
   },
   ElScrollbar: {
@@ -930,6 +931,78 @@ describe('NL2SqlChat', () => {
     expect(ring.attributes('aria-label')).toContain('输出：200')
   })
 
+  it('keeps previous context window usage while a follow-up question is queued', async () => {
+    const deliverPending = deferred()
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 2,
+      items: [
+        {
+          message_id: 'u1',
+          topic_id: 'topic-1',
+          sender_type: 'user',
+          content: '最近 30 天工作流发布次数趋势',
+          created_at: '2026-03-10T02:00:00Z'
+        },
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: '最近 30 天共发布 4 次。',
+          usage: {
+            input_tokens: 1000,
+            output_tokens: 200
+          },
+          blocks: [
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: '最近 30 天共发布 4 次。'
+            }
+          ],
+          created_at: '2026-03-10T02:01:00Z'
+        }
+      ]
+    })
+    apiMocks.taskApi.deliverMessage.mockImplementation(() => deliverPending.promise)
+
+    const wrapper = mountChat()
+
+    try {
+      await flushPromises()
+      await flushPromises()
+
+      expect(wrapper.find('.query-context-ring-wrap').attributes('aria-label')).toContain('1,200 / 200,000')
+
+      await wrapper.find('.query-textarea').setValue('继续追问同比情况')
+      await wrapper.find('.query-btn-send').trigger('click')
+      await flushPromises()
+
+      const ring = wrapper.find('.query-context-ring-wrap')
+      expect(ring.attributes('aria-label')).toContain('1,200 / 200,000')
+      expect(ring.attributes('aria-label')).toContain('输入：1,000')
+      expect(ring.attributes('aria-label')).toContain('输出：200')
+    } finally {
+      deliverPending.resolve({
+        accepted: true,
+        topic_id: 'topic-1',
+        task_id: 'task-new',
+        task_status: 'waiting',
+        user_message_id: 'u-new',
+        assistant_message_id: 'a-new'
+      })
+      await flushPromises()
+      wrapper.unmount()
+    }
+  })
+
   it('estimates context window usage while assistant text is streaming', async () => {
     const streamHold = deferred()
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
@@ -995,6 +1068,10 @@ describe('NL2SqlChat', () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText }
+    })
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: true
     })
 
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
