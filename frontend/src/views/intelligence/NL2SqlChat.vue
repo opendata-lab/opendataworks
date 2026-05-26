@@ -587,8 +587,7 @@ const getContextWindowLimit = (model) => {
   return 128000
 }
 
-const contextWindowUsage = computed(() => {
-  const message = latestAssistantMessage.value
+const buildContextWindowUsage = (message) => {
   const usage = message?.usage || message?.token_usage || null
   const inputTokens = parseTokenNumber(usage?.input_tokens)
   const actualOutputTokens = parseTokenNumber(usage?.output_tokens)
@@ -625,6 +624,20 @@ const contextWindowUsage = computed(() => {
     percentage,
     percentLabel
   }
+}
+
+const contextWindowUsage = computed(() => {
+  const assistantMessages = [...activeMessages.value]
+    .reverse()
+    .filter((msg) => msg?.role === 'assistant')
+  const fallback = assistantMessages[0] || latestAssistantMessage.value
+
+  for (const message of assistantMessages) {
+    const usage = buildContextWindowUsage(message)
+    if (usage.available) return usage
+  }
+
+  return buildContextWindowUsage(fallback)
 })
 
 const contextRingDashArray = computed(() => `${contextWindowUsage.value.available ? contextWindowUsage.value.percentage : 0} 100`)
