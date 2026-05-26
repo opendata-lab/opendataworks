@@ -252,13 +252,21 @@ jobs:
           : > gitee_attach_files.jsonl
           for f in "$PACKAGE_PATH" "$PACKAGE_SHA" "$ODA_PACKAGE_PATH" "$ODA_PACKAGE_SHA"; do
             if [ -f "$f" ]; then
-              echo "Uploading ${f} ..."
-              upload_response=$(curl -fsS --retry 3 -X POST \
+              fsize=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo '?')
+              echo "Uploading ${f} (${fsize} bytes) ..."
+              http_code=$(curl -sS --retry 3 -w '%{http_code}' -o /tmp/gitee_upload.json -X POST \
                 -H "Authorization: token ${GITEE_TOKEN}" \
                 -F "file=@${f}" \
                 "${GITEE_API}/releases/${release_id}/attach_files")
-              echo "${upload_response}" | jq -e '.id' >/dev/null
-              echo "${upload_response}" >> gitee_attach_files.jsonl
+              upload_response=$(cat /tmp/gitee_upload.json)
+              upload_id=$(echo "${upload_response}" | jq -r '.id // empty')
+              if [ -z "${upload_id}" ] || [ "${upload_id}" = "null" ]; then
+                echo "WARNING: Failed to upload ${f} (HTTP ${http_code})"
+                echo "Gitee response: ${upload_response}"
+              else
+                echo "${upload_response}" >> gitee_attach_files.jsonl
+                echo "OK (attachment id=${upload_id})"
+              fi
               echo ""
             fi
           done
@@ -413,13 +421,21 @@ jobs:
           : > gitee_attach_files.jsonl
           for f in "$PACKAGE_PATH" "$PACKAGE_SHA" "$ODA_PACKAGE_PATH" "$ODA_PACKAGE_SHA"; do
             if [ -f "$f" ]; then
-              echo "Uploading ${f} ..."
-              upload_response=$(curl -fsS --retry 3 -X POST \
+              fsize=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo '?')
+              echo "Uploading ${f} (${fsize} bytes) ..."
+              http_code=$(curl -sS --retry 3 -w '%{http_code}' -o /tmp/gitee_upload.json -X POST \
                 -H "Authorization: token ${GITEE_TOKEN}" \
                 -F "file=@${f}" \
                 "${GITEE_API}/releases/${release_id}/attach_files")
-              echo "${upload_response}" | jq -e '.id' >/dev/null
-              echo "${upload_response}" >> gitee_attach_files.jsonl
+              upload_response=$(cat /tmp/gitee_upload.json)
+              upload_id=$(echo "${upload_response}" | jq -r '.id // empty')
+              if [ -z "${upload_id}" ] || [ "${upload_id}" = "null" ]; then
+                echo "WARNING: Failed to upload ${f} (HTTP ${http_code})"
+                echo "Gitee response: ${upload_response}"
+              else
+                echo "${upload_response}" >> gitee_attach_files.jsonl
+                echo "OK (attachment id=${upload_id})"
+              fi
               echo ""
             fi
           done
