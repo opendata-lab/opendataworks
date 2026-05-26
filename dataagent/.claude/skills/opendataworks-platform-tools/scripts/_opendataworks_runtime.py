@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -64,6 +65,26 @@ def metadata_cli_command(subcommand: str, **options: Any) -> list[str]:
     return command
 
 
+def runtime_data_scope_header() -> str:
+    configured = str(
+        os.getenv("ODW_AGENT_DATA_SCOPE_HEADER")
+        or os.getenv("DATAAGENT_DATA_SCOPE_HEADER")
+        or ""
+    ).strip()
+    if configured:
+        return configured
+
+    raw_scope = str(os.getenv("DATAAGENT_DATA_SCOPE_JSON") or "").strip()
+    if not raw_scope:
+        return ""
+    try:
+        parsed = json.loads(raw_scope)
+    except json.JSONDecodeError:
+        return ""
+    payload = json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
 def serializable_value(value: Any) -> Any:
     if value is None or isinstance(value, (int, float, str, bool)):
         return value
@@ -105,6 +126,11 @@ def ensure_read_only(sql: str):
 def call_metadata_cli(subcommand: str, **options: Any) -> Any:
     command = metadata_cli_command(subcommand, **options)
     cli_path = metadata_cli_bin()
+    scope_header = runtime_data_scope_header()
+    cli_env = None
+    if scope_header:
+        cli_env = dict(os.environ)
+        cli_env["ODW_AGENT_DATA_SCOPE_HEADER"] = scope_header
 
     try:
         completed = subprocess.run(
@@ -112,6 +138,7 @@ def call_metadata_cli(subcommand: str, **options: Any) -> Any:
             check=False,
             capture_output=True,
             text=True,
+            env=cli_env,
         )
     except PermissionError as exc:
         # 离线部署包常见场景是文件保留了 +x，但挂载介质本身是 noexec；
@@ -125,6 +152,7 @@ def call_metadata_cli(subcommand: str, **options: Any) -> Any:
             check=False,
             capture_output=True,
             text=True,
+            env=cli_env,
         )
 
     if completed.returncode != 0:
