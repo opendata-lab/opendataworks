@@ -42,6 +42,7 @@ const docsSidebar = [
       { text: '任务调度', link: '/guide/workflow' },
       { text: '数据血缘', link: '/guide/lineage' },
       { text: '智能查询', link: '/guide/intelligent-query' },
+      { text: 'Widget 嵌入', link: '/guide/widget' },
     ],
   },
   {
