@@ -2,7 +2,28 @@
   <div class="query-workbench">
     <aside class="query-sidebar">
       <div class="query-sidebar-head">
-        <div class="query-brand">智能问数</div>
+        <el-select
+          v-model="agentSelectValue"
+          class="query-agent-select"
+          :disabled="!agents.length"
+          @change="handleAgentChange"
+        >
+          <template #prefix>
+            <svg class="query-agent-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2V4" />
+              <rect x="4" y="6" width="16" height="12" rx="2" />
+              <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+              <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+              <path d="M9 16c1.5 1 4.5 1 6 0" />
+            </svg>
+          </template>
+          <el-option
+            v-for="agent in agents"
+            :key="agent.agent_id"
+            :label="agent.name"
+            :value="agent.agent_id"
+          />
+        </el-select>
         <button class="query-btn-new" @click="handleNewTopic">新建</button>
       </div>
 
@@ -44,30 +65,15 @@
           <h4 class="query-topic-title">{{ activeTopic ? activeTopic.title : '开始一次新的数据分析' }}</h4>
         </div>
 
-        <div class="query-agent-switch">
-          <span class="query-agent-switch-label">当前智能体</span>
-          <el-select
-            v-model="agentSelectValue"
-            class="query-agent-select"
-            :disabled="!agents.length"
-            @change="handleAgentChange"
-          >
-            <template #prefix>
-              <svg class="query-agent-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2V4" />
-                <rect x="4" y="6" width="16" height="12" rx="2" />
-                <circle cx="9" cy="12" r="1.5" fill="currentColor" />
-                <circle cx="15" cy="12" r="1.5" fill="currentColor" />
-                <path d="M9 16c1.5 1 4.5 1 6 0" />
-              </svg>
-            </template>
-            <el-option
-              v-for="agent in agents"
-              :key="agent.agent_id"
-              :label="agent.name"
-              :value="agent.agent_id"
-            />
-          </el-select>
+        <div class="query-current-agent">
+          <svg class="query-current-agent-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2V4" />
+            <rect x="4" y="6" width="16" height="12" rx="2" />
+            <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+            <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+            <path d="M9 16c1.5 1 4.5 1 6 0" />
+          </svg>
+          <span class="query-current-agent-name">{{ activeAgent?.name || '默认助手' }}</span>
         </div>
       </div>
 
@@ -360,7 +366,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
@@ -382,6 +388,7 @@ const router = useRouter()
 const topics = ref([])
 const agents = ref([])
 const activeTopicId = ref('')
+const activeTopicSnapshot = ref(null)
 const selectedAgentId = ref('')
 const inputText = ref('')
 const searchKeyword = ref('')
@@ -410,8 +417,24 @@ const suggestions = [
   '查看 dwd_tech_dev_inspection_rule_cnt_di 的上下游血缘'
 ]
 
-const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === activeTopicId.value) || null)
-const activeAgent = computed(() => agents.value.find((agent) => agent.agent_id === selectedAgentId.value) || agents.value[0] || null)
+const findListedTopic = (topicId) => topics.value.find((topic) => topic.topic_id === topicId) || null
+const activeTopic = computed(() => (
+  findListedTopic(activeTopicId.value)
+  || (activeTopicSnapshot.value?.topic_id === activeTopicId.value ? activeTopicSnapshot.value : null)
+))
+const activeAgent = computed(() => {
+  const topicAgentId = String(activeTopic.value?.agent_id || activeTopic.value?.agent?.agent_id || '').trim()
+  if (topicAgentId) {
+    return agents.value.find((agent) => agent.agent_id === topicAgentId) || activeTopic.value?.agent || null
+  }
+  return agents.value.find((agent) => agent.agent_id === selectedAgentId.value) || agents.value[0] || null
+})
+const activeConversationAgentId = computed(() => String(
+  activeTopic.value?.agent_id
+  || activeTopic.value?.agent?.agent_id
+  || selectedAgentId.value
+  || ''
+).trim())
 const activeMessages = computed(() => activeTopic.value?.messages || [])
 const latestAssistantMessage = computed(() => [...activeMessages.value]
   .reverse()
@@ -519,7 +542,7 @@ const canSendMessage = computed(() => (
   && !activeCancelableMessage.value
   && Boolean(selectedProvider.value)
   && Boolean(selectedModel.value)
-  && Boolean(selectedAgentId.value)
+  && Boolean(activeConversationAgentId.value)
 ))
 const composerActionDisabled = computed(() => (
   composerActionMode.value === 'cancel'
@@ -1008,6 +1031,12 @@ const normalizeTopicSummary = (topic) => ({
   messages: []
 })
 
+const rememberActiveTopic = (topic) => {
+  if (topic && String(topic.topic_id || '') === String(activeTopicId.value || '')) {
+    activeTopicSnapshot.value = topic
+  }
+}
+
 const makeAssistantMsg = () => reactive(createAssistantMessageState({
   id: `a_${uid()}`,
   created_at: new Date().toISOString()
@@ -1403,7 +1432,14 @@ const hydrateTopic = async (topicId) => {
       topicApi.getTopic(topicId),
       topicApi.getTopicMessages(topicId, { page: 1, page_size: 500, order: 'asc' })
     ])
-    const target = topics.value.find((topic) => topic.topic_id === topicId)
+    let target = findListedTopic(topicId)
+    if (!target && activeTopicSnapshot.value?.topic_id === topicId) {
+      target = activeTopicSnapshot.value
+    }
+    if (!target && detail) {
+      target = normalizeTopicSummary(detail)
+      rememberActiveTopic(target)
+    }
     if (target && detail) {
       target.title = String(detail.title || target.title)
       target.agent_id = String(detail.agent_id || target.agent_id || '')
@@ -1428,6 +1464,7 @@ const hydrateTopic = async (topicId) => {
       }).filter(Boolean)
       target.message_count = Number(messagePage?.total || target.messages.length)
       resumePendingTasks(target)
+      rememberActiveTopic(target)
     }
 
     hydratedIds.add(topicId)
@@ -1438,13 +1475,28 @@ const hydrateTopic = async (topicId) => {
 
 const loadTopics = async () => {
   try {
+    const currentActiveTopic = activeTopic.value
+    rememberActiveTopic(currentActiveTopic)
+    const preservedHydratedTopicId = currentActiveTopic && hydratedIds.has(currentActiveTopic.topic_id)
+      ? currentActiveTopic.topic_id
+      : ''
     const list = await topicApi.listTopics(selectedAgentId.value ? { agent_id: selectedAgentId.value } : {})
     topics.value = (Array.isArray(list) ? list : []).map(normalizeTopicSummary)
+    hydratedIds.clear()
+    if (preservedHydratedTopicId) {
+      hydratedIds.add(preservedHydratedTopicId)
+    }
     sortTopics()
     if (!activeTopicId.value && topics.value.length) {
       activeTopicId.value = topics.value[0].topic_id
+      rememberActiveTopic(topics.value[0])
     }
-    if (activeTopicId.value) {
+    const listedActiveTopic = activeTopicId.value ? findListedTopic(activeTopicId.value) : null
+    if (listedActiveTopic) {
+      if (currentActiveTopic?.topic_id === listedActiveTopic.topic_id && preservedHydratedTopicId) {
+        Object.assign(listedActiveTopic, currentActiveTopic)
+      }
+      rememberActiveTopic(listedActiveTopic)
       await hydrateTopic(activeTopicId.value)
     }
   } catch (error) {
@@ -1457,12 +1509,14 @@ const handleNewTopic = async () => {
   topics.value.unshift(topic)
   hydratedIds.add(topic.topic_id)
   activeTopicId.value = topic.topic_id
+  rememberActiveTopic(topic)
   autoScroll.value = true
   scrollToBottom(true)
 }
 
 const handleSelectTopic = async (topicId) => {
   activeTopicId.value = topicId
+  rememberActiveTopic(findListedTopic(topicId))
   await hydrateTopic(topicId)
   autoScroll.value = true
   scrollToBottom(true)
@@ -1509,6 +1563,7 @@ const handleSend = async () => {
       topics.value.unshift(created)
       hydratedIds.add(created.topic_id)
       activeTopicId.value = created.topic_id
+      rememberActiveTopic(created)
       submitTopicId = created.topic_id
       pendingKey = moveTopicSubmitting('', submitTopicId)
     }
@@ -1516,7 +1571,7 @@ const handleSend = async () => {
     submitTopicId = activeTopicId.value
     await hydrateTopic(submitTopicId)
 
-    topic = topics.value.find((item) => item.topic_id === submitTopicId) || null
+    topic = activeTopic.value || null
     if (!topic) {
       throw new Error('话题初始化失败')
     }
@@ -1540,7 +1595,7 @@ const handleSend = async () => {
     const response = await taskApi.deliverMessage({
       topic_id: submitTopicId,
       content: text,
-      agent_id: selectedAgentId.value,
+      agent_id: activeConversationAgentId.value,
       provider_id: selectedProvider.value,
       model: selectedModel.value,
       debug: true,
@@ -1638,49 +1693,19 @@ watch(selectedAgentId, (val) => {
 
 const handleAgentChange = async (nextValue) => {
   if (!agentSelectionReady.value) return
-  
-  const hasMessages = activeMessages.value && activeMessages.value.length > 0
-  
-  if (hasMessages) {
-    ElMessageBox.confirm(
-      '切换智能体需开启新会话。是否继续？',
-      '提示',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info'
-      }
-    ).then(async () => {
-      persistSelectedAgentInRoute(nextValue)
-      selectedAgentId.value = nextValue
-      await handleNewTopic()
-    }).catch(() => {
-      // Revert dropdown value
-      agentSelectValue.value = selectedAgentId.value
-    })
-  } else {
-    // Delete the old empty topic to avoid leaving clutter
-    const oldTopicId = activeTopicId.value
-    persistSelectedAgentInRoute(nextValue)
-    selectedAgentId.value = nextValue
-    await handleNewTopic()
-    if (oldTopicId) {
-      try {
-        await topicApi.deleteTopic(oldTopicId)
-        topics.value = topics.value.filter(t => t.topic_id !== oldTopicId)
-      } catch (e) {
-        console.warn('Failed to delete old empty topic:', e)
-      }
-    }
+
+  const value = String(nextValue || '').trim()
+  if (!value || value === selectedAgentId.value) {
+    agentSelectValue.value = selectedAgentId.value
+    return
   }
+
+  persistSelectedAgentInRoute(value)
+  selectedAgentId.value = value
 }
 
 watch(selectedAgentId, async (next, prev) => {
   if (!agentSelectionReady.value || !next || next === prev) return
-  stopAllTaskSubscriptions()
-  hydratedIds.clear()
-  topics.value = []
-  activeTopicId.value = ''
   await loadTopics()
 })
 
@@ -1758,16 +1783,10 @@ onBeforeUnmount(() => {
   padding: 4px 8px 16px;
 }
 
-.query-brand {
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
-  color: #1F1F1F;
-}
-
 .query-agent-select {
-  width: min(240px, 30vw);
-  min-width: 160px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
 }
 
 .query-agent-select :deep(.el-select__wrapper) {
@@ -1974,16 +1993,28 @@ onBeforeUnmount(() => {
   background: rgba(255, 255, 255, 0.92);
 }
 
-.query-agent-switch {
+.query-current-agent {
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 10px;
+  color: var(--text-muted);
 }
 
-.query-agent-switch-label {
-  color: var(--text-muted);
-  font-size: 13px;
+.query-current-agent-icon {
+  width: 16px;
+  height: 16px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.query-current-agent-name {
+  min-width: 0;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #334155;
+  font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
 }

@@ -362,7 +362,7 @@ describe('NL2SqlChat', () => {
     expect(wrapper.find('.query-model-selector-name').text()).toContain('选择模型')
   })
 
-  it('moves the agent selector into the top bar as an Element Plus select', async () => {
+  it('shows the agent filter above sessions and current conversation agent in the top bar', async () => {
     apiMocks.agentApi.listAgents.mockResolvedValue([
       {
         agent_id: 'agent_default',
@@ -392,22 +392,23 @@ describe('NL2SqlChat', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(wrapper.find('.query-sidebar-head .query-agent-select').exists()).toBe(false)
-    expect(wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').exists()).toBe(true)
-    expect(wrapper.find('.query-main-top-bar').text()).toContain('当前智能体')
+    expect(wrapper.find('.query-sidebar-head .el-select-stub.query-agent-select').exists()).toBe(true)
+    expect(wrapper.find('.query-brand').exists()).toBe(false)
+    expect(wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').exists()).toBe(false)
+    expect(wrapper.find('.query-current-agent').exists()).toBe(true)
     expect(wrapper.find('.query-main-top-bar').text()).toContain('默认智能问数助手')
 
     apiMocks.topicApi.listTopics.mockClear()
     apiMocks.topicApi.listTopics.mockResolvedValue([])
 
-    await wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').trigger('click')
+    await wrapper.find('.query-sidebar-head .el-select-stub.query-agent-select').trigger('click')
     await flushPromises()
     await flushPromises()
 
     expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: 'agent_sales' })
   })
 
-  it('persists the selected agent id in the route query for refresh recovery', async () => {
+  it('filters sessions by agent without replacing the active conversation', async () => {
     apiMocks.agentApi.listAgents.mockResolvedValue([
       {
         agent_id: 'agent_default',
@@ -439,15 +440,38 @@ describe('NL2SqlChat', () => {
 
     apiMocks.topicApi.listTopics.mockClear()
     apiMocks.topicApi.listTopics.mockResolvedValue([])
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({
+      accepted: true,
+      topic_id: 'topic-1',
+      task_id: 'task-after-filter',
+      task_status: 'waiting',
+      user_message_id: 'u-after-filter',
+      assistant_message_id: 'a-after-filter'
+    })
 
-    await wrapper.find('.query-main-top-bar .el-select-stub.query-agent-select').trigger('click')
+    await wrapper.find('.query-sidebar-head .el-select-stub.query-agent-select').trigger('click')
     await flushPromises()
     await flushPromises()
 
+    expect(wrapper.find('.query-topic-title').text()).toBe('流式话题')
+    expect(wrapper.find('.query-main-top-bar').text()).toContain('默认智能问数助手')
+    expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
+    expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
     expect(routerReplace).toHaveBeenCalledWith({
       path: '/intelligent-query',
       query: { agent_id: 'agent_sales' }
     })
+
+    await wrapper.find('.query-textarea').setValue('继续当前对话')
+    await wrapper.find('.query-btn-send').trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      topic_id: 'topic-1',
+      agent_id: 'agent_default',
+      content: '继续当前对话'
+    }))
   })
 
   it('keeps streamed main text visible while tools are still running', async () => {

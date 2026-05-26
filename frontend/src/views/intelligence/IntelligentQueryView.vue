@@ -8,7 +8,7 @@
       >
         <el-menu-item index="chat">
           <el-icon><ChatDotRound /></el-icon>
-          <span>智能问数</span>
+          <span>Agent问答</span>
         </el-menu-item>
         <el-menu-item index="skills">
           <el-icon><Collection /></el-icon>
