@@ -14,7 +14,7 @@ from core import followup_suggestions
 from core.followup_suggestions import generate_followup_suggestions
 
 
-def test_default_model_runner_uses_bounded_two_turn_budget(monkeypatch, tmp_path):
+def test_default_model_runner_uses_bounded_ten_turn_budget(monkeypatch, tmp_path):
     class FakeOptions:
         last_kwargs = None
 
@@ -63,7 +63,7 @@ def test_default_model_runner_uses_bounded_two_turn_budget(monkeypatch, tmp_path
     result = anyio.run(run)
 
     assert result == '{"suggestions":["查看异常波动对应的明细"]}'
-    assert FakeOptions.last_kwargs["max_turns"] == 2
+    assert FakeOptions.last_kwargs["max_turns"] == 10
 
 
 def test_generate_followup_suggestions_parses_and_normalizes_model_json():

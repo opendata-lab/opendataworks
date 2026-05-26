@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 MAX_SUGGESTIONS = 3
 MAX_SUGGESTION_LENGTH = 64
 DEFAULT_TIMEOUT_SECONDS = 20
-DEFAULT_MAX_TURNS = 2
+DEFAULT_MAX_TURNS = 10
 
 ModelRunner = Callable[..., Awaitable[str]]
 
