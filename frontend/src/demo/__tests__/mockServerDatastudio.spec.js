@@ -49,6 +49,29 @@ describe('demoAdapter DataStudio endpoints', () => {
     })
   })
 
+  it('covers DataStudio SQL completion metadata endpoints', async () => {
+    await expect(request('get', '/v1/doris-clusters/1/schema-objects', {
+      params: { keyword: 'order', limit: 5 }
+    })).resolves.toMatchObject({
+      code: 200,
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          schemaName: 'opendataworks',
+          tableName: 'demo_order_detail'
+        })
+      ])
+    })
+
+    await expect(request('get', '/v1/doris-clusters/1/databases/opendataworks/tables/demo_order_detail/columns')).resolves.toMatchObject({
+      code: 200,
+      data: expect.arrayContaining([
+        expect.objectContaining({
+          columnName: 'order_id'
+        })
+      ])
+    })
+  })
+
   it('covers table designer endpoints used by the create drawer', async () => {
     await expect(request('post', '/v1/table-designer/table-name', {
       data: { topic: '订单明细', layer: 'DWD' }

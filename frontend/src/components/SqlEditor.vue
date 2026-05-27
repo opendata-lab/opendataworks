@@ -10,6 +10,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { autocompletion, acceptCompletion } from '@codemirror/autocomplete'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { sql, MySQL } from '@codemirror/lang-sql'
+import { createSqlCompletionSource } from './sqlCompletion'
 
 const props = defineProps({
   modelValue: {
@@ -27,6 +28,10 @@ const props = defineProps({
   tableNames: {
     type: Array,
     default: () => []
+  },
+  completionContext: {
+    type: Object,
+    default: null
   },
   highlights: {
     type: Array,
@@ -83,81 +88,10 @@ const buildHighlightExtension = (highlights = [], docLength = null) => {
   return EditorView.decorations.of(Decoration.set(ranges, true))
 }
 
-const SQL_KEYWORDS = [
-  'SELECT',
-  'FROM',
-  'WHERE',
-  'GROUP BY',
-  'ORDER BY',
-  'LIMIT',
-  'HAVING',
-  'JOIN',
-  'LEFT JOIN',
-  'RIGHT JOIN',
-  'INNER JOIN',
-  'OUTER JOIN',
-  'ON',
-  'AS',
-  'WITH',
-  'DISTINCT',
-  'UNION',
-  'UNION ALL',
-  'EXPLAIN',
-  'SHOW',
-  'DESCRIBE',
-  'DESC',
-  'AND',
-  'OR',
-  'NOT',
-  'IN',
-  'LIKE',
-  'IS NULL',
-  'IS NOT NULL',
-  'BETWEEN',
-  'CASE',
-  'WHEN',
-  'THEN',
-  'ELSE',
-  'END'
-]
-
-const buildCompletions = () => {
-  const tables = (props.tableNames || [])
-    .map((name) => String(name || '').trim())
-    .filter(Boolean)
-  const tableOptions = tables.map((name) => ({
-    label: name,
-    type: 'variable',
-    boost: 90
-  }))
-
-  const keywordOptions = SQL_KEYWORDS.map((kw) => ({
-    label: kw,
-    type: 'keyword',
-    boost: 50
-  }))
-
-  return [...tableOptions, ...keywordOptions]
-}
-
-const completionSource = (context) => {
-  const word = context.matchBefore(/[\w$.]+/)
-  if (!word && !context.explicit) return null
-  if (word && word.from === word.to && !context.explicit) return null
-  const from = word ? word.from : context.pos
-  const typed = word ? word.text : ''
-  const lower = typed.toLowerCase()
-  const options = buildCompletions().filter((opt) => {
-    if (!lower) return true
-    return String(opt.label || '').toLowerCase().startsWith(lower)
-  })
-  if (!options.length) return null
-  return {
-    from,
-    options,
-    validFor: /[\w$.]+/
-  }
-}
+const completionSource = createSqlCompletionSource({
+  getCompletionContext: () => props.completionContext,
+  getTableNames: () => props.tableNames
+})
 
 const buildExtensions = () => {
   const extensions = [
@@ -368,6 +302,7 @@ watch(
   },
   { deep: true }
 )
+
 
 watch(
   () => props.highlights,

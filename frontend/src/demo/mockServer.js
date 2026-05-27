@@ -1873,6 +1873,27 @@ export const demoAdapter = async (config) => {
     ])
   }
 
+  if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/schema-objects$/)) {
+    const keyword = String(params.keyword || '').trim().toLowerCase()
+    const limit = Math.max(1, Math.min(Number(params.limit) || 50, 200))
+    const objects = getTables()
+      .filter((item) => {
+        if (!keyword) return true
+        return (
+          String(item.tableName || '').toLowerCase().includes(keyword) ||
+          String(item.tableComment || '').toLowerCase().includes(keyword)
+        )
+      })
+      .slice(0, limit)
+      .map((item) => ({
+        schemaName: item.dbName || DEMO_DATABASE,
+        tableName: item.tableName,
+        tableType: item.tableType || 'BASE TABLE',
+        tableComment: item.tableComment || ''
+      }))
+    return createResponse(config, objects)
+  }
+
   if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/databases$/)) {
     return createResponse(config, [DEMO_DATABASE])
   }
@@ -1888,6 +1909,27 @@ export const demoAdapter = async (config) => {
       tableRows: item.rowCount
     }))
     return createResponse(config, tables)
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/databases\/[^/]+\/tables\/[^/]+\/columns$/)) {
+    const match = pathname.match(/^\/v1\/doris-clusters\/\d+\/databases\/([^/]+)\/tables\/([^/]+)\/columns$/)
+    const database = decodeURIComponent(match?.[1] || '')
+    const tableName = decodeURIComponent(match?.[2] || '')
+    const table = getTableByName(tableName)
+    if (!table || String(table.dbName || DEMO_DATABASE) !== database) {
+      return createRejectedResponse(config, '表不存在', 404)
+    }
+    const columns = getTableFields(table.id).map((field) => ({
+      columnName: field.fieldName,
+      dataType: field.fieldType,
+      isNullable: field.isNullable,
+      defaultValue: field.defaultValue,
+      columnComment: field.fieldComment,
+      ordinalPosition: field.fieldOrder,
+      columnKey: field.isPrimary ? 'PRI' : '',
+      isPrimary: field.isPrimary
+    }))
+    return createResponse(config, columns)
   }
 
   if (method === 'get' && pathname === '/v1/business-domains') {

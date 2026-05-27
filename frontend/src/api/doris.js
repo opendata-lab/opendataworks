@@ -37,6 +37,16 @@ export const dorisClusterApi = {
     return request.get(`/v1/doris-clusters/${id}/databases/${dbName}/tables`, { params })
   },
 
+  searchSchemaObjects(id, params = {}) {
+    return request.get(`/v1/doris-clusters/${id}/schema-objects`, { params })
+  },
+
+  getColumns(id, dbName, tableName) {
+    return request.get(
+      `/v1/doris-clusters/${id}/databases/${encodeURIComponent(dbName)}/tables/${encodeURIComponent(tableName)}/columns`
+    )
+  },
+
   getSchemaObjectCounts(id, params = {}) {
     return request.get(`/v1/doris-clusters/${id}/schema-object-counts`, { params })
   },
