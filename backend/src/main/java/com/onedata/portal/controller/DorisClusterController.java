@@ -115,6 +115,50 @@ public class DorisClusterController {
     }
 
     @RequireAuth
+    @GetMapping("/{id}/schema-objects")
+    public Result<List<Map<String, Object>>> listSchemaObjects(
+            @PathVariable Long id,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer limit,
+            @RequestParam(required = false, defaultValue = "false") boolean includeSoftDeleted) {
+        List<Map<String, Object>> objects = dorisConnectionService.getSchemaObjects(id, keyword);
+        Set<String> softDeletedKeys = includeSoftDeleted
+                ? Collections.emptySet()
+                : dataTableService.listSoftDeletedTableKeys(id);
+        int max = normalizeObjectLimit(limit);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map<String, Object> object : objects) {
+            String schemaName = toText(object.get("schemaName"));
+            String tableName = toText(object.get("tableName"));
+            if (!StringUtils.hasText(schemaName) || !StringUtils.hasText(tableName)) {
+                continue;
+            }
+            if (!includeSoftDeleted && softDeletedKeys.contains(buildDbTableKey(schemaName, tableName))) {
+                continue;
+            }
+            Map<String, Object> item = new java.util.LinkedHashMap<>();
+            item.put("schemaName", schemaName);
+            item.put("tableName", tableName);
+            item.put("tableType", toText(object.get("tableType")));
+            item.put("tableComment", toText(object.get("tableComment")));
+            result.add(item);
+            if (result.size() >= max) {
+                break;
+            }
+        }
+        return Result.success(result);
+    }
+
+    @RequireAuth
+    @GetMapping("/{id}/databases/{database}/tables/{table}/columns")
+    public Result<List<Map<String, Object>>> listTableColumns(
+            @PathVariable Long id,
+            @PathVariable String database,
+            @PathVariable("table") String tableName) {
+        return Result.success(dorisConnectionService.getColumnsInTable(id, database, tableName));
+    }
+
+    @RequireAuth
     @GetMapping("/{id}/schema-object-counts")
     public Result<List<SchemaObjectCount>> listSchemaObjectCounts(
             @PathVariable Long id,
@@ -226,6 +270,13 @@ public class DorisClusterController {
             @PathVariable String schema,
             @RequestBody SchemaBackupRestoreRequest request) {
         return Result.success(schemaBackupService.restoreSnapshot(id, schema, request));
+    }
+
+    private int normalizeObjectLimit(Integer limit) {
+        if (limit == null || limit <= 0) {
+            return 50;
+        }
+        return Math.min(limit, 200);
     }
 
     private String toText(Object value) {

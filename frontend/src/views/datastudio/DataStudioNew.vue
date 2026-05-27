@@ -324,6 +324,7 @@
                       class="sql-editor"
                       placeholder="-- 输入 SQL，支持查询与变更语句（高风险语句需强确认）"
                       :table-names="getSqlCompletionTables(tab.id)"
+                      :completion-context="getSqlCompletionContext(tab.id)"
                       @selection-change="(payload) => handleSqlSelectionChange(tab.id, payload)"
                     />
                   </div>
@@ -495,24 +496,12 @@
                               description="暂无数据"
                               :image-size="80"
                             />
-	                            <el-table
-	                              v-else
-	                              :ref="(el) => setResultTableRef(tab.id, idx, el)"
-	                              :data="resultSet.rows || []"
-	                              border
-	                              stripe
-	                              size="small"
-	                              height="100%"
-	                            >
-	                              <el-table-column
-	                                v-for="col in (resultSet.columns || [])"
-	                                :key="col"
-	                                :prop="col"
-	                                :label="col"
-	                                min-width="120"
-	                                show-overflow-tooltip
-	                              />
-	                            </el-table>
+                            <DataStudioResultGrid
+                              v-else
+                              :columns="resultSet.columns || []"
+                              :rows="resultSet.rows || []"
+                              :row-key-prefix="getResultRowKeyPrefix(tab.id, idx)"
+                            />
 	                          </div>
 	
                           <div
@@ -1159,7 +1148,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, markRaw, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -1188,10 +1177,12 @@ import { dataQueryApi } from '@/api/query'
 import { businessDomainApi, dataDomainApi } from '@/api/domain'
 import PersistentTabs from '@/components/PersistentTabs.vue'
 import TaskEditDrawer from '@/views/tasks/TaskEditDrawer.vue'
+import DataStudioResultGrid from '@/views/datastudio/components/DataStudioResultGrid.vue'
 import { isDemoMode, showDemoReadonlyMessage } from '@/demo/runtime'
 import { copyText } from '@/utils/clipboard'
 import { loadEcharts } from '@/utils/loadEcharts'
 import { buildCsvContent } from './csvExport'
+import { buildResultGridRows } from './components/resultGridModel'
 
 const SqlEditor = defineAsyncComponent({
   loader: () => import('@/components/SqlEditor.vue'),
@@ -1270,6 +1261,7 @@ const schemaCountRequestSeq = reactive({})
 const activeSchema = reactive({})
 const tableLoading = reactive({})
 const tableStore = reactive({})
+const columnStore = reactive({})
 const lineageCache = reactive({})
 const activatedSources = reactive({})
 const datasourceActivationTasks = new Map()
@@ -1455,7 +1447,6 @@ watch(
 	const tableRefs = ref({})
 	const chartRefs = ref({})
 	const chartInstances = new Map()
-	const resultTableInstances = new Map()
 	const taskDrawerRef = ref(null)
 	const tableObserver = ref(null)
 	const nowTick = ref(Date.now())
@@ -3201,6 +3192,63 @@ const getSchemaOptions = (sourceId) => {
   return schemaStore[sid] || []
 }
 
+const getCompletionTablesBySchema = (sourceId) => {
+  const sourceKey = String(sourceId || '')
+  if (!sourceKey) return {}
+  return tableStore[sourceKey] || {}
+}
+
+const getColumnCacheKey = (sourceId, schema, tableName) =>
+  `${String(sourceId || '')}::${String(schema || '')}::${String(tableName || '')}`
+
+const loadCompletionTables = async (sourceId, schema) => {
+  const sourceKey = String(sourceId || '')
+  const schemaName = String(schema || '')
+  if (!sourceKey || !schemaName) return []
+  await loadTables(sourceKey, schemaName)
+  return tableStore[sourceKey]?.[schemaName] || []
+}
+
+const loadCompletionColumns = async (sourceId, schema, tableName) => {
+  const sourceKey = String(sourceId || '')
+  const schemaName = String(schema || '')
+  const objectName = String(tableName || '')
+  if (!sourceKey || !schemaName || !objectName) return []
+  const cacheKey = getColumnCacheKey(sourceKey, schemaName, objectName)
+  if (Array.isArray(columnStore[cacheKey])) {
+    return columnStore[cacheKey]
+  }
+  try {
+    const activated = await activateDatasource(sourceKey)
+    if (!activated) return []
+    const columns = await dorisClusterApi.getColumns(sourceKey, schemaName, objectName)
+    columnStore[cacheKey] = Array.isArray(columns) ? columns : []
+    return columnStore[cacheKey]
+  } catch (error) {
+    console.error('加载 SQL 补全字段失败', error)
+    columnStore[cacheKey] = []
+    return []
+  }
+}
+
+const searchCompletionTables = async (sourceId, keyword) => {
+  const sourceKey = String(sourceId || '')
+  const normalizedKeyword = String(keyword || '').trim()
+  if (!sourceKey || normalizedKeyword.length < 2) return []
+  try {
+    const activated = await activateDatasource(sourceKey)
+    if (!activated) return []
+    const objects = await dorisClusterApi.searchSchemaObjects(sourceKey, {
+      keyword: normalizedKeyword,
+      limit: 50
+    })
+    return Array.isArray(objects) ? objects : []
+  } catch (error) {
+    console.error('搜索 SQL 补全表失败', error)
+    return []
+  }
+}
+
 const getSqlCompletionTables = (tabId) => {
   const state = tabStates[String(tabId || '')]
   if (!state) return []
@@ -3209,6 +3257,23 @@ const getSqlCompletionTables = (tabId) => {
   if (!sourceId || !dbName) return []
   const list = tableStore[sourceId]?.[dbName] || []
   return list.map((item) => item.tableName).filter(Boolean)
+}
+
+const getSqlCompletionContext = (tabId) => {
+  const state = tabStates[String(tabId || '')]
+  if (!state) return null
+  const sourceId = String(state.table?.sourceId || '')
+  if (!sourceId) return null
+  const currentSchema = String(state.table?.dbName || '')
+  return {
+    sourceId,
+    currentSchema,
+    schemas: getSchemaOptions(sourceId),
+    tablesBySchema: getCompletionTablesBySchema(sourceId),
+    loadTables: (schema) => loadCompletionTables(sourceId, schema),
+    loadColumns: ({ schema, table }) => loadCompletionColumns(sourceId, schema, table),
+    searchTables: (keyword) => searchCompletionTables(sourceId, keyword)
+  }
 }
 
 const getTabItemById = (tabId) => {
@@ -3491,7 +3556,7 @@ const syncAutoSelectSqlIfSchemaMismatch = (state) => {
       hasMore: !!res.hasMore,
       previewRowCount: (res.rows || []).length
     }
-    const normalizedSets = resultSets.length ? resultSets : [fallbackResultSet]
+    const normalizedSets = normalizeResultSetsForDisplay(resultSets.length ? resultSets : [fallbackResultSet], tabId)
     const statementInfos = buildStatementInfosFromResultSets(normalizedSets)
     const hasFailure = normalizedSets.some((item) => {
       const status = String(item?.status || '').toUpperCase()
@@ -3500,8 +3565,8 @@ const syncAutoSelectSqlIfSchemaMismatch = (state) => {
 
 		    state.queryResult = {
 		      resultSets: normalizedSets,
-		      columns: res.columns || [],
-		      rows: res.rows || [],
+		      columns: normalizedSets[0]?.columns || [],
+		      rows: normalizedSets[0]?.rows || [],
       hasMore: res.hasMore,
       durationMs: res.durationMs,
       executedAt: res.executedAt,
@@ -3893,7 +3958,26 @@ const parseResultTabIndex = (value) => {
 }
 
 const getChartKey = (tabId, resultIndex) => `${String(tabId)}::${Number(resultIndex)}`
-const getResultTableKey = (tabId, resultIndex) => `${String(tabId)}::${Number(resultIndex)}`
+const getResultRowKeyPrefix = (tabId, resultIndex) => `${String(tabId)}::${Number(resultIndex)}`
+
+const normalizeResultSetForDisplay = (resultSet, tabId, resultIndex) => {
+  const rows = Array.isArray(resultSet?.rows) ? resultSet.rows : []
+  const columns = Array.isArray(resultSet?.columns) ? resultSet.columns : []
+  return markRaw({
+    ...resultSet,
+    columns,
+    rows: markRaw(buildResultGridRows(rows, getResultRowKeyPrefix(tabId, resultIndex))),
+    hasMore: !!resultSet?.hasMore,
+    previewRowCount: Number.isFinite(Number(resultSet?.previewRowCount))
+      ? Number(resultSet.previewRowCount)
+      : rows.length
+  })
+}
+
+const normalizeResultSetsForDisplay = (resultSets, tabId) => {
+  const sets = Array.isArray(resultSets) ? resultSets : []
+  return markRaw(sets.map((set, idx) => normalizeResultSetForDisplay(set, tabId, idx)))
+}
 
 	const getResultSetByIndex = (tabId, resultIndex = 0) => {
 	  const state = tabStates[tabId]
@@ -4012,16 +4096,6 @@ const setChartRef = (tabId, resultIndex, el) => {
 	  }
 	}
 
-const setResultTableRef = (tabId, resultIndex, instance) => {
-  const key = getResultTableKey(tabId, resultIndex)
-  if (!key) return
-  if (instance) {
-    resultTableInstances.set(key, instance)
-    return
-  }
-  resultTableInstances.delete(key)
-}
-
 const syncResultPaneLayout = (tabId) => {
   const state = tabStates[tabId]
   if (!state) return
@@ -4030,10 +4104,6 @@ const syncResultPaneLayout = (tabId) => {
   const view = state?.resultViewTabs?.[idx] || 'table'
   if (view === 'chart') {
     chartInstances.get(getChartKey(tabId, idx))?.resize()
-    return
-  }
-  if (view === 'table') {
-    resultTableInstances.get(getResultTableKey(tabId, idx))?.doLayout?.()
   }
 }
 
@@ -4854,7 +4924,6 @@ onBeforeUnmount(() => {
   }
 				chartInstances.forEach((instance) => instance.dispose())
 				chartInstances.clear()
-				resultTableInstances.clear()
 			queryTimerHandles.forEach((handle) => clearInterval(handle))
 			queryTimerHandles.clear()
   if (tableObserver.value) {
