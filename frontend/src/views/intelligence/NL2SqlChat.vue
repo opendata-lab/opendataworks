@@ -966,11 +966,55 @@ const latestSuccessfulAssistantMessage = computed(() => {
 
 const followupMessageKey = (msg) => String(msg?.message_id || msg?.id || '').trim()
 
+const followupSuggestionTextKeys = ['question', 'text', 'content', 'title', 'value', 'label']
+
+const parseJsonLikeFollowupSuggestion = (value) => {
+  const text = String(value || '').trim()
+  if (!text || !['{', '['].includes(text[0])) return null
+  try {
+    return JSON.parse(text)
+  } catch (_error) {
+    return null
+  }
+}
+
+const collectFollowupSuggestionValues = (value, depth = 0) => {
+  if (depth > 4 || value === null || value === undefined) return []
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectFollowupSuggestionValues(item, depth + 1))
+  }
+  if (typeof value === 'object') {
+    if (Object.prototype.hasOwnProperty.call(value, 'suggestions')) {
+      return collectFollowupSuggestionValues(value.suggestions, depth + 1)
+    }
+    for (const key of followupSuggestionTextKeys) {
+      if (Object.prototype.hasOwnProperty.call(value, key) && String(value[key] || '').trim()) {
+        return collectFollowupSuggestionValues(value[key], depth + 1)
+      }
+    }
+    return []
+  }
+
+  const text = String(value || '').trim()
+  if (!text) return []
+  const parsed = parseJsonLikeFollowupSuggestion(text)
+  if (parsed !== null) {
+    return collectFollowupSuggestionValues(parsed, depth + 1)
+  }
+  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+}
+
+const cleanFollowupSuggestion = (value) => String(value || '')
+  .replace(/^\s*[-*•]\s*/, '')
+  .replace(/^\s*\d+[.)、]\s*/, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .replace(/^["'`]+|["'`]+$/g, '')
+
 const normalizeFollowupSuggestions = (values) => {
-  if (!Array.isArray(values)) return []
   const seen = new Set()
-  return values
-    .map((value) => String(value || '').trim())
+  return collectFollowupSuggestionValues(values)
+    .map((value) => cleanFollowupSuggestion(value))
     .filter((value) => {
       if (!value || seen.has(value)) return false
       seen.add(value)
@@ -1003,7 +1047,7 @@ const loadFollowupSuggestionsForMessage = async (msg) => {
     setFollowupSuggestionState(
       messageKey,
       'loaded',
-      normalizeFollowupSuggestions(response?.suggestions)
+      normalizeFollowupSuggestions(response?.suggestions ?? response)
     )
   } catch (_error) {
     setFollowupSuggestionState(messageKey, 'error', [])

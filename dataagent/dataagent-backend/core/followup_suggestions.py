@@ -21,6 +21,8 @@ MAX_SUGGESTIONS = 3
 MAX_SUGGESTION_LENGTH = 64
 DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_TURNS = 10
+SUGGESTION_TEXT_KEYS = ("question", "text", "content", "title", "value", "label")
+FOLLOWUP_SCHEMA_EXAMPLE = '{"suggestions":["问题1","问题2"]}'
 
 ModelRunner = Callable[..., Awaitable[str]]
 
@@ -43,19 +45,45 @@ def _clean_suggestion(value: Any) -> str:
     return text
 
 
-def _normalize_suggestions(values: Any, *, previous_question: str) -> list[str]:
-    if isinstance(values, dict):
-        values = values.get("suggestions")
-    if isinstance(values, str):
-        values = [line for line in values.splitlines() if line.strip()]
-    if not isinstance(values, list):
-        return []
+def _parse_json_like_value(value: str) -> Any | None:
+    text = _strip_code_fence(value)
+    if not text or text[0] not in "{[":
+        return None
+    try:
+        return json.loads(text)
+    except Exception:
+        return None
 
+
+def _suggestion_text_candidates(value: Any, *, depth: int = 0) -> list[Any]:
+    if depth > 4 or value is None:
+        return []
+    if isinstance(value, dict):
+        if "suggestions" in value:
+            return _suggestion_text_candidates(value.get("suggestions"), depth=depth + 1)
+        for key in SUGGESTION_TEXT_KEYS:
+            if key in value and value.get(key) not in (None, ""):
+                return _suggestion_text_candidates(value.get(key), depth=depth + 1)
+        return []
+    if isinstance(value, list):
+        candidates: list[Any] = []
+        for item in value:
+            candidates.extend(_suggestion_text_candidates(item, depth=depth + 1))
+        return candidates
+    if isinstance(value, str):
+        parsed = _parse_json_like_value(value)
+        if parsed is not None:
+            return _suggestion_text_candidates(parsed, depth=depth + 1)
+        return [line for line in value.splitlines() if line.strip()]
+    return [value]
+
+
+def _normalize_suggestions(values: Any, *, previous_question: str) -> list[str]:
     previous = str(previous_question or "").strip()
     previous_key = previous.lower()
     seen: set[str] = set()
     result: list[str] = []
-    for value in values:
+    for value in _suggestion_text_candidates(values):
         text = _clean_suggestion(value)
         if not text:
             continue
@@ -76,6 +104,33 @@ def _parse_model_suggestions(raw: str, *, previous_question: str) -> list[str]:
     except Exception:
         parsed = text
     return _normalize_suggestions(parsed, previous_question=previous_question)
+
+
+def _parse_strict_model_suggestions(raw: str, *, previous_question: str) -> tuple[list[str], str]:
+    text = _strip_code_fence(raw)
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return [], "输出不是合法 JSON"
+
+    if not isinstance(parsed, dict):
+        return [], "顶层必须是 JSON 对象"
+
+    extra_keys = set(parsed.keys()) - {"suggestions"}
+    if extra_keys:
+        return [], "顶层只能包含 suggestions 字段"
+
+    values = parsed.get("suggestions")
+    if not isinstance(values, list):
+        return [], "suggestions 必须是数组"
+
+    if not all(isinstance(value, str) for value in values):
+        return [], "suggestions 数组中的每一项必须是字符串"
+
+    suggestions = _normalize_suggestions(values, previous_question=previous_question)
+    if not suggestions:
+        return [], "suggestions 中没有可用的问题文本"
+    return suggestions, ""
 
 
 def _fallback_suggestions(answer_text: str, *, previous_question: str) -> list[str]:
@@ -106,7 +161,8 @@ def _fallback_suggestions(answer_text: str, *, previous_question: str) -> list[s
 def _build_prompt(*, previous_question: str, answer_text: str, result_summary: str) -> str:
     sections = [
         "请基于上一轮问答，生成 2-3 条用户最可能继续追问的问题。",
-        "要求：只输出 JSON；格式为 {\"suggestions\":[\"问题1\",\"问题2\"]}；不要输出 Markdown、编号或解释。",
+        f"要求：只输出 JSON；格式为 {FOLLOWUP_SCHEMA_EXAMPLE}；不要输出 Markdown、编号或解释。",
+        "suggestions 数组中的每一项必须是字符串，禁止对象、嵌套数组或额外字段。",
         "追问必须贴合当前回答中的事实、指标、SQL、图表或异常点，避免重复原问题。",
         f"上一轮用户问题：{previous_question}",
         f"上一轮助手回答：{answer_text}",
@@ -114,6 +170,20 @@ def _build_prompt(*, previous_question: str, answer_text: str, result_summary: s
     if str(result_summary or "").strip():
         sections.append(f"结果摘要：{result_summary}")
     return "\n\n".join(sections)
+
+
+def _build_format_retry_prompt(*, original_prompt: str, raw: str, error: str) -> str:
+    return "\n\n".join(
+        [
+            "上一次输出不符合格式要求。",
+            f"格式错误：{error}",
+            f"必须只输出合法 JSON，且格式严格为 {FOLLOWUP_SCHEMA_EXAMPLE}。",
+            "suggestions 数组中的每一项必须是字符串，禁止对象、嵌套数组、JSON 字符串、Markdown、编号、解释或额外字段。",
+            "请基于下面的原始任务重新输出：",
+            original_prompt,
+            f"上一次错误输出：{str(raw or '').strip()[:1200]}",
+        ]
+    )
 
 
 def _extract_sdk_text(message: Any) -> str:
@@ -222,7 +292,18 @@ async def generate_followup_suggestions(
             model=model,
             timeout_seconds=timeout_seconds,
         )
-        suggestions = _parse_model_suggestions(raw, previous_question=previous_question)
+        suggestions, schema_error = _parse_strict_model_suggestions(raw, previous_question=previous_question)
+        if not suggestions and schema_error:
+            retry_prompt = _build_format_retry_prompt(original_prompt=prompt, raw=raw, error=schema_error)
+            raw = await runner(
+                prompt=retry_prompt,
+                provider_id=provider_id,
+                model=model,
+                timeout_seconds=timeout_seconds,
+            )
+            suggestions, schema_error = _parse_strict_model_suggestions(raw, previous_question=previous_question)
+        if not suggestions:
+            suggestions = _parse_model_suggestions(raw, previous_question=previous_question)
         if suggestions:
             return {"suggestions": suggestions, "source": "generated"}
     except Exception as exc:

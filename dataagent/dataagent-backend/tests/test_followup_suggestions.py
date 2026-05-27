@@ -99,6 +99,68 @@ def test_generate_followup_suggestions_parses_and_normalizes_model_json():
     }
 
 
+def test_generate_followup_suggestions_extracts_text_from_structured_items():
+    async def fake_runner(**_kwargs):
+        return """
+        {
+          "suggestions": [
+            {"question": "查看异常峰值对应的工作流明细"},
+            "{\\"question\\": \\"按发布操作类型拆解这段趋势\\"}",
+            {"suggestions": ["查看失败任务明细"]}
+          ]
+        }
+        """
+
+    async def run():
+        return await generate_followup_suggestions(
+            previous_question="最近 30 天工作流发布次数趋势",
+            answer_text="最近 30 天发布次数上升，5 月 20 日出现异常峰值。",
+            result_summary="",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            model_runner=fake_runner,
+        )
+
+    result = anyio.run(run)
+
+    assert result == {
+        "suggestions": ["查看异常峰值对应的工作流明细", "按发布操作类型拆解这段趋势", "查看失败任务明细"],
+        "source": "generated",
+    }
+
+
+def test_generate_followup_suggestions_retries_once_when_model_schema_is_invalid():
+    prompts: list[str] = []
+    responses = [
+        '{"suggestions":[{"question":"查看异常峰值对应的工作流明细"}]}',
+        '{"suggestions":["查看异常峰值对应的工作流明细","按发布操作类型拆解这段趋势"]}',
+    ]
+
+    async def fake_runner(**kwargs):
+        prompts.append(kwargs["prompt"])
+        return responses[len(prompts) - 1]
+
+    async def run():
+        return await generate_followup_suggestions(
+            previous_question="最近 30 天工作流发布次数趋势",
+            answer_text="最近 30 天发布次数上升，5 月 20 日出现异常峰值。",
+            result_summary="",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            model_runner=fake_runner,
+        )
+
+    result = anyio.run(run)
+
+    assert result == {
+        "suggestions": ["查看异常峰值对应的工作流明细", "按发布操作类型拆解这段趋势"],
+        "source": "generated",
+    }
+    assert len(prompts) == 2
+    assert "上一次输出不符合格式要求" in prompts[1]
+    assert "suggestions 数组中的每一项必须是字符串" in prompts[1]
+
+
 def test_generate_followup_suggestions_returns_fallback_when_model_fails():
     async def failing_runner(**_kwargs):
         raise TimeoutError("model timed out")
