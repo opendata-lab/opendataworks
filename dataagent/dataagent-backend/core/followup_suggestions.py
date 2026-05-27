@@ -23,6 +23,7 @@ DEFAULT_TIMEOUT_SECONDS = 20
 DEFAULT_MAX_TURNS = 10
 SUGGESTION_TEXT_KEYS = ("question", "text", "content", "title", "value", "label")
 FOLLOWUP_SCHEMA_EXAMPLE = '{"suggestions":["问题1","问题2"]}'
+JSON_STRUCTURE_KEYS = {"suggestions", *SUGGESTION_TEXT_KEYS, "items", "item", "kind", "type"}
 
 ModelRunner = Callable[..., Awaitable[str]]
 
@@ -55,8 +56,43 @@ def _parse_json_like_value(value: str) -> Any | None:
         return None
 
 
+def _quoted_text_candidates(value: str) -> list[str]:
+    candidates: list[str] = []
+    index = 0
+    while index < len(value):
+        start = value.find('"', index)
+        if start < 0:
+            break
+        raw_parts: list[str] = []
+        pos = start + 1
+        closed = False
+        while pos < len(value):
+            char = value[pos]
+            if char == "\\" and pos + 1 < len(value):
+                raw_parts.append(value[pos : pos + 2])
+                pos += 2
+                continue
+            if char == '"':
+                closed = True
+                break
+            raw_parts.append(char)
+            pos += 1
+        raw = "".join(raw_parts)
+        try:
+            text = json.loads(f'"{raw}"')
+        except Exception:
+            text = raw.replace('\\"', '"').replace("\\n", "\n")
+        text = str(text or "").strip()
+        if not text or text.lower() in JSON_STRUCTURE_KEYS:
+            index = pos + 1 if closed else len(value)
+            continue
+        candidates.append(text)
+        index = pos + 1 if closed else len(value)
+    return candidates
+
+
 def _suggestion_text_candidates(value: Any, *, depth: int = 0) -> list[Any]:
-    if depth > 4 or value is None:
+    if depth > 8 or value is None:
         return []
     if isinstance(value, dict):
         if "suggestions" in value:
@@ -71,9 +107,12 @@ def _suggestion_text_candidates(value: Any, *, depth: int = 0) -> list[Any]:
             candidates.extend(_suggestion_text_candidates(item, depth=depth + 1))
         return candidates
     if isinstance(value, str):
+        text = _strip_code_fence(value)
         parsed = _parse_json_like_value(value)
         if parsed is not None:
             return _suggestion_text_candidates(parsed, depth=depth + 1)
+        if text.startswith(("{", "[")):
+            return _quoted_text_candidates(text)
         return [line for line in value.splitlines() if line.strip()]
     return [value]
 
@@ -127,6 +166,9 @@ def _parse_strict_model_suggestions(raw: str, *, previous_question: str) -> tupl
     if not all(isinstance(value, str) for value in values):
         return [], "suggestions 数组中的每一项必须是字符串"
 
+    if any(str(value or "").strip().startswith(("{", "[")) for value in values):
+        return [], "suggestions 数组项不能是 JSON 字符串"
+
     suggestions = _normalize_suggestions(values, previous_question=previous_question)
     if not suggestions:
         return [], "suggestions 中没有可用的问题文本"
@@ -170,20 +212,6 @@ def _build_prompt(*, previous_question: str, answer_text: str, result_summary: s
     if str(result_summary or "").strip():
         sections.append(f"结果摘要：{result_summary}")
     return "\n\n".join(sections)
-
-
-def _build_format_retry_prompt(*, original_prompt: str, raw: str, error: str) -> str:
-    return "\n\n".join(
-        [
-            "上一次输出不符合格式要求。",
-            f"格式错误：{error}",
-            f"必须只输出合法 JSON，且格式严格为 {FOLLOWUP_SCHEMA_EXAMPLE}。",
-            "suggestions 数组中的每一项必须是字符串，禁止对象、嵌套数组、JSON 字符串、Markdown、编号、解释或额外字段。",
-            "请基于下面的原始任务重新输出：",
-            original_prompt,
-            f"上一次错误输出：{str(raw or '').strip()[:1200]}",
-        ]
-    )
 
 
 def _extract_sdk_text(message: Any) -> str:
@@ -294,15 +322,6 @@ async def generate_followup_suggestions(
         )
         suggestions, schema_error = _parse_strict_model_suggestions(raw, previous_question=previous_question)
         if not suggestions and schema_error:
-            retry_prompt = _build_format_retry_prompt(original_prompt=prompt, raw=raw, error=schema_error)
-            raw = await runner(
-                prompt=retry_prompt,
-                provider_id=provider_id,
-                model=model,
-                timeout_seconds=timeout_seconds,
-            )
-            suggestions, schema_error = _parse_strict_model_suggestions(raw, previous_question=previous_question)
-        if not suggestions:
             suggestions = _parse_model_suggestions(raw, previous_question=previous_question)
         if suggestions:
             return {"suggestions": suggestions, "source": "generated"}

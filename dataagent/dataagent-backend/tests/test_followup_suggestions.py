@@ -99,8 +99,12 @@ def test_generate_followup_suggestions_parses_and_normalizes_model_json():
     }
 
 
-def test_generate_followup_suggestions_extracts_text_from_structured_items():
+def test_generate_followup_suggestions_extracts_text_from_structured_items_without_retry():
+    calls = 0
+
     async def fake_runner(**_kwargs):
+        nonlocal calls
+        calls += 1
         return """
         {
           "suggestions": [
@@ -123,22 +127,23 @@ def test_generate_followup_suggestions_extracts_text_from_structured_items():
 
     result = anyio.run(run)
 
+    assert calls == 1
     assert result == {
         "suggestions": ["查看异常峰值对应的工作流明细", "按发布操作类型拆解这段趋势", "查看失败任务明细"],
         "source": "generated",
     }
 
 
-def test_generate_followup_suggestions_retries_once_when_model_schema_is_invalid():
-    prompts: list[str] = []
-    responses = [
-        '{"suggestions":[{"question":"查看异常峰值对应的工作流明细"}]}',
-        '{"suggestions":["查看异常峰值对应的工作流明细","按发布操作类型拆解这段趋势"]}',
-    ]
+def test_generate_followup_suggestions_uses_local_extraction_when_first_schema_is_invalid():
+    calls = 0
 
-    async def fake_runner(**kwargs):
-        prompts.append(kwargs["prompt"])
-        return responses[len(prompts) - 1]
+    async def fake_runner(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return (
+            '{"suggestions":[{"question":"查看异常峰值对应的工作流明细"},'
+            '{"question":"按发布操作类型拆解这段趋势"}]}'
+        )
 
     async def run():
         return await generate_followup_suggestions(
@@ -152,13 +157,100 @@ def test_generate_followup_suggestions_retries_once_when_model_schema_is_invalid
 
     result = anyio.run(run)
 
+    assert calls == 1
     assert result == {
         "suggestions": ["查看异常峰值对应的工作流明细", "按发布操作类型拆解这段趋势"],
         "source": "generated",
     }
-    assert len(prompts) == 2
-    assert "上一次输出不符合格式要求" in prompts[1]
-    assert "suggestions 数组中的每一项必须是字符串" in prompts[1]
+
+
+def test_generate_followup_suggestions_extracts_items_from_json_string_without_retry():
+    calls = 0
+
+    async def fake_runner(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return (
+            '{"suggestions":["{\\"suggestions\\":[\\"分级保障等级具体有哪些取值？\\",'
+            '\\"各等级分别代表什么含义？\\"]}"]}'
+        )
+
+    async def run():
+        return await generate_followup_suggestions(
+            previous_question="所有分级保障组件都是普通组件吗？",
+            answer_text="所有分级保障组件都是普通组件，但不是所有普通组件都是分级保障组件。",
+            result_summary="",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            model_runner=fake_runner,
+        )
+
+    result = anyio.run(run)
+
+    assert calls == 1
+    assert result == {
+        "suggestions": ["分级保障等级具体有哪些取值？", "各等级分别代表什么含义？"],
+        "source": "generated",
+    }
+
+
+def test_generate_followup_suggestions_extracts_items_from_truncated_json_string_without_retry():
+    calls = 0
+
+    async def fake_runner(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return (
+            '{"suggestions":["{\\"suggestions\\":[\\"分级保障等级具体有哪些级别？\\",'
+            '\\"保障策略具体包含哪些内容？\\",\\"如何查询一个普通组件是否具备"]}'
+        )
+
+    async def run():
+        return await generate_followup_suggestions(
+            previous_question="所有分级保障组件都是普通组件吗？",
+            answer_text="简言之：所有分级保障组件都是普通组件，但不是所有普通组件都是分级保障组件。",
+            result_summary="",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            model_runner=fake_runner,
+        )
+
+    result = anyio.run(run)
+
+    assert calls == 1
+    assert result == {
+        "suggestions": ["分级保障等级具体有哪些级别？", "保障策略具体包含哪些内容？", "如何查询一个普通组件是否具备"],
+        "source": "generated",
+    }
+
+
+def test_generate_followup_suggestions_returns_fallback_when_local_extraction_finds_nothing():
+    calls = 0
+
+    async def fake_runner(**_kwargs):
+        nonlocal calls
+        calls += 1
+        return '{"items":[{"kind":"metadata"}]}'
+
+    async def run():
+        return await generate_followup_suggestions(
+            previous_question="所有分级保障组件都是普通组件吗？",
+            answer_text="简言之：所有分级保障组件都是普通组件，但不是所有普通组件都是分级保障组件。",
+            result_summary="",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            model_runner=fake_runner,
+        )
+
+    result = anyio.run(run)
+
+    assert calls == 1
+    assert result["source"] == "fallback"
+    assert result["suggestions"] == [
+        "按核心维度做进一步对比",
+        "查看这个结果的明细数据",
+        "总结一下可能的业务原因",
+    ]
 
 
 def test_generate_followup_suggestions_returns_fallback_when_model_fails():
