@@ -1221,6 +1221,61 @@ describe('NL2SqlChat', () => {
     }))
   })
 
+  it('normalizes structured API follow-up suggestions before rendering them', async () => {
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: 'SQL 查询如下：select count(*) from workflow_publish_record;',
+          blocks: [
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: 'SQL 查询如下：select count(*) from workflow_publish_record;'
+            }
+          ],
+          created_at: '2026-03-10T02:01:00Z'
+        }
+      ]
+    })
+    apiMocks.topicApi.generateFollowupSuggestions.mockResolvedValue({
+      topic_id: 'topic-1',
+      message_id: 'a1',
+      suggestions: [
+        { question: '查看异常峰值对应的明细' },
+        '{"question":"按发布操作类型拆解这个趋势"}',
+        { suggestions: ['查看失败任务明细'] }
+      ],
+      source: 'generated'
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+    await flushPromises()
+
+    const suggestions = wrapper.findAll('.query-followup-suggestion')
+    expect(suggestions.map((suggestion) => suggestion.text())).toEqual([
+      '查看异常峰值对应的明细',
+      '按发布操作类型拆解这个趋势',
+      '查看失败任务明细'
+    ])
+    expect(wrapper.text()).not.toContain('[object Object]')
+    expect(wrapper.text()).not.toContain('{"question"')
+  })
+
   it('does not render follow-up suggestions when the API returns an empty list', async () => {
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
       topic_id: 'topic-1',
