@@ -157,12 +157,17 @@ def _request_context(request: Request) -> dict[str, str]:
             matched_site = site
             break
     if not matched_site:
+        allowed_ids = [str(s.get("website_id") or "") for s in _allowed_widget_sites()]
+        logger.warning(f"Widget site rejected: website_id={website_id!r} allowed={allowed_ids!r}")
         raise HTTPException(status_code=403, detail="Widget site is not allowed")
 
     allowed_origins = matched_site.get("allowed_origins") or []
     if not isinstance(allowed_origins, list):
+        logger.warning(f"Widget config error: allowed_origins is not a list: {allowed_origins!r}")
         allowed_origins = []
-    if not _origin_allowed(request.headers.get("Origin") or "", allowed_origins):
+    req_origin = request.headers.get("Origin") or ""
+    if not _origin_allowed(req_origin, allowed_origins):
+        logger.warning(f"Widget origin rejected: origin={req_origin!r} allowed={allowed_origins!r}")
         raise HTTPException(status_code=403, detail="Widget origin is not allowed")
 
     return {

@@ -821,24 +821,32 @@ def call_judge_model(config: JudgeConfig, payload: dict[str, Any]) -> dict[str, 
         "x-api-key": config.token,
         "Authorization": f"Bearer {config.token}",
     }
-    for attempt in range(2):
+    max_attempts = 3
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            time.sleep(1)
+        messages: list[dict[str, str]] = [
+            {"role": "user", "content": _judge_message_content(judge_payload, repair=attempt > 0, previous_output=raw_output)},
+            {"role": "assistant", "content": "{"},
+        ]
         body = {
             "model": config.model,
             "max_tokens": config.max_tokens,
             "temperature": 0,
-            "messages": [{"role": "user", "content": _judge_message_content(judge_payload, repair=attempt > 0, previous_output=raw_output)}],
+            "messages": messages,
         }
         try:
             response = http_json("POST", _anthropic_messages_url(config.base_url), body, timeout=config.timeout_seconds, headers=headers)
-            raw_output = _extract_message_text(response)
+            raw_output = "{" + _extract_message_text(response)
             parsed = json.loads(_json_object_text(raw_output))
             if not isinstance(parsed, dict):
                 raise ValueError("judge output is not a JSON object")
             return _normalize_judge_payload(parsed, raw_output=raw_output)
         except EvalRunnerError as exc:
-            return _failed_judge(str(exc), raw_output=raw_output, attribution=["judge_failed", "judge_http_error"])
+            if attempt == max_attempts - 1:
+                return _failed_judge(str(exc), raw_output=raw_output, attribution=["judge_failed", "judge_http_error"])
         except Exception as exc:
-            if attempt == 1:
+            if attempt == max_attempts - 1:
                 return _failed_judge(f"裁判模型未返回合法 JSON: {exc}", raw_output=raw_output)
     return _failed_judge("裁判模型未返回合法 JSON", raw_output=raw_output)
 
