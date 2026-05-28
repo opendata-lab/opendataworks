@@ -129,7 +129,8 @@ def _origin_allowed(origin: str, allowed_origins: list[str]) -> bool:
     if "*" in normalized_allowed:
         return True
     if not normalized_origin:
-        return False
+        # 同源请求 / 非浏览器客户端不会发送 Origin 头，放行
+        return True
     return normalized_origin in normalized_allowed
 
 
