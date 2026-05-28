@@ -19,5 +19,5 @@ installWidget({
   position: 'bottom-right',
   projectName: 'AI 智能问数',
   apiBaseUrl: '',
-  agentId: 'agent_default',
+  agentId: 'agent_opendataworks',
 })
