@@ -127,6 +127,12 @@
 
                   <div v-if="isProcessPanelExpanded(msg)" class="query-process-content">
                     <div class="query-process-content-inner">
+                      <div v-if="processPlaceholder(msg)" class="query-process-placeholder">
+                        <span class="query-process-placeholder-text">{{ processPlaceholder(msg)?.text }}</span>
+                        <span v-if="processPlaceholder(msg)?.preview" class="query-process-placeholder-preview">{{ processPlaceholder(msg)?.preview }}</span>
+                        <span class="query-loading-dots"><span>.</span><span>.</span><span>.</span></span>
+                      </div>
+
                       <div v-for="block in processBlocksForMessage(msg)" :key="block.id" class="query-step-row">
                         <div v-if="block.kind === 'thinking' && block.text" class="query-process-thought">
                           <div class="query-process-thought-content" v-html="renderMarkdown(block.text)" />
@@ -902,21 +908,74 @@ const errorMessage = (error) => {
   return String(error)
 }
 
-const hasProcessPanel = (msg) => processBlocksForMessage(msg).length > 0
-const isProcessPanelExpanded = (msg) => msg?._processExpanded !== false
+const thinkingPreview = (block) => {
+  if (!block || block.kind !== 'thinking') return ''
+  const text = String(block.text || '').trim()
+  return truncatePreviewEnd(text, 72)
+}
+
+const isActiveTaskStatus = (status) => ['queued', 'running', 'streaming'].includes(String(status || '').trim())
+
+const streamingActivity = (msg) => {
+  const status = String(msg?.status || '').trim()
+  if (!isActiveTaskStatus(status)) return null
+  if (status === 'queued') return { kind: 'thinking', text: '等待执行', preview: '' }
+  const activeBlock = [...renderBlocksForMessage(msg)].reverse().find((block) => {
+    if (block?.kind === 'tool' && block.tool) return ['pending', 'streaming'].includes(String(block.tool.status || '').trim())
+    return ['pending', 'streaming'].includes(String(block?.status || '').trim())
+  }) || null
+  if (activeBlock?.kind === 'tool' && activeBlock.tool) {
+    const desc = describeToolAction(activeBlock.tool)
+    return { kind: 'executing', text: desc.preview || desc.command || desc.description || desc.kind || '', preview: '' }
+  }
+  if (activeBlock?.kind === 'main_text') return { kind: 'thinking', text: '正在整理回答', preview: '' }
+  const latestThinking = [...renderBlocksForMessage(msg)].reverse().find((b) => b.kind === 'thinking' && String(b.text || '').trim())
+  const preview = thinkingPreview(activeBlock?.kind === 'thinking' ? activeBlock : latestThinking)
+  return { kind: 'thinking', text: '正在思考', preview }
+}
+
+const hasFinalResult = (msg) => finalBlocksForMessage(msg).some((block) => block.kind === 'main_text' && Boolean(displayTextBlock(block)))
+
+const processPlaceholder = (msg) => {
+  const hasRenderableBlock = processBlocksForMessage(msg).some((block) => {
+    if (block.kind === 'tool' && block.tool) return true
+    return Boolean(String(block.text || '').trim())
+  })
+  if (hasRenderableBlock) return null
+  return streamingActivity(msg)
+}
+
+const hasProcessPanel = (msg) => processBlocksForMessage(msg).some((block) => {
+  if (block.kind === 'tool' && block.tool) return true
+  return Boolean(String(block.text || '').trim())
+}) || Boolean(processPlaceholder(msg))
+
+const defaultProcessPanelExpanded = (msg) => isActiveTaskStatus(msg?.status) || !hasFinalResult(msg)
+
+const isProcessPanelExpanded = (msg) => {
+  if (msg?._processPanelTouched) return Boolean(msg._processPanelExpanded)
+  return defaultProcessPanelExpanded(msg)
+}
+
 const toggleProcessPanel = (msg) => {
   if (!msg) return
-  msg._processExpanded = msg._processExpanded === false
+  msg._processPanelTouched = true
+  msg._processPanelExpanded = !isProcessPanelExpanded(msg)
 }
-const isActiveTaskStatus = (status) => ['queued', 'running', 'streaming'].includes(String(status || '').trim())
+
 const processSummaryPreview = (msg) => {
-  const blocks = processBlocksForMessage(msg)
-  const lastBlock = [...blocks].reverse().find((block) => block.kind === 'thinking' || block.kind === 'tool')
-  if (!lastBlock) return ''
-  if (lastBlock.kind === 'thinking') return truncatePreviewEnd(lastBlock.text, 72)
-  const action = describeToolAction(lastBlock.tool)
-  if (lastBlock.tool?._skillBootstrapName) return formatSkillBootstrapLabel(lastBlock.tool._skillBootstrapName)
-  return truncatePreviewEnd(action.preview || action.command || action.description || action.kind || '', 72)
+  const activity = streamingActivity(msg)
+  if (activity) return activity.preview || activity.text
+  const latestBlock = [...processBlocksForMessage(msg)].reverse().find((block) => {
+    if (block.kind === 'tool' && block.tool) return true
+    return Boolean(String(block.text || '').trim())
+  })
+  if (latestBlock?.kind === 'tool' && latestBlock.tool) {
+    const desc = describeToolAction(latestBlock.tool)
+    return desc.preview || desc.command || desc.description || desc.kind || ''
+  }
+  if (latestBlock?.kind === 'thinking') return thinkingPreview(latestBlock)
+  return hasFinalResult(msg) ? '已完成' : ''
 }
 
 const escapeHtml = (text) => String(text || '')

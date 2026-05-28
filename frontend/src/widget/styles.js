@@ -1041,6 +1041,49 @@ export const WIDGET_STYLES = `
   padding: 12px;
 }
 
+.query-process-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.query-process-placeholder-preview {
+  color: #94a3b8;
+  max-width: 360px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.query-loading-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.query-loading-dots span {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #94a3b8;
+  animation: query-dot 1.4s ease-in-out infinite;
+}
+
+.query-loading-dots span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.query-loading-dots span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes query-dot {
+  0%, 80%, 100% { opacity: 0.15; }
+  40% { opacity: 1; }
+}
+
 .query-process-thought {
   color: #475569;
   font-size: 13px;
