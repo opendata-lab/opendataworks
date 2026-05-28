@@ -33,6 +33,8 @@
     <el-main>
       <router-view />
     </el-main>
+
+    <FloatingAssistant />
   </el-container>
 </template>
 
@@ -42,6 +44,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
+import FloatingAssistant from '@/components/FloatingAssistant.vue'
 
 const route = useRoute()
 const router = useRouter()

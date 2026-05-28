@@ -1,6 +1,6 @@
 <template>
-  <div class="query-workbench">
-    <aside class="query-sidebar">
+  <div class="query-workbench" :class="{ 'is-panel': isPanelMode }">
+    <aside v-if="!isPanelMode" class="query-sidebar">
       <div class="query-sidebar-head">
         <el-select
           v-model="agentSelectValue"
@@ -60,7 +60,7 @@
     </aside>
 
     <main class="query-main">
-      <div class="query-main-top-bar">
+      <div v-if="!isPanelMode" class="query-main-top-bar">
         <div class="query-topic-info">
           <h4 class="query-topic-title">{{ activeTopic ? activeTopic.title : '开始一次新的数据分析' }}</h4>
         </div>
@@ -379,6 +379,11 @@ import {
 } from './messageStream'
 
 marked.setOptions({ breaks: true, gfm: true })
+
+const props = defineProps({
+  mode: { type: String, default: 'page' }
+})
+const isPanelMode = computed(() => props.mode === 'panel')
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
 const { topicApi, taskApi, adminApi, agentApi } = api
@@ -1462,7 +1467,7 @@ const loadAgents = async () => {
     agents.value = normalized.length
       ? normalized
       : [{ agent_id: 'agent_default', name: '默认助手', description: '', is_default: true, is_builtin: true }]
-    const routeAgentId = String(route.query.agent_id || '').trim()
+    const routeAgentId = isPanelMode.value ? '' : String(route.query.agent_id || '').trim()
     if (routeAgentId && agents.value.some((agent) => agent.agent_id === routeAgentId)) {
       selectedAgentId.value = routeAgentId
     } else if (!agents.value.some((agent) => agent.agent_id === selectedAgentId.value)) {
@@ -1476,6 +1481,7 @@ const loadAgents = async () => {
 }
 
 const persistSelectedAgentInRoute = (agentId) => {
+  if (isPanelMode.value) return
   const value = String(agentId || '').trim()
   if (String(route.query.agent_id || '').trim() === value) return
 
@@ -1804,6 +1810,8 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   stopAllTaskSubscriptions()
 })
+
+defineExpose({ handleNewTopic })
 </script>
 
 <style scoped>
@@ -3419,5 +3427,18 @@ onBeforeUnmount(() => {
   .query-composer-input-row {
     align-items: flex-end;
   }
+}
+
+.query-workbench.is-panel {
+  grid-template-columns: 1fr;
+  border-radius: 0;
+  border: none;
+  box-shadow: none;
+  --content-max-width: 100%;
+}
+
+.query-workbench.is-panel .query-messages-inner,
+.query-workbench.is-panel .query-composer {
+  max-width: 100%;
 }
 </style>
