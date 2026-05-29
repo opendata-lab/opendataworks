@@ -151,6 +151,7 @@
       </el-scrollbar>
 
       <!-- Composer -->
+      <div class="v2-composer-bar">
       <div class="v2-composer-wrap">
         <div class="v2-composer">
           <div class="v2-composer-textarea-wrap">
@@ -199,6 +200,7 @@
             </button>
           </div>
         </div>
+      </div>
       </div>
     </main>
   </div>
@@ -424,7 +426,9 @@ async function handleSend() {
   let topicId = activeTopicId.value
   if (!topicId) {
     try {
-      const topic = await topicApi.createTopic(text.slice(0, 60))
+      const topic = await topicApi.createTopic(text.slice(0, 60), {
+        agent_id: agentSelectValue.value || undefined,
+      })
       topicId = topic.topic_id
       activeTopicId.value = topicId
       topics.value.unshift(topic)
@@ -661,9 +665,11 @@ onBeforeUnmount(() => {
 .v2-messages { flex: 1; min-height: 0; }
 
 .v2-messages-inner {
-  padding: 24px 32px 32px;
-  max-width: 860px;
+  padding: 24px 28px 32px;
+  max-width: 960px;
   margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -865,11 +871,18 @@ onBeforeUnmount(() => {
 }
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
-.v2-composer-wrap {
-  padding: 12px 16px 16px;
+.v2-composer-bar {
   border-top: 1px solid #eef1f5;
   flex-shrink: 0;
   background: #ffffff;
+}
+
+.v2-composer-wrap {
+  max-width: 960px;
+  margin: 0 auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px 28px 16px;
 }
 
 .v2-composer {
@@ -962,6 +975,12 @@ onBeforeUnmount(() => {
 @media (max-width: 960px) {
   .v2-workbench { grid-template-columns: 1fr; }
   .v2-sidebar { display: none; }
-  .v2-messages-inner { max-width: 100%; }
+}
+
+@media (max-width: 640px) {
+  .v2-messages-inner { padding: 16px 16px 24px; }
+  .v2-composer-wrap { padding: 10px 16px 14px; }
+  .v2-user-shell { max-width: 90%; }
+  .v2-assistant-body { max-width: 100%; }
 }
 </style>
