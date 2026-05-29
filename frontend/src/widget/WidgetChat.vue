@@ -113,9 +113,6 @@
                             <span v-if="block.status === 'streaming'" class="query-process-badge-dot" />
                             深度思考
                           </span>
-                          <span v-if="!isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex) && block.content" class="query-process-preview">
-                            {{ block.content.slice(0, 72) }}
-                          </span>
                           <svg class="query-process-chevron" :class="{ open: isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex) }" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
                           </svg>
