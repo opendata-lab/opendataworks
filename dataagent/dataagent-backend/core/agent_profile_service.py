@@ -151,6 +151,19 @@ def _validate_env_vars(value: Any) -> dict[str, str]:
     return dict(sorted(normalized.items()))
 
 
+def _validate_preset_questions(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        text = str(item or "").strip()[:200]
+        if text:
+            result.append(text)
+        if len(result) >= 3:
+            break
+    return result
+
+
 def available_mcp_servers() -> list[dict[str, Any]]:
     cfg = get_settings()
     configured = bool(
@@ -201,6 +214,8 @@ def normalize_agent_profile_payload(
     max_turns = _validate_max_turns(data.get("max_turns", base.get("max_turns") or 0))
     env_vars = _validate_env_vars(data.get("env_vars", base.get("env_vars") or {}))
     data_scope = normalize_data_scope(data.get("data_scope", base.get("data_scope") or {}))
+    raw_questions = data.get("preset_questions", base.get("preset_questions") or [])
+    preset_questions = _validate_preset_questions(raw_questions)
 
     return {
         "name": name,
@@ -213,6 +228,7 @@ def normalize_agent_profile_payload(
         "max_turns": max_turns,
         "env_vars": env_vars,
         "data_scope": data_scope,
+        "preset_questions": preset_questions,
     }
 
 
@@ -229,6 +245,7 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "max_turns": int(profile.get("max_turns") or 0),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
         "data_scope": normalize_data_scope(profile.get("data_scope") or {}),
+        "preset_questions": _validate_preset_questions(profile.get("preset_questions") or []),
         "is_default": bool(profile.get("is_default")),
         "is_builtin": bool(profile.get("is_builtin")),
     }
@@ -363,6 +380,7 @@ class AgentProfileStore:
             "max_turns": int(row.get("max_turns") or 0),
             "env_vars": _validate_env_vars(_safe_json_load(row.get("env_vars_json"), {})),
             "data_scope": normalize_data_scope(_safe_json_load(row.get("data_scope_json"), {})),
+            "preset_questions": _validate_preset_questions(_safe_json_load(row.get("preset_questions_json"), [])),
             "is_default": bool(row.get("is_default")),
             "is_builtin": bool(row.get("is_builtin")),
             "created_at": _to_iso(row.get("created_at")),
@@ -380,7 +398,8 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt, permission_mode,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, data_scope_json, is_default, is_builtin, created_at, updated_at
+                           max_turns, env_vars_json, data_scope_json, preset_questions_json,
+                           is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
                     ORDER BY is_builtin DESC, is_default DESC, updated_at DESC, created_at DESC
                     """
@@ -399,7 +418,8 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt, permission_mode,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, data_scope_json, is_default, is_builtin, created_at, updated_at
+                           max_turns, env_vars_json, data_scope_json, preset_questions_json,
+                           is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
                     WHERE agent_id = %s
                     LIMIT 1
@@ -426,8 +446,9 @@ class AgentProfileStore:
                     INSERT INTO da_agent_profile (
                         agent_id, name, description, system_prompt, permission_mode,
                         allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                        max_turns, env_vars_json, data_scope_json, is_default, is_builtin
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        max_turns, env_vars_json, data_scope_json, preset_questions_json,
+                        is_default, is_builtin
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         name = VALUES(name),
                         description = VALUES(description),
@@ -439,6 +460,7 @@ class AgentProfileStore:
                         max_turns = VALUES(max_turns),
                         env_vars_json = VALUES(env_vars_json),
                         data_scope_json = VALUES(data_scope_json),
+                        preset_questions_json = VALUES(preset_questions_json),
                         is_default = VALUES(is_default),
                         is_builtin = VALUES(is_builtin),
                         updated_at = CURRENT_TIMESTAMP
@@ -455,6 +477,7 @@ class AgentProfileStore:
                         int(profile.get("max_turns") or 0),
                         _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
                         _json_dump(normalize_data_scope(profile.get("data_scope") or {})),
+                        _json_dump(_validate_preset_questions(profile.get("preset_questions") or [])),
                         1 if is_default else 0,
                         1 if is_builtin else 0,
                     ),

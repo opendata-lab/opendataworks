@@ -381,6 +381,7 @@ class AgentProfileBase(BaseModel):
     max_turns: Optional[int] = None
     env_vars: Optional[Dict[str, str]] = None
     data_scope: Optional[Dict[str, Any]] = None
+    preset_questions: Optional[List[str]] = None
 
 
 class AgentProfileCreateRequest(AgentProfileBase):
@@ -431,6 +432,7 @@ class AgentProfile(BaseModel):
     max_turns: int = 0
     env_vars: Dict[str, str] = Field(default_factory=dict)
     data_scope: Dict[str, Any] = Field(default_factory=lambda: {"allowed_scopes": []})
+    preset_questions: List[str] = Field(default_factory=list)
     is_default: bool = False
     is_builtin: bool = False
     created_at: str = ""

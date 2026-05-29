@@ -61,6 +61,21 @@
               </el-form-item>
             </section>
 
+            <!-- 预设问题 -->
+            <section v-else-if="activeTab === 'questions'" key="questions" class="agent-panel-section">
+              <h3>预设问题</h3>
+              <p class="agent-panel-desc">最多可配置 3 个预设问题，将展示在对话入口的新建页中，方便用户快速提问。</p>
+              <el-form-item v-for="(_, i) in 3" :key="i" :label="`问题 ${i + 1}`">
+                <el-input
+                  v-model="form.preset_questions[i]"
+                  maxlength="200"
+                  show-word-limit
+                  clearable
+                  :placeholder="`请输入预设问题 ${i + 1}（可选）`"
+                />
+              </el-form-item>
+            </section>
+
             <!-- 权限模式 -->
             <section v-else-if="activeTab === 'permission'" key="permission" class="agent-panel-section">
               <h3>权限模式</h3>
@@ -186,6 +201,7 @@ const activeTab = ref('basic')
 const tabs = [
   { key: 'basic', label: '基础信息' },
   { key: 'prompt', label: '提示词设置' },
+  { key: 'questions', label: '预设问题' },
   { key: 'permission', label: '权限模式' },
   { key: 'tools', label: '工具' },
   { key: 'skills', label: 'Skills' },
@@ -226,6 +242,7 @@ const form = reactive({
   max_turns: 0,
   env_vars: {},
   data_scope: { allowed_scopes: [] },
+  preset_questions: ['', '', ''],
   is_default: false
 })
 
@@ -281,7 +298,11 @@ const applyAgent = (agent) => {
     data_scope: agent?.data_scope && typeof agent.data_scope === 'object'
       ? { allowed_scopes: Array.isArray(agent.data_scope.allowed_scopes) ? [...agent.data_scope.allowed_scopes] : [] }
       : { allowed_scopes: [] },
-    is_default: Boolean(agent?.is_default)
+    is_default: Boolean(agent?.is_default),
+    preset_questions: (() => {
+      const q = Array.isArray(agent?.preset_questions) ? agent.preset_questions.filter(Boolean) : []
+      return [q[0] || '', q[1] || '', q[2] || '']
+    })()
   })
   envVarsText.value = JSON.stringify(form.env_vars || {}, null, 2)
   scopeSelection.value = (form.data_scope.allowed_scopes || []).map(scopeKey)
@@ -337,7 +358,8 @@ const buildPayload = () => {
           source_type: scope.source_type || '',
           database: scope.database || ''
         }))
-    }
+    },
+    preset_questions: form.preset_questions.map((q) => String(q || '').trim()).filter(Boolean)
   }
 }
 
@@ -463,6 +485,13 @@ onMounted(loadDetail)
   color: #1f2937;
   font-size: 17px;
   font-weight: 600;
+}
+
+.agent-panel-desc {
+  margin: -12px 0 20px;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 /* ── Tab fade transition ── */
