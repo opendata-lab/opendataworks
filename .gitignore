@@ -102,4 +102,7 @@ website/.vitepress/cache/
 .superpowers/
 .stitch/
 
+# Vite local cache (generated at project root during frontend dev/test)
+.vite/
+
 
