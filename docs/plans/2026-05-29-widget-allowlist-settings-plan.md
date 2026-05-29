@@ -7,7 +7,8 @@
 ### 后端
 
 - [x] `models/schemas.py`：新增 `WidgetAllowedSite`；`AdminSettingsResponse` / `AdminSettingsUpdateRequest` 增加 `widget_allowed_sites`
-- [x] `core/skill_admin_service.py`：新增 `_normalize_widget_allowed_sites()`；`_runtime_settings_payload()` 注入 env 默认；`_merge_settings_payload()` 透传归一并写入 flattened
+- [x] `core/skill_admin_service.py`：新增 `_normalize_widget_allowed_sites()`；`_runtime_settings_payload()` 默认 `[]`（无 env 来源）；`_merge_settings_payload()` 透传归一并写入 flattened
+- [x] 移除环境变量 `WIDGET_ALLOWED_SITES_JSON`：`config.py`、`deploy/docker-compose.dev.yml`、`deploy/docker-compose.prod.yml`、`deploy/.env.example`、`website/guide/widget.md`
 - [x] `core/skill_admin_store.py`：`_normalize_settings_payload` / `_normalize_settings_row` 增加 `widget_allowed_sites`（raw_json 扩展键）读写
 - [x] `api/admin_routes.py`：`_build_admin_settings_response` 输出 `widget_allowed_sites`
 - [x] `api/routes.py`：`_allowed_widget_sites()` 改读 `current_settings_payload()`；移除未用的 `json` import

@@ -161,14 +161,13 @@ Widget 请求会携带以下特殊请求头：
 - `X-ODW-Website-Id: <website-id>`
 - `X-ODW-User-Id: <user-id>` 或 `X-ODW-Visitor-Id: <visitor-id>`
 
-后端需要在环境变量中配置允许的站点列表，确保只有受信任的站点可以接入：
+允许接入的站点白名单在管理后台「智能问数 → Widget 接入」设置页配置，确保只有受信任的站点可以接入：
 
-```bash
-# 格式：JSON 数组，默认 [] 表示不允许任何外部 widget 请求
-WIDGET_ALLOWED_SITES_JSON='[{"website_id":"my-site","allowed_origins":["https://app.example.com"],"project_name":"我的站点","project_color":"#6366f1"}]'
-```
+- **Website ID**：与嵌入脚本的 `data-website-id` 完全一致
+- **允许来源（Origin）**：嵌入页面的来源，例如 `https://app.example.com`；填 `*` 放行所有来源（仅建议测试环境）
+- **项目名称 / 主题色**：展示在 Widget 上的标题与配色
 
-配置详情参见 [配置说明](./configuration)。
+白名单持久化在 `da_agent_settings`，保存后即时生效、无需重启服务（不再使用环境变量配置）。
 
 ## 浏览器兼容性
 

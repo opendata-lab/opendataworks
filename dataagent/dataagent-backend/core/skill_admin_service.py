@@ -152,7 +152,9 @@ def _runtime_settings_payload() -> dict[str, Any]:
         "doris_database": cfg.doris_database,
         "skills_output_dir": cfg.skills_output_dir,
         "session_mysql_database": cfg.session_mysql_database,
-        "widget_allowed_sites": _normalize_widget_allowed_sites(getattr(cfg, "widget_allowed_sites_json", "[]")),
+        # Widget allowlist is managed exclusively from the settings page and
+        # persisted in da_agent_settings; there is no env-var source.
+        "widget_allowed_sites": [],
     }
 
 

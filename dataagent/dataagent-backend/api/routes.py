@@ -114,10 +114,9 @@ def _previous_user_question(messages: list[dict[str, Any]], assistant_message: d
 
 
 def _allowed_widget_sites() -> list[dict]:
-    # Persisted admin settings are authoritative. `current_settings_payload`
-    # already merges the env default (WIDGET_ALLOWED_SITES_JSON) as the base and
-    # lets the saved settings record override it, so the resolved list is the
-    # effective whitelist managed from the settings page.
+    # The widget allowlist is managed from the settings page and persisted in
+    # da_agent_settings. `current_settings_payload` returns the effective
+    # whitelist; there is no env-var source.
     try:
         payload = current_settings_payload()
     except Exception:

@@ -135,7 +135,6 @@ def install_widget_settings(monkeypatch):
             skills_output_dir="../.claude/skills/opendataworks-business-knowledge",
             redis_host="127.0.0.1",
             redis_port=6379,
-            widget_allowed_sites_json='[{"website_id":"demo","allowed_origins":["https://host.example.com"],"project_name":"Demo","project_color":"#4A90A4"}]',
             run_events_stream_poll_interval_seconds=1,
             run_events_stream_ping_seconds=10,
         ),
