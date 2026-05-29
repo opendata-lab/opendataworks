@@ -87,6 +87,11 @@
               <div class="v2-assistant-body">
                 <!-- Streaming: render turns from v2 state -->
                 <template v-if="msg._v2state">
+                  <!-- Loading indicator: waiting for first block -->
+                  <div v-if="!msg._v2state.turns.length && isStreaming" class="v2-typing-indicator">
+                    <span /><span /><span />
+                  </div>
+
                   <template v-for="(turn, ti) in msg._v2state.turns" :key="ti">
                     <template v-for="block in turn.blocks" :key="block.blockIndex + '-' + ti">
                       <!-- Thinking block -->
@@ -214,6 +219,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
@@ -221,6 +227,9 @@ import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
+
+const route = useRoute()
+const router = useRouter()
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
 const { topicApi, taskApi, adminApi, agentApi } = api
@@ -340,7 +349,10 @@ async function loadAgents() {
     agents.value = normalized.length
       ? normalized
       : [{ agent_id: 'agent_default', name: '默认助手', is_default: true }]
-    if (!agentSelectValue.value) {
+    const routeAgentId = String(route.query.agent_id || '').trim()
+    if (routeAgentId && agents.value.some((a) => a.agent_id === routeAgentId)) {
+      agentSelectValue.value = routeAgentId
+    } else if (!agentSelectValue.value) {
       const def = agents.value.find((a) => a.is_default) || agents.value[0]
       agentSelectValue.value = def?.agent_id || ''
     }
@@ -425,6 +437,15 @@ async function handleSelectTopic(topicId) {
 
 function handleAgentChange(agentId) {
   agentSelectValue.value = agentId
+  const value = String(agentId || '').trim()
+  if (String(route.query.agent_id || '').trim() === value) return
+  const query = { ...route.query }
+  if (value) {
+    query.agent_id = value
+  } else {
+    delete query.agent_id
+  }
+  router.replace({ path: route.path, query }).catch(() => {})
 }
 
 function handleModelCommand(command) {
@@ -548,6 +569,10 @@ onBeforeUnmount(() => {
   background: #F4F5F7;
   box-shadow: 0 8px 20px rgba(15, 23, 42, 0.035);
   font-family: 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+}
+
+@media (min-width: 1280px) {
+  .v2-workbench { grid-template-columns: 300px 1fr; }
 }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
@@ -675,7 +700,7 @@ onBeforeUnmount(() => {
 
 .v2-messages-inner {
   padding: 24px 28px 32px;
-  max-width: 960px;
+  max-width: 800px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -927,7 +952,7 @@ onBeforeUnmount(() => {
 }
 
 .v2-composer-wrap {
-  max-width: 960px;
+  max-width: 800px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -1018,6 +1043,31 @@ onBeforeUnmount(() => {
 
 .v2-cancel-btn {
   background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%) !important;
+}
+
+/* ── Typing indicator ────────────────────────────────────────────────────── */
+.v2-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+}
+
+.v2-typing-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--odw-primary);
+  opacity: 0.35;
+  animation: v2-typing 1.2s ease-in-out infinite;
+}
+
+.v2-typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.v2-typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes v2-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-5px); opacity: 1; }
 }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
