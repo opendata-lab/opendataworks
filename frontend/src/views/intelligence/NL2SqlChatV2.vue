@@ -699,8 +699,9 @@ onBeforeUnmount(() => {
 .v2-messages { flex: 1; min-height: 0; }
 
 .v2-messages-inner {
-  padding: 24px 28px 32px;
-  max-width: 800px;
+  padding-block: 24px 32px;
+  padding-inline: clamp(28px, 5%, 64px);
+  max-width: 1000px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -952,11 +953,12 @@ onBeforeUnmount(() => {
 }
 
 .v2-composer-wrap {
-  max-width: 800px;
+  max-width: 1000px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
-  padding: 12px 28px 16px;
+  padding-block: 12px 16px;
+  padding-inline: clamp(20px, 5%, 48px);
 }
 
 .v2-composer {
@@ -1077,8 +1079,8 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
-  .v2-messages-inner { padding: 16px 16px 24px; }
-  .v2-composer-wrap { padding: 10px 16px 14px; }
+  .v2-messages-inner { padding-block: 16px 24px; padding-inline: 16px; }
+  .v2-composer-wrap { padding-block: 10px 14px; padding-inline: 16px; }
   .v2-user-shell { max-width: 90%; }
   .v2-assistant-body { max-width: 100%; }
   .v2-landing-greeting { font-size: 18px; }
