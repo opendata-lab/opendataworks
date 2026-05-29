@@ -34,17 +34,16 @@
       <router-view />
     </el-main>
 
-    <FloatingAssistant />
   </el-container>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
-import FloatingAssistant from '@/components/FloatingAssistant.vue'
+import { installWidget } from '@/widget/entry'
 
 const route = useRoute()
 const router = useRouter()
@@ -104,6 +103,7 @@ const preloadMenuRoute = (path) => {
   void preloadRouteComponents(router, path)
 }
 
+let _widgetCtrl = null
 onMounted(() => {
   scheduleRouteWarmup(
     router,
@@ -111,6 +111,17 @@ onMounted(() => {
       .map((item) => item.index)
       .filter((path) => path !== activeMenu.value)
   )
+  _widgetCtrl = installWidget({
+    displayMode: 'floating',
+    position: 'bottom-right',
+    projectName: '智能助手',
+    projectColor: '#2c5282',
+    agentId: '',
+    apiBaseUrl: '',
+  })
+})
+onBeforeUnmount(() => {
+  _widgetCtrl?.destroy()
 })
 </script>
 
