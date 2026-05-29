@@ -163,47 +163,46 @@
         </div>
       </div>
 
-      <!-- Composer bar — matches v2-composer-bar / v2-composer -->
+      <!-- Composer bar -->
       <div class="query-composer-bar">
         <div class="query-composer-wrap">
+          <!-- Input pill -->
           <div class="query-composer" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send">
-            <div class="query-composer-textarea-wrap">
-              <textarea
-                v-model="inputText"
-                class="query-textarea"
-                rows="1"
-                :disabled="!providers.length || !availableModels.length"
-                placeholder="输入数据问题…"
-                @input="autoResizeTextarea"
-              />
-            </div>
-            <div class="query-composer-actions">
-              <!-- Model selector: pill button with current model name -->
-              <div class="query-model-selector">
-                <select v-model="selectedProvider" class="query-model-select" :disabled="!providers.length || isBusy" title="切换提供商">
-                  <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
-                    {{ provider.display_name || provider.provider_id }}
-                  </option>
-                </select>
-                <select v-model="selectedModel" class="query-model-select" :disabled="!availableModels.length || isBusy" title="切换模型">
-                  <option v-for="modelName in availableModels" :key="modelName" :value="modelName">{{ modelName }}</option>
-                </select>
-              </div>
-              <button
-                type="button"
-                class="query-send-btn"
-                :class="{ 'query-cancel-btn': activeTaskId }"
-                :disabled="activeTaskId ? false : !canSend"
-                :aria-label="activeTaskId ? '取消当前任务' : '发送消息'"
-                @click="activeTaskId ? cancel() : send()"
-              >
-                <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                  <rect x="8" y="8" width="8" height="8" rx="1.5" />
-                </svg>
-                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
-                  <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
-                </svg>
-              </button>
+            <textarea
+              v-model="inputText"
+              class="query-textarea"
+              rows="1"
+              :disabled="!providers.length || !availableModels.length"
+              placeholder="输入数据问题…"
+              @input="autoResizeTextarea"
+            />
+            <button
+              type="button"
+              class="query-send-btn"
+              :class="{ 'query-cancel-btn': activeTaskId }"
+              :disabled="activeTaskId ? false : !canSend"
+              :aria-label="activeTaskId ? '取消当前任务' : '发送消息'"
+              @click="activeTaskId ? cancel() : send()"
+            >
+              <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                <rect x="8" y="8" width="8" height="8" rx="1.5" />
+              </svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15">
+                <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
+              </svg>
+            </button>
+          </div>
+          <!-- Toolbar row -->
+          <div class="query-composer-toolbar">
+            <div class="query-model-selector">
+              <select v-model="selectedProvider" class="query-model-select" :disabled="!providers.length || isBusy" title="切换提供商">
+                <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
+                  {{ provider.display_name || provider.provider_id }}
+                </option>
+              </select>
+              <select v-model="selectedModel" class="query-model-select" :disabled="!availableModels.length || isBusy" title="切换模型">
+                <option v-for="modelName in availableModels" :key="modelName" :value="modelName">{{ modelName }}</option>
+              </select>
             </div>
           </div>
         </div>
@@ -241,11 +240,14 @@ const api = createNl2SqlApiClient({
   defaultHeaders: props.config.headers
 })
 
-const suggestions = [
+const DEFAULT_SUGGESTIONS = [
   '各数据层表数量对比',
   '最近 30 天工作流发布次数趋势',
   '各工作流发布操作类型占比'
 ]
+
+const agentPresetQuestions = ref([])
+const suggestions = computed(() => agentPresetQuestions.value.length ? agentPresetQuestions.value : DEFAULT_SUGGESTIONS)
 
 const inputText = ref('')
 const searchKeyword = ref('')
@@ -873,8 +875,17 @@ watch(
   }
 )
 
-onMounted(() => {
-  void loadConfig()
+onMounted(async () => {
+  await loadConfig()
+  if (agentId.value && agentId.value !== 'demo') {
+    try {
+      const agentProfile = await api.agentApi.getAgent(agentId.value)
+      const questions = Array.isArray(agentProfile?.preset_questions) ? agentProfile.preset_questions.filter(Boolean) : []
+      agentPresetQuestions.value = questions.slice(0, 3)
+    } catch {
+      // non-fatal, fall back to defaults
+    }
+  }
   void loadTopics()
 })
 

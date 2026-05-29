@@ -13,7 +13,6 @@
         </button>
         <div class="odw-panel__heading">
           <div class="odw-panel__title">{{ config.projectName }}</div>
-          <div class="odw-panel__subtitle">智能问数</div>
         </div>
         <div class="odw-panel__actions">
           <button class="odw-icon-button" type="button" aria-label="新建会话" title="新建会话" :disabled="state.isBusy" @click="newConversation">

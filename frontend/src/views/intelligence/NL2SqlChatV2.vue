@@ -158,9 +158,9 @@
 
       <!-- Composer -->
       <div class="v2-composer-bar">
-      <div class="v2-composer-wrap">
-        <div class="v2-composer">
-          <div class="v2-composer-textarea-wrap">
+        <div class="v2-composer-wrap">
+          <!-- Input bar -->
+          <div class="v2-composer" :class="{ 'is-focused': inputText }">
             <textarea
               ref="textareaRef"
               v-model="inputText"
@@ -171,29 +171,6 @@
               @keydown.enter.exact.prevent="handleSend"
               @input="autoResize"
             />
-          </div>
-          <div class="v2-composer-actions">
-            <el-dropdown trigger="click" @command="handleModelCommand">
-              <button type="button" class="v2-model-btn" title="切换模型">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 2V4" /><rect x="4" y="6" width="16" height="12" rx="2" /><circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" /></svg>
-                <span class="v2-model-label">{{ selectedModel || '默认' }}</span>
-              </button>
-              <template #dropdown>
-                <el-dropdown-menu>
-                  <template v-for="provider in settings.providers" :key="provider.provider_id">
-                    <el-dropdown-item
-                      v-for="model in provider.models"
-                      :key="model"
-                      :command="provider.provider_id + '::' + model"
-                      :class="{ active: selectedProvider === provider.provider_id && selectedModel === model }"
-                    >
-                      {{ model }}
-                    </el-dropdown-item>
-                  </template>
-                </el-dropdown-menu>
-              </template>
-            </el-dropdown>
-
             <button
               type="button"
               class="v2-send-btn"
@@ -201,12 +178,37 @@
               :disabled="!isStreaming && !inputText.trim()"
               @click="isStreaming ? handleCancel() : handleSend()"
             >
-              <svg v-if="isStreaming" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
-              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
+              <svg v-if="isStreaming" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
+              <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
             </button>
           </div>
+          <!-- Bottom toolbar -->
+          <div class="v2-composer-toolbar">
+            <div class="v2-composer-toolbar-left" />
+            <div class="v2-composer-toolbar-right">
+              <el-dropdown trigger="click" @command="handleModelCommand">
+                <button type="button" class="v2-model-btn" title="切换模型">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 2V4" /><rect x="4" y="6" width="16" height="12" rx="2" /><circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" /></svg>
+                  <span class="v2-model-label">{{ selectedModel || '默认' }}</span>
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <template v-for="provider in settings.providers" :key="provider.provider_id">
+                      <el-dropdown-item
+                        v-for="model in provider.models"
+                        :key="model"
+                        :command="provider.provider_id + '::' + model"
+                        :class="{ active: selectedProvider === provider.provider_id && selectedModel === model }"
+                      >
+                        {{ model }}
+                      </el-dropdown-item>
+                    </template>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+          </div>
         </div>
-      </div>
       </div>
     </main>
   </div>
@@ -341,6 +343,7 @@ async function loadAgents() {
       agent_id: String(a?.agent_id || ''),
       name: String(a?.name || '默认助手'),
       is_default: Boolean(a?.is_default),
+      preset_questions: Array.isArray(a?.preset_questions) ? a.preset_questions.filter(Boolean) : [],
     })).filter((a) => a.agent_id)
     agents.value = normalized.length
       ? normalized
@@ -449,12 +452,18 @@ function chartSpecToToolProp(spec) {
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────
-const suggestions = [
+const DEFAULT_SUGGESTIONS = [
   '最近 30 天工作流发布次数趋势',
   '各数据层表数量对比',
   '各工作流发布操作类型占比',
   '有哪些失败的任务实例',
 ]
+
+const suggestions = computed(() => {
+  const agent = agents.value.find((a) => a.agent_id === agentSelectValue.value)
+  const questions = Array.isArray(agent?.preset_questions) ? agent.preset_questions.filter(Boolean) : []
+  return questions.length ? questions : DEFAULT_SUGGESTIONS
+})
 
 function handleSuggestion(text) {
   if (isStreaming.value) return
@@ -990,7 +999,7 @@ onBeforeUnmount(() => {
 .v2-composer-bar {
   border-top: 1px solid #eef1f5;
   flex-shrink: 0;
-  background: #ffffff;
+  background: #f5f6f8;
 }
 
 .v2-composer-wrap {
@@ -998,27 +1007,30 @@ onBeforeUnmount(() => {
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
-  padding-block: 12px 16px;
+  padding-block: 10px 12px;
   padding-inline: clamp(40px, 5%, 64px);
 }
 
 .v2-composer {
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid #dbe3ef;
-  border-radius: 14px;
-  background: #fafbfc;
-  transition: border-color var(--odw-transition);
+  align-items: center;
+  gap: 8px;
+  padding: 10px 10px 10px 18px;
+  border: 1px solid #dde2ea;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: border-color var(--odw-transition), box-shadow var(--odw-transition);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
 }
 
-.v2-composer:focus-within { border-color: var(--odw-primary); }
-
-.v2-composer-textarea-wrap { flex: 1; min-width: 0; }
+.v2-composer:focus-within {
+  border-color: #b0bbcc;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
 
 .v2-textarea {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   border: none;
   outline: none;
   background: transparent;
@@ -1034,30 +1046,42 @@ onBeforeUnmount(() => {
 
 .v2-textarea::placeholder { color: #A0AABF; }
 
-.v2-composer-actions {
+.v2-composer-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-inline: 4px;
+}
+
+.v2-composer-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-composer-toolbar-right {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
 }
 
 .v2-model-btn {
   display: flex;
   align-items: center;
-  gap: 5px;
-  padding: 5px 10px;
-  border: 1px solid #dbe3ef;
-  border-radius: 8px;
-  background: #fff;
-  color: #595959;
+  gap: 4px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a96a6;
   font-size: 12px;
   cursor: pointer;
-  transition: border-color var(--odw-transition), background var(--odw-transition);
-  max-width: 140px;
-  overflow: hidden;
+  transition: color var(--odw-transition), background var(--odw-transition);
+  max-width: 160px;
 }
 
-.v2-model-btn:hover { border-color: var(--odw-primary); background: #f4f7fb; }
+.v2-model-btn:hover { color: #4a5568; background: #eef1f5; }
 
 .v2-model-label {
   overflow: hidden;
@@ -1066,26 +1090,32 @@ onBeforeUnmount(() => {
 }
 
 .v2-send-btn {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: none;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
-  color: #fff;
+  border-radius: 8px;
+  background: #e8eaed;
+  color: #606878;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: opacity var(--odw-transition), transform var(--odw-transition);
+  transition: background var(--odw-transition), color var(--odw-transition), transform var(--odw-transition);
+}
+
+.v2-send-btn:not(:disabled):not(.v2-cancel-btn) {
+  background: linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
+  color: #fff;
 }
 
 .v2-send-btn:disabled { opacity: 0.4; cursor: default; }
-.v2-send-btn:not(:disabled):hover { transform: scale(1.05); }
-.v2-send-btn:active { transform: scale(0.96); }
+.v2-send-btn:not(:disabled):hover { transform: scale(1.06); }
+.v2-send-btn:active { transform: scale(0.94); }
 
 .v2-cancel-btn {
   background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%) !important;
+  color: #fff !important;
 }
 
 /* ── Typing indicator ────────────────────────────────────────────────────── */
