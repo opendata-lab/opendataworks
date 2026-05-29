@@ -131,15 +131,16 @@ export const WIDGET_STYLES = `
 }
 
 .odw-panel__header {
-  min-height: 58px;
-  padding: 0 14px 0 18px;
+  min-height: 52px;
+  padding: 0 12px 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px solid color-mix(in srgb, var(--odw-widget-color) 12%, #e5eaf1);
-  background: linear-gradient(135deg, #fff 60%, color-mix(in srgb, var(--odw-widget-color) 6%, #fff));
-  color: #1f1f1f;
+  border-bottom: none;
+  background: linear-gradient(135deg, var(--odw-widget-color) 0%, color-mix(in srgb, var(--odw-widget-color) 75%, #000) 100%);
+  color: #ffffff;
+  border-radius: 18px 18px 0 0;
 }
 
 .odw-panel__heading {
@@ -149,7 +150,7 @@ export const WIDGET_STYLES = `
 
 .odw-panel__title {
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -158,26 +159,28 @@ export const WIDGET_STYLES = `
 .odw-panel__subtitle {
   margin-top: 2px;
   font-size: 12px;
-  color: #a0aabf;
+  color: rgba(255, 255, 255, 0.65);
 }
 
 .odw-icon-button {
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 50%;
-  background: #eef1f5;
-  color: #595959;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.85);
   line-height: 1;
   cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
 }
 
 .odw-icon-button:not(:disabled):hover {
-  background: #e5eaf1;
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
 }
 
 .odw-icon-button:disabled {
@@ -186,11 +189,11 @@ export const WIDGET_STYLES = `
 }
 
 .odw-history-toggle {
-  color: #475569;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .odw-close-button {
-  color: #64748b;
+  color: rgba(255, 255, 255, 0.85);
 }
 
 .odw-icon-svg {
