@@ -1,5 +1,4 @@
 import { createApp, reactive } from 'vue'
-import { ElScrollbar } from 'element-plus'
 import OpenDataWorksWidget from './OpenDataWorksWidget.vue'
 import { parseWidgetConfig, resolveCurrentScript, resolveVisitorId } from './config'
 import { WIDGET_STYLES } from './styles'
@@ -645,7 +644,6 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
   }
 
   const app = createApp(OpenDataWorksWidget, { config, state, emit })
-  app.component(ElScrollbar.name, ElScrollbar)
   app.mount(mountPoint)
 
   const controller = {
