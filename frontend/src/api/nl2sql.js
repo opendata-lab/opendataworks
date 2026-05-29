@@ -209,6 +209,36 @@ export function createNl2SqlApiClient(options = {}) {
       if (buffer.trim()) {
         parseSseChunk(`${buffer}\n\n`, onEvent)
       }
+    },
+
+    async streamSdkEvents(taskId, options = {}) {
+      const { onRecord, signal, afterId = 0 } = options
+      const response = await fetch(
+        buildUrl(baseURL, `${RUNTIME_PREFIX}/tasks/${taskId}/sdk-events/stream?after_id=${encodeURIComponent(afterId)}`),
+        {
+          method: 'GET',
+          headers: { Accept: 'text/event-stream', ...defaultHeaders },
+          signal
+        }
+      )
+      if (!response.ok) {
+        throw new Error(await extractHttpError(response))
+      }
+      if (!response.body) {
+        throw new Error('SSE stream body is empty')
+      }
+      const decoder = new TextDecoder('utf-8')
+      const reader = response.body.getReader()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        buffer = parseSseChunk(buffer, onRecord)
+      }
+      if (buffer.trim()) {
+        parseSseChunk(`${buffer}\n\n`, onRecord)
+      }
     }
   }
 
