@@ -116,7 +116,7 @@ onMounted(() => {
     position: 'bottom-right',
     projectName: '智能助手',
     projectColor: '#2c5282',
-    agentId: '',
+    agentId: 'agent_opendataworks',
     apiBaseUrl: '',
   })
 })
