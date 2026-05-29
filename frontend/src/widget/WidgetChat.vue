@@ -551,12 +551,8 @@ const newConversation = async () => {
   if (!guardIdle()) return
   errorText.value = ''
   searchKeyword.value = ''
-  const topic = normalizeTopic(await api.topicApi.createTopic('Widget 会话', { agent_id: agentId.value || undefined }))
-  if (!topic.topic_id) return
-  topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
-  topicId.value = topic.topic_id
+  topicId.value = ''
   messages.value = []
-  hydratedTopicIds.add(topic.topic_id)
   closeHistory()
 }
 
@@ -574,7 +570,7 @@ const deleteConversation = async (targetTopicId) => {
 const ensureTopic = async (title) => {
   if (!ensureAgentConfigured()) return ''
   if (topicId.value) return topicId.value
-  const topic = normalizeTopic(await api.topicApi.createTopic(title || 'Widget 会话', { agent_id: agentId.value || undefined }))
+  const topic = normalizeTopic(await api.topicApi.createTopic(title || '新会话', { agent_id: agentId.value || undefined }))
   if (!topic.topic_id) return ''
   topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
   topicId.value = topic.topic_id

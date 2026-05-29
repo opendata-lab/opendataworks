@@ -140,7 +140,7 @@ describe('installWidget', () => {
     expect(root).toBeTruthy()
     expect(root.getAttribute('data-odw-widget-mode')).toBe('inline')
     expect(controller.isOpen()).toBe(true)
-    expect(root.shadowRoot.textContent).toContain('智能问数')
+    expect(root.shadowRoot.textContent).toContain('新建会话')
     expect(root.shadowRoot.textContent).not.toContain('AI Demo')
   })
 

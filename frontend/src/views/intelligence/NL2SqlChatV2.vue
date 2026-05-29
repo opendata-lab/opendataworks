@@ -236,7 +236,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
@@ -390,7 +390,9 @@ async function loadAgents() {
 
 async function loadTopics() {
   try {
-    const data = await topicApi.listTopics({ page: 1, page_size: 50 })
+    const params = { page: 1, page_size: 50 }
+    if (route.query.agent_id) params.agent_id = route.query.agent_id
+    const data = await topicApi.listTopics(params)
     topics.value = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
     if (topics.value.length && !activeTopicId.value) {
       await selectTopic(topics.value[0].topic_id)
@@ -694,6 +696,12 @@ function handleCancel() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([loadSettings(), loadAgents()])
+  await loadTopics()
+})
+
+watch(() => route.query.agent_id, async () => {
+  activeTopicId.value = ''
+  messages.value = []
   await loadTopics()
 })
 
