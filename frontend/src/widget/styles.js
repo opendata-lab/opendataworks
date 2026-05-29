@@ -710,18 +710,52 @@ export const WIDGET_STYLES = `
   background: #fafbfc;
 }
 
-.query-process-content-inner {
-  padding: 12px;
+.query-tool-row {
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.query-process-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .query-process-thought {
-  color: #475569;
+  padding: 12px 16px;
   font-size: 13px;
-  line-height: 1.75;
+  line-height: 1.65;
+  color: #595959;
 }
 
-.query-step-row + .query-step-row {
-  margin-top: 10px;
+.query-process-thought p { margin: 0 0 8px; }
+.query-process-thought p:last-child { margin: 0; }
+
+.query-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+}
+
+.query-typing-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.35;
+  animation: query-typing 1.2s ease-in-out infinite;
+}
+
+.query-typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.query-typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes query-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-5px); opacity: 1; }
 }
 
 .query-error-card {
