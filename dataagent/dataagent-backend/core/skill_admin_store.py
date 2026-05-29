@@ -512,6 +512,7 @@ class SkillAdminStore:
             "provider_settings",
             "providers",
             "skill_runtime",
+            "widget_allowed_sites",
         }
         for key in extra_keys:
             if key in data:
@@ -519,6 +520,9 @@ class SkillAdminStore:
                     normalized["provider_settings"] = _normalize_provider_settings_blob(data.get(key))
                 elif key == "skill_runtime":
                     normalized["skill_runtime"] = _normalize_skill_runtime_blob(data.get(key))
+                elif key == "widget_allowed_sites":
+                    value = data.get(key)
+                    normalized["widget_allowed_sites"] = value if isinstance(value, list) else []
                 else:
                     normalized[key] = str(data.get(key) or "")
         return normalized
@@ -559,12 +563,16 @@ class SkillAdminStore:
                         "provider_settings",
                         "providers",
                         "skill_runtime",
+                        "widget_allowed_sites",
                     }:
                         if key in payload:
                             if key in {"provider_settings", "providers"}:
                                 normalized["provider_settings"] = _normalize_provider_settings_blob(payload.get(key))
                             elif key == "skill_runtime":
                                 normalized["skill_runtime"] = _normalize_skill_runtime_blob(payload.get(key))
+                            elif key == "widget_allowed_sites":
+                                value = payload.get(key)
+                                normalized["widget_allowed_sites"] = value if isinstance(value, list) else []
                             else:
                                 normalized[key] = str(payload.get(key) or "")
             except Exception:

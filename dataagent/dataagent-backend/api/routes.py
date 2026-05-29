@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import json
 from typing import Any, AsyncIterator
 
 import anyio
@@ -12,7 +11,7 @@ from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
 from core.followup_suggestions import generate_followup_suggestions
 from core.magic_events import TERMINAL_TASK_STATUSES, encode_sse
-from core.skill_admin_service import resolved_chat_settings_payload
+from core.skill_admin_service import current_settings_payload, resolved_chat_settings_payload
 from core.task_coordinator import get_task_coordinator
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
 from core.topic_task_store import get_topic_task_store
@@ -115,16 +114,19 @@ def _previous_user_question(messages: list[dict[str, Any]], assistant_message: d
 
 
 def _allowed_widget_sites() -> list[dict]:
-    cfg = get_settings()
-    raw = str(getattr(cfg, "widget_allowed_sites_json", "") or "[]").strip() or "[]"
+    # Persisted admin settings are authoritative. `current_settings_payload`
+    # already merges the env default (WIDGET_ALLOWED_SITES_JSON) as the base and
+    # lets the saved settings record override it, so the resolved list is the
+    # effective whitelist managed from the settings page.
     try:
-        parsed = json.loads(raw)
+        payload = current_settings_payload()
     except Exception:
-        logger.warning("Invalid WIDGET_ALLOWED_SITES_JSON; widget requests will be rejected")
+        logger.warning("Failed to load widget allowed sites from settings store", exc_info=True)
+        payload = {}
+    sites = payload.get("widget_allowed_sites")
+    if not isinstance(sites, list):
         return []
-    if not isinstance(parsed, list):
-        return []
-    return [item for item in parsed if isinstance(item, dict)]
+    return [item for item in sites if isinstance(item, dict)]
 
 
 def _origin_allowed(origin: str, allowed_origins: list[str]) -> bool:

@@ -140,6 +140,21 @@ def install_widget_settings(monkeypatch):
             run_events_stream_ping_seconds=10,
         ),
     )
+    # The widget whitelist is now resolved from persisted admin settings.
+    monkeypatch.setattr(
+        routes,
+        "current_settings_payload",
+        lambda: {
+            "widget_allowed_sites": [
+                {
+                    "website_id": "demo",
+                    "allowed_origins": ["https://host.example.com"],
+                    "project_name": "Demo",
+                    "project_color": "#4A90A4",
+                }
+            ]
+        },
+    )
 
 
 def install_agent_profile(monkeypatch, agent_id="agent_widget"):
