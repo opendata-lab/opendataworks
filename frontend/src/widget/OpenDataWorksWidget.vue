@@ -94,30 +94,40 @@ const {
   unbind
 } = useWidgetGeometry({ rootEl, panelEl, config: props.config, state: props.state })
 
-onMounted(bind)
+onMounted(() => {
+  bind()
+  if (isInline.value) {
+    props.state.track?.('widget_open')
+  }
+})
 onBeforeUnmount(unbind)
 
 const open = () => {
   props.state.isOpen = true
+  props.state.track?.('widget_open')
   props.emit('open')
 }
 
 const close = () => {
   props.state.isOpen = false
+  props.state.track?.('widget_close')
   props.emit('close')
 }
 
 const toggleHistory = () => {
   props.state.historyOpen = !props.state.historyOpen
   if (props.state.historyOpen) {
+    props.state.track?.('history_open')
     props.emit('history:open')
   } else {
+    props.state.track?.('history_close')
     props.emit('history:close')
   }
 }
 
 const newConversation = () => {
   props.state.newConversationSignal += 1
+  props.state.track?.('conversation_new')
   props.emit('conversation:new')
 }
 

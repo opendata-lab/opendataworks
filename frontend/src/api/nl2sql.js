@@ -281,6 +281,20 @@ export function createNl2SqlApiClient(options = {}) {
     }
   }
 
+  const eventApi = {
+    async recordEvents(events, { keepalive = false } = {}) {
+      return fetch(
+        buildUrl(baseURL, `${RUNTIME_PREFIX}/widget-events`),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...defaultHeaders },
+          body: JSON.stringify({ events }),
+          keepalive
+        }
+      )
+    }
+  }
+
   const adminApi = {
     getSettings() {
       return adminRequest.get('/settings')
@@ -319,6 +333,7 @@ export function createNl2SqlApiClient(options = {}) {
     scheduleApi,
     adminApi,
     agentApi,
+    eventApi,
     health() {
       return runtimeRequest.get('/health')
     }

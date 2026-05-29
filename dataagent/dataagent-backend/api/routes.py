@@ -46,6 +46,8 @@ from models.schemas import (
     TopicSummary,
     UpdateMessageFeedbackRequest,
     UpdateTopicRequest,
+    WidgetEventBatchRequest,
+    WidgetEventIngestResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -219,6 +221,15 @@ async def api_runtime_config():
         default_model=str(payload.get("default_model") or ""),
         providers=providers,
     )
+
+
+@router.post("/widget-events", response_model=WidgetEventIngestResponse)
+async def api_widget_events(payload: WidgetEventBatchRequest, http_request: Request):
+    context = _request_context(http_request)
+    store = _get_store()
+    events = [item.model_dump() for item in payload.events]
+    accepted = store.record_widget_events(events, context)
+    return WidgetEventIngestResponse(accepted=accepted)
 
 
 @topic_router.post("", response_model=TopicDetail)

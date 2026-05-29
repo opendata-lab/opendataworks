@@ -660,4 +660,22 @@ class SdkEventPageResponse(BaseModel):
     records: List[SdkEventRecord] = Field(default_factory=list)
 
 
+class WidgetEventItem(BaseModel):
+    event_type: str
+    agent_id: Optional[str] = None
+    topic_id: Optional[str] = None
+    task_id: Optional[str] = None
+    message_id: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    client_ts: Optional[str] = None
+
+
+class WidgetEventBatchRequest(BaseModel):
+    events: List[WidgetEventItem] = Field(default_factory=list)
+
+
+class WidgetEventIngestResponse(BaseModel):
+    accepted: int = 0
+
+
 TableMeta.model_rebuild()

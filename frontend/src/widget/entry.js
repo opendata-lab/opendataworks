@@ -2,6 +2,7 @@ import { createApp, reactive } from 'vue'
 import OpenDataWorksWidget from './OpenDataWorksWidget.vue'
 import { parseWidgetConfig, resolveCurrentScript, resolveVisitorId } from './config'
 import { WIDGET_STYLES } from './styles'
+import { createWidgetTracker } from './tracking'
 
 const GLOBAL_NAME = 'OpenDataWorksWidget'
 const MIN_INLINE_PARENT_HEIGHT = 320
@@ -618,6 +619,11 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
   const disposeHostSizing = bindInlineHostSizing(host, mountParent, config)
 
   const parentWidth = mountParent?.getBoundingClientRect?.()?.width || 0
+  const tracker = createWidgetTracker({
+    apiBaseUrl: config.apiBaseUrl ?? '',
+    headers: config.headers || {}
+  })
+
   const state = reactive({
     isOpen: config.displayMode === 'inline',
     historyOpen: config.displayMode === 'inline' && parentWidth >= 600,
@@ -628,7 +634,8 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
     selectConversationSignal: 0,
     deleteConversationSignal: 0,
     requestedTopicId: '',
-    deleteRequestedTopicId: ''
+    deleteRequestedTopicId: '',
+    track: tracker.track
   })
   const listeners = new Map()
 
@@ -717,6 +724,7 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
       }
     },
     destroy() {
+      tracker.destroy()
       disposeHostSizing()
       app.unmount()
       host.remove()
