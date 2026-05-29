@@ -640,4 +640,22 @@ class MessageScheduleLogPageResponse(BaseModel):
     list: List[MessageScheduleLogRecord] = Field(default_factory=list)
 
 
+class SdkEventRecord(BaseModel):
+    seq_id: int
+    turn_index: int = 0
+    record_type: str
+    event_type: Optional[str] = None
+    data: Dict[str, Any] = Field(default_factory=dict)
+    created_at: Optional[str] = None
+
+
+class SdkEventPageResponse(BaseModel):
+    task_id: str
+    task_status: str
+    after_id: int
+    next_after_id: int
+    has_more: bool
+    records: List[SdkEventRecord] = Field(default_factory=list)
+
+
 TableMeta.model_rebuild()

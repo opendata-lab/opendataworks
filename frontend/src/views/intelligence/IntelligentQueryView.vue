@@ -18,6 +18,10 @@
           <el-icon><User /></el-icon>
           <span>智能体</span>
         </el-menu-item>
+        <el-menu-item index="chat-v2">
+          <el-icon><MagicStick /></el-icon>
+          <span>Chat V2</span>
+        </el-menu-item>
         <el-menu-item index="models">
           <el-icon><Cpu /></el-icon>
           <span>模型管理</span>
@@ -25,12 +29,13 @@
       </el-menu>
     </aside>
 
-    <main class="intelligent-query-content" :class="{ 'is-chat': activeMenu === 'chat' }">
+    <main class="intelligent-query-content" :class="{ 'is-chat': activeMenu === 'chat' || activeMenu === 'chat-v2' }">
       <SkillDetailView v-if="isSkillDetailRoute" />
       <AgentDetailView v-else-if="isAgentDetailRoute" />
       <AgentStudio v-else-if="activeTab === 'agents'" />
       <SkillStudio v-else-if="activeTab === 'skills'" />
       <DataAgentConfig v-else-if="activeTab === 'models'" />
+      <NL2SqlChatV2 v-else-if="activeTab === 'chat-v2'" />
       <NL2SqlChat v-else />
     </main>
   </div>
@@ -39,8 +44,9 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Collection, Cpu, User } from '@element-plus/icons-vue'
+import { ChatDotRound, Collection, Cpu, MagicStick, User } from '@element-plus/icons-vue'
 import NL2SqlChat from './NL2SqlChat.vue'
+import NL2SqlChatV2 from './NL2SqlChatV2.vue'
 import AgentStudio from './AgentStudio.vue'
 import AgentDetailView from './AgentDetailView.vue'
 import SkillStudio from '../settings/SkillStudio.vue'
@@ -49,7 +55,7 @@ import SkillDetailView from '../settings/SkillDetailView.vue'
 
 const route = useRoute()
 const router = useRouter()
-const validTabs = new Set(['chat', 'skills', 'agents', 'models'])
+const validTabs = new Set(['chat', 'chat-v2', 'skills', 'agents', 'models'])
 
 const isSkillDetailRoute = computed(() => (
   route.name === 'IntelligentQuerySkillDetail' || route.path.startsWith('/intelligent-query/skills/')
@@ -82,6 +88,7 @@ const handleMenuSelect = (index) => {
     path: '/intelligent-query',
     query: tab === 'chat' ? {} : { tab }
   })
+
 }
 </script>
 

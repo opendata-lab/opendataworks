@@ -39,6 +39,8 @@ from core.agent_runtime import (
     resolve_runtime_provider_selection,
 )
 from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, resolved_agent_workdir
+from core.sdk_block_writer import SdkBlockWriter
+from core.topic_task_store import get_topic_task_store
 
 logger = logging.getLogger(__name__)
 
@@ -765,6 +767,7 @@ async def execute_task_stream(
         model = _default_model_for_provider(provider_id)
 
     adapter = ClaudeToMagicAdapter(params, provider_id=provider_id, model=model)
+    sdk_writer = SdkBlockWriter(get_topic_task_store(), params.task_id, params.topic_id)
 
     prompt = str(params.question or "").strip() if params.resume_session_id else _build_prompt(params.history, params.question)
     agent_snapshot = normalize_agent_snapshot(params.agent_snapshot) if params.agent_snapshot else None
@@ -937,6 +940,7 @@ async def execute_task_stream(
                         session_id=adapter.session_id,
                     )
                 await _emit_records(emit, adapter.ingest_sdk_message(msg))
+                sdk_writer.ingest(msg)
     except Exception as exc:
         reason = _format_exception_reason(exc)
         partial = adapter._current_answer_text().strip()

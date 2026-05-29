@@ -1423,6 +1423,80 @@ class TopicTaskStore:
             "events": page,
         }
 
+    def append_sdk_record(
+        self,
+        *,
+        task_id: str,
+        topic_id: str,
+        turn_index: int,
+        record_type: str,
+        event_type: str | None,
+        data: dict[str, Any],
+    ) -> None:
+        self._ensure_ready()
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO da_agent_sdk_record (topic_id, task_id, turn_index, record_type, event_type, data)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        topic_id,
+                        task_id,
+                        int(turn_index),
+                        record_type,
+                        event_type,
+                        json.dumps(data, ensure_ascii=False, default=_json_default),
+                    ),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def list_sdk_records(
+        self,
+        *,
+        task_id: str,
+        after_id: int = 0,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        self._ensure_ready()
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT id, turn_index, record_type, event_type, data, created_at
+                    FROM da_agent_sdk_record
+                    WHERE task_id = %s AND id > %s
+                    ORDER BY id ASC
+                    LIMIT %s
+                    """,
+                    (task_id, max(0, after_id), max(1, limit)),
+                )
+                rows = cur.fetchall() or []
+        finally:
+            conn.close()
+        result = []
+        for row in rows:
+            raw_data = row.get("data")
+            if isinstance(raw_data, str):
+                try:
+                    raw_data = json.loads(raw_data)
+                except Exception:
+                    raw_data = {}
+            result.append({
+                "seq_id": int(row.get("id") or 0),
+                "turn_index": int(row.get("turn_index") or 0),
+                "record_type": str(row.get("record_type") or ""),
+                "event_type": row.get("event_type"),
+                "data": raw_data or {},
+                "created_at": _to_iso(row["created_at"]) if row.get("created_at") else None,
+            })
+        return result
+
     def get_message_queue(self, queue_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
         context_sql, context_params = self._topic_context_predicate(context, alias="t")

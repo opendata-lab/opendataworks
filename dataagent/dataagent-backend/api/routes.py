@@ -34,6 +34,8 @@ from models.schemas import (
     MessageScheduleUpsertRequest,
     RuntimeConfigResponse,
     RuntimeProviderConfig,
+    SdkEventPageResponse,
+    SdkEventRecord,
     TaskEventPageResponse,
     TaskEventRecord,
     TaskStatusResponse,
@@ -453,6 +455,81 @@ async def api_stream_task_events(task_id: str, request: Request, after_seq: int 
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@task_router.get("/{task_id}/sdk-events", response_model=SdkEventPageResponse)
+async def api_list_sdk_events(
+    task_id: str,
+    request: Request,
+    after_id: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
+):
+    store = _get_store()
+    context = _request_context(request)
+    task = store.get_task(task_id, context=context)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    records = store.list_sdk_records(task_id=task_id, after_id=after_id, limit=limit + 1)
+    has_more = len(records) > limit
+    page = records[:limit]
+    next_after_id = int(page[-1]["seq_id"]) if page else after_id
+    return SdkEventPageResponse(
+        task_id=task_id,
+        task_status=str(task.get("task_status") or "waiting"),
+        after_id=after_id,
+        next_after_id=next_after_id,
+        has_more=has_more,
+        records=[SdkEventRecord.model_validate(r) for r in page],
+    )
+
+
+@task_router.get("/{task_id}/sdk-events/stream")
+async def api_stream_sdk_events(task_id: str, request: Request, after_id: int = Query(default=0, ge=0)):
+    store = _get_store()
+    context = _request_context(request)
+    task = store.get_task(task_id, context=context)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return StreamingResponse(
+        _stream_sdk_events(task_id=task_id, after_id=after_id, context=context),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _stream_sdk_events(task_id: str, after_id: int, context: dict[str, str] | None = None) -> AsyncIterator[str]:
+    cfg = get_settings()
+    poll_interval = max(1, int(cfg.run_events_stream_poll_interval_seconds or 1))
+    ping_seconds = max(5, int(cfg.run_events_stream_ping_seconds or 10))
+    next_after_id = max(0, after_id)
+    since_ping = 0
+    store = _get_store()
+
+    while True:
+        records = store.list_sdk_records(task_id=task_id, after_id=next_after_id, limit=200)
+        for rec in records:
+            next_after_id = max(next_after_id, int(rec.get("seq_id") or 0))
+            yield encode_sse(rec)
+        if records:
+            since_ping = 0
+        else:
+            since_ping += poll_interval
+            if since_ping >= ping_seconds:
+                yield ": ping\n\n"
+                since_ping = 0
+
+        task = store.get_task(task_id, context=context)
+        if not task:
+            break
+        # Stop when: task is terminal AND we've delivered all SDK records (look for 'done'/'error')
+        if str(task.get("task_status") or "") in TERMINAL_TASK_STATUSES and not records:
+            # Check if we've already yielded a done/error record
+            break
+        await anyio.sleep(poll_interval)
 
 
 @task_router.post("/{task_id}/cancel", response_model=CancelTaskResponse)
