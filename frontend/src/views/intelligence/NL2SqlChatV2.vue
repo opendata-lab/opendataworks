@@ -424,7 +424,9 @@ async function handleSend() {
   let topicId = activeTopicId.value
   if (!topicId) {
     try {
-      const topic = await topicApi.createTopic(text.slice(0, 60))
+      const topic = await topicApi.createTopic(text.slice(0, 60), {
+        agent_id: agentSelectValue.value || undefined,
+      })
       topicId = topic.topic_id
       activeTopicId.value = topicId
       topics.value.unshift(topic)
