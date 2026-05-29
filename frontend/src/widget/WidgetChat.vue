@@ -42,10 +42,9 @@
     </aside>
 
     <main class="query-main">
-      <!-- Top bar: only when messages exist, matches v2-main-top-bar -->
-      <div v-if="messages.length || errorText" class="query-top-bar">
+      <!-- Top bar: only when messages exist and inline mode (floating has no top-bar content) -->
+      <div v-if="(messages.length || errorText) && isInline" class="query-top-bar">
         <button
-          v-if="isInline"
           class="query-btn-history-toggle"
           type="button"
           aria-label="历史会话"
@@ -56,7 +55,6 @@
             <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
           </svg>
         </button>
-        <h4 class="query-topic-title">{{ activeTopic ? truncate(activeTopic.title, 48) : '智能问数' }}</h4>
       </div>
 
       <div class="query-messages">
@@ -161,7 +159,7 @@
       </div>
 
       <!-- Composer bar -->
-      <div class="query-composer-bar">
+      <form class="query-composer-bar" @submit.prevent="send">
         <div class="query-composer-wrap">
           <!-- Input pill -->
           <div class="query-composer" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send">
@@ -203,7 +201,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </form>
     </main>
   </div>
 </template>
@@ -265,7 +263,7 @@ const pendingOutboundMessage = ref('')
 const hydratedTopicIds = new Set()
 
 const isInline = computed(() => props.config.displayMode === 'inline')
-const historyVisible = computed(() => Boolean(props.state.historyOpen))
+const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
 const isBusy = computed(() => isSubmitting.value || Boolean(activeTaskId.value))
 const agentId = computed(() => String(props.config.agentId || '').trim())
 const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === topicId.value) || null)
@@ -639,7 +637,7 @@ const subscribe = async (taskId, assistant) => {
 const updateActiveTopicAfterSend = (text, taskId) => {
   const target = topics.value.find((topic) => topic.topic_id === topicId.value)
   if (!target) return
-  if (!target.title || target.title === 'Widget 会话' || target.title === '新话题') {
+  if (!target.title || target.title === '新话题') {
     target.title = truncate(text, 30)
   }
   target.current_task_id = taskId
