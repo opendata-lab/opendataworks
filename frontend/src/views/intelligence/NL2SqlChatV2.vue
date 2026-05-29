@@ -700,8 +700,8 @@ onBeforeUnmount(() => {
 
 .v2-messages-inner {
   padding-block: 24px 32px;
-  padding-inline: clamp(28px, 5%, 64px);
-  max-width: 1000px;
+  padding-inline: clamp(40px, 5%, 64px);
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -953,12 +953,12 @@ onBeforeUnmount(() => {
 }
 
 .v2-composer-wrap {
-  max-width: 1000px;
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
   padding-block: 12px 16px;
-  padding-inline: clamp(20px, 5%, 48px);
+  padding-inline: clamp(40px, 5%, 64px);
 }
 
 .v2-composer {
