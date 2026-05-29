@@ -38,7 +38,7 @@ GENERAL_AGENT_SNAPSHOT = {
 
 OPENDATAWORKS_AGENT_SNAPSHOT = {
     "agent_id": OPENDATAWORKS_AGENT_ID,
-    "name": "OpenDataWorks助手智能体",
+    "name": "OpenDataWorks平台助手",
     "description": "面向 OpenDataWorks 数据门户、元数据、血缘、工作流和智能问数场景。",
     "system_prompt": "你是 OpenDataWorks 数据门户助手，优先围绕平台元数据、工作流、血缘、数据质量和智能问数场景提供帮助。",
     "permission_mode": "inherit",

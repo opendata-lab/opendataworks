@@ -11,9 +11,8 @@
 
     <aside v-if="historyVisible" class="query-sidebar" aria-label="历史会话">
       <div class="query-sidebar-head">
-        <span class="query-sidebar-brand">智能问数</span>
         <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy" @click="newConversation">
-          新建
+          新建会话
         </button>
       </div>
 
@@ -34,7 +33,13 @@
             @click="selectTopic(topic.topic_id)"
           >
             <div class="query-session-title">{{ truncate(topic.title || '新话题', 26) }}</div>
-            <div class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</div>
+            <div v-if="topic.topic_id === topicId && activeTaskId" class="query-session-loading" title="正在分析中...">
+              <svg class="query-session-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle class="query-session-spinner-track" cx="12" cy="12" r="10" stroke-width="3" />
+                <path class="query-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
+              </svg>
+            </div>
+            <div v-else class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</div>
           </button>
           <div v-if="!filteredTopics.length" class="query-empty-sessions">暂无话题</div>
         </div>
@@ -62,28 +67,6 @@
           <div v-if="errorText" class="query-error-card query-error-banner">
             <span class="query-error-label">错误</span>
             <span>{{ errorText }}</span>
-          </div>
-
-          <div v-if="!providers.length" class="query-config-empty">
-            <div class="query-config-empty-title">还没有可用的智能问数模型</div>
-            <div class="query-config-empty-text">请先完成模型配置。</div>
-          </div>
-
-          <!-- Landing page (empty state) — matches v2-landing -->
-          <div v-if="!messages.length && !errorText" class="query-landing">
-            <div class="query-landing-greeting">有什么数据问题需要分析？</div>
-            <div class="query-suggestions">
-              <button
-                v-for="suggestion in suggestions"
-                :key="suggestion"
-                class="query-suggestion"
-                type="button"
-                :disabled="isBusy"
-                @click="handleSuggestion(suggestion)"
-              >
-                {{ suggestion }}
-              </button>
-            </div>
           </div>
 
           <template v-for="msg in messages" :key="msg.id">
@@ -159,8 +142,16 @@
       </div>
 
       <!-- Composer bar -->
-      <form class="query-composer-bar" @submit.prevent="send">
+      <form class="query-composer-bar" :class="{ 'is-landing': !messages.length }" @submit.prevent="send">
         <div class="query-composer-wrap">
+          <template v-if="!messages.length">
+            <div v-if="!providers.length" class="query-config-empty">
+              <div class="query-config-empty-title">还没有可用的模型</div>
+              <div class="query-config-empty-text">请先完成模型配置。</div>
+            </div>
+            <div class="query-landing-greeting">您好，我是智能数据助手。</div>
+          </template>
+
           <!-- Input pill -->
           <div class="query-composer" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send">
             <textarea
@@ -200,6 +191,22 @@
               </select>
             </div>
           </div>
+
+          <template v-if="!messages.length">
+            <div class="query-landing-suggestions-title">您可以问我以下问题</div>
+            <div class="query-suggestions">
+              <button
+                v-for="suggestion in suggestions"
+                :key="suggestion"
+                class="query-suggestion"
+                type="button"
+                :disabled="isBusy"
+                @click="handleSuggestion(suggestion)"
+              >
+                {{ suggestion }}
+              </button>
+            </div>
+          </template>
         </div>
       </form>
     </main>
@@ -410,6 +417,10 @@ const buildV2StateFromStoredBlocks = (item) => {
       v2state.blocks.push(block)
     } else if (kind === 'main_text' && b?.text) {
       const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    } else if (kind === 'tool_use') {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
       turn.blocks.push(block)
       v2state.blocks.push(block)
     } else if (kind === 'tool' && b?.tool) {

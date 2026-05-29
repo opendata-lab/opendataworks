@@ -1,5 +1,5 @@
 <template>
-  <div class="odw-widget" :style="themeStyle" :class="[positionClass, modeClass]">
+  <div class="odw-widget" :style="themeStyle" :class="[positionClass, modeClass, state.historyOpen ? 'is-history-open' : '']">
     <button v-if="!isInline && !state.isOpen" class="odw-launcher" type="button" :aria-label="`打开 ${config.projectName}`" @click="open">
       <svg class="odw-launcher__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
@@ -8,7 +8,7 @@
 
     <section v-else class="odw-panel" aria-label="OpenDataWorks intelligent query widget">
       <header v-if="!isInline" class="odw-panel__header">
-        <button class="odw-icon-button odw-history-toggle" type="button" aria-label="历史会话" title="历史会话" @click="openHistory">
+        <button class="odw-icon-button odw-history-toggle" type="button" aria-label="历史会话" title="历史会话" @click="toggleHistory">
           <Menu class="odw-icon-svg" aria-hidden="true" />
         </button>
         <div class="odw-panel__heading">
@@ -72,9 +72,13 @@ const close = () => {
   props.emit('close')
 }
 
-const openHistory = () => {
-  props.state.historyOpen = true
-  props.emit('history:open')
+const toggleHistory = () => {
+  props.state.historyOpen = !props.state.historyOpen
+  if (props.state.historyOpen) {
+    props.emit('history:open')
+  } else {
+    props.emit('history:close')
+  }
 }
 
 const newConversation = () => {
