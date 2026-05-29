@@ -26,7 +26,7 @@
       </div>
 
       <div v-if="tracePanelVisible" class="tool-output-panel shell-trace-panel">
-        <el-scrollbar class="tool-output-body-scroll" max-height="360px">
+        <div class="tool-output-body-scroll">
           <pre v-if="traceCommand" class="shell-trace-command"><code>{{ traceCommandPrefix }}{{ traceCommand }}</code></pre>
           <div v-if="traceDescription && traceDescription !== traceCommand" class="shell-trace-description">
             {{ traceDescription }}
@@ -46,7 +46,7 @@
             <pre v-else class="shell-trace-output"><code>{{ traceOutputText }}</code></pre>
           </template>
           <div v-else class="shell-trace-empty">无输出</div>
-        </el-scrollbar>
+        </div>
       </div>
     </div>
 
@@ -81,7 +81,7 @@
       <div v-if="chartRenderState === 'invalid'" class="tool-output-error">{{ chartRenderError }}</div>
       <div v-else-if="chartRenderState === 'error' && !errorText" class="tool-output-error">{{ chartRenderError }}</div>
 
-      <el-scrollbar v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap">
+      <div v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap">
         <table class="tool-table">
           <thead>
             <tr>
@@ -94,7 +94,7 @@
             </tr>
           </tbody>
         </table>
-      </el-scrollbar>
+      </div>
 
       <div
         v-else-if="chartRenderState === 'renderable' && chartOption"
@@ -108,11 +108,11 @@
     </template>
 
     <div v-if="mainPanelVisible && !isDirectChart" class="tool-output-panel">
-      <el-scrollbar class="tool-output-body-scroll" max-height="360px">
+      <div class="tool-output-body-scroll">
         <template v-if="kind === 'sql_execution'">
           <pre v-if="sqlText" class="tool-code"><code>{{ sqlText }}</code></pre>
 
-          <el-scrollbar v-if="columns.length && rows.length" class="tool-table-wrap">
+          <div v-if="columns.length && rows.length" class="tool-table-wrap">
             <table class="tool-table">
               <thead>
                 <tr>
@@ -125,7 +125,7 @@
                 </tr>
               </tbody>
             </table>
-          </el-scrollbar>
+          </div>
           <div v-else-if="!errorText" class="tool-output-empty">无数据</div>
         </template>
 
@@ -133,7 +133,7 @@
           <div v-if="chartRenderState === 'invalid'" class="tool-output-error">{{ chartRenderError }}</div>
           <div v-else-if="chartRenderState === 'error' && !errorText" class="tool-output-error">{{ chartRenderError }}</div>
 
-          <el-scrollbar v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap">
+          <div v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap">
             <table class="tool-table">
               <thead>
                 <tr>
@@ -146,7 +146,7 @@
                 </tr>
               </tbody>
             </table>
-          </el-scrollbar>
+          </div>
 
           <div
             v-else-if="chartRenderState === 'renderable' && chartOption"
@@ -178,7 +178,7 @@
           </div>
           <pre v-else class="tool-code tool-code-light"><code>{{ normalizedRawText }}</code></pre>
         </template>
-      </el-scrollbar>
+      </div>
     </div>
   </div>
 </template>
@@ -874,9 +874,7 @@ onBeforeUnmount(() => {
 
 .tool-output-body-scroll {
   max-height: 360px;
-}
-
-.tool-output-body-scroll :deep(.el-scrollbar__wrap) {
+  overflow-y: auto;
   overscroll-behavior: contain;
 }
 
@@ -1093,9 +1091,7 @@ onBeforeUnmount(() => {
   border: 1px solid #e1e8f0;
   border-radius: 14px;
   background: #fff;
-}
-
-.tool-table-wrap :deep(.el-scrollbar__wrap) {
+  overflow-x: auto;
   overscroll-behavior: contain;
 }
 
