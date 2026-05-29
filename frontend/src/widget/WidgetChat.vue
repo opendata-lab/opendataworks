@@ -95,7 +95,7 @@
                             深度思考
                           </span>
                           <svg class="query-process-chevron" :class="{ open: isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex) }" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M9 18l6-6-6-6" />
                           </svg>
                         </button>
                         <div v-if="isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex)" class="query-process-content">
@@ -149,17 +149,18 @@
               <div class="query-config-empty-title">还没有可用的模型</div>
               <div class="query-config-empty-text">请先完成模型配置。</div>
             </div>
-            <div class="query-landing-greeting">您好，我是智能数据助手。</div>
+            <div class="query-landing-greeting">您好，我是{{ agentName }}。</div>
           </template>
 
           <!-- Input pill -->
-          <div class="query-composer" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send">
+          <div class="query-composer">
             <textarea
               v-model="inputText"
               class="query-textarea"
               rows="1"
               :disabled="!providers.length || !availableModels.length"
               placeholder="输入数据问题…"
+              @keydown.enter.exact.prevent="send"
               @input="autoResizeTextarea"
             />
             <button
@@ -249,6 +250,7 @@ const DEFAULT_SUGGESTIONS = [
 ]
 
 const agentPresetQuestions = ref([])
+const agentName = ref('智能数据助手')
 const suggestions = computed(() => agentPresetQuestions.value.length ? agentPresetQuestions.value : DEFAULT_SUGGESTIONS)
 
 const inputText = ref('')
@@ -882,6 +884,7 @@ onMounted(async () => {
   if (agentId.value && agentId.value !== 'demo') {
     try {
       const agentProfile = await api.agentApi.getAgent(agentId.value)
+      if (agentProfile?.name) agentName.value = String(agentProfile.name)
       const questions = Array.isArray(agentProfile?.preset_questions) ? agentProfile.preset_questions.filter(Boolean) : []
       agentPresetQuestions.value = questions.slice(0, 3)
     } catch {
