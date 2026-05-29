@@ -80,7 +80,7 @@ export const WIDGET_STYLES = `
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-radius: 20px;
+  border-radius: 14px;
   background: #ffffff;
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.06),
@@ -115,7 +115,7 @@ export const WIDGET_STYLES = `
   flex-shrink: 0;
   background: var(--odw-widget-color);
   color: #ffffff;
-  border-radius: 20px 20px 0 0;
+  border-radius: 14px 14px 0 0;
 }
 
 .odw-widget.is-inline .odw-panel__header {
@@ -272,7 +272,7 @@ export const WIDGET_STYLES = `
 .query-workbench.is-floating {
   grid-template-columns: minmax(0, 1fr);
   border: none;
-  border-radius: 0 0 20px 20px;
+  border-radius: 0 0 14px 14px;
   box-shadow: none;
 }
 
