@@ -581,7 +581,7 @@ export const WIDGET_STYLES = `
 }
 
 .query-assistant-body {
-  max-width: min(860px, 92%);
+  width: min(860px, 92%);
   color: var(--text);
 }
 
@@ -645,6 +645,7 @@ export const WIDGET_STYLES = `
 }
 
 .query-process-panel {
+  width: 100%;
   margin-bottom: 12px;
   overflow: hidden;
 }
