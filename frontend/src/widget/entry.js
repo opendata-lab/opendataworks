@@ -1,7 +1,7 @@
 import { createApp, reactive } from 'vue'
 import { ElScrollbar } from 'element-plus'
 import OpenDataWorksWidget from './OpenDataWorksWidget.vue'
-import { parseWidgetConfig, resolveCurrentScript } from './config'
+import { parseWidgetConfig, resolveCurrentScript, resolveVisitorId } from './config'
 import { WIDGET_STYLES } from './styles'
 
 const GLOBAL_NAME = 'OpenDataWorksWidget'
@@ -580,7 +580,20 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
     config.position = config.position || 'bottom-right'
     config.projectName = config.projectName || '智能问数'
     config.projectColor = config.projectColor || '#4A90A4'
-    config.headers = config.headers || { 'X-ODW-Client': 'widget' }
+    if (!config.headers) {
+      const websiteId = String(config.websiteId || '').trim()
+      if (websiteId) {
+        const userId = String(config.userId || '').trim()
+        config.headers = { 'X-ODW-Client': 'widget', 'X-ODW-Website-Id': websiteId }
+        if (userId) {
+          config.headers['X-ODW-User-Id'] = userId
+        } else {
+          config.headers['X-ODW-Visitor-Id'] = config.visitorId || resolveVisitorId(websiteId)
+        }
+      } else {
+        config.headers = {}
+      }
+    }
     config.agentId = config.agentId || ''
     config.apiBaseUrl = config.apiBaseUrl ?? ''
   } else {
