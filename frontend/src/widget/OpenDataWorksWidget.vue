@@ -1,8 +1,9 @@
 <template>
   <div class="odw-widget" :style="themeStyle" :class="[positionClass, modeClass]">
-    <button v-if="!isInline && !state.isOpen" class="odw-launcher" type="button" @click="open">
-      <span class="odw-launcher__mark">AI</span>
-      <span class="odw-launcher__label">{{ config.projectName }}</span>
+    <button v-if="!isInline && !state.isOpen" class="odw-launcher" type="button" :aria-label="`打开 ${config.projectName}`" @click="open">
+      <svg class="odw-launcher__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
     </button>
 
     <section v-else class="odw-panel" aria-label="OpenDataWorks intelligent query widget">
