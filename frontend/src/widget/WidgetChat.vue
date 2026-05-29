@@ -11,10 +11,7 @@
 
     <aside v-if="historyVisible" class="query-sidebar" aria-label="历史会话">
       <div class="query-sidebar-head">
-        <div>
-          <div class="query-brand">智能问数</div>
-          <div class="query-brand-meta">数据分析</div>
-        </div>
+        <span class="query-sidebar-brand">智能问数</span>
         <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy" @click="newConversation">
           新建
         </button>
@@ -45,35 +42,25 @@
     </aside>
 
     <main class="query-main">
-      <div class="query-messages">
-        <div class="query-messages-inner">
-          <div class="query-main-head">
-            <div class="query-main-head-left">
-              <button
-                v-if="isInline"
-                class="query-btn-history-toggle"
-                type="button"
-                aria-label="历史会话"
-                title="历史会话"
-                @click="toggleHistory"
-              >
-                <svg class="query-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="3" y1="12" x2="21" y2="12"></line>
-                  <line x1="3" y1="6" x2="21" y2="6"></line>
-                  <line x1="3" y1="18" x2="21" y2="18"></line>
-                </svg>
-              </button>
-              <div>
-                <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
-                <p class="query-main-subtitle">围绕数据查询与分析开展连续对话。</p>
-              </div>
-            </div>
-            <div class="query-model-badge">
-              <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
-              <strong>{{ selectedModel || defaultModel || '默认模型' }}</strong>
-            </div>
-          </div>
+      <!-- Top bar: only when messages exist, matches v2-main-top-bar -->
+      <div v-if="messages.length || errorText" class="query-top-bar">
+        <button
+          v-if="isInline"
+          class="query-btn-history-toggle"
+          type="button"
+          aria-label="历史会话"
+          title="历史会话"
+          @click="toggleHistory"
+        >
+          <svg class="query-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <h4 class="query-topic-title">{{ activeTopic ? truncate(activeTopic.title, 48) : '智能问数' }}</h4>
+      </div>
 
+      <div class="query-messages">
+        <div class="query-messages-inner" :class="{ 'is-empty': !messages.length }">
           <div v-if="errorText" class="query-error-card query-error-banner">
             <span class="query-error-label">错误</span>
             <span>{{ errorText }}</span>
@@ -84,10 +71,9 @@
             <div class="query-config-empty-text">请先完成模型配置。</div>
           </div>
 
-          <div v-if="!messages.length && !errorText" class="query-empty">
-            <div class="query-empty-mark">AI</div>
-            <div class="query-empty-title">请输入你的数据问题</div>
-            <div class="query-empty-subtitle">支持数据查询、趋势分析与结果可视化。</div>
+          <!-- Landing page (empty state) — matches v2-landing -->
+          <div v-if="!messages.length && !errorText" class="query-landing">
+            <div class="query-landing-greeting">有什么数据问题需要分析？</div>
             <div class="query-suggestions">
               <button
                 v-for="suggestion in suggestions"
@@ -177,80 +163,50 @@
         </div>
       </div>
 
-      <div class="query-composer-wrap">
-        <form class="query-composer" @submit.prevent="send">
-          <div class="query-composer-top">
-            <div class="query-composer-control">
-              <select v-model="selectedProvider" class="query-select" :disabled="!providers.length || isBusy">
-                <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
-                  {{ provider.display_name || provider.provider_id }}
-                </option>
-              </select>
+      <!-- Composer bar — matches v2-composer-bar / v2-composer -->
+      <div class="query-composer-bar">
+        <div class="query-composer-wrap">
+          <div class="query-composer" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send">
+            <div class="query-composer-textarea-wrap">
+              <textarea
+                v-model="inputText"
+                class="query-textarea"
+                rows="1"
+                :disabled="!providers.length || !availableModels.length"
+                placeholder="输入数据问题…"
+                @input="autoResizeTextarea"
+              />
             </div>
-            <div class="query-composer-control">
-              <select v-model="selectedModel" class="query-select" :disabled="!availableModels.length || isBusy">
-                <option v-for="modelName in availableModels" :key="modelName" :value="modelName">
-                  {{ modelName }}
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="query-composer-input-row">
-            <textarea
-              v-model="inputText"
-              class="query-textarea"
-              rows="1"
-              :disabled="!providers.length || !availableModels.length"
-              placeholder="例如：查询最近 30 天工作流发布次数趋势"
-              @keydown.ctrl.enter.prevent="send"
-              @keydown.meta.enter.prevent="send"
-            />
             <div class="query-composer-actions">
+              <!-- Model selector: pill button with current model name -->
+              <div class="query-model-selector">
+                <select v-model="selectedProvider" class="query-model-select" :disabled="!providers.length || isBusy" title="切换提供商">
+                  <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
+                    {{ provider.display_name || provider.provider_id }}
+                  </option>
+                </select>
+                <select v-model="selectedModel" class="query-model-select" :disabled="!availableModels.length || isBusy" title="切换模型">
+                  <option v-for="modelName in availableModels" :key="modelName" :value="modelName">{{ modelName }}</option>
+                </select>
+              </div>
               <button
                 type="button"
-                class="query-composer-action"
-                :class="[
-                  activeTaskId ? 'query-btn-cancel' : 'query-btn-send',
-                  { 'query-composer-action-labeled': activeTaskId }
-                ]"
+                class="query-send-btn"
+                :class="{ 'query-cancel-btn': activeTaskId }"
                 :disabled="activeTaskId ? false : !canSend"
                 :aria-label="activeTaskId ? '取消当前任务' : '发送消息'"
-                :title="activeTaskId ? '取消当前任务' : '发送消息'"
                 @click="activeTaskId ? cancel() : send()"
               >
-                <svg
-                  v-if="activeTaskId"
-                  class="query-composer-action-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
+                <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <rect x="8" y="8" width="8" height="8" rx="1.5" />
                 </svg>
-                <svg
-                  v-else
-                  class="query-composer-action-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M5 12h12" />
-                  <path d="M13 6l6 6-6 6" />
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
                 </svg>
-                <span v-if="activeTaskId" class="query-composer-action-text">停止回答</span>
               </button>
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </main>
   </div>
@@ -861,6 +817,12 @@ const renderMarkdown = (text) => {
   } catch (_error) {
     return escapeHtml(text)
   }
+}
+
+const autoResizeTextarea = (event) => {
+  const el = event.target
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
 }
 
 watch(
