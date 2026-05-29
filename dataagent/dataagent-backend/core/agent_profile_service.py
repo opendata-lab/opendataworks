@@ -17,7 +17,7 @@ from core.data_scope import normalize_data_scope
 DEFAULT_AGENT_ID = "agent_default"
 DEFAULT_AGENT_NAME = "默认助手"
 OPENDATAWORKS_AGENT_ID = "agent_opendataworks"
-OPENDATAWORKS_AGENT_NAME = "OpenDataWorks助手智能体"
+OPENDATAWORKS_AGENT_NAME = "OpenDataWorks平台助手"
 PERMISSION_MODES = {"inherit", "default", "bypassPermissions"}
 SAFE_AGENT_TOOLS = ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
 GENERAL_AGENT_TOOLS = ["Read", "LS", "Glob", "Grep"]

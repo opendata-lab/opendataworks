@@ -37,7 +37,13 @@
             @click="handleSelectTopic(topic.topic_id)"
           >
             <span class="v2-session-title">{{ topic.title || '新话题' }}</span>
-            <span class="v2-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</span>
+            <span v-if="topic.topic_id === activeTopicId && isStreaming" class="v2-session-loading" title="正在分析中...">
+              <svg class="v2-session-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <circle class="v2-session-spinner-track" cx="12" cy="12" r="10" stroke-width="3" />
+                <path class="v2-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
+              </svg>
+            </span>
+            <span v-else class="v2-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</span>
           </button>
           <div v-if="!filteredTopics.length" class="v2-empty-sessions">暂无话题</div>
         </div>
@@ -50,26 +56,8 @@
         <h4 class="v2-topic-title">{{ activeTopic?.title }}</h4>
       </div>
 
-      <el-scrollbar ref="messagesScrollbarRef" class="v2-messages" @scroll="handleScroll">
-        <div class="v2-messages-inner" :class="{ 'is-empty': !messages.length }">
-          <div v-if="!settings.providers.length" class="v2-config-empty">
-            <div class="v2-config-empty-title">还没有可用的模型</div>
-            <div class="v2-config-empty-text">请先完成模型配置。</div>
-          </div>
-
-          <div v-if="!messages.length" class="v2-landing">
-            <div class="v2-landing-greeting">有什么数据问题需要分析？</div>
-            <div class="v2-landing-suggestions">
-              <button
-                v-for="s in suggestions"
-                :key="s"
-                class="v2-suggestion-card"
-                :disabled="isStreaming"
-                @click="handleSuggestion(s)"
-              >{{ s }}</button>
-            </div>
-          </div>
-
+      <el-scrollbar v-show="messages.length" ref="messagesScrollbarRef" class="v2-messages" @scroll="handleScroll">
+        <div class="v2-messages-inner">
           <!-- Message loop -->
           <template v-for="msg in messages" :key="msg.id">
             <!-- User message -->
@@ -78,6 +66,9 @@
                 <div class="v2-user-bubble">{{ msg.content }}</div>
                 <div class="v2-msg-footer">
                   <span v-if="msg.created_at" class="v2-msg-time">{{ formatMessageTime(msg.created_at) }}</span>
+                  <button type="button" class="v2-message-tool" title="复制" aria-label="复制消息" @click.stop="handleCopyMessage(msg)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -149,6 +140,15 @@
                 <!-- Message footer -->
                 <div class="v2-msg-footer">
                   <span v-if="msg.created_at" class="v2-msg-time">{{ formatMessageTime(msg.created_at) }}</span>
+                  <button type="button" class="v2-message-tool" title="复制" aria-label="复制消息" @click.stop="handleCopyMessage(msg)">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                  <button type="button" class="v2-message-tool v2-message-feedback-like" :class="{ active: msg.feedback === 'like' }" title="有帮助" aria-label="有帮助" @click.stop="toggleMessageFeedback(msg, 'like')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M7 11v10H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3Z" /><path d="M7 11 12 2a3 3 0 0 1 3 3v4h4a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7" /></svg>
+                  </button>
+                  <button type="button" class="v2-message-tool v2-message-feedback-dislike" :class="{ active: msg.feedback === 'dislike' }" title="没帮助" aria-label="没帮助" @click.stop="toggleMessageFeedback(msg, 'dislike')">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M17 13V3h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3Z" /><path d="M17 13 12 22a3 3 0 0 1-3-3v-4H5a2 2 0 0 1-2-2l1-8a2 2 0 0 1 2-2h11" /></svg>
+                  </button>
                 </div>
               </div>
             </div>
@@ -157,8 +157,16 @@
       </el-scrollbar>
 
       <!-- Composer -->
-      <div class="v2-composer-bar">
+      <div class="v2-composer-bar" :class="{ 'is-landing': !messages.length }">
         <div class="v2-composer-wrap">
+          <template v-if="!messages.length">
+            <div v-if="!settings.providers.length" class="v2-config-empty">
+              <div class="v2-config-empty-title">还没有可用的模型</div>
+              <div class="v2-config-empty-text">请先完成模型配置。</div>
+            </div>
+            <div class="v2-landing-greeting">您好，我是{{ currentAgentName }}。</div>
+          </template>
+
           <!-- Input bar -->
           <div class="v2-composer" :class="{ 'is-focused': inputText }">
             <textarea
@@ -208,6 +216,19 @@
               </el-dropdown>
             </div>
           </div>
+
+          <template v-if="!messages.length">
+            <div class="v2-landing-suggestions-title">您可以问我以下问题</div>
+            <div class="v2-landing-suggestions">
+              <button
+                v-for="s in suggestions"
+                :key="s"
+                class="v2-suggestion-card"
+                :disabled="isStreaming"
+                @click="handleSuggestion(s)"
+              >{{ s }}</button>
+            </div>
+          </template>
         </div>
       </div>
     </main>
@@ -215,7 +236,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
@@ -245,6 +266,12 @@ const searchKeyword = ref('')
 const inputText = ref('')
 const isStreaming = ref(false)
 const autoScroll = ref(true)
+
+const currentAgentName = computed(() => {
+  const currentId = agentSelectValue.value
+  const found = agents.value.find((a) => a.agent_id === currentId)
+  return found?.name || '智能数据助手'
+})
 const thinkingExpanded = reactive({})
 const messagesScrollbarRef = ref(null)
 const textareaRef = ref(null)
@@ -363,7 +390,9 @@ async function loadAgents() {
 
 async function loadTopics() {
   try {
-    const data = await topicApi.listTopics({ page: 1, page_size: 50 })
+    const params = { page: 1, page_size: 50 }
+    if (route.query.agent_id) params.agent_id = route.query.agent_id
+    const data = await topicApi.listTopics(params)
     topics.value = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
     if (topics.value.length && !activeTopicId.value) {
       await selectTopic(topics.value[0].topic_id)
@@ -439,6 +468,7 @@ function hydrateHistoryMessage(m) {
     id: String(m?.message_id || m?.id || Math.random()),
     role: 'assistant',
     content,
+    feedback: String(m?.feedback || ''),
     created_at: m?.created_at || null,
     _v2state: reactive(buildV2StateFromStoredBlocks(m)),
   })
@@ -512,6 +542,67 @@ function handleModelCommand(command) {
   }
 }
 
+// ── Message Tools ─────────────────────────────────────────────────────────
+async function handleCopyMessage(msg) {
+  let text = String(msg?.content || '')
+  if (msg?._v2state?.turns) {
+    const texts = []
+    for (const turn of msg._v2state.turns) {
+      if (!turn.blocks) continue
+      for (const block of turn.blocks) {
+        if (block.type === 'text' && block.content) {
+          texts.push(cleanTextForDisplay(block.content))
+        }
+      }
+    }
+    if (texts.length) text = texts.join('\n\n')
+  }
+  text = text.trim()
+  if (!text) return
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      ta.style.top = '-9999px'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    ElMessage.success('已复制')
+  } catch (_error) {
+    ElMessage.error('复制失败，请手动复制')
+  }
+}
+
+async function toggleMessageFeedback(msg, value) {
+  if (!msg || typeof msg !== 'object') return
+  const previousFeedback = String(msg.feedback || '')
+  const nextFeedback = previousFeedback === value ? '' : value
+  const topicId = String(activeTopicId.value || '')
+  const messageId = String(msg.id || '')
+
+  msg.feedback = nextFeedback
+  if (!topicId || !messageId) {
+    msg.feedback = previousFeedback
+    ElMessage.error('反馈保存失败，请稍后重试')
+    return
+  }
+
+  try {
+    const updated = await topicApi.updateMessageFeedback(topicId, messageId, nextFeedback)
+    msg.feedback = String(updated?.feedback ?? nextFeedback)
+  } catch (_error) {
+    msg.feedback = previousFeedback
+    ElMessage.error('反馈保存失败，请稍后重试')
+  }
+}
+
 // ── Send message ───────────────────────────────────────────────────────────
 async function handleSend() {
   const text = inputText.value.trim()
@@ -552,6 +643,7 @@ async function handleSend() {
     role: 'assistant',
     content: '',
     thinkingText: '',
+    feedback: '',
     created_at: new Date().toISOString(),
     _v2state: v2state,
   })
@@ -604,6 +696,12 @@ function handleCancel() {
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 onMounted(async () => {
   await Promise.all([loadSettings(), loadAgents()])
+  await loadTopics()
+})
+
+watch(() => route.query.agent_id, async () => {
+  activeTopicId.value = ''
+  messages.value = []
   await loadTopics()
 })
 
@@ -721,6 +819,32 @@ onBeforeUnmount(() => {
 
 .v2-session-meta { flex-shrink: 0; font-size: 11px; color: #8C8C8C; }
 
+.v2-session-loading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.v2-session-spinner {
+  width: 14px;
+  height: 14px;
+  color: var(--odw-primary);
+  animation: v2-spin 1s linear infinite;
+}
+
+.v2-session-spinner-track {
+  stroke: rgba(0, 0, 0, 0.05);
+}
+
+.v2-session-spinner-head {
+  stroke: currentColor;
+}
+
+@keyframes v2-spin {
+  to { transform: rotate(360deg); }
+}
+
 .v2-empty-sessions { padding: 16px 10px; font-size: 13px; color: #8C8C8C; text-align: center; }
 
 /* ── Main ────────────────────────────────────────────────────────────────── */
@@ -729,6 +853,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   min-height: 0;
   background: #ffffff;
+  position: relative;
 }
 
 .v2-main-top-bar {
@@ -755,7 +880,8 @@ onBeforeUnmount(() => {
 .v2-messages { flex: 1; min-height: 0; }
 
 .v2-messages-inner {
-  padding-block: 24px 32px;
+  padding-top: 24px;
+  padding-bottom: 180px;
   padding-inline: clamp(40px, 5%, 64px);
   max-width: 1280px;
   margin: 0 auto;
@@ -766,30 +892,22 @@ onBeforeUnmount(() => {
   gap: 24px;
 }
 
-.v2-messages-inner.is-empty {
-  min-height: 100%;
-  align-items: center;
-  justify-content: center;
-  padding-top: 40px;
-  padding-bottom: 72px;
-}
-
 /* ── Landing (new chat) ──────────────────────────────────────────────────── */
-.v2-landing {
-  width: 100%;
-  max-width: 640px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 28px;
-}
-
 .v2-landing-greeting {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 600;
   color: #1e293b;
   text-align: center;
   letter-spacing: -0.2px;
+  margin-bottom: 32px;
+}
+
+.v2-landing-suggestions-title {
+  text-align: center;
+  color: #64748b;
+  font-size: 13px;
+  margin-top: 24px;
+  margin-bottom: 8px;
 }
 
 .v2-landing-suggestions {
@@ -828,7 +946,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60px 0;
+  padding: 0 0 24px;
   gap: 8px;
 }
 
@@ -864,6 +982,37 @@ onBeforeUnmount(() => {
 
 .v2-msg-footer { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
 .v2-msg-time { font-size: 11px; color: #A0AABF; }
+
+/* ── Message tools ───────────────────────────────────────────────────────── */
+.v2-message-tool {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #A0AABF;
+  cursor: pointer;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.v2-message-tool svg {
+  width: 13px;
+  height: 13px;
+  stroke-width: 1.8;
+}
+
+.v2-message-tool:hover, .v2-message-tool.active {
+  border-color: #D9E2F2;
+  background: #ffffff;
+  color: var(--odw-primary);
+}
+
+.v2-message-tool.v2-message-feedback-dislike.active {
+  color: #e63946;
+}
 
 /* ── Thinking (深度思考) panel ────────────────────────────────────────────── */
 .v2-process-panel {
@@ -1003,9 +1152,24 @@ onBeforeUnmount(() => {
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
 .v2-composer-bar {
-  border-top: 1px solid #eef1f5;
-  flex-shrink: 0;
-  background: #f5f6f8;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 10;
+  padding-top: 32px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.85) 30%, #ffffff 50%);
+  transition: background 0.3s ease;
+  border-top: none;
+}
+
+.v2-composer-bar.is-landing {
+  top: 0;
+  padding-top: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .v2-composer-wrap {
@@ -1015,6 +1179,11 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   padding-block: 10px 12px;
   padding-inline: clamp(40px, 5%, 64px);
+  transition: max-width 0.3s ease;
+}
+
+.v2-composer-bar.is-landing .v2-composer-wrap {
+  max-width: 860px;
 }
 
 .v2-composer {
@@ -1023,7 +1192,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 10px 10px 10px 18px;
   border: 1px solid #dde2ea;
-  border-radius: 999px;
+  border-radius: 16px;
   background: #ffffff;
   transition: border-color var(--odw-transition), box-shadow var(--odw-transition);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
@@ -1156,7 +1325,7 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
-  .v2-messages-inner { padding-block: 16px 24px; padding-inline: 16px; }
+  .v2-messages-inner { padding-top: 16px; padding-bottom: 160px; padding-inline: 16px; }
   .v2-composer-wrap { padding-block: 10px 14px; padding-inline: 16px; }
   .v2-user-shell { max-width: 90%; }
   .v2-assistant-body { max-width: 100%; }

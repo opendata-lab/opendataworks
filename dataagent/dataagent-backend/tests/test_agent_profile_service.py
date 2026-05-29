@@ -30,7 +30,7 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     payload = agent_profile_service.opendataworks_agent_payload()
 
     assert payload["agent_id"] == "agent_opendataworks"
-    assert payload["name"] == "OpenDataWorks助手智能体"
+    assert payload["name"] == "OpenDataWorks平台助手"
     assert payload["allowed_tools"] == ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
     assert payload["mcp_server_ids"] == ["portal"]
     assert payload["skill_folders"] == ["opendataworks-business-knowledge", "opendataworks-platform-tools"]

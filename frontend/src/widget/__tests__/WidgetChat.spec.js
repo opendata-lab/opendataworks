@@ -154,9 +154,8 @@ describe('WidgetChat history conversations', () => {
 
     await wrapper.get('[data-testid="new-conversation"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('Widget 会话', { agent_id: 'agent_widget' })
-    expect(wrapper.text()).toContain('Widget 会话')
-    expect(wrapper.text()).toContain('有什么数据问题需要分析？')
+    expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('您可以问我以下问题')
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
   })
 
