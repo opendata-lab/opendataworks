@@ -359,7 +359,7 @@ async function loadTopics() {
 async function selectTopic(topicId) {
   activeTopicId.value = topicId
   try {
-    const data = await topicApi.getTopicMessages(topicId, { page: 1, page_size: 50 })
+    const data = await topicApi.getTopicMessages(topicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
     messages.value = list.map((m) => hydrateHistoryMessage(m))
     scrollToBottom(true)
