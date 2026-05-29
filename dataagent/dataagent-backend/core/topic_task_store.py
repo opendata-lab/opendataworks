@@ -218,6 +218,111 @@ def _project_task_history(records: list[dict[str, Any]], *, fallback_resume_afte
     }
 
 
+def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Rebuild v2-compatible blocks from da_agent_sdk_record rows.
+
+    Mirrors the logic in v2StreamParser.js so history blocks match the
+    schema produced during live streaming.  Returns the same shape as
+    _project_task_history: {"blocks": [...], "resume_after_seq": int}.
+    """
+    ordered_blocks: list[dict[str, Any]] = []
+    current_turn_blocks: list[dict[str, Any]] | None = None
+    block_by_index: dict[int, dict[str, Any]] = {}
+    blocks_by_tool_id: dict[str, dict[str, Any]] = {}
+    max_seq_id = 0
+
+    for record in records:
+        seq_id = int(record.get("seq_id") or 0)
+        if seq_id > max_seq_id:
+            max_seq_id = seq_id
+
+        record_type = str(record.get("record_type") or "")
+        data = dict(record.get("data") or {})
+
+        if record_type == "stream":
+            etype = str(data.get("type") or "")
+
+            if etype == "message_start":
+                current_turn_blocks = []
+                block_by_index = {}
+
+            elif etype == "content_block_start" and current_turn_blocks is not None:
+                cb = dict(data.get("content_block") or {})
+                block_type = str(cb.get("type") or "text")
+                raw_index = data.get("index")
+                index = raw_index if isinstance(raw_index, int) else len(current_turn_blocks)
+
+                if block_type == "thinking":
+                    block: dict[str, Any] = {"type": "thinking", "text": "", "_idx": index}
+                elif block_type == "tool_use":
+                    tool_id = str(cb.get("id") or "")
+                    block = {
+                        "type": "tool_use",
+                        "tool_id": tool_id,
+                        "tool_name": str(cb.get("name") or "Tool"),
+                        "_input_json": "",
+                        "input": None,
+                        "output": None,
+                        "is_error": False,
+                        "_idx": index,
+                    }
+                    if tool_id:
+                        blocks_by_tool_id[tool_id] = block
+                else:
+                    block = {"type": "main_text", "text": "", "_idx": index}
+
+                current_turn_blocks.append(block)
+                block_by_index[index] = block
+                ordered_blocks.append(block)
+
+            elif etype == "content_block_delta" and current_turn_blocks is not None:
+                raw_index = data.get("index")
+                if isinstance(raw_index, int):
+                    block = block_by_index.get(raw_index)
+                else:
+                    block = current_turn_blocks[-1] if current_turn_blocks else None
+                if block:
+                    delta = dict(data.get("delta") or {})
+                    dtype = str(delta.get("type") or "")
+                    if dtype == "thinking_delta":
+                        block["text"] = str(block.get("text") or "") + str(delta.get("thinking") or "")
+                    elif dtype == "text_delta":
+                        block["text"] = str(block.get("text") or "") + str(delta.get("text") or "")
+                    elif dtype == "input_json_delta":
+                        block["_input_json"] = str(block.get("_input_json") or "") + str(delta.get("partial_json") or "")
+
+            elif etype == "content_block_stop" and current_turn_blocks is not None:
+                raw_index = data.get("index")
+                if isinstance(raw_index, int):
+                    block = block_by_index.get(raw_index)
+                else:
+                    block = current_turn_blocks[-1] if current_turn_blocks else None
+                if block and block.get("type") == "tool_use":
+                    input_json = str(block.get("_input_json") or "")
+                    if input_json:
+                        try:
+                            block["input"] = json.loads(input_json)
+                        except Exception:
+                            block["input"] = input_json
+
+        elif record_type == "tool_result":
+            tool_use_id = str(data.get("tool_use_id") or "")
+            if tool_use_id and tool_use_id in blocks_by_tool_id:
+                blk = blocks_by_tool_id[tool_use_id]
+                blk["output"] = data.get("content")
+                blk["is_error"] = bool(data.get("is_error"))
+
+    result: list[dict[str, Any]] = []
+    for block in ordered_blocks:
+        btype = block.get("type")
+        if btype in {"thinking", "main_text"} and not str(block.get("text") or "").strip():
+            continue
+        clean = {k: v for k, v in block.items() if not k.startswith("_")}
+        result.append(clean)
+
+    return {"blocks": result, "resume_after_seq": max_seq_id}
+
+
 class TopicTaskStore:
     def __init__(self):
         self._ready = False
@@ -2228,6 +2333,8 @@ class TopicTaskStore:
         event_records: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in task_ids}
         last_seq_by_task_id: dict[str, int] = {task_id: 0 for task_id in task_ids}
 
+        sdk_records: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in task_ids}
+
         with conn.cursor() as cur:
             cur.execute(
                 f"""
@@ -2241,6 +2348,33 @@ class TopicTaskStore:
                 task_id = str(row.get("task_id") or "").strip()
                 if task_id:
                     last_seq_by_task_id[task_id] = int(row.get("last_event_seq") or 0)
+
+            cur.execute(
+                f"""
+                SELECT task_id, id, turn_index, record_type, event_type, data
+                FROM da_agent_sdk_record
+                WHERE task_id IN ({placeholders})
+                ORDER BY task_id ASC, id ASC
+                """,
+                task_ids,
+            )
+            for row in cur.fetchall() or []:
+                task_id = str(row.get("task_id") or "").strip()
+                if not task_id:
+                    continue
+                raw_data = row.get("data")
+                if isinstance(raw_data, str):
+                    try:
+                        raw_data = json.loads(raw_data)
+                    except Exception:
+                        raw_data = {}
+                sdk_records.setdefault(task_id, []).append({
+                    "seq_id": int(row.get("id") or 0),
+                    "turn_index": int(row.get("turn_index") or 0),
+                    "record_type": str(row.get("record_type") or ""),
+                    "event_type": row.get("event_type"),
+                    "data": raw_data or {},
+                })
 
             cur.execute(
                 f"""
@@ -2275,10 +2409,13 @@ class TopicTaskStore:
                     event_records.setdefault(task_id, []).append(self._normalize_task_chunk_record(row))
 
         for task_id in task_ids:
-            history_by_task_id[task_id] = _project_task_history(
-                event_records.get(task_id, []),
-                fallback_resume_after_seq=last_seq_by_task_id.get(task_id, 0),
-            )
+            if sdk_records.get(task_id):
+                history_by_task_id[task_id] = _project_sdk_records(sdk_records[task_id])
+            else:
+                history_by_task_id[task_id] = _project_task_history(
+                    event_records.get(task_id, []),
+                    fallback_resume_after_seq=last_seq_by_task_id.get(task_id, 0),
+                )
         return history_by_task_id
 
     def _normalize_message_row(self, row: dict[str, Any], *, history: dict[str, Any] | None = None) -> dict[str, Any]:
