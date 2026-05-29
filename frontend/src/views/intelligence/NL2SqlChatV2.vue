@@ -123,8 +123,13 @@
 
                       <!-- Text block -->
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
-                        <div v-html="renderMarkdown(block.content)" />
+                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
                         <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
+                        <ToolOutputRenderer
+                          v-for="(spec, si) in extractedChartSpecs(block.content)"
+                          :key="si"
+                          :tool="chartSpecToToolProp(spec)"
+                        />
                       </div>
                     </template>
                   </template>
@@ -136,18 +141,8 @@
                   </div>
                 </template>
 
-                <!-- Hydrated from history -->
+                <!-- Fallback for non-assistant or empty v2state -->
                 <template v-else>
-                  <div v-if="msg.thinkingText" class="v2-process-panel">
-                    <button class="v2-process-summary" type="button" @click="toggleThinking('hist-' + msg.id)">
-                      <span class="v2-process-label">深度思考</span>
-                      <span v-if="!thinkingExpanded['hist-' + msg.id]" class="v2-process-preview">{{ msg.thinkingText.slice(0, 80) }}</span>
-                      <svg class="v2-chevron" :class="{ expanded: thinkingExpanded['hist-' + msg.id] }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg>
-                    </button>
-                    <el-scrollbar v-if="thinkingExpanded['hist-' + msg.id]" class="v2-process-content">
-                      <div class="v2-process-thought" v-html="renderMarkdown(msg.thinkingText)" />
-                    </el-scrollbar>
-                  </div>
                   <div v-if="msg.content" class="v2-text-block" v-html="renderMarkdown(msg.content)" />
                 </template>
 
@@ -225,6 +220,7 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
+import { extractChartSpecsFromText, stripChartSpecsFromText } from './chartSpec'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -386,25 +382,70 @@ async function selectTopic(topicId) {
   }
 }
 
+function buildV2StateFromStoredBlocks(item) {
+  const v2state = createChatState()
+  v2state.status = 'done'
+  const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
+  const turn = { turnIndex: 0, blocks: [], status: 'done' }
+  v2state.turns.push(turn)
+  let blockIdx = 0
+  for (const b of storedBlocks) {
+    const kind = String(b?.kind || b?.type || '')
+    if (kind === 'thinking' && b?.text) {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    } else if (kind === 'main_text' && b?.text) {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    } else if (kind === 'tool' && b?.tool) {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    }
+  }
+  const content = String(item?.content || '')
+  if (!turn.blocks.length && content) {
+    const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+    turn.blocks.push(block)
+    v2state.blocks.push(block)
+  }
+  return v2state
+}
+
 function hydrateHistoryMessage(m) {
   const role = String(m?.role || m?.sender_type || 'user')
   const content = String(m?.content || '')
-  // Extract thinking text from stored blocks if present
-  let thinkingText = ''
-  const blocks = Array.isArray(m?.blocks) ? m.blocks : []
-  for (const b of blocks) {
-    if (String(b?.kind || b?.type || '') === 'thinking' && b?.text) {
-      thinkingText += b.text
+  if (role !== 'assistant') {
+    return {
+      id: String(m?.message_id || m?.id || Math.random()),
+      role: 'user',
+      content,
+      created_at: m?.created_at || null,
+      _v2state: null,
     }
   }
-  return {
+  return reactive({
     id: String(m?.message_id || m?.id || Math.random()),
-    role: role === 'assistant' ? 'assistant' : 'user',
+    role: 'assistant',
     content,
-    thinkingText,
     created_at: m?.created_at || null,
-    _v2state: null,
-  }
+    _v2state: reactive(buildV2StateFromStoredBlocks(m)),
+  })
+}
+
+// ── Chart spec helpers ────────────────────────────────────────────────────
+function cleanTextForDisplay(content) {
+  return stripChartSpecsFromText(String(content || '')).trim()
+}
+
+function extractedChartSpecs(content) {
+  return extractChartSpecsFromText(String(content || ''))
+}
+
+function chartSpecToToolProp(spec) {
+  return { name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true }
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────

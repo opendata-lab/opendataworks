@@ -11,10 +11,7 @@
 
     <aside v-if="historyVisible" class="query-sidebar" aria-label="历史会话">
       <div class="query-sidebar-head">
-        <div>
-          <div class="query-brand">智能问数</div>
-          <div class="query-brand-meta">数据分析</div>
-        </div>
+        <span class="query-sidebar-brand">智能问数</span>
         <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy" @click="newConversation">
           新建
         </button>
@@ -45,35 +42,25 @@
     </aside>
 
     <main class="query-main">
-      <div class="query-messages">
-        <div class="query-messages-inner">
-          <div class="query-main-head">
-            <div class="query-main-head-left">
-              <button
-                v-if="isInline"
-                class="query-btn-history-toggle"
-                type="button"
-                aria-label="历史会话"
-                title="历史会话"
-                @click="toggleHistory"
-              >
-                <svg class="query-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="3" y1="12" x2="21" y2="12"></line>
-                  <line x1="3" y1="6" x2="21" y2="6"></line>
-                  <line x1="3" y1="18" x2="21" y2="18"></line>
-                </svg>
-              </button>
-              <div>
-                <h3>{{ activeTopic ? truncate(activeTopic.title, 48) : '开始一次新的数据分析' }}</h3>
-                <p class="query-main-subtitle">围绕数据查询与分析开展连续对话。</p>
-              </div>
-            </div>
-            <div class="query-model-badge">
-              <span>{{ activeProviderConfig?.display_name || '未配置' }}</span>
-              <strong>{{ selectedModel || defaultModel || '默认模型' }}</strong>
-            </div>
-          </div>
+      <!-- Top bar: only when messages exist, matches v2-main-top-bar -->
+      <div v-if="messages.length || errorText" class="query-top-bar">
+        <button
+          v-if="isInline"
+          class="query-btn-history-toggle"
+          type="button"
+          aria-label="历史会话"
+          title="历史会话"
+          @click="toggleHistory"
+        >
+          <svg class="query-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <h4 class="query-topic-title">{{ activeTopic ? truncate(activeTopic.title, 48) : '智能问数' }}</h4>
+      </div>
 
+      <div class="query-messages">
+        <div class="query-messages-inner" :class="{ 'is-empty': !messages.length }">
           <div v-if="errorText" class="query-error-card query-error-banner">
             <span class="query-error-label">错误</span>
             <span>{{ errorText }}</span>
@@ -84,10 +71,9 @@
             <div class="query-config-empty-text">请先完成模型配置。</div>
           </div>
 
-          <div v-if="!messages.length && !errorText" class="query-empty">
-            <div class="query-empty-mark">AI</div>
-            <div class="query-empty-title">请输入你的数据问题</div>
-            <div class="query-empty-subtitle">支持数据查询、趋势分析与结果可视化。</div>
+          <!-- Landing page (empty state) — matches v2-landing -->
+          <div v-if="!messages.length && !errorText" class="query-landing">
+            <div class="query-landing-greeting">有什么数据问题需要分析？</div>
             <div class="query-suggestions">
               <button
                 v-for="suggestion in suggestions"
@@ -109,134 +95,118 @@
 
             <div v-else class="query-message-row query-message-assistant">
               <div class="query-assistant-body">
-                <div v-if="hasProcessPanel(msg)" class="query-process-panel">
-                  <div class="query-process-summary-row">
-                    <button type="button" class="query-process-summary" @click.stop="toggleProcessPanel(msg)">
-                      <span class="query-process-summary-label">
-                        <span v-if="isActiveTaskStatus(msg.status)" class="query-process-badge-dot" />
-                        深度思考
-                      </span>
-                      <span v-if="!isProcessPanelExpanded(msg) && processSummaryPreview(msg)" class="query-process-summary-preview">
-                        {{ processSummaryPreview(msg) }}
-                      </span>
-                      <svg class="query-process-chevron" :class="{ open: isProcessPanelExpanded(msg) }" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
+                <template v-if="msg._v2state">
+                  <div v-if="!msg._v2state.turns.length && isActiveTask(msg)" class="query-typing-indicator">
+                    <span /><span /><span />
                   </div>
 
-                  <div v-if="isProcessPanelExpanded(msg)" class="query-process-content">
-                    <div class="query-process-content-inner">
-                      <div v-for="block in processBlocksForMessage(msg)" :key="block.id" class="query-step-row">
-                        <div v-if="block.kind === 'thinking' && block.text" class="query-process-thought">
-                          <div class="query-process-thought-content" v-html="renderMarkdown(block.text)" />
-                          <span v-if="msg.status === 'streaming' && block.status === 'streaming'" class="query-cursor">|</span>
+                  <template v-for="(turn, ti) in msg._v2state.turns" :key="ti">
+                    <template v-for="block in turn.blocks" :key="block.blockIndex + '-' + ti">
+                      <!-- Thinking block -->
+                      <div v-if="block.type === 'thinking'" class="query-process-panel">
+                        <button
+                          type="button"
+                          class="query-process-summary"
+                          @click.stop="toggleThinking(msg.id + '-' + ti + '-' + block.blockIndex)"
+                        >
+                          <span class="query-process-label">
+                            <span v-if="block.status === 'streaming'" class="query-process-badge-dot" />
+                            深度思考
+                          </span>
+                          <span v-if="!isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex) && block.content" class="query-process-preview">
+                            {{ block.content.slice(0, 72) }}
+                          </span>
+                          <svg class="query-process-chevron" :class="{ open: isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex) }" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+                        <div v-if="isThinkingExpanded(msg.id + '-' + ti + '-' + block.blockIndex)" class="query-process-content">
+                          <div class="query-process-thought" v-html="renderMarkdown(block.content)" />
+                          <span v-if="block.status === 'streaming'" class="query-cursor">|</span>
                         </div>
-
-                        <ToolOutputRenderer v-else-if="block.kind === 'tool' && block.tool" :tool="block.tool" />
                       </div>
-                    </div>
-                  </div>
-                </div>
 
-                <div v-for="block in finalBlocksForMessage(msg)" :key="block.id" class="query-step-row">
-                  <template v-if="block.kind === 'main_text'">
-                    <div v-if="displayTextBlock(block)" class="query-main-text">
-                      <div v-html="renderMarkdown(displayTextBlock(block))" />
-                      <span v-if="msg.status === 'streaming' && block.status === 'streaming'" class="query-cursor">|</span>
-                    </div>
+                      <!-- Tool use block -->
+                      <div v-else-if="block.type === 'tool_use'" class="query-tool-row">
+                        <ToolOutputRenderer :tool="blockToToolProp(block)" />
+                      </div>
+
+                      <!-- Text block -->
+                      <div v-else-if="block.type === 'text' && block.content" class="query-main-text">
+                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
+                        <span v-if="block.status === 'streaming'" class="query-cursor">|</span>
+                        <ToolOutputRenderer
+                          v-for="(spec, si) in extractedChartSpecs(block.content)"
+                          :key="si"
+                          :tool="chartSpecToToolProp(spec)"
+                        />
+                      </div>
+                    </template>
                   </template>
 
-                  <div v-else-if="block.kind === 'error' && block.text" class="query-error-card">
+                  <div v-if="msg._v2state.status === 'error'" class="query-error-card">
                     <span class="query-error-label">错误</span>
-                    <span>{{ block.text }}</span>
+                    <span>{{ msg._v2state.errorText || '处理出错' }}</span>
                   </div>
-                </div>
+                </template>
 
-                <div v-if="msg.error && !hasErrorBlock(msg)" class="query-error-card">
-                  <span class="query-error-label">错误</span>
-                  <span>{{ errorMessage(msg.error) }}</span>
-                </div>
+                <template v-else>
+                  <div v-if="msg.content" class="query-main-text" v-html="renderMarkdown(msg.content)" />
+                  <div v-if="msg.error" class="query-error-card">
+                    <span class="query-error-label">错误</span>
+                    <span>{{ errorMessage(msg.error) }}</span>
+                  </div>
+                </template>
               </div>
             </div>
           </template>
         </div>
       </div>
 
-      <div class="query-composer-wrap">
-        <form class="query-composer" @submit.prevent="send">
-          <div class="query-composer-top">
-            <div class="query-composer-control">
-              <select v-model="selectedProvider" class="query-select" :disabled="!providers.length || isBusy">
-                <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
-                  {{ provider.display_name || provider.provider_id }}
-                </option>
-              </select>
+      <!-- Composer bar — matches v2-composer-bar / v2-composer -->
+      <div class="query-composer-bar">
+        <div class="query-composer-wrap">
+          <div class="query-composer" @keydown.ctrl.enter.prevent="send" @keydown.meta.enter.prevent="send">
+            <div class="query-composer-textarea-wrap">
+              <textarea
+                v-model="inputText"
+                class="query-textarea"
+                rows="1"
+                :disabled="!providers.length || !availableModels.length"
+                placeholder="输入数据问题…"
+                @input="autoResizeTextarea"
+              />
             </div>
-            <div class="query-composer-control">
-              <select v-model="selectedModel" class="query-select" :disabled="!availableModels.length || isBusy">
-                <option v-for="modelName in availableModels" :key="modelName" :value="modelName">
-                  {{ modelName }}
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div class="query-composer-input-row">
-            <textarea
-              v-model="inputText"
-              class="query-textarea"
-              rows="1"
-              :disabled="!providers.length || !availableModels.length"
-              placeholder="例如：查询最近 30 天工作流发布次数趋势"
-              @keydown.ctrl.enter.prevent="send"
-              @keydown.meta.enter.prevent="send"
-            />
             <div class="query-composer-actions">
+              <!-- Model selector: pill button with current model name -->
+              <div class="query-model-selector">
+                <select v-model="selectedProvider" class="query-model-select" :disabled="!providers.length || isBusy" title="切换提供商">
+                  <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
+                    {{ provider.display_name || provider.provider_id }}
+                  </option>
+                </select>
+                <select v-model="selectedModel" class="query-model-select" :disabled="!availableModels.length || isBusy" title="切换模型">
+                  <option v-for="modelName in availableModels" :key="modelName" :value="modelName">{{ modelName }}</option>
+                </select>
+              </div>
               <button
                 type="button"
-                class="query-composer-action"
-                :class="[
-                  activeTaskId ? 'query-btn-cancel' : 'query-btn-send',
-                  { 'query-composer-action-labeled': activeTaskId }
-                ]"
+                class="query-send-btn"
+                :class="{ 'query-cancel-btn': activeTaskId }"
                 :disabled="activeTaskId ? false : !canSend"
                 :aria-label="activeTaskId ? '取消当前任务' : '发送消息'"
-                :title="activeTaskId ? '取消当前任务' : '发送消息'"
                 @click="activeTaskId ? cancel() : send()"
               >
-                <svg
-                  v-if="activeTaskId"
-                  class="query-composer-action-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
+                <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
                   <rect x="8" y="8" width="8" height="8" rx="1.5" />
                 </svg>
-                <svg
-                  v-else
-                  class="query-composer-action-icon"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M5 12h12" />
-                  <path d="M13 6l6 6-6 6" />
+                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                  <line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" />
                 </svg>
-                <span v-if="activeTaskId" class="query-composer-action-text">停止回答</span>
               </button>
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </main>
   </div>
@@ -247,13 +217,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch 
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
-import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
-import { describeToolAction, extractToolSkillName, formatSkillBootstrapLabel, isSkillBootstrapPlaceholder } from '@/views/intelligence/toolPresentation'
-import {
-  createAssistantMessageState,
-  hydrateAssistantMessageState,
-  processAssistantStreamEvent
-} from '@/views/intelligence/messageStream'
+import { extractChartSpecsFromText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
+import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -417,12 +382,66 @@ const appendUserMessage = (content) => {
   })
 }
 
-const appendAssistantMessage = () => {
-  const assistant = reactive(createAssistantMessageState({
-    id: `a_${uid()}`,
+const thinkingExpanded = reactive({})
+
+const toggleThinking = (key) => {
+  thinkingExpanded[key] = !thinkingExpanded[key]
+}
+
+const isThinkingExpanded = (key) => Boolean(thinkingExpanded[key])
+
+const isActiveTask = (msg) => Boolean(activeTaskId.value && msg.task_id === activeTaskId.value)
+
+const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content || '')).trim()
+
+const extractedChartSpecs = (content) => extractChartSpecsFromText(String(content || ''))
+
+const chartSpecToToolProp = (spec) => ({ name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true })
+
+const buildV2StateFromStoredBlocks = (item) => {
+  const v2state = createChatState()
+  v2state.status = 'done'
+  const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
+  const turn = { turnIndex: 0, blocks: [], status: 'done' }
+  v2state.turns.push(turn)
+  let blockIdx = 0
+  for (const b of storedBlocks) {
+    const kind = String(b?.kind || b?.type || '')
+    if (kind === 'thinking' && b?.text) {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    } else if (kind === 'main_text' && b?.text) {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    } else if (kind === 'tool' && b?.tool) {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    }
+  }
+  const content = String(item?.content || '')
+  if (!turn.blocks.length && content) {
+    const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+    turn.blocks.push(block)
+    v2state.blocks.push(block)
+  }
+  return v2state
+}
+
+const appendAssistantMessage = (taskId) => {
+  const id = `a_${uid()}`
+  const assistant = reactive({
+    id,
+    role: 'assistant',
+    content: '',
     status: 'queued',
-    created_at: new Date().toISOString()
-  }))
+    task_id: taskId || '',
+    error: null,
+    created_at: new Date().toISOString(),
+    _v2state: reactive(createChatState()),
+  })
   messages.value.push(assistant)
   return assistant
 }
@@ -443,15 +462,21 @@ const messageFromApi = (item) => {
       id: String(item.message_id || `user_${item.seq_id || uid()}`),
       role: 'user',
       content: messageContent(item),
-      created_at: item.created_at || ''
+      created_at: item.created_at || '',
+      _v2state: null,
     }
   }
-  return reactive(hydrateAssistantMessageState({
-    ...item,
-    message_id: item?.message_id || `assistant_${item?.seq_id || uid()}`,
+  const id = String(item?.message_id || `assistant_${item?.seq_id || uid()}`)
+  return reactive({
+    id,
+    role: 'assistant',
     content: messageContent(item),
-    status: item?.status || 'success'
-  }))
+    status: item?.status || 'success',
+    task_id: String(item?.task_id || ''),
+    error: item?.error || null,
+    created_at: item?.created_at || '',
+    _v2state: reactive(buildV2StateFromStoredBlocks(item)),
+  })
 }
 
 const loadTopicMessages = async (targetTopicId) => {
@@ -585,39 +610,25 @@ const loadConfig = async () => {
   }
 }
 
-const processStreamEvent = (assistant, event) => {
-  const beforeContent = assistant.content || ''
-  const beforeBlocks = Array.isArray(assistant.renderBlocks) ? assistant.renderBlocks.length : 0
-  processAssistantStreamEvent(assistant, event)
-
-  const afterContent = assistant.content || ''
-  const afterBlocks = Array.isArray(assistant.renderBlocks) ? assistant.renderBlocks.length : 0
-  const data = event?.data || {}
-  const legacyText = data?.text || data?.content || event?.content || ''
-  if (legacyText && beforeContent === afterContent && beforeBlocks === afterBlocks) {
-    processAssistantStreamEvent(assistant, { type: 'text.delta', payload: { text: legacyText } })
-  }
-  triggerRef(messages)
-}
-
 const subscribe = async (taskId, assistant) => {
   abortController.value = new AbortController()
   try {
-    await api.taskApi.streamTaskEvents(taskId, {
+    await api.taskApi.streamSdkEvents(taskId, {
       signal: abortController.value.signal,
-      onEvent: (event) => processStreamEvent(assistant, event)
+      afterId: 0,
+      onRecord: (record) => {
+        processV2Record(assistant._v2state, record)
+        triggerRef(messages)
+      }
     })
-    const task = await api.taskApi.getTask(taskId)
-    assistant.status = String(task?.task_status || '') === 'error' ? 'failed' : 'success'
-    if (!assistant.content && !assistant.renderBlocks?.length) {
-      processAssistantStreamEvent(assistant, { type: 'done', payload: { content: '已完成', status: 'success' } })
-    }
+    assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
     emit('event', { name: 'message:done', payload: { taskId } })
   } catch (error) {
     if (abortController.value?.signal?.aborted) return
     assistant.status = 'failed'
     assistant.error = { message: String(error?.message || '请求失败') }
-    processAssistantStreamEvent(assistant, { type: 'error', payload: assistant.error })
+    assistant._v2state.status = 'error'
+    assistant._v2state.errorText = assistant.error.message
     emit('event', { name: 'error', payload: assistant.error.message })
   } finally {
     activeTaskId.value = ''
@@ -647,8 +658,9 @@ const send = async () => {
   isSubmitting.value = true
   inputText.value = ''
   errorText.value = ''
+  const mockTaskId = `task_mock_${uid()}`
   appendUserMessage(text)
-  const assistant = appendAssistantMessage()
+  const assistant = appendAssistantMessage(selectedProvider.value === 'mock' ? mockTaskId : '')
 
   if (selectedProvider.value === 'mock') {
     if (!topicId.value) {
@@ -667,78 +679,58 @@ const send = async () => {
       updateActiveTopicAfterSend(text, '')
     }
 
-    activeTaskId.value = `task_mock_${uid()}`
+    activeTaskId.value = mockTaskId
     activeAssistantId.value = assistant.id
-    assistant.task_id = activeTaskId.value
     assistant.status = 'running'
 
     emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
 
-    let replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
+    const replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
 
 这是模拟的 AI 回复：
-- 您提问的内容是：“${text}”
+- 您提问的内容是：”${text}”
 - 智能小组件包含悬浮触发（Floating）、侧边栏内嵌（Inline）、API 控制等多种集成能力。
 - 接入真实后端服务时，请在引入小组件的 HTML 中指定正确的 \`data-api-base-url\`。
 
 如有其他疑问，请随时提问！`
-    
-    let blockIndex = 0
-    let currentText = ''
+
     const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-    
+    const v2 = assistant._v2state
     const mockProgressSteps = [
-      '正在解析问题语义...',
-      '正在匹配数据库 Schema...',
-      '正在生成执行 SQL 语句...',
-      '已成功获取数据，正在整理报表...'
+      { id: 'tool-0', step: '正在解析问题语义...', label: 'text-to-sql' },
+      { id: 'tool-1', step: '正在匹配数据库 Schema...', label: 'text-to-sql' },
+      { id: 'tool-2', step: '正在生成执行 SQL 语句...', label: 'run-sql' },
+      { id: 'tool-3', step: '已成功获取数据，正在整理报表...', label: 'render-chart' },
     ]
-    
+
     try {
-      processAssistantStreamEvent(assistant, { type: 'message_start', message: { id: assistant.id } })
-      
-      for (const step of mockProgressSteps) {
+      processV2Record(v2, { record_type: 'stream', data: { type: 'message_start', usage: {} } })
+      triggerRef(messages)
+
+      for (let i = 0; i < mockProgressSteps.length; i++) {
         if (activeTaskId.value !== assistant.task_id) break
-        processAssistantStreamEvent(assistant, {
-          type: 'tool.pending',
-          payload: {
-            block_id: `tool-${blockIndex}`,
-            tool_name: 'text-to-sql',
-            input: `[Demo Input] ${step}`
-          }
-        })
+        const { id, step, label } = mockProgressSteps[i]
+        processV2Record(v2, { record_type: 'stream', data: { type: 'content_block_start', index: i, content_block: { type: 'tool_use', id, name: label } } })
+        triggerRef(messages)
         await delay(500)
-        processAssistantStreamEvent(assistant, {
-          type: 'tool.complete',
-          payload: {
-            block_id: `tool-${blockIndex}`,
-            tool_name: 'text-to-sql',
-            output: `[Demo Output] 已完成: ${step}`
-          }
-        })
-        blockIndex++
+        processV2Record(v2, { record_type: 'stream', data: { type: 'content_block_stop', index: i } })
+        processV2Record(v2, { record_type: 'tool_result', data: { tool_use_id: id, content: `[Demo] 已完成: ${step}` } })
+        triggerRef(messages)
       }
-      
-      assistant.status = 'success'
-      for (let i = 0; i < replyText.length; i++) {
+
+      const textIdx = mockProgressSteps.length
+      processV2Record(v2, { record_type: 'stream', data: { type: 'content_block_start', index: textIdx, content_block: { type: 'text' } } })
+      for (const char of replyText) {
         if (activeTaskId.value !== assistant.task_id) break
-        currentText += replyText[i]
-        processAssistantStreamEvent(assistant, {
-          type: 'text.delta',
-          payload: { text: replyText[i] }
-        })
+        processV2Record(v2, { record_type: 'stream', data: { type: 'content_block_delta', index: textIdx, delta: { type: 'text_delta', text: char } } })
+        triggerRef(messages)
         await delay(15)
       }
+      processV2Record(v2, { record_type: 'stream', data: { type: 'content_block_stop', index: textIdx } })
+      processV2Record(v2, { record_type: 'done', data: {} })
+      triggerRef(messages)
 
-      processAssistantStreamEvent(assistant, {
-        type: 'text.complete',
-        payload: { text: replyText }
-      })
-      processAssistantStreamEvent(assistant, {
-        type: 'done',
-        payload: { status: 'success' }
-      })
-
+      assistant.status = 'success'
       emit('event', { name: 'message', payload: { id: assistant.id, content: replyText } })
     } catch (e) {
       console.error(e)
@@ -771,7 +763,8 @@ const send = async () => {
   } catch (error) {
     assistant.status = 'failed'
     assistant.error = { message: String(error?.message || '请求失败') }
-    processAssistantStreamEvent(assistant, { type: 'error', payload: assistant.error })
+    assistant._v2state.status = 'error'
+    assistant._v2state.errorText = assistant.error.message
     emit('event', { name: 'error', payload: assistant.error.message })
   } finally {
     isSubmitting.value = false
@@ -805,102 +798,11 @@ const handleSuggestion = (suggestion) => {
   void send()
 }
 
-const cleanTextContent = (value) => String(value || '')
-  .replace(/Base directory for this skill:[\s\S]*?(?:ARGUMENTS:\s*[^\n]*\n?)/gi, '')
-  .replace(/^ARGUMENTS:\s*[^\n]*\n?/gm, '')
-  .replace(/^\s+/, '')
-
-const normalizeInlinePreview = (value) => String(value || '').replace(/\s+/g, ' ').trim()
-const truncatePreviewEnd = (value, max) => {
-  const text = normalizeInlinePreview(value)
-  if (!text) return ''
-  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 3))}...`
-}
-
-const hasMeaningfulToolPayload = (value) => {
-  if (value == null) return false
-  if (typeof value === 'string') return Boolean(value.trim())
-  if (Array.isArray(value)) return value.some((item) => hasMeaningfulToolPayload(item))
-  if (typeof value === 'object') return Object.values(value).some((item) => hasMeaningfulToolPayload(item))
-  return true
-}
-
-const shouldRenderToolBlock = (tool) => {
-  if (!tool || typeof tool !== 'object') return false
-  const action = describeToolAction(tool)
-  if (!action.isTrace) return true
-  const detail = String(action.preview || action.command || action.path || action.directory || action.pattern || action.description || '').trim()
-  return Boolean(detail || hasMeaningfulToolPayload(tool.output))
-}
-
-const renderBlocksForMessage = (msg) => (Array.isArray(msg?.renderBlocks) ? msg.renderBlocks : []).filter((block) => {
-  if (!block || typeof block !== 'object') return false
-  if (block.kind === 'tool') {
-    if (!shouldRenderToolBlock(block.tool)) return false
-    const name = String(block.tool?.name || '').toLowerCase()
-    if (name === 'glob' && String(block.tool?.status || '') === 'success') return false
-    return true
-  }
-  return ['thinking', 'main_text', 'error'].includes(String(block.kind || ''))
-})
-
-const markFollowupToolWithSkillContext = (blocks) => {
-  let pendingSkillName = ''
-  return blocks.reduce((result, block, index) => {
-    if (block?.kind !== 'tool' || !block.tool) {
-      result.push(block)
-      return result
-    }
-    if (isSkillBootstrapPlaceholder(block.tool)) {
-      const hasFollowingConcreteTool = blocks.slice(index + 1).some((nextBlock) => (
-        nextBlock?.kind === 'tool'
-        && nextBlock.tool
-        && describeToolAction(nextBlock.tool).kind !== 'skill'
-      ))
-      if (hasFollowingConcreteTool) {
-        pendingSkillName = extractToolSkillName(block.tool) || pendingSkillName
-        return result
-      }
-    }
-    if (pendingSkillName && describeToolAction(block.tool).kind !== 'skill') {
-      block.tool._skillBootstrapName = pendingSkillName
-      pendingSkillName = ''
-    }
-    result.push(block)
-    return result
-  }, [])
-}
-
-const processBlocksForMessage = (msg) => markFollowupToolWithSkillContext(renderBlocksForMessage(msg))
-  .filter((block) => ['thinking', 'tool'].includes(block.kind))
-
-const finalBlocksForMessage = (msg) => renderBlocksForMessage(msg)
-  .filter((block) => ['main_text', 'error'].includes(block.kind))
-
-const displayTextBlock = (block) => stripChartSpecsFromText(cleanTextContent(block?.text)).trim()
-const hasErrorBlock = (msg) => renderBlocksForMessage(msg).some((block) => block.kind === 'error' && String(block.text || '').trim())
 const errorMessage = (error) => {
   if (!error) return ''
   if (typeof error === 'string') return error
   if (typeof error === 'object') return String(error.message || error.detail || '请求失败')
   return String(error)
-}
-
-const hasProcessPanel = (msg) => processBlocksForMessage(msg).length > 0
-const isProcessPanelExpanded = (msg) => msg?._processExpanded !== false
-const toggleProcessPanel = (msg) => {
-  if (!msg) return
-  msg._processExpanded = msg._processExpanded === false
-}
-const isActiveTaskStatus = (status) => ['queued', 'running', 'streaming'].includes(String(status || '').trim())
-const processSummaryPreview = (msg) => {
-  const blocks = processBlocksForMessage(msg)
-  const lastBlock = [...blocks].reverse().find((block) => block.kind === 'thinking' || block.kind === 'tool')
-  if (!lastBlock) return ''
-  if (lastBlock.kind === 'thinking') return truncatePreviewEnd(lastBlock.text, 72)
-  const action = describeToolAction(lastBlock.tool)
-  if (lastBlock.tool?._skillBootstrapName) return formatSkillBootstrapLabel(lastBlock.tool._skillBootstrapName)
-  return truncatePreviewEnd(action.preview || action.command || action.description || action.kind || '', 72)
 }
 
 const escapeHtml = (text) => String(text || '')
@@ -915,6 +817,12 @@ const renderMarkdown = (text) => {
   } catch (_error) {
     return escapeHtml(text)
   }
+}
+
+const autoResizeTextarea = (event) => {
+  const el = event.target
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
 }
 
 watch(
