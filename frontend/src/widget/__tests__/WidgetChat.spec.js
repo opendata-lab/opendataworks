@@ -17,7 +17,7 @@ const apiMocks = vi.hoisted(() => ({
   },
   taskApi: {
     deliverMessage: vi.fn(),
-    streamTaskEvents: vi.fn(),
+    streamSdkEvents: vi.fn(),
     getTask: vi.fn(),
     cancelTask: vi.fn()
   }
@@ -111,7 +111,7 @@ describe('WidgetChat history conversations', () => {
     apiMocks.topicApi.deleteTopic.mockResolvedValue({ status: 'ok' })
     apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-1' })
     apiMocks.taskApi.getTask.mockResolvedValue({ task_status: 'finished' })
-    apiMocks.taskApi.streamTaskEvents.mockResolvedValue()
+    apiMocks.taskApi.streamSdkEvents.mockResolvedValue()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
   })
 
@@ -127,8 +127,8 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('.query-workbench').exists()).toBe(true)
     expect(wrapper.find('.query-sidebar').exists()).toBe(true)
     expect(wrapper.find('.query-main').exists()).toBe(true)
-    expect(wrapper.find('.query-model-badge').text()).toContain('Anthropic Compatible')
-    expect(wrapper.find('.query-model-badge').text()).toContain('claude-opus-4-6')
+    expect(wrapper.find('.query-model-selector').text()).toContain('Anthropic Compatible')
+    expect(wrapper.find('.query-model-selector').text()).toContain('claude-opus-4-6')
     expect(wrapper.text()).toContain('最近 30 天工作流发布趋势')
     expect(wrapper.text()).toContain('smoke-ok 测试')
     expect(wrapper.text()).toContain('topic-1 历史回复')
@@ -156,18 +156,17 @@ describe('WidgetChat history conversations', () => {
     await flushPromises()
     expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('Widget 会话', { agent_id: 'agent_widget' })
     expect(wrapper.text()).toContain('Widget 会话')
-    expect(wrapper.text()).toContain('请输入你的数据问题')
+    expect(wrapper.text()).toContain('有什么数据问题需要分析？')
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
   })
 
-  it('shows a configuration error when the embedding script omits agent id', async () => {
+  it('loads topics without agent id filter when agentId is not configured', async () => {
     const { wrapper } = mountChat({ config: { agentId: '', displayMode: 'inline' } })
 
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Widget 缺少 data-agent-id 配置')
-    expect(wrapper.get('[data-testid="new-conversation"]').attributes('disabled')).toBeDefined()
-    expect(apiMocks.topicApi.listTopics).not.toHaveBeenCalled()
+    expect(wrapper.find('.query-workbench').exists()).toBe(true)
+    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: undefined })
     expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
   })
 
@@ -178,13 +177,13 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('.query-workbench').classes()).toContain('is-floating')
     expect(wrapper.find('.query-sidebar').exists()).toBe(true)
     expect(wrapper.find('.query-sidebar-backdrop').exists()).toBe(true)
-    expect(wrapper.find('.query-model-badge').text()).toContain('claude-opus-4-6')
+    expect(wrapper.find('.query-model-selector').text()).toContain('claude-opus-4-6')
     expect(wrapper.find('[data-testid^="delete-topic-"]').exists()).toBe(false)
   })
 
   it('prevents switching and creating while an answer is running', async () => {
     let resolveStream
-    apiMocks.taskApi.streamTaskEvents.mockImplementation(() => new Promise((resolve) => {
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => {
       resolveStream = resolve
     }))
     const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
@@ -236,10 +235,13 @@ describe('WidgetChat history conversations', () => {
   })
 
   it('renders messageStream-style text deltas in the portal-style assistant body', async () => {
-    apiMocks.taskApi.streamTaskEvents.mockImplementation(async (_taskId, options) => {
-      options.onEvent({ type: 'text.delta', payload: { text: 'smoke-' } })
-      options.onEvent({ type: 'text.delta', payload: { text: 'ok' } })
-      options.onEvent({ type: 'done', payload: { status: 'success' } })
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, options) => {
+      options.onRecord({ record_type: 'stream', data: { type: 'message_start', usage: {} } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'smoke-' } } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'ok' } } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_stop', index: 0 } })
+      options.onRecord({ record_type: 'done', data: {} })
     })
     const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
     await flushPromises()

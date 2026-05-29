@@ -466,22 +466,6 @@ export const WIDGET_STYLES = `
   min-height: 52px;
 }
 
-.query-workbench.is-floating .query-top-bar {
-  padding: 10px 16px 10px;
-  min-height: 44px;
-}
-
-.query-topic-title {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 15px;
-  font-weight: 600;
-  color: #162131;
-}
 
 .query-config-empty {
   margin: 44px auto 0;
@@ -597,7 +581,7 @@ export const WIDGET_STYLES = `
 }
 
 .query-assistant-body {
-  max-width: min(860px, 92%);
+  width: min(860px, 92%);
   color: var(--text);
 }
 
@@ -661,6 +645,7 @@ export const WIDGET_STYLES = `
 }
 
 .query-process-panel {
+  width: 100%;
   margin-bottom: 12px;
   overflow: hidden;
 }
