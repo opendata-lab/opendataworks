@@ -232,10 +232,18 @@ class RuntimeConfigResponse(BaseModel):
     providers: List[RuntimeProviderConfig] = Field(default_factory=list)
 
 
+class WidgetAllowedSite(BaseModel):
+    website_id: str = ""
+    allowed_origins: List[str] = Field(default_factory=list)
+    project_name: str = ""
+    project_color: str = ""
+
+
 class AdminSettingsResponse(BaseModel):
     provider_id: str
     model: str
     providers: List[ProviderConfig] = Field(default_factory=list)
+    widget_allowed_sites: List[WidgetAllowedSite] = Field(default_factory=list)
     anthropic_api_key: str = ""
     anthropic_auth_token: str = ""
     anthropic_base_url: str = ""
@@ -275,6 +283,7 @@ class AdminSettingsUpdateRequest(BaseModel):
     doris_database: Optional[str] = None
     skills_output_dir: Optional[str] = None
     providers: Optional[List[ProviderSettingsUpdate]] = None
+    widget_allowed_sites: Optional[List[WidgetAllowedSite]] = None
 
 
 class SkillDocumentVersionSummary(BaseModel):
@@ -658,6 +667,24 @@ class SdkEventPageResponse(BaseModel):
     next_after_id: int
     has_more: bool
     records: List[SdkEventRecord] = Field(default_factory=list)
+
+
+class WidgetEventItem(BaseModel):
+    event_type: str
+    agent_id: Optional[str] = None
+    topic_id: Optional[str] = None
+    task_id: Optional[str] = None
+    message_id: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    client_ts: Optional[str] = None
+
+
+class WidgetEventBatchRequest(BaseModel):
+    events: List[WidgetEventItem] = Field(default_factory=list)
+
+
+class WidgetEventIngestResponse(BaseModel):
+    accepted: int = 0
 
 
 TableMeta.model_rebuild()

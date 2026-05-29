@@ -8,7 +8,13 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from core.topic_task_store import TopicTaskStore, _project_task_history
+from core.topic_task_store import (
+    TopicTaskStore,
+    _project_task_history,
+    WIDGET_EVENT_TYPES,
+    MAX_WIDGET_EVENTS_PER_BATCH,
+    _parse_client_ts,
+)
 
 
 def test_get_message_accepts_request_context_for_scoped_callers():
@@ -252,3 +258,161 @@ def test_normalize_message_row_only_attaches_history_to_assistant():
     assert "blocks" not in user
     assert "resume_after_seq" not in user
     assert user["feedback"] == ""
+
+
+# ---------------------------------------------------------------------------
+# record_widget_events
+# ---------------------------------------------------------------------------
+
+def _make_store_with_fake_db(inserted_rows):
+    """Return a TopicTaskStore whose _connect returns a fake connection."""
+
+    class FakeCursor:
+        def __init__(self):
+            self.executed_many = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def executemany(self, sql, rows):
+            for row in rows:
+                inserted_rows.append(row)
+
+    class FakeConn:
+        def __init__(self):
+            self._cursor = FakeCursor()
+
+        def cursor(self):
+            return self._cursor
+
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    store = TopicTaskStore()
+    store._ready = True
+
+    fake_conn = FakeConn()
+    store._connect = lambda database=None: fake_conn
+    store._schema_name = lambda: "dataagent"
+    return store
+
+
+def test_record_widget_events_persists_valid_events():
+    rows = []
+    store = _make_store_with_fake_db(rows)
+    context = {"source": "widget", "website_id": "site1", "external_user_id": "u1", "visitor_id": ""}
+
+    accepted = store.record_widget_events(
+        [
+            {"event_type": "widget_open", "agent_id": "agent_a"},
+            {"event_type": "message_send", "payload": {"input_source": "typed", "length": 10}},
+        ],
+        context,
+    )
+
+    assert accepted == 2
+    assert len(rows) == 2
+    # Row tuple: (event_type, source, website_id, external_user_id, visitor_id, agent_id, topic_id, task_id, message_id, payload_json, client_ts)
+    assert rows[0][0] == "widget_open"
+    assert rows[0][1] == "widget"
+    assert rows[0][2] == "site1"
+    assert rows[0][3] == "u1"
+    assert rows[1][0] == "message_send"
+    assert rows[1][9] is not None  # payload_json
+
+
+def test_record_widget_events_rejects_unknown_event_types():
+    rows = []
+    store = _make_store_with_fake_db(rows)
+    context = {"source": "widget", "website_id": "site1", "external_user_id": "u1", "visitor_id": ""}
+
+    accepted = store.record_widget_events(
+        [
+            {"event_type": "unknown_event"},
+            {"event_type": "widget_open"},
+        ],
+        context,
+    )
+
+    assert accepted == 1
+    assert rows[0][0] == "widget_open"
+
+
+def test_record_widget_events_ignores_oversized_payload():
+    rows = []
+    store = _make_store_with_fake_db(rows)
+    context = {"source": "widget", "website_id": "site1", "external_user_id": "u1", "visitor_id": ""}
+    big_payload = {"data": "x" * 5000}
+
+    accepted = store.record_widget_events(
+        [{"event_type": "widget_open", "payload": big_payload}],
+        context,
+    )
+
+    assert accepted == 1
+    assert rows[0][9] is None  # payload_json dropped
+
+
+def test_record_widget_events_enforces_batch_limit():
+    rows = []
+    store = _make_store_with_fake_db(rows)
+    context = {"source": "widget", "website_id": "site1", "external_user_id": "u1", "visitor_id": ""}
+    events = [{"event_type": "widget_open"}] * (MAX_WIDGET_EVENTS_PER_BATCH + 10)
+
+    accepted = store.record_widget_events(events, context)
+
+    assert accepted == MAX_WIDGET_EVENTS_PER_BATCH
+
+
+def test_record_widget_events_uses_only_header_identity():
+    rows = []
+    store = _make_store_with_fake_db(rows)
+    # Identity from context only — body fields should be ignored
+    context = {"source": "widget", "website_id": "real_site", "external_user_id": "real_user", "visitor_id": ""}
+
+    store.record_widget_events(
+        [{"event_type": "widget_open", "website_id": "injected_site", "external_user_id": "injected_user"}],
+        context,
+    )
+
+    assert rows[0][2] == "real_site"
+    assert rows[0][3] == "real_user"
+
+
+def test_record_widget_events_returns_zero_for_empty_list():
+    rows = []
+    store = _make_store_with_fake_db(rows)
+    context = {"source": "widget", "website_id": "site1", "external_user_id": "u1", "visitor_id": ""}
+
+    accepted = store.record_widget_events([], context)
+
+    assert accepted == 0
+    assert rows == []
+
+
+def test_parse_client_ts_handles_iso_and_z_suffix():
+    from datetime import datetime
+
+    ts = _parse_client_ts("2026-05-29T10:00:00Z")
+    assert isinstance(ts, datetime)
+
+    ts2 = _parse_client_ts("2026-05-29T10:00:00")
+    assert isinstance(ts2, datetime)
+
+    assert _parse_client_ts("") is None
+    assert _parse_client_ts("not-a-date") is None
+
+
+def test_widget_event_types_allowlist_contains_expected_values():
+    assert "widget_open" in WIDGET_EVENT_TYPES
+    assert "widget_close" in WIDGET_EVENT_TYPES
+    assert "history_open" in WIDGET_EVENT_TYPES
+    assert "history_close" in WIDGET_EVENT_TYPES
+    assert "conversation_new" in WIDGET_EVENT_TYPES
+    assert "message_send" in WIDGET_EVENT_TYPES

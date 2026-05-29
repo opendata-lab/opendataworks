@@ -79,9 +79,6 @@ class Settings(BaseSettings):
     dataagent_portal_mcp_token: str = ""
     dataagent_portal_mcp_token_header_name: str = "X-Portal-MCP-Token"
 
-    # ---- Widget embedding ----
-    widget_allowed_sites_json: str = "[]"
-
     # ---- 运行策略 ----
     max_few_shot_examples: int = 5
     max_schema_tables: int = 10

@@ -75,8 +75,9 @@ export const WIDGET_STYLES = `
 }
 
 .odw-panel {
-  width: min(480px, calc(100vw - 24px));
-  height: min(680px, calc(100vh - 48px));
+  position: relative;
+  width: clamp(440px, 30vw, 720px);
+  height: min(860px, calc(100vh - 48px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -91,7 +92,43 @@ export const WIDGET_STYLES = `
 }
 
 .odw-widget.is-history-open:not(.is-inline) .odw-panel {
-  width: min(700px, calc(100vw - 24px));
+  width: min(clamp(720px, 52vw, 1080px), calc(100vw - 24px));
+}
+
+.odw-widget.is-dragged {
+  right: auto;
+  bottom: auto;
+}
+
+.odw-widget.is-interacting .odw-panel {
+  transition: none;
+  user-select: none;
+}
+
+.odw-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  z-index: 12;
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 2px;
+  color: rgba(23, 32, 51, 0.28);
+  cursor: nwse-resize;
+  touch-action: none;
+}
+
+.odw-resize-handle:hover {
+  color: rgba(23, 32, 51, 0.5);
+}
+
+.odw-resize-handle svg {
+  width: 12px;
+  height: 12px;
+  display: block;
 }
 
 .odw-widget.is-inline .odw-panel {
@@ -121,6 +158,14 @@ export const WIDGET_STYLES = `
   background: var(--odw-widget-color);
   color: #ffffff;
   border-radius: 14px 14px 0 0;
+  cursor: move;
+  user-select: none;
+  touch-action: none;
+}
+
+.odw-panel__header .odw-icon-button {
+  cursor: pointer;
+  touch-action: auto;
 }
 
 .odw-widget.is-inline .odw-panel__header {

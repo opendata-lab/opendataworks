@@ -15,7 +15,11 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from core import skill_admin_service
-from core.skill_admin_service import _merge_provider_settings, _merge_settings_payload
+from core.skill_admin_service import (
+    _merge_provider_settings,
+    _merge_settings_payload,
+    _normalize_widget_allowed_sites,
+)
 
 
 BUSINESS_SKILL = "opendataworks-business-knowledge"
@@ -212,6 +216,90 @@ def test_merge_provider_settings_allows_enabled_model_without_detection():
     assert provider["enabled_models"] == ["anthropic/claude-sonnet-4.5"]
     assert provider["validation_status"] == "verified"
     assert provider["enabled"] is True
+
+
+def test_normalize_widget_allowed_sites_from_json_string():
+    sites = _normalize_widget_allowed_sites(
+        '[{"website_id":"demo","allowed_origins":["https://a.com","https://a.com"],"project_name":"Demo","project_color":"#4A90A4"}]'
+    )
+
+    assert sites == [
+        {
+            "website_id": "demo",
+            "allowed_origins": ["https://a.com"],
+            "project_name": "Demo",
+            "project_color": "#4A90A4",
+        }
+    ]
+
+
+def test_normalize_widget_allowed_sites_drops_invalid_and_duplicate_entries():
+    sites = _normalize_widget_allowed_sites(
+        [
+            {"website_id": "  ", "allowed_origins": ["x"]},
+            {"website_id": "dup"},
+            {"website_id": "dup"},
+            "not-a-dict",
+            {"allowed_origins": ["y"]},
+        ]
+    )
+
+    assert [item["website_id"] for item in sites] == ["dup"]
+    assert sites[0]["allowed_origins"] == []
+
+
+def test_merge_settings_payload_carries_widget_allowed_sites_from_patch():
+    merged = _merge_settings_payload(
+        {
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
+            "widget_allowed_sites": [{"website_id": "old", "allowed_origins": []}],
+        },
+        {
+            "widget_allowed_sites": [
+                {"website_id": "new", "allowed_origins": ["https://b.com"], "project_color": "#000"}
+            ]
+        },
+    )
+
+    assert merged["widget_allowed_sites"] == [
+        {
+            "website_id": "new",
+            "allowed_origins": ["https://b.com"],
+            "project_name": "",
+            "project_color": "#000",
+        }
+    ]
+
+
+def test_merge_settings_payload_preserves_widget_allowed_sites_without_patch():
+    merged = _merge_settings_payload(
+        {
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
+            "widget_allowed_sites": [{"website_id": "keep", "allowed_origins": ["*"]}],
+        },
+        {},
+    )
+
+    assert merged["widget_allowed_sites"] == [
+        {
+            "website_id": "keep",
+            "allowed_origins": ["*"],
+            "project_name": "",
+            "project_color": "",
+        }
+    ]
+
+
+def test_merge_settings_payload_allows_clearing_widget_allowed_sites():
+    merged = _merge_settings_payload(
+        {
+            "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
+            "widget_allowed_sites": [{"website_id": "keep", "allowed_origins": ["*"]}],
+        },
+        {"widget_allowed_sites": []},
+    )
+
+    assert merged["widget_allowed_sites"] == []
 
 
 def test_merge_settings_defaults_to_current_bundled_skills_when_runtime_missing():

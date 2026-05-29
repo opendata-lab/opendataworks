@@ -46,6 +46,34 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:24]}"
 
 
+# Widget behavior tracking: allowlisted event types and ingest limits.
+WIDGET_EVENT_TYPES = frozenset({
+    "widget_open",
+    "widget_close",
+    "history_open",
+    "history_close",
+    "conversation_new",
+    "message_send",
+})
+MAX_WIDGET_EVENTS_PER_BATCH = 50
+MAX_WIDGET_PAYLOAD_BYTES = 4096
+
+
+def _parse_client_ts(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    return parsed
+
+
 def _is_placeholder_conversation_id(value: str | None) -> bool:
     text = str(value or "").strip()
     if not text:
@@ -426,6 +454,61 @@ class TopicTaskStore:
         cur.execute("SELECT last_event_seq FROM da_agent_task WHERE task_id = %s LIMIT 1", (task_id,))
         row = cur.fetchone() or {}
         return int(row.get("last_event_seq") or 0)
+
+    def record_widget_events(
+        self,
+        events: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+    ) -> int:
+        """Persist widget behavior events. Identity comes only from `context`
+        (HTTP headers), never from the event body. Best-effort: unknown event
+        types and oversized payloads are skipped rather than rejected."""
+        self._ensure_ready()
+        if not events:
+            return 0
+        normalized_context = self._normalize_context(context)
+        rows: list[tuple] = []
+        for event in events[:MAX_WIDGET_EVENTS_PER_BATCH]:
+            event_type = str((event or {}).get("event_type") or "").strip()
+            if event_type not in WIDGET_EVENT_TYPES:
+                continue
+            payload = (event or {}).get("payload")
+            payload_json = None
+            if payload is not None:
+                dumped = _json_dump(payload)
+                if len(dumped.encode("utf-8")) <= MAX_WIDGET_PAYLOAD_BYTES:
+                    payload_json = dumped
+            rows.append((
+                event_type,
+                normalized_context["source"],
+                normalized_context["website_id"],
+                normalized_context["external_user_id"],
+                normalized_context["visitor_id"],
+                str((event or {}).get("agent_id") or "").strip()[:64],
+                (str((event or {}).get("topic_id") or "").strip()[:64] or None),
+                (str((event or {}).get("task_id") or "").strip()[:64] or None),
+                (str((event or {}).get("message_id") or "").strip()[:64] or None),
+                payload_json,
+                _parse_client_ts((event or {}).get("client_ts")),
+            ))
+        if not rows:
+            return 0
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.executemany(
+                    """
+                    INSERT INTO da_agent_widget_event (
+                        event_type, source, website_id, external_user_id, visitor_id,
+                        agent_id, topic_id, task_id, message_id, payload_json, client_ts
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    rows,
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return len(rows)
 
     def create_topic(
         self,

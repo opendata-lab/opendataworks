@@ -152,6 +152,9 @@ def _runtime_settings_payload() -> dict[str, Any]:
         "doris_database": cfg.doris_database,
         "skills_output_dir": cfg.skills_output_dir,
         "session_mysql_database": cfg.session_mysql_database,
+        # Widget allowlist is managed exclusively from the settings page and
+        # persisted in da_agent_settings; there is no env-var source.
+        "widget_allowed_sites": [],
     }
 
 
@@ -178,6 +181,35 @@ def _string_list(values: Any) -> list[str]:
         seen.add(item)
         result.append(item)
     return result
+
+
+def _normalize_widget_allowed_sites(raw: Any) -> list[dict[str, Any]]:
+    items = raw
+    if isinstance(raw, str):
+        try:
+            items = json.loads(raw or "[]")
+        except Exception:
+            return []
+    if not isinstance(items, list):
+        return []
+    normalized: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        website_id = str(item.get("website_id") or "").strip()
+        if not website_id or website_id in seen:
+            continue
+        seen.add(website_id)
+        origins = item.get("allowed_origins")
+        origin_list = _string_list(list(origins) if isinstance(origins, (list, tuple, set)) else [])
+        normalized.append({
+            "website_id": website_id[:128],
+            "allowed_origins": origin_list,
+            "project_name": str(item.get("project_name") or "").strip()[:128],
+            "project_color": str(item.get("project_color") or "").strip()[:32],
+        })
+    return normalized
 
 
 def _normalize_skill_runtime(raw: Any, *, fallback_folder: str = "") -> dict[str, dict[str, bool]]:
@@ -477,6 +509,7 @@ def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any
         update.get("skill_runtime") if "skill_runtime" in update else base.get("skill_runtime"),
         fallback_folder=fallback_skill_folder,
     )
+    widget_allowed_sites = _normalize_widget_allowed_sites(base.get("widget_allowed_sites"))
 
     provider_id = _normalize_provider_id(base.get("provider_id"), allow_empty=True)
     if not provider_id:
@@ -518,6 +551,7 @@ def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any
         "session_mysql_database": str(base.get("session_mysql_database") or ""),
         "provider_settings": provider_settings,
         "skill_runtime": skill_runtime,
+        "widget_allowed_sites": widget_allowed_sites,
     }
     flattened["validated_provider_id"] = provider_id if runtime_provider.get("enabled") else ""
     flattened["validated_model"] = model if model in runtime_provider.get("enabled_models", []) and runtime_provider.get("enabled") else ""

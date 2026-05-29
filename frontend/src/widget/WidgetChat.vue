@@ -254,6 +254,7 @@ const agentName = ref('智能数据助手')
 const suggestions = computed(() => agentPresetQuestions.value.length ? agentPresetQuestions.value : DEFAULT_SUGGESTIONS)
 
 const inputText = ref('')
+const inputSource = ref('typed')
 const searchKeyword = ref('')
 const topicId = ref('')
 const isSubmitting = ref(false)
@@ -661,8 +662,19 @@ const send = async () => {
   const text = inputText.value.trim()
   if (!text || isBusy.value) return
   if (!ensureAgentConfigured()) return
+  const currentInputSource = inputSource.value
+  inputSource.value = 'typed'
   isSubmitting.value = true
   inputText.value = ''
+  try {
+    props.state.track?.('message_send', {
+      input_source: currentInputSource,
+      length: text.length,
+      provider_id: selectedProvider.value,
+      model: selectedModel.value,
+      topic_id: topicId.value || null
+    })
+  } catch (_e) { /* best-effort */ }
   errorText.value = ''
   const mockTaskId = `task_mock_${uid()}`
   appendUserMessage(text)
@@ -782,6 +794,7 @@ const sendPendingOutbound = () => {
   if (!text || !canDeliverPendingOutbound.value) return
   pendingOutboundMessage.value = ''
   inputText.value = text
+  inputSource.value = 'outbound'
   void send()
 }
 
@@ -801,6 +814,7 @@ const cancel = async () => {
 const handleSuggestion = (suggestion) => {
   if (isBusy.value) return
   inputText.value = suggestion
+  inputSource.value = 'suggestion'
   void send()
 }
 

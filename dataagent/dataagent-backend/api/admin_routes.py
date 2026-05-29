@@ -64,6 +64,7 @@ def _build_admin_settings_response(updated_at: str = "") -> AdminSettingsRespons
         provider_id=str(payload.get("provider_id") or ""),
         model=str(payload.get("model") or ""),
         providers=_provider_catalog(),
+        widget_allowed_sites=payload.get("widget_allowed_sites") or [],
         anthropic_api_key="",
         anthropic_auth_token="",
         anthropic_base_url=str(payload.get("anthropic_base_url") or ""),
