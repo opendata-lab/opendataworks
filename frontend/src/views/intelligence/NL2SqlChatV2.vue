@@ -46,22 +46,28 @@
 
     <!-- Main chat area -->
     <main class="v2-main">
-      <div class="v2-main-top-bar">
-        <h4 class="v2-topic-title">{{ activeTopic?.title || '开始一次新的数据分析' }}</h4>
-        <span class="v2-badge">SDK Native</span>
+      <div v-if="messages.length" class="v2-main-top-bar">
+        <h4 class="v2-topic-title">{{ activeTopic?.title }}</h4>
       </div>
 
       <el-scrollbar ref="messagesScrollbarRef" class="v2-messages" @scroll="handleScroll">
-        <div class="v2-messages-inner">
+        <div class="v2-messages-inner" :class="{ 'is-empty': !messages.length }">
           <div v-if="!settings.providers.length" class="v2-config-empty">
             <div class="v2-config-empty-title">还没有可用的模型</div>
             <div class="v2-config-empty-text">请先完成模型配置。</div>
           </div>
 
-          <div v-if="!messages.length" class="v2-welcome">
-            <div class="v2-welcome-mark">AI</div>
-            <div class="v2-welcome-title">SDK Native Chat</div>
-            <div class="v2-welcome-sub">原生展示思考过程、工具调用与结论</div>
+          <div v-if="!messages.length" class="v2-landing">
+            <div class="v2-landing-greeting">有什么数据问题需要分析？</div>
+            <div class="v2-landing-suggestions">
+              <button
+                v-for="s in suggestions"
+                :key="s"
+                class="v2-suggestion-card"
+                :disabled="isStreaming"
+                @click="handleSuggestion(s)"
+              >{{ s }}</button>
+            </div>
           </div>
 
           <!-- Message loop -->
@@ -81,6 +87,11 @@
               <div class="v2-assistant-body">
                 <!-- Streaming: render turns from v2 state -->
                 <template v-if="msg._v2state">
+                  <!-- Loading indicator: waiting for first block -->
+                  <div v-if="!msg._v2state.turns.length && isStreaming" class="v2-typing-indicator">
+                    <span /><span /><span />
+                  </div>
+
                   <template v-for="(turn, ti) in msg._v2state.turns" :key="ti">
                     <template v-for="block in turn.blocks" :key="block.blockIndex + '-' + ti">
                       <!-- Thinking block -->
@@ -208,6 +219,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
@@ -215,6 +227,9 @@ import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
+
+const route = useRoute()
+const router = useRouter()
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
 const { topicApi, taskApi, adminApi, agentApi } = api
@@ -334,7 +349,10 @@ async function loadAgents() {
     agents.value = normalized.length
       ? normalized
       : [{ agent_id: 'agent_default', name: '默认助手', is_default: true }]
-    if (!agentSelectValue.value) {
+    const routeAgentId = String(route.query.agent_id || '').trim()
+    if (routeAgentId && agents.value.some((a) => a.agent_id === routeAgentId)) {
+      agentSelectValue.value = routeAgentId
+    } else if (!agentSelectValue.value) {
       const def = agents.value.find((a) => a.is_default) || agents.value[0]
       agentSelectValue.value = def?.agent_id || ''
     }
@@ -389,6 +407,20 @@ function hydrateHistoryMessage(m) {
   }
 }
 
+// ── Suggestions ───────────────────────────────────────────────────────────
+const suggestions = [
+  '最近 30 天工作流发布次数趋势',
+  '各数据层表数量对比',
+  '各工作流发布操作类型占比',
+  '有哪些失败的任务实例',
+]
+
+function handleSuggestion(text) {
+  if (isStreaming.value) return
+  inputText.value = text
+  nextTick(() => handleSend())
+}
+
 // ── Topic management ───────────────────────────────────────────────────────
 async function handleNewTopic() {
   if (isStreaming.value) return
@@ -405,6 +437,15 @@ async function handleSelectTopic(topicId) {
 
 function handleAgentChange(agentId) {
   agentSelectValue.value = agentId
+  const value = String(agentId || '').trim()
+  if (String(route.query.agent_id || '').trim() === value) return
+  const query = { ...route.query }
+  if (value) {
+    query.agent_id = value
+  } else {
+    delete query.agent_id
+  }
+  router.replace({ path: route.path, query }).catch(() => {})
 }
 
 function handleModelCommand(command) {
@@ -530,6 +571,10 @@ onBeforeUnmount(() => {
   font-family: 'IBM Plex Sans', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
 }
 
+@media (min-width: 1280px) {
+  .v2-workbench { grid-template-columns: 300px 1fr; }
+}
+
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .v2-sidebar {
   display: flex;
@@ -650,23 +695,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.v2-badge {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border-radius: 20px;
-  background: linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.3px;
-}
-
 /* ── Messages ────────────────────────────────────────────────────────────── */
 .v2-messages { flex: 1; min-height: 0; }
 
 .v2-messages-inner {
-  padding: 24px 28px 32px;
-  max-width: 960px;
+  padding-block: 24px 32px;
+  padding-inline: clamp(40px, 5%, 64px);
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
@@ -675,34 +710,74 @@ onBeforeUnmount(() => {
   gap: 24px;
 }
 
-.v2-config-empty,
-.v2-welcome {
+.v2-messages-inner.is-empty {
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding-top: 40px;
+  padding-bottom: 72px;
+}
+
+/* ── Landing (new chat) ──────────────────────────────────────────────────── */
+.v2-landing {
+  width: 100%;
+  max-width: 640px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 60px 0;
-  gap: 12px;
-  color: #8C8C8C;
+  gap: 28px;
 }
 
-.v2-welcome-mark {
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
+.v2-landing-greeting {
+  font-size: 22px;
+  font-weight: 600;
+  color: #1e293b;
+  text-align: center;
+  letter-spacing: -0.2px;
+}
+
+.v2-landing-suggestions {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.v2-suggestion-card {
+  text-align: left;
+  padding: 14px 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.55;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.v2-suggestion-card:hover:not(:disabled) {
+  border-color: var(--odw-primary);
+  background: color-mix(in srgb, var(--odw-primary) 4%, #fff);
+  color: #162131;
+}
+
+.v2-suggestion-card:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.v2-config-empty {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  padding: 60px 0;
+  gap: 8px;
 }
 
-.v2-welcome-title { font-size: 17px; font-weight: 600; color: #334155; }
-.v2-welcome-sub { font-size: 14px; color: #8C8C8C; }
 .v2-config-empty-title { font-size: 15px; font-weight: 600; color: #334155; }
-.v2-config-empty-text { font-size: 13px; }
+.v2-config-empty-text { font-size: 13px; color: #8C8C8C; }
 
 /* ── Message rows ────────────────────────────────────────────────────────── */
 .v2-msg-row { display: flex; }
@@ -878,11 +953,12 @@ onBeforeUnmount(() => {
 }
 
 .v2-composer-wrap {
-  max-width: 960px;
+  max-width: 1280px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
-  padding: 12px 28px 16px;
+  padding-block: 12px 16px;
+  padding-inline: clamp(40px, 5%, 64px);
 }
 
 .v2-composer {
@@ -971,6 +1047,31 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%) !important;
 }
 
+/* ── Typing indicator ────────────────────────────────────────────────────── */
+.v2-typing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+}
+
+.v2-typing-indicator span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--odw-primary);
+  opacity: 0.35;
+  animation: v2-typing 1.2s ease-in-out infinite;
+}
+
+.v2-typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.v2-typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes v2-typing {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-5px); opacity: 1; }
+}
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 @media (max-width: 960px) {
   .v2-workbench { grid-template-columns: 1fr; }
@@ -978,9 +1079,11 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 640px) {
-  .v2-messages-inner { padding: 16px 16px 24px; }
-  .v2-composer-wrap { padding: 10px 16px 14px; }
+  .v2-messages-inner { padding-block: 16px 24px; padding-inline: 16px; }
+  .v2-composer-wrap { padding-block: 10px 14px; padding-inline: 16px; }
   .v2-user-shell { max-width: 90%; }
   .v2-assistant-body { max-width: 100%; }
+  .v2-landing-greeting { font-size: 18px; }
+  .v2-landing-suggestions { grid-template-columns: 1fr; }
 }
 </style>

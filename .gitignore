@@ -20,6 +20,7 @@ backend/*.ipr
 # Node.js
 frontend/node_modules/
 frontend/dist/
+dist/
 frontend/.DS_Store
 frontend/npm-debug.log*
 frontend/yarn-debug.log*
