@@ -4,6 +4,7 @@ import contextlib
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse
@@ -116,6 +117,14 @@ class FrontDoorTokenMiddleware:
 def build_mcp_server(service: PortalToolService) -> FastMCP:
     mcp = FastMCP("portal-mcp", json_response=True)
     mcp.settings.streamable_http_path = "/"
+    # DNS-rebinding protection defaults to localhost-only in FastMCP 1.x, which
+    # rejects requests from the Claude CLI subprocess using the Docker service
+    # hostname (e.g. Host: portal-mcp:8801) with HTTP 421. The service is
+    # already protected by FrontDoorTokenMiddleware, so disable it here.
+    mcp.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    # Stateless mode: each request is handled independently with no session-ID
+    # handshake required. Correct for a read-only tool server.
+    mcp.settings.stateless_http = True
 
     @mcp.tool(
         name="portal_search_tables",
