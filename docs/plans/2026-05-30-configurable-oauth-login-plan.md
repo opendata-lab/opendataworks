@@ -1,18 +1,34 @@
 # 可配置 OAuth 登录与统一身份认证 实施计划
 
 - 日期: 2026-05-30
-- 配套设计: `docs/design/2026-05-30-configurable-oauth-login-design.md`
-- 涉及栈: `backend/`(主)、`frontend/`、`dataagent/dataagent-backend/`(身份校验落地)、`deploy/`(env + 反代)
+- 配套设计:
+  - `docs/design/2026-05-30-configurable-oauth-login-design.md`(登录流程/表/接口业务细节)
+  - `docs/design/2026-05-30-odw-auth-module-design.md`(独立 `odw-auth` 模块架构)
+- 涉及栈: `odw-auth/`(新模块)、`backend/`、`frontend/`、`dataagent/`(`odw_auth` 包 + dataagent-backend 接入)、`deploy/`(env + 反代)
 
 ## 阶段划分
 
-按风险与依赖分四阶段,可分 PR 交付。阶段 1-2 即可让平台具备登录与保护能力;阶段 3 收口 dataagent;阶段 4 部署收敛。
+按风险与依赖分五阶段,可分 PR 交付。阶段 0 立模块骨架;阶段 1-2 让平台具备登录与保护能力;阶段 3 收口 dataagent;阶段 4 部署收敛。
 
 ---
 
-## 阶段 1:后端认证基座(密码登录 + 会话 + 默认拦截)
+## 阶段 0:建立 odw-auth 独立模块骨架
 
-目标:平台具备本地密码登录、会话签发/校验、默认拦截全部 + 白名单。
+目标:Reactor 注册新模块,自动装配可空跑接入。
+
+- [ ] `odw-auth/pom.xml`:`packaging=jar`,parent=`spring-boot-starter-parent`,依赖 jjwt / nimbus-jose-jwt / spring-security-crypto / mybatis-plus / spring-boot-starter-web+aop+webflux。
+- [ ] 根 `pom.xml` `<modules>` 增加 `odw-auth`(置于 `backend` 前)。
+- [ ] `autoconfigure/OdwAuthProperties.java`(`@ConfigurationProperties("odw.auth")`)+ `OdwAuthAutoConfiguration.java`。
+- [ ] `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`。
+- [ ] 迁移旧代码进模块:`UserContext` / `UserContextHolder`(简化去 oauthUserId,加 role)。
+- [ ] `backend/pom.xml` 增 `odw-auth` 依赖;删除 backend 旧 `context/UserContextHolder`、`aspect/AuthenticationAspect`、`annotation/RequireAuth`、`auth.anonymous.*`;批量改 import。
+- [ ] 验证:`mvn -q -pl odw-auth,backend -am compile` 通过;backend 启动不报装配错误。
+
+---
+
+## 阶段 1:认证核心(密码登录 + 会话 + 默认拦截)
+
+目标:平台具备本地密码登录、会话签发/校验、默认拦截全部 + 白名单。所有代码落在 `odw-auth`。
 
 ### 数据库
 - [ ] `backend/src/main/resources/db/migration/V44__create_sys_user.sql`
@@ -23,20 +39,21 @@
 - [ ] `backend/pom.xml` 增加 `io.jsonwebtoken:jjwt-api/impl/jackson`、`org.springframework.security:spring-security-crypto`。
 
 ### 代码(`backend/src/main/java/com/onedata/portal/`)
-- [ ] `entity/SysUser.java`(镜像 `DolphinConfig` 注解范式,`password_hash` 加 `@JsonProperty(WRITE_ONLY)`)。
-- [ ] `mapper/SysUserMapper.java`(extends `BaseMapper`,加按 username / external_id 查询)。
-- [ ] `service/AuthService.java`:bcrypt 校验、失败计数 + 锁定、签发/解析会话 JWT。
-- [ ] `service/JwtService.java`:HS256 签发/校验(读 `AUTH_JWT_SECRET` / `AUTH_JWT_ISSUER` / `AUTH_JWT_TTL`)。
-- [ ] `filter/AuthenticationFilter.java`:非白名单校验 `odw_session` Cookie → 填 `UserContextHolder`;失败按 `auth.anonymous.enabled` 决定 401 / 匿名;`finally` 清理。
-- [ ] `config/WebConfig.java`:注册 `AuthenticationFilter`(顺序在 CORS 之后);白名单可配置项 `auth.whitelist`。
-- [ ] `controller/AuthController.java`:`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password`(登录后改密)。
-- [ ] `aspect/AuthenticationAspect.java`:`@RequireAuth` 改为基于 `UserContextHolder` 判断(不再直接读外部头);新增 `role` 校验支持(`@RequireRole("admin")` 或 `@RequireAuth(role=...)`)。
-- [ ] `application.yml`:`auth.anonymous.enabled` 默认 `false`(生产),开发可 `true`;`auth.session.ttl`、`auth.whitelist`。
+(以下类均在 `odw-auth` 模块 `com.onedata.auth.*` 包内)
+
+- [ ] `user/SysUser.java`(镜像 `DolphinConfig` 注解范式,`password_hash` 加 `@JsonProperty(WRITE_ONLY)`)+ `user/SysUserMapper.java`(按 username / external_id 查询)。
+- [ ] `user/SysUserService.java`:bcrypt 校验、失败计数 + 锁定、upsert OAuth 用户。
+- [ ] `jwt/JwtService.java`(接口)+ `jwt/Hs256JwtService.java`:HS256 签发/校验(读 `odw.auth.jwt.*`)。
+- [ ] `filter/AuthenticationFilter.java`:非白名单校验 `odw_session` Cookie → 填 `UserContextHolder`;失败按 `odw.auth.anonymous.enabled` 决定 401 / 匿名;`finally` 清理。
+- [ ] `web/AuthController.java`:`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password`(登录后改密)。
+- [ ] `annotation/RequireAuth`(重写,基于 `UserContextHolder`)+ `annotation/RequireRole` + `aspect/AuthorizationAspect`。
+- [ ] `autoconfigure/OdwAuthAutoConfiguration`:注册 Filter(顺序在 CORS 之后)、各 Bean 加 `@ConditionalOnMissingBean`;白名单来自 `OdwAuthProperties`。
+- [ ] `db/migration/V44__create_sys_user.sql`(建表 + 写死 `admin123` 的 bcrypt 哈希初始 admin)。
 
 ### 验证
-- [ ] 后端编译:`mvn -q -pl backend compile`(或仓库现用构建命令)。
-- [ ] 针对 `AuthService` / `JwtService` 的单测(密码校验、锁定、JWT 签发解析、过期/篡改拒绝)。
-- [ ] 手测:登录拿 Cookie → 带 Cookie 访问受保护接口 200 → 不带 401。
+- [ ] 编译:`mvn -q -pl odw-auth,backend -am compile`。
+- [ ] `odw-auth` 单测:`Hs256JwtService` / `SysUserService` / `AuthenticationFilter`(密码校验、锁定、JWT 签发解析、过期/篡改拒绝、白名单/401)。
+- [ ] 手测:backend 引入模块后,登录拿 Cookie → 带 Cookie 访问受保护接口 200 → 不带 401。
 
 ---
 
@@ -44,15 +61,15 @@
 
 目标:管理员前端配置 OAuth;配置启用后登录页出现 OAuth 入口;授权码全流程打通。
 
-### 数据库
-- [ ] `V45__create_sys_oauth_config.sql`:建 `sys_oauth_config`,插入 `enabled=0` 占位行。
+### 数据库(odw-auth 模块)
+- [ ] `db/migration/V45__create_sys_oauth_config.sql`:建 `sys_oauth_config`,插入 `enabled=0` 占位行。
 
-### 后端
-- [ ] `entity/OAuthConfig.java`(`client_secret` 加 `@JsonProperty(WRITE_ONLY)`)、`mapper/OAuthConfigMapper.java`。
-- [ ] `service/OAuthConfigService.java`:读/更新(secret 留空沿用旧值,参考 `DolphinConfigService` 对 token 的处理)、端点可达性测试。
-- [ ] `service/OAuthLoginService.java`:拼 authorize URL + `state`、code 换 token、JWT 验签(jwks)或调 userinfo、upsert `sys_user`(`auth_source=oauth`、`external_id`)、签发会话。
-- [ ] `controller/AuthController` 增:`GET /api/auth/oauth/config`(公开,仅 enabled+provider_name)、`GET /api/auth/oauth/authorize`、`GET /api/auth/oauth/callback`。
-- [ ] `controller/OAuthConfigController.java`:`GET/PUT /api/admin/oauth/config`、`POST /api/admin/oauth/config/test`(`@RequireRole("admin")`)。
+### 后端(odw-auth 模块 `com.onedata.auth.*`)
+- [ ] `config/SysOAuthConfig.java`(`client_secret` 加 `@JsonProperty(WRITE_ONLY)`)、`config/SysOAuthConfigMapper.java`。
+- [ ] `config/OAuthConfigService.java`:读/更新(secret 留空沿用旧值,参考 `DolphinConfigService` 对 token 的处理)、端点可达性测试。
+- [ ] `oauth/OAuthClient.java`(接口)+ `oauth/DefaultOAuthClient.java`:拼 authorize URL + `state`、code 换 token、JWKS 验签(nimbus)或调 userinfo;`user/UserResolver` upsert `sys_user`(`auth_source=oauth`、`external_id`)。
+- [ ] `web/AuthController` 增:`GET /api/auth/oauth/config`(公开,仅 enabled+provider_name)、`GET /api/auth/oauth/authorize`、`GET /api/auth/oauth/callback`。
+- [ ] `web/OAuthConfigController.java`:`GET/PUT /api/admin/oauth/config`、`POST /api/admin/oauth/config/test`(`@RequireRole("admin")`)。
 - [ ] 白名单加入 `/api/auth/oauth/{config,authorize,callback}`。
 
 ### 前端(`frontend/src/`)
@@ -73,10 +90,10 @@
 
 目标:收口 dataagent admin 裸奔缺口;业务路由灰度启用同一令牌校验。
 
-### 代码(`dataagent/dataagent-backend/`)
-- [ ] `requirements.txt` 增 `PyJWT`。
-- [ ] 新增 `api/auth.py`:`verify_identity()` FastAPI 依赖,从 `odw_session` Cookie 或 `Authorization: Bearer` 取 JWT,用 `AUTH_JWT_SECRET` 校验(算法/issuer 与 Java 端一致),返回 `{user_id, username, role}`;`require_admin()` 依赖。
-- [ ] `api/admin_routes.py`:为 `/settings` 等 admin 端点加 `Depends(require_admin)`(立即收口高危缺口)。
+### 代码(`dataagent/odw_auth/` 包 + `dataagent/dataagent-backend/`)
+- [ ] 新增 Python 包 `dataagent/odw_auth/`:`claims.py`(契约)、`verify.py`(PyJWT 校验,与 Java 同契约/向量)、`fastapi.py`(`verify_identity` / `require_admin` 的 Depends)。
+- [ ] `dataagent-backend/requirements.txt` 增 `PyJWT`,并依赖本地 `odw_auth` 包。
+- [ ] `api/admin_routes.py`:为 `/settings` 等 admin 端点加 `Depends(require_admin)`(立即收口高危缺口),从 `odw_auth.fastapi` 导入。
 - [ ] `api/routes.py`:业务 NL2SQL 路由按开关 `DATAAGENT_REQUIRE_AUTH` 接 `Depends(verify_identity)`;`X-ODW-Client=widget` 分支保留匿名 widget 逻辑不变。
 - [ ] `main.py`:CORS `allow_origins` 由 `*` 收敛为前端域(环境变量驱动)。
 - [ ] 不改 `core/nl2sql_agent.py` 等通用运行时(遵循 skill-agnostic 约束)。
