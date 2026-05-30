@@ -17,7 +17,7 @@
 ### 数据库
 - [ ] `backend/src/main/resources/db/migration/V44__create_sys_user.sql`
   - 建 `sys_user` 表(见设计 5.1)。
-  - 插入初始 `admin`(占位哈希或留空,配合首启改密)。
+  - 直接插入初始 `admin`:`role=admin`、`auth_source=local`、`password_hash` = `admin123` 的 bcrypt 哈希(写死在迁移里)。
 
 ### 依赖
 - [ ] `backend/pom.xml` 增加 `io.jsonwebtoken:jjwt-api/impl/jackson`、`org.springframework.security:spring-security-crypto`。
@@ -29,7 +29,7 @@
 - [ ] `service/JwtService.java`:HS256 签发/校验(读 `AUTH_JWT_SECRET` / `AUTH_JWT_ISSUER` / `AUTH_JWT_TTL`)。
 - [ ] `filter/AuthenticationFilter.java`:非白名单校验 `odw_session` Cookie → 填 `UserContextHolder`;失败按 `auth.anonymous.enabled` 决定 401 / 匿名;`finally` 清理。
 - [ ] `config/WebConfig.java`:注册 `AuthenticationFilter`(顺序在 CORS 之后);白名单可配置项 `auth.whitelist`。
-- [ ] `controller/AuthController.java`:`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`。
+- [ ] `controller/AuthController.java`:`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password`(登录后改密)。
 - [ ] `aspect/AuthenticationAspect.java`:`@RequireAuth` 改为基于 `UserContextHolder` 判断(不再直接读外部头);新增 `role` 校验支持(`@RequireRole("admin")` 或 `@RequireAuth(role=...)`)。
 - [ ] `application.yml`:`auth.anonymous.enabled` 默认 `false`(生产),开发可 `true`;`auth.session.ttl`、`auth.whitelist`。
 
@@ -89,11 +89,11 @@
 
 ## 阶段 4:部署与配置收敛
 
-- [ ] `deploy/.env.example` 增:`AUTH_JWT_SECRET`、`AUTH_JWT_ISSUER=opendataworks`、`AUTH_JWT_TTL=8h`、`ADMIN_INIT_PASSWORD`、`DATAAGENT_REQUIRE_AUTH`、前端域(CORS)。
-- [ ] `deploy/` compose:三服务注入同一 `AUTH_JWT_SECRET`。
-- [ ] 反向代理:前端 / Java 后端(`/api`)/ dataagent(`/api/v1/dataagent` 等)收敛到同一站点域,使 `odw_session` Cookie 同域可见。
-- [ ] 生产 Cookie `Secure` 开启;CORS `Allow-Origin` 为具体域。
-- [ ] 文档:更新 `docs/handbook/` 登录与认证说明;若改动公共 API/部署行为,同步相关文档。
+- [ ] `deploy/.env.example` 增:`AUTH_JWT_SECRET`、`AUTH_JWT_ISSUER=opendataworks`、`AUTH_JWT_TTL=8h`、`DATAAGENT_REQUIRE_AUTH`、前端域(CORS)。(无需 `ADMIN_INIT_PASSWORD`,初始口令已存库)
+- [ ] `deploy/docker-compose.prod.yml`:为 `backend` 与 `dataagent-backend` 注入同一 `AUTH_JWT_SECRET`。
+- [ ] 反向代理:**已就绪**。`frontend/nginx.conf` 已把 `/`、`/api/`、`/api/v1/{dataagent,nl2sql,nl2sql-admin}/` 收敛到单域,`odw_session` Cookie 自动同域可见,无需改动路由;仅需确认 cookie 透传不被 nginx 剥离。
+- [ ] 生产 Cookie `Secure` 开启;dataagent CORS `Allow-Origin` 由 `*` 改为具体域。
+- [ ] 文档:更新 `docs/handbook/` 登录与认证说明(含默认 admin 口令 `admin123` 与首登改密提示);若改动公共 API/部署行为,同步相关文档。
 
 ---
 
@@ -114,6 +114,6 @@
 
 ## 风险与缓解
 
-- 直连拓扑下同域 Cookie 是关键前提 → 阶段 4 反代收敛先行验证;不满足则切 Bearer 注入。
+- 同域 Cookie 前提已由 `frontend/nginx.conf` 单域反代满足,风险消除;仅需确认 nginx 不剥离 cookie。
 - 现有大量 `@RequireAuth` 接口语义切换(外部头 → 平台会话)→ 阶段 1 用单测 + 手测覆盖代表性接口。
 - 一次性开启 dataagent 业务校验可能阻断现有前端 → 用 `DATAAGENT_REQUIRE_AUTH` 灰度。

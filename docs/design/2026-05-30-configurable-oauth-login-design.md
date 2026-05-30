@@ -151,7 +151,7 @@ CREATE TABLE `sys_user` (
 
 - 迁移文件: `V44__create_sys_user.sql`。
 - 与现有 `platform_users` 的关系:`platform_users` 偏 OAuth 画像(`oauth_user_id`),`sys_user` 是登录/密码/角色的权威。OAuth 用户登录时,`sys_user.external_id` 即对应 `platform_users.oauth_user_id`,二者通过 `external_id` 关联,本期不合并表(降风险)。
-- 初始管理员:迁移中插入一条 `admin` 账号(口令哈希由部署初始化注入或首启强制改密,见 7.5),`role=admin`,`auth_source=local`。
+- 初始管理员:迁移中**直接插入** `admin` 账号,`role=admin`、`auth_source=local`,`password_hash` 为一个固定默认口令的 bcrypt 哈希(如 `admin` / `admin123`,哈希值写死在 `V44` 迁移里)。部署后管理员可在「个人设置/改密」接口自行修改,无需环境变量或首启流程。
 
 ### 5.2 `sys_oauth_config`(OAuth Provider 配置,管理员可管理)
 
@@ -241,7 +241,8 @@ CREATE TABLE `sys_oauth_config` (
 ### 7.5 初始管理员与口令安全
 
 - bcrypt 存储,登录失败计数 + `locked_until` 锁定(如 5 次锁 15 分钟)。
-- 初始 admin 口令不硬编码进迁移:迁移插入占位 + 首次启动校验 `ADMIN_INIT_PASSWORD` 环境变量并强制改密;或部署脚本写入哈希。具体取部署侧约定(见计划文档)。
+- 初始 admin 口令**直接存库**:`V44` 迁移插入一条 `admin` 账号,`password_hash` 为默认口令(`admin123`)的 bcrypt 哈希。无环境变量、无首启强制改密流程。
+- 提供 `POST /api/auth/password`(已登录)供管理员登录后自行改密;运维默认口令安全责任在部署方,建议首登后立即修改。
 
 ## 8. 扩展到 backend 与 dataagent-backend(核心扩展性设计)
 
@@ -264,10 +265,15 @@ CREATE TABLE `sys_oauth_config` (
 
 > 约束(遵循 AGENTS.md):不在 `core/nl2sql_agent.py` 等通用运行时硬编码鉴权;`verify_identity()` 作为独立 FastAPI 依赖/中间件存在,保持通用运行时 skill-agnostic。dataagent 侧落地可分阶段:先收口 admin 端点(高危),再对业务路由灰度启用。
 
-### 8.3 生产部署前提
+### 8.3 生产部署前提(已确认成立)
 
-- 生产环境需经反向代理把前端、Java 后端、dataagent-backend 收敛到**同一站点域**,使 `odw_session` Cookie 对三者同域可见;否则需改用 `Authorization: Bearer`(前端从受信渠道获取并注入,牺牲部分 HttpOnly 优势)。本设计默认同域 Cookie 方案,`deploy/` 反代配置需相应调整(见计划文档)。
+- 生产经 docker compose 部署,`frontend/nginx.conf` 已把三者收敛到**同一域名**(单一入口):
+  - `/` → 前端静态资源
+  - `/api/` → `backend:8080`
+  - `/api/v1/dataagent/`、`/api/v1/nl2sql/`、`/api/v1/nl2sql-admin/` → `dataagent-backend:8900`
+- 因此 `odw_session` HttpOnly Cookie 设在该单域上,会**自动随请求带到三套服务**,同域 Cookie 方案直接成立,无需 Bearer 兜底。
 - dataagent CORS 由 `*` 收敛为具体前端域(凭证模式要求)。
+- 开发态由 `frontend/vite.config.js` 代理达成同源,行为与 prod 一致。
 
 共享密钥配置(三处一致):
 
@@ -301,9 +307,9 @@ AUTH_JWT_TTL=8h
 
 ## 11. 待确认 / 风险
 
-- 生产部署是否能把前端 / Java 后端 / dataagent 收敛到同一站点域(同域 Cookie 方案的前提)。若不能,dataagent 侧改用 Bearer 注入。
+- ~~同域 Cookie 前提~~:已确认。docker compose + `frontend/nginx.conf` 单域收敛三服务,Cookie 自动覆盖(见 8.3)。
+- ~~初始 admin 口令注入方式~~:已确认。直接存库,`V44` 写死 `admin123` 的 bcrypt 哈希(见 7.5)。
 - dataagent 业务路由启用身份校验的节奏:admin 端点立即收口为高优先级;业务路由建议灰度开关,避免一次性阻断现有直连前端。
-- 初始 admin 口令注入方式(env 强制改密 vs 部署脚本写哈希)——计划文档定。
 - `platform_users` 与 `sys_user` 是否近期合并(本期不合并,保留风险点)。
 - 会话失效与单点登出在多服务下的传播(本期 JWT 自然过期为主,主动登出黑名单为可选)。
 - widget 匿名场景与平台登录场景在 dataagent 同一路由上的区分逻辑需明确(按 `X-ODW-Client=widget` 走 widget 分支,否则要求会话)。
