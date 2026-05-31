@@ -229,7 +229,7 @@ def test_deepeval_topic_and_task_requests_include_agent_id(monkeypatch):
     assert calls[1]["payload"]["agent_id"] == "agent_eval"
 
 
-def test_deepeval_evaluate_error_without_all_judges_raises_runner_error(monkeypatch):
+def test_deepeval_run_deepeval_records_failed_judge_when_measure_crashes(monkeypatch, capsys):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
     case = _sample_case()
@@ -239,21 +239,23 @@ def test_deepeval_evaluate_error_without_all_judges_raises_runner_error(monkeypa
     )
     metric = runner.DataAgentEvaluationMetric(runner.JudgeConfig(base_url="http://judge", token="t", model="m"))
 
-    def broken_evaluate(**kwargs):
-        raise RuntimeError("deepeval crashed before measuring")
+    def boom(config, payload):
+        raise RuntimeError("judge call exploded")
 
-    monkeypatch.setattr(runner, "deepeval_evaluate", broken_evaluate)
+    monkeypatch.setattr(runner, "call_judge_model", boom)
 
-    try:
-        runner.run_deepeval([test_case], metric)
-    except runner.EvalRunnerError as exc:
-        assert "deepeval evaluate failed before all judge results were captured" in str(exc)
-    else:
-        raise AssertionError("expected EvalRunnerError")
+    # A crashing case must not abort the batch or lose the report.
+    runner.run_deepeval([test_case], metric)
+
+    judge = runner.DataAgentEvaluationMetric.shared_case_judges["ODW_SAMPLE_001"]
+    assert judge["judge_failed"] is True
+    assert "judge_crash" in judge["failure_attribution"]
+    captured = capsys.readouterr()
+    assert "judge measurement crashed" in captured.err
 
 
-def test_deepeval_evaluate_error_after_all_judges_is_nonfatal(monkeypatch, capsys):
-    _install_fake_deepeval(monkeypatch)
+def test_deepeval_run_deepeval_measures_all_cases_without_cloud_evaluate(monkeypatch):
+    calls = _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
     case = _sample_case()
     test_case = runner.to_deepeval_test_case(
@@ -272,20 +274,26 @@ def test_deepeval_evaluate_error_after_all_judges_is_nonfatal(monkeypatch, capsy
             "comment": "ok",
         }
 
-    def late_error_evaluate(**kwargs):
-        for test_case_item in kwargs["test_cases"]:
-            for metric_item in kwargs["metrics"]:
-                metric_item.measure(test_case_item)
-        raise RuntimeError("deepeval summary writer failed")
-
     monkeypatch.setattr(runner, "call_judge_model", fake_judge)
-    monkeypatch.setattr(runner, "deepeval_evaluate", late_error_evaluate)
 
     runner.run_deepeval([test_case], metric)
 
-    captured = capsys.readouterr()
-    assert "deepeval evaluate warning" in captured.err
     assert metric.case_judges["ODW_SAMPLE_001"]["score"] == 9.0
+    # The offline runner never invokes DeepEval's cloud-coupled evaluate().
+    assert calls["test_cases"] == []
+
+
+def test_deepeval_runner_opts_out_of_cloud_telemetry(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    monkeypatch.delenv("DEEPEVAL_TELEMETRY_OPT_OUT", raising=False)
+    monkeypatch.delenv("DEEPEVAL_UPDATE_WARNING_OPT_OUT", raising=False)
+
+    import os
+
+    _load_runner()
+
+    assert os.environ.get("DEEPEVAL_TELEMETRY_OPT_OUT") == "YES"
+    assert os.environ.get("DEEPEVAL_UPDATE_WARNING_OPT_OUT") == "YES"
 
 
 def test_deepeval_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
@@ -599,4 +607,6 @@ def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monk
     assert result["task_status"] == "finished"
     assert result["judge"]["score"] == 9.0
     assert result["case_passed"] is True
-    assert len(calls["test_cases"]) == 1
+    # Offline runner drives the judge metric locally; DeepEval's cloud-coupled
+    # evaluate() is never invoked.
+    assert calls["test_cases"] == []
