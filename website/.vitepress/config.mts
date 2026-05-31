@@ -70,6 +70,7 @@ export default defineConfig({
   lang: 'zh-CN',
   title: 'OpenDataWorks',
   description: '统一数据门户 — 元数据管理、工作流编排、血缘分析与智能查询',
+  cleanUrls: true,
   ignoreDeadLinks: [/localhost/],
   srcDir: '.',
   srcExclude: ['**/node_modules/**', '**/README.md'],
@@ -80,6 +81,25 @@ export default defineConfig({
     ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
     ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
     ['link', { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600;700&display=swap' }],
+
+    // SEO & keywords
+    ['meta', { name: 'keywords', content: 'OpenDataWorks,数据门户,元数据管理,工作流编排,数据血缘,NL2SQL,智能问数,DolphinScheduler,数据平台,开源,data portal,metadata,lineage' }],
+    ['meta', { name: 'author', content: 'OpenDataWorks' }],
+    ['meta', { name: 'theme-color', content: '#10b981' }],
+
+    // Open Graph
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { property: 'og:site_name', content: 'OpenDataWorks' }],
+    ['meta', { property: 'og:title', content: 'OpenDataWorks · 一站式智能数据平台' }],
+    ['meta', { property: 'og:description', content: '开源统一数据门户：元数据管理、工作流编排、血缘分析与自然语言智能问数。' }],
+    ['meta', { property: 'og:url', content: 'https://opendataworks.vercel.app/' }],
+    ['meta', { property: 'og:image', content: 'https://opendataworks.vercel.app/readme-lineage.png' }],
+
+    // Twitter card
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: 'OpenDataWorks · 一站式智能数据平台' }],
+    ['meta', { name: 'twitter:description', content: '开源统一数据门户：元数据管理、工作流编排、血缘分析与自然语言智能问数。' }],
+    ['meta', { name: 'twitter:image', content: 'https://opendataworks.vercel.app/readme-lineage.png' }],
   ],
 
   themeConfig: {

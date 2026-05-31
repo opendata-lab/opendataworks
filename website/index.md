@@ -22,8 +22,8 @@ const copied = ref(false)
 const copyTerminalCommand = () => {
   const textToCopy = activeTerminalTab.value === 'docker'
     ? 'git clone https://github.com/opendata-lab/opendataworks.git && cd opendataworks && cp deploy/.env.example deploy/.env && docker compose -f deploy/docker-compose.dev.yml up -d'
-    : 'git clone https://github.com/opendata-lab/opendataworks.git && cd opendataworks && cd website && npm install && npm run build'
-  
+    : 'git clone https://github.com/opendata-lab/opendataworks.git && cd opendataworks && cp deploy/.env.example deploy/.env && docker compose -f deploy/docker-compose.prod.yml up -d'
+
   navigator.clipboard.writeText(textToCopy).then(() => {
     copied.value = true
     setTimeout(() => {
@@ -39,10 +39,21 @@ const copyTerminalCommand = () => {
     <div class="hero-glow"></div>
     <p class="hero-badge">Open Source Data Platform</p>
     <h1 class="hero-title">一站式智能数据工作台<br><span class="hero-title-gradient">OpenDataWorks</span></h1>
-    <p class="hero-subtitle">企业级元数据治理、一击流血缘追踪、可视化工作流调度，搭配内置的 NL2SQL 智能问数服务。</p>
+    <p class="hero-subtitle">把<strong>元数据管理、工作流编排、数据血缘</strong>与内置的 <strong>NL2SQL 智能问数</strong>整合进同一个开源、可部署的平台。让技术与业务在同一处理解数据、使用数据。</p>
     <div class="hero-actions">
       <a href="/guide/quick-start" class="btn-primary">快速开始</a>
+      <a href="https://opendataworks-demo.vercel.app/" target="_blank" class="btn-secondary">在线 Demo</a>
       <a href="https://github.com/opendata-lab/opendataworks" target="_blank" class="btn-secondary">GitHub ⭐</a>
+    </div>
+    <!-- Stats strip -->
+    <div class="hero-stats">
+      <div class="stat-item"><span class="stat-num">4</span><span class="stat-label">核心模块</span></div>
+      <div class="stat-divider"></div>
+      <div class="stat-item"><span class="stat-num">NL2SQL</span><span class="stat-label">内置智能问数</span></div>
+      <div class="stat-divider"></div>
+      <div class="stat-item"><span class="stat-num">1</span><span class="stat-label">命令一键部署</span></div>
+      <div class="stat-divider"></div>
+      <div class="stat-item"><span class="stat-num">GPL-3.0</span><span class="stat-label">完全开源</span></div>
     </div>
     <!-- Architecture SVG -->
     <div class="arch-visual">
@@ -84,35 +95,39 @@ const copyTerminalCommand = () => {
 
   <!-- Features Section -->
   <section class="features-section">
+    <p class="section-eyebrow">CORE CAPABILITIES</p>
     <h2 class="features-title">全域数据管理解决方案</h2>
-    <p class="features-subtitle">精心打磨的开源组件，提供稳定、快速、可靠的数据平台生命周期治理。</p>
+    <p class="features-subtitle">精心打磨的开源组件，覆盖数据平台从资产、调度、血缘到智能问数的完整生命周期。</p>
     <div class="features-grid">
       <div class="feature-card">
         <div class="feature-icon">📊</div>
         <h3>数据资产</h3>
-        <p>提供 ODS 至 ADS 全流程模型管理，细粒度字段定义，支持多域模型与元数据同步分类。</p>
+        <p>ODS 至 ADS 全流程模型管理，可视化建表与物理 DDL 同步，软删除回收站与存储/热度分析。</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">⚡</div>
         <h3>工作流编排</h3>
-        <p>集成 DolphinScheduler，提供 SQL/Shell 等多种任务节点依赖、DAG 依赖自动编排与排期规划。</p>
+        <p>集成 DolphinScheduler，可视化 DAG 依赖编排、版本比对回滚、发布审批与历史补数据。</p>
       </div>
-      <div class="feature-card">
-        <div class="feature-icon">🛡️</div>
-        <h3>数据治理</h3>
-        <p>支持数据全周期监控。包含执行质量追踪、超期与空表校验告警机制。</p>
-      </div>
-    </div>
-    <div class="features-grid-2">
       <div class="feature-card">
         <div class="feature-icon">🔗</div>
         <h3>全域数据血缘</h3>
-        <p>字段级数据血缘自动分析解析，支持美观的力导向拓扑大图展示及跨库的依赖追溯。</p>
+        <p>基于 SQL 自动解析表级血缘，力导向拓扑大图展示，支持上下游穿透与跨库依赖追溯。</p>
       </div>
       <div class="feature-card">
         <div class="feature-icon">🤖</div>
         <h3>智能问数</h3>
-        <p>内置 AI Agent。只需输入中文自然语言即可秒级转换为结构化 SQL，自动生成统计图表。</p>
+        <p>内置 AI Agent，中文自然语言秒级转结构化 SQL，自愈式纠错并自动推荐统计图表。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🛡️</div>
+        <h3>数据治理</h3>
+        <p>数据全周期监控，包含执行质量追踪、超期与空表校验告警，闲置资产预警。</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🚀</div>
+        <h3>一键部署</h3>
+        <p>前端、后端、DataAgent、MySQL、Redis 与 Portal MCP 全部容器化，Docker Compose 即开即用。</p>
       </div>
     </div>
   </section>
@@ -120,6 +135,7 @@ const copyTerminalCommand = () => {
   <!-- Product Showcase Section -->
   <section class="showcase-section">
     <div class="showcase-inner">
+      <p class="section-eyebrow">PRODUCT TOUR</p>
       <h2 class="showcase-title">直观的操作界面</h2>
       <p class="showcase-desc">点击切换预览真实的操作面板和可视化界面</p>
       <div class="showcase-tabs">
@@ -202,13 +218,14 @@ const copyTerminalCommand = () => {
 
   <!-- Quickstart Terminal -->
   <section class="quickstart-section">
+    <p class="section-eyebrow">GET STARTED</p>
     <h2 class="quickstart-title">三步快速启动</h2>
     <p class="quickstart-desc">所有组件均通过容器底座打包，使用 Docker Compose 快速初始化开发与生产环境。</p>
     <div class="terminal-window">
       <div class="terminal-header">
         <div class="terminal-tabs">
-          <button class="terminal-tab" :class="{ active: activeTerminalTab === 'docker' }" @click="activeTerminalTab = 'docker'">Docker Compose</button>
-          <button class="terminal-tab" :class="{ active: activeTerminalTab === 'npm' }" @click="activeTerminalTab = 'npm'">Source Build</button>
+          <button class="terminal-tab" :class="{ active: activeTerminalTab === 'docker' }" @click="activeTerminalTab = 'docker'">开发环境</button>
+          <button class="terminal-tab" :class="{ active: activeTerminalTab === 'npm' }" @click="activeTerminalTab = 'npm'">生产部署</button>
         </div>
         <button class="btn-copy" :class="{ copied: copied }" @click="copyTerminalCommand">
           <span v-if="!copied">
@@ -236,12 +253,12 @@ const copyTerminalCommand = () => {
           <p><span class="cmd">docker compose -f deploy/docker-compose.dev.yml up -d</span></p>
         </template>
         <template v-else>
-          <p><span class="comment"># 1. 克隆并进入项目目录</span></p>
+          <p><span class="comment"># 1. 克隆并进入项目根目录</span></p>
           <p><span class="cmd">git clone </span><span class="accent">https://github.com/opendata-lab/opendataworks.git</span><span class="cmd"> &amp;&amp; cd opendataworks</span></p>
-          <p><span class="comment"># 2. 编译并打包前端静态资源</span></p>
-          <p><span class="cmd">cd website &amp;&amp; npm install &amp;&amp; npm run build</span></p>
-          <p><span class="comment"># 3. 启动 Vite 本地预览</span></p>
-          <p><span class="cmd">npm run preview</span></p>
+          <p><span class="comment"># 2. 准备生产配置（编辑 .env 填写密码、镜像 tag 与 Provider 凭据）</span></p>
+          <p><span class="cmd">cp deploy/.env.example deploy/.env</span></p>
+          <p><span class="comment"># 3. 启动生产容器堆栈</span></p>
+          <p><span class="cmd">docker compose -f deploy/docker-compose.prod.yml up -d</span></p>
         </template>
       </div>
     </div>
@@ -320,7 +337,7 @@ const copyTerminalCommand = () => {
     <p class="cta-desc">现在就集成并开始构建你的数据治理流，提供完全开源免费的解决方案。</p>
     <div class="cta-actions">
       <a href="/guide/quick-start" class="btn-primary">快速开始</a>
-      <a href="/guide/features" class="btn-secondary">特性概览</a>
+      <a href="/guide/introduction" class="btn-secondary">了解更多</a>
       <a href="https://github.com/opendata-lab/opendataworks" target="_blank" class="btn-secondary">GitHub 仓库</a>
     </div>
   </section>

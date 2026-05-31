@@ -140,6 +140,54 @@
   flex-wrap: wrap;
 }
 
+/* Hero stats strip */
+.hero-stats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.75rem;
+  margin: 3rem auto 0;
+  flex-wrap: wrap;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.stat-num {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.78rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.stat-divider {
+  width: 1px;
+  height: 32px;
+  background: #e2e8f0;
+}
+
+/* Section eyebrow label */
+.section-eyebrow {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vp-c-brand-1);
+  margin: 0 0 0.75rem;
+}
+
 .btn-primary {
   padding: 0.8rem 2.2rem;
   background: var(--vp-c-brand-1);
@@ -213,15 +261,6 @@
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.features-grid-2 {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 1.5rem;
-  max-width: 66%;
-  margin: 0 auto;
 }
 
 .feature-card {
@@ -652,9 +691,11 @@
 @media (max-width: 768px) {
   .hero-title { font-size: 2.5rem; }
   .features-grid { grid-template-columns: 1fr; }
-  .features-grid-2 { grid-template-columns: 1fr; max-width: 100%; }
   .footer-grid { grid-template-columns: 1fr; gap: 2rem; }
   .arch-visual { display: none; } /* Hide complicated SVG on mobile */
+  .hero-stats { gap: 1rem; }
+  .stat-divider { display: none; }
+  .stat-item { flex: 0 0 40%; }
 }
 
 /* Animated SVG Flowing Lines */
