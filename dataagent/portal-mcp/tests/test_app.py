@@ -93,6 +93,31 @@ def test_mcp_path_accepts_valid_frontdoor_token():
     assert response.status_code != 401
 
 
+def test_mcp_path_accepts_docker_hostname():
+    # Regression: FastMCP 1.x DNS-rebinding protection defaults to
+    # localhost-only and returns 421 for Host: portal-mcp:8801.
+    # The fix disables that check so Claude CLI subprocesses can connect.
+    app = create_app(settings=_settings(), backend_client=FakeBackendClient())
+    with TestClient(app, base_url="http://portal-mcp:8801") as client:
+        response = client.post(
+            "/mcp/",
+            headers={"X-Portal-MCP-Token": "portal-token", "Content-Type": "application/json"},
+            json={
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "claude-code", "version": "1.0"},
+                },
+            },
+        )
+
+    assert response.status_code != 421, "MCP server must not reject Docker service hostname"
+    assert response.status_code != 401
+
+
 @pytest.mark.anyio
 async def test_all_tool_service_methods_return_backend_shapes():
     service = PortalToolService(FakeBackendClient())
