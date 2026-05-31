@@ -16,6 +16,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# Keep DeepEval fully offline for intranet deployments. These flags must be set
+# before importing deepeval so the import never triggers telemetry, update
+# checks, or Confident AI cloud coupling. The runner drives the judge metric
+# itself and does not depend on any deepeval.com / Confident AI service.
+os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
+os.environ.setdefault("DEEPEVAL_UPDATE_WARNING_OPT_OUT", "YES")
+os.environ.setdefault("DEEPEVAL_DISABLE_PROGRESS_BAR", "YES")
+
 try:
     from deepeval import evaluate as deepeval_evaluate
 except Exception:  # pragma: no cover - exercised in environments without deepeval
@@ -901,26 +909,41 @@ class DataAgentEvaluationMetric(BaseMetric):  # type: ignore[misc, valid-type]
         }
 
 
+def _test_case_case_id(test_case: Any) -> str:
+    try:
+        payload = DataAgentEvaluationMetric._payload_from_test_case(test_case)
+    except Exception:
+        return ""
+    return str((payload.get("case") or {}).get("case_id") or "")
+
+
 def run_deepeval(test_cases: list[Any], metric: DataAgentEvaluationMetric) -> None:
+    """Drive the judge metric locally, fully offline.
+
+    DeepEval's ``evaluate()`` couples each run to telemetry and Confident AI
+    cloud calls. On intranet deployments those calls fail or hang *after* every
+    case has already been measured, which previously crashed the runner before
+    any report was written. The runner only needs each metric to call our own
+    Anthropic-compatible judge, so we iterate the test cases directly. This is
+    the single primary path and requires no deepeval.com / Confident AI service.
+
+    A single failing case is recorded as a failed judge instead of aborting the
+    whole batch, so a complete report is always produced.
+    """
     _ensure_deepeval_available()
     DataAgentEvaluationMetric.shared_case_judges = {}
-    try:
+    for test_case in test_cases:
+        case_id = _test_case_case_id(test_case)
         try:
-            deepeval_evaluate(test_cases=test_cases, metrics=[metric], print_results=False)
-        except TypeError:
-            deepeval_evaluate(test_cases=test_cases, metrics=[metric])
-    except Exception as exc:
-        expected_case_ids = {
-            str(DataAgentEvaluationMetric._payload_from_test_case(test_case).get("case", {}).get("case_id") or "")
-            for test_case in test_cases
-        }
-        expected_case_ids.discard("")
-        captured_case_ids = set(metric.case_judges) | set(DataAgentEvaluationMetric.shared_case_judges)
-        if not expected_case_ids.issubset(captured_case_ids):
-            raise EvalRunnerError(
-                f"deepeval evaluate failed before all judge results were captured: {exc}"
-            ) from exc
-        print(f"deepeval evaluate warning (judge results already captured): {exc}", file=sys.stderr)
+            metric.measure(test_case)
+        except Exception as exc:  # never lose the remaining cases or the report
+            judge = failed_judge(
+                f"judge measurement crashed: {exc}",
+                attribution=["judge_failed", "judge_crash"],
+            )
+            metric.case_judges[case_id] = judge
+            DataAgentEvaluationMetric.shared_case_judges[case_id] = judge
+            print(f"judge measurement crashed for case {case_id or '?'}: {exc}", file=sys.stderr)
 
 
 def _apply_judges(results: list[dict[str, Any]], metric: DataAgentEvaluationMetric) -> list[dict[str, Any]]:
@@ -1129,11 +1152,24 @@ def main(argv: list[str] | None = None) -> int:
         dataset_stats["preflight"] = preflight_payload
         dataset_stats["agent_id"] = str(args.agent_id or "").strip()
         results = _run_cases(base_url, cases, args)
-        metric = DataAgentEvaluationMetric(judge_config)
-        test_cases = [to_deepeval_test_case(case, result) for case, result in zip(cases, results)]
-        run_deepeval(test_cases, metric)
-        _apply_judges(results, metric)
-        summary = build_summary(results, dataset_stats)
+        try:
+            metric = DataAgentEvaluationMetric(judge_config)
+            test_cases = [to_deepeval_test_case(case, result) for case, result in zip(cases, results)]
+            run_deepeval(test_cases, metric)
+            _apply_judges(results, metric)
+            summary = build_summary(results, dataset_stats)
+        except Exception as exc:
+            # The expensive case runs already finished; never drop the report
+            # just because the judging/summary step failed. Persist what we have.
+            for item in results:
+                if not item.get("judge"):
+                    item["judge"] = failed_judge(f"judging aborted: {exc}")
+            summary = build_summary(results, dataset_stats)
+            summary["judging_error"] = str(exc)
+            write_outputs(output_dir, results, summary)
+            print(f"eval outputs written to: {output_dir}")
+            print(f"judging step failed after all cases ran: {exc}", file=sys.stderr)
+            return 1
         write_outputs(output_dir, results, summary)
         print(f"eval outputs written to: {output_dir}")
         return 0 if summary.get("passed") else 1

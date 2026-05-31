@@ -17,6 +17,8 @@ DeepEval should be available as a separate evaluation engine, but its Python dep
 - Run DataAgent cases through the existing HTTP task chain and convert final answers plus evidence into DeepEval `LLMTestCase` instances.
 - Use a custom DeepEval metric to call an independently configured Anthropic-compatible judge endpoint and preserve the existing 10-point rubric, veto rules, and failure attribution.
 - Package DeepEval dependencies only in `opendataworks-dataagent-evals-deepeval:<tag>`.
+- Drive the judge metric with a local loop rather than DeepEval's `evaluate()`. `evaluate()` couples each run to telemetry and Confident AI cloud calls that fail or hang on intranet deployments after every case has already run, which crashed the runner before any report was written. The runner only needs each metric to call the judge, so it iterates the test cases directly as the single primary path. DeepEval telemetry and update checks are opted out at import time so the package never phones home. The only external dependency for judging is the judge endpoint, which can be an internal Anthropic-compatible gateway.
+- Always write the report once cases have run. A single failing judge call is recorded as a failed judge for that case; if the judging step fails late, `summary.json` records `judging_error` and the runner exits non-zero instead of dropping the report.
 
 ## Entrypoints
 
