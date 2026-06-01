@@ -91,6 +91,20 @@ describe('sql completion source', () => {
     ]))
   })
 
+  it('tokenizes long inputs in linear time (no catastrophic backtracking)', async () => {
+    const source = createSqlCompletionSource({
+      getCompletionContext: () => null,
+      getTableNames: () => []
+    })
+
+    // A long word-character run followed by a non-identifier boundary used to
+    // trigger exponential regex backtracking (~18s freeze) in getToken.
+    const doc = `SELECT col_${'a'.repeat(60)} `
+    const started = Date.now()
+    await source(editorContext(doc, true))
+    expect(Date.now() - started).toBeLessThan(1000)
+  })
+
   it('keeps legacy tableNames completion for existing callers', async () => {
     const source = createSqlCompletionSource({
       getCompletionContext: () => null,

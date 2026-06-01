@@ -1,4 +1,11 @@
-const IDENTIFIER_TOKEN = /(?:`[^`]*`|[\w$]+|\.)+$/
+// NOTE: keep each branch single-character (no nested `+`). A previous form
+// `(?:`[^`]*`|[\w$]+|\.)+$` nested a `+` quantifier inside another `+`, which
+// caused catastrophic regex backtracking: on completion the editor froze for
+// ~18s ("setTimeout handler took 18000ms" in CodeMirror) whenever a long
+// word-character run preceded a non-identifier boundary before the cursor.
+// This form matches the same language (identifiers, dotted paths, backtick
+// quoted names) but runs in linear time.
+const IDENTIFIER_TOKEN = /(?:`[^`]*`|[\w$]|\.)+$/
 const VALID_FOR = /^[`"'\[\]\w$.]*$/
 
 const SQL_KEYWORDS = [
