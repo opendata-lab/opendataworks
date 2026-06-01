@@ -117,7 +117,7 @@
                         </el-scrollbar>
                       </div>
 
-                      <!-- Tool use block (chart-producing tools are also re-rendered in the conclusion area below) -->
+                      <!-- Tool use block (chart-producing tools render their chart directly below the block) -->
                       <div v-else-if="block.type === 'tool_use'" class="v2-tool-row">
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
@@ -126,23 +126,9 @@
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
                         <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
                         <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
-                        <ToolOutputRenderer
-                          v-for="(spec, si) in extractedChartSpecs(block.content)"
-                          :key="si"
-                          :tool="chartSpecToToolProp(spec)"
-                        />
                       </div>
                     </template>
                   </template>
-
-                  <!-- Conclusion area: only the chart itself (not the full tool-call box) -->
-                  <div
-                    v-for="(block, ci) in conclusionChartBlocks(msg)"
-                    :key="'v2-chart-' + ci"
-                    class="v2-final-chart"
-                  >
-                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
-                  </div>
 
                   <!-- Error from stream -->
                   <div v-if="msg._v2state.status === 'error'" class="v2-error-card">
@@ -264,7 +250,7 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
-import { extractChartSpec, extractChartSpecsFromText, stripChartSpecsFromText } from './chartSpec'
+import { stripChartSpecsFromText } from './chartSpec'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -595,33 +581,10 @@ function hydrateHistoryMessage(m) {
 }
 
 // ── Chart spec helpers ────────────────────────────────────────────────────
+// Inline chart_spec written into the model's prose is stripped from display;
+// charts must come from a real tool call (rendered below that tool block).
 function cleanTextForDisplay(content) {
   return stripChartSpecsFromText(String(content || '')).trim()
-}
-
-function extractedChartSpecs(content) {
-  return extractChartSpecsFromText(String(content || ''))
-}
-
-function chartSpecToToolProp(spec) {
-  return { name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true }
-}
-
-// A tool_use block whose output resolves to a chart_spec is also surfaced in the
-// conclusion area below the answer text, in addition to its inline tool row.
-function isToolChartBlock(block) {
-  return block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
-}
-
-function conclusionChartBlocks(msg) {
-  const turns = Array.isArray(msg?._v2state?.turns) ? msg._v2state.turns : []
-  const blocks = []
-  for (const turn of turns) {
-    for (const block of (turn.blocks || [])) {
-      if (isToolChartBlock(block)) blocks.push(block)
-    }
-  }
-  return blocks
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────
@@ -1273,7 +1236,6 @@ onBeforeUnmount(() => {
 
 /* ── Tool output row ─────────────────────────────────────────────────────── */
 .v2-tool-row { border-radius: 10px; overflow: hidden; }
-.v2-final-chart { margin-top: 12px; }
 
 /* ── Text block ──────────────────────────────────────────────────────────── */
 .v2-text-block {

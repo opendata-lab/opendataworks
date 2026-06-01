@@ -1,5 +1,5 @@
 <template>
-  <div class="tool-output" :class="{ failed: hasError, 'tool-output-shell': showTrace, 'tool-output-chart-direct': isDirectChart, 'tool-output-flat': isFlat }">
+  <div class="tool-output" :class="{ failed: hasError, 'tool-output-shell': showTrace, 'tool-output-flat': isFlat }">
     <div v-if="showTrace" class="shell-trace">
       <button
         v-if="traceSummaryInteractive"
@@ -87,12 +87,9 @@
 
     <div v-if="errorText && showMainHeader" class="tool-output-error">{{ errorText }}</div>
 
-    <!-- Direct chart rendering (no panel wrapper) -->
-    <template v-if="isDirectChart">
-      <div v-if="chartRenderState === 'invalid'" class="tool-output-error">{{ chartRenderError }}</div>
-      <div v-else-if="chartRenderState === 'error' && !errorText" class="tool-output-error">{{ chartRenderError }}</div>
-
-      <div v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap">
+    <!-- Chart rendered directly below the tool-call block (never raw JSON) -->
+    <template v-if="chartVisible">
+      <div v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap tool-chart-below">
         <table class="tool-table">
           <thead>
             <tr>
@@ -110,15 +107,13 @@
       <div
         v-else-if="chartRenderState === 'renderable' && chartOption"
         ref="chartCanvasRef"
-        class="tool-chart"
+        class="tool-chart tool-chart-below"
       />
       <div v-else-if="chartRenderState === 'empty'" class="tool-output-empty">图表暂无可渲染数据</div>
-      <div v-else-if="chartRenderState !== 'invalid' && chartRenderState !== 'error'" class="tool-output-empty">图表数据为空</div>
-
-      <pre v-if="showChartRawText" class="tool-code tool-code-light"><code>{{ normalizedRawText }}</code></pre>
+      <div v-else class="tool-output-empty">{{ chartRenderError || '图表无法渲染' }}</div>
     </template>
 
-    <div v-if="mainPanelVisible && !isDirectChart" class="tool-output-panel">
+    <div v-if="mainPanelVisible" class="tool-output-panel">
       <div class="tool-output-body-scroll">
         <template v-if="kind === 'sql_execution'">
           <pre v-if="sqlText" class="tool-code"><code>{{ sqlText }}</code></pre>
@@ -138,36 +133,6 @@
             </table>
           </div>
           <div v-else-if="!errorText" class="tool-output-empty">无数据</div>
-        </template>
-
-        <template v-else-if="kind === 'chart_spec'">
-          <div v-if="chartRenderState === 'invalid'" class="tool-output-error">{{ chartRenderError }}</div>
-          <div v-else-if="chartRenderState === 'error' && !errorText" class="tool-output-error">{{ chartRenderError }}</div>
-
-          <div v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap">
-            <table class="tool-table">
-              <thead>
-                <tr>
-                  <th v-for="column in chartColumns" :key="column">{{ column }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, rowIndex) in chartRows" :key="rowIndex">
-                  <td v-for="column in chartColumns" :key="column">{{ row[column] }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <div
-            v-else-if="chartRenderState === 'renderable' && chartOption"
-            ref="chartCanvasRef"
-            class="tool-chart"
-          />
-          <div v-else-if="chartRenderState === 'empty'" class="tool-output-empty">图表暂无可渲染数据</div>
-          <div v-else-if="chartRenderState !== 'invalid' && chartRenderState !== 'error'" class="tool-output-empty">图表数据为空</div>
-
-          <pre v-if="showChartRawText" class="tool-code tool-code-light"><code>{{ normalizedRawText }}</code></pre>
         </template>
 
         <template v-else-if="kind === 'python_execution'">
@@ -405,11 +370,11 @@ const traceKind = computed(() => {
 })
 
 const showTrace = computed(() => Boolean(traceKind.value))
-const showMainHeader = computed(() => {
-  if (showTrace.value) return false
-  if (isDirectChart.value) return false
-  return true
-})
+const showMainHeader = computed(() => !showTrace.value)
+
+// Charts render directly below the tool-call block, always visible (never gated
+// behind expand and never as raw chart_spec JSON).
+const chartVisible = computed(() => kind.value === 'chart_spec')
 
 const traceOutputText = computed(() => {
   const directText = extractTextParts(props.tool?.output).trim()
@@ -463,7 +428,14 @@ const traceDescription = computed(() => {
 const traceSummaryText = computed(() => {
   if (bootstrapSkillLabel.value) return bootstrapSkillLabel.value
   const detail = traceCommand.value || traceDescription.value
-  
+
+  // A shell step that produces a chart_spec is the chart-generation tool call;
+  // label it as such so it stays recognizable alongside the conclusion chart.
+  if (kind.value === 'chart_spec') {
+    const title = String(outputPayload.value.title || '').trim()
+    return title ? `生成图表：${title}` : '生成图表'
+  }
+
   if (traceKind.value === 'read') {
     return detail ? `读取文件：${detail}` : '正在读取文件'
   }
@@ -508,6 +480,15 @@ const statusLabel = computed(() => {
   const status = String(props.tool?.status || 'success')
   const callComplete = Boolean(props.tool?._callComplete)
   const runtimeStarted = Boolean(props.tool?._runtimeStarted)
+
+  if (kind.value === 'chart_spec') {
+    if (!callComplete) return '正在发起生成图表'
+    if (callComplete && !runtimeStarted) return '已发起生成图表'
+    if (status === 'pending' || status === 'streaming') return '正在生成图表'
+    if (status === 'failed') return '生成图表失败'
+    return '已生成图表'
+  }
+
   if (traceKind.value === 'shell') {
     if (!callComplete) return '正在发起命令'
     if (callComplete && !runtimeStarted) return '已发起命令'
@@ -615,17 +596,7 @@ const chartOption = computed(() => {
     return baseOption
   }
 })
-const showChartRawText = computed(() => {
-  if (kind.value !== 'chart_spec') return false
-  return ['invalid', 'error'].includes(chartRenderState.value) && Boolean(normalizedRawText.value)
-})
 const showRawPayload = computed(() => Boolean(normalizedRawText.value) && !showTrace.value)
-
-const isDirectChart = computed(() => {
-  if (kind.value !== 'chart_spec') return false
-  if (showTrace.value) return false
-  return true
-})
 
 const isFlat = computed(() => kind.value === 'sql_execution')
 
@@ -638,14 +609,15 @@ const tracePanelAvailable = computed(() => {
 
 const mainPanelAvailable = computed(() => {
   if (kind.value === 'sql_execution') return Boolean(sqlText.value || (columns.value.length && rows.value.length) || !errorText.value)
-  if (kind.value === 'chart_spec') return true
+  // chart_spec has no expandable main panel; the chart renders below the block.
+  if (kind.value === 'chart_spec') return false
   if (kind.value === 'python_execution') return Boolean(stdoutText.value || resultText.value)
   return Boolean(showRawPayload.value)
 })
 
 const hasExpandablePanel = computed(() => tracePanelAvailable.value || mainPanelAvailable.value)
 const traceSummaryInteractive = computed(() => showTrace.value && hasExpandablePanel.value)
-const showMainToggle = computed(() => !showTrace.value && !isDirectChart.value && hasExpandablePanel.value)
+const showMainToggle = computed(() => !showTrace.value && hasExpandablePanel.value)
 const tracePanelVisible = computed(() => showTrace.value && tracePanelAvailable.value && panelOpen.value)
 const mainPanelVisible = computed(() => mainPanelAvailable.value && panelOpen.value)
 
@@ -739,9 +711,9 @@ const refreshChart = async () => {
 }
 
 watch(
-  () => [chartRenderState.value, chartOption.value, props.tool?.id, mainPanelVisible.value, isDirectChart.value],
+  () => [chartRenderState.value, chartOption.value, props.tool?.id, chartVisible.value],
   () => {
-    if (chartRenderState.value === 'renderable' && chartOption.value && (mainPanelVisible.value || isDirectChart.value)) {
+    if (chartRenderState.value === 'renderable' && chartOption.value && chartVisible.value) {
       refreshChart()
       return
     }
@@ -766,8 +738,8 @@ const togglePanel = () => {
 }
 
 onMounted(() => {
-  panelOpen.value = isDirectChart.value ? true : shouldAutoOpenPanel()
-  if (chartRenderState.value === 'renderable' && chartOption.value && (mainPanelVisible.value || isDirectChart.value)) {
+  panelOpen.value = shouldAutoOpenPanel()
+  if (chartRenderState.value === 'renderable' && chartOption.value && chartVisible.value) {
     refreshChart()
   }
 
@@ -824,11 +796,8 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.tool-output-chart-direct {
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
+.tool-chart-below {
+  margin-top: 10px;
 }
 
 .tool-output-flat {
@@ -844,8 +813,7 @@ onBeforeUnmount(() => {
   background: #fff8fb;
 }
 
-.tool-output-shell.failed,
-.tool-output-chart-direct.failed {
+.tool-output-shell.failed {
   background: transparent;
 }
 
