@@ -1,5 +1,6 @@
 import {
   buildChartRenderModel,
+  extractChartSpec,
   extractChartSpecsFromText,
   parseChartSpec,
   stripChartSpecsFromText,
@@ -103,6 +104,36 @@ describe('chartSpec', () => {
     expect(specs).toHaveLength(1)
     expect(specs[0].chart_type).toBe('pie')
     expect(specs[0].series[0].field).toBe('publish_cnt')
+  })
+
+  it('extracts chart specs from tool-result content blocks for conclusion-area promotion', () => {
+    const spec = {
+      kind: 'chart_spec',
+      version: 1,
+      chart_type: 'line',
+      title: '最近30天工作流发布趋势',
+      x_field: 'stat_day',
+      series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+      dataset: [{ stat_day: '2026-03-01', publish_cnt: 3 }],
+      error: null
+    }
+
+    // Tool result delivered as Claude content blocks (array of {type,text}).
+    const fromContentBlocks = extractChartSpec([
+      { type: 'text', text: JSON.stringify(spec) }
+    ])
+    expect(fromContentBlocks?.chart_type).toBe('line')
+    expect(fromContentBlocks?.series[0].field).toBe('publish_cnt')
+
+    // Tool result delivered as raw stdout text with surrounding noise.
+    const fromStdout = extractChartSpec(`build ok\n${JSON.stringify(spec)}\n`)
+    expect(fromStdout?.chart_type).toBe('line')
+
+    // Direct object passthrough still works.
+    expect(extractChartSpec(spec)?.title).toBe('最近30天工作流发布趋势')
+
+    // Non-chart output stays null so unrelated tools are not promoted.
+    expect(extractChartSpec([{ type: 'text', text: 'no chart here' }])).toBeNull()
   })
 
   it('extracts and strips xml-style chart spec blocks', () => {

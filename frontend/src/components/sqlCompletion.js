@@ -255,6 +255,7 @@ export const createSqlCompletionSource = ({ getCompletionContext, getTableNames 
   return async (context) => {
     const token = getToken(context)
     if (!token.text && !context.explicit) return null
+
     const ctx = typeof getCompletionContext === 'function' ? getCompletionContext() : null
     const currentSchema = String(ctx?.currentSchema || ctx?.dbName || '').trim()
 

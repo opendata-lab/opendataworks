@@ -173,7 +173,7 @@
                   </div>
 
                   <div v-else-if="block.kind === 'tool' && block.tool" class="query-final-chart">
-                    <ToolOutputRenderer :tool="block.tool" />
+                    <ToolOutputRenderer :tool="chartOnlyToolProp(block.tool)" />
                   </div>
                 </div>
 
@@ -370,7 +370,7 @@ import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
-import { parseChartSpec, stripChartSpecsFromText } from './chartSpec'
+import { extractChartSpec, stripChartSpecsFromText } from './chartSpec'
 import { describeToolAction, extractToolSkillName, formatSkillBootstrapLabel, isSkillBootstrapPlaceholder } from './toolPresentation'
 import {
   createAssistantMessageState,
@@ -825,21 +825,22 @@ const shouldRenderToolBlock = (tool) => {
   return Boolean(detail || hasMeaningfulToolPayload(tool.output))
 }
 
-const extractChartSpecFromToolOutput = (value) => {
-  const parsed = parseChartSpec(value)
-  if (parsed) return parsed
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const itemParsed = extractChartSpecFromToolOutput(item)
-      if (itemParsed) return itemParsed
-    }
-  }
-  return null
-}
-
 const isChartBlock = (block) => block?.kind === 'tool'
   && block.tool
-  && Boolean(extractChartSpecFromToolOutput(block.tool.output))
+  && Boolean(extractChartSpec(block.tool.output))
+
+// In the conclusion area we only want the chart itself, not the full tool-call
+// box (header, meta, expandable trace). Wrap the extracted chart_spec into a
+// synthetic tool so ToolOutputRenderer renders it as a clean direct chart.
+const chartOnlyToolProp = (tool) => ({
+  name: 'render_chart',
+  input: null,
+  output: extractChartSpec(tool?.output),
+  status: 'success',
+  id: tool?.id || null,
+  _callComplete: true,
+  _runtimeStarted: true
+})
 
 const renderBlocksForMessage = (msg) => (Array.isArray(msg?.renderBlocks) ? msg.renderBlocks : []).filter((block) => {
   if (!block || typeof block !== 'object') return false
@@ -884,8 +885,10 @@ const markFollowupToolWithSkillContext = (blocks) => {
   }, [])
 }
 
+// Chart blocks stay in the 深度思考 process panel (showing the tool execution) and
+// are additionally surfaced in the conclusion area below the answer text.
 const processBlocksForMessage = (msg) => markFollowupToolWithSkillContext(renderBlocksForMessage(msg))
-  .filter((block) => ['thinking', 'tool'].includes(block.kind) && !isChartBlock(block))
+  .filter((block) => ['thinking', 'tool'].includes(block.kind))
 
 const finalBlocksForMessage = (msg) => renderBlocksForMessage(msg)
   .filter((block) => ['main_text', 'error'].includes(block.kind) || isChartBlock(block))

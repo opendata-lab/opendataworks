@@ -105,6 +105,19 @@ describe('sql completion source', () => {
     expect(Date.now() - started).toBeLessThan(1000)
   })
 
+  it('suggests current-schema tables while typing bare words', async () => {
+    const ctx = completionContext()
+    const source = createSqlCompletionSource({
+      getCompletionContext: () => ctx,
+      getTableNames: () => []
+    })
+
+    const result = await source(editorContext('fa', false))
+
+    expect(result.options.some((item) => item.label === 'fact_orders')).toBe(true)
+    expect(result.options.some((item) => item.label === 'SELECT')).toBe(true)
+  })
+
   it('keeps legacy tableNames completion for existing callers', async () => {
     const source = createSqlCompletionSource({
       getCompletionContext: () => null,

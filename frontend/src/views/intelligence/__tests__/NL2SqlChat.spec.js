@@ -1321,7 +1321,7 @@ describe('NL2SqlChat', () => {
     expect(wrapper.find('.query-followup-suggestion').exists()).toBe(false)
   })
 
-  it('renders tool chart_spec blocks in the conclusion area instead of the process panel', async () => {
+  it('keeps tool chart_spec blocks in the process panel and also renders them in the conclusion area', async () => {
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
       topic_id: 'topic-1',
       page: 1,
@@ -1376,9 +1376,73 @@ describe('NL2SqlChat', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(wrapper.find('.query-process-content').exists()).toBe(false)
+    // Chart is surfaced in the conclusion area below the answer.
     expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').exists()).toBe(true)
     expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').attributes('data-output-kind')).toBe('chart_spec')
+
+    // ...and is also kept inside the 深度思考 process panel (visible once expanded).
+    expect(wrapper.find('.query-process-panel').exists()).toBe(true)
+    expect(wrapper.find('.query-process-content').exists()).toBe(false)
+    await wrapper.find('.query-process-summary').trigger('click')
+    expect(wrapper.find('.query-process-content .tool-output-renderer-stub[data-output-kind="chart_spec"]').exists()).toBe(true)
+  })
+
+  it('surfaces chart_spec in the conclusion area when the tool emits it as stdout content blocks', async () => {
+    const chartSpecJson = JSON.stringify({
+      kind: 'chart_spec',
+      chart_type: 'line',
+      title: '发布趋势',
+      x_field: 'stat_day',
+      series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+      dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }]
+    })
+
+    apiMocks.topicApi.getTopicMessages.mockResolvedValue({
+      topic_id: 'topic-1',
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a1',
+          topic_id: 'topic-1',
+          task_id: 'task-1',
+          sender_type: 'assistant',
+          type: 'assistant',
+          status: 'finished',
+          content: '最近 30 天共发布 4 次。',
+          blocks: [
+            {
+              block_id: 'tool-chart',
+              type: 'tool',
+              status: 'success',
+              tool_id: 'tool-chart',
+              tool_name: 'Bash',
+              // Build script result delivered as Claude content blocks, not a structured object.
+              output: [{ type: 'text', text: `build ok\n${chartSpecJson}` }]
+            },
+            {
+              block_id: 'main-1',
+              type: 'main_text',
+              status: 'success',
+              text: '最近 30 天共发布 4 次。'
+            }
+          ],
+          created_at: '2026-03-10T02:00:00Z'
+        }
+      ]
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    // Chart from stdout content blocks is detected and rendered in the conclusion area,
+    // while the tool block is still kept in the process panel.
+    expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').exists()).toBe(true)
+    expect(wrapper.find('.query-process-panel').exists()).toBe(true)
   })
 
   it('allows another topic to submit while the current topic is still awaiting acceptance', async () => {
