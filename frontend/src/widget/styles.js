@@ -524,7 +524,7 @@ export const WIDGET_STYLES = `
 }
 
 .query-workbench.is-floating .query-messages-inner {
-  padding: 14px 16px 20px;
+  padding: 14px 16px 120px;
 }
 
 .query-top-bar {
