@@ -114,6 +114,20 @@ def test_build_column_definition_preserves_auto_increment() -> None:
     assert migration._build_column_definition(row, "自增主键") == (
         "bigint NOT NULL AUTO_INCREMENT COMMENT '自增主键'"
     )
+
+
+def test_comment_migration_extends_current_dataagent_head() -> None:
+    migration = _load_migration()
+
+    assert migration.down_revision == "20260529_000014"
+
+
+def test_comment_migration_covers_widget_event_table() -> None:
+    migration = _load_migration()
+
+    assert migration.TABLE_COMMENTS["da_agent_widget_event"] == "DataAgent嵌入组件事件埋点表"
+    assert migration.COLUMN_COMMENTS["da_agent_widget_event"]["event_type"] == "事件类型"
+    assert migration.COLUMN_COMMENTS["da_agent_widget_event"]["payload_json"] == "事件负载JSON"
 ```
 
 - [ ] **Step 2: Run the test and confirm RED**
@@ -136,7 +150,7 @@ Expected: fail with `ModuleNotFoundError` because the migration has not been cre
 
 - [ ] **Step 1: Implement the migration**
 
-Create a migration with revision `20260601_000014`, down revision `20260529_000013`, helper functions for quoting/default rendering, and comment dictionaries for all in-scope tables and columns.
+Create a migration with revision `20260601_000014`, down revision `20260529_000014`, helper functions for quoting/default rendering, and comment dictionaries for all in-scope tables and columns.
 
 - [ ] **Step 2: Re-run the focused test and confirm GREEN**
 

@@ -28,6 +28,7 @@ This change covers the current DataAgent-owned `da_*` tables at Alembic head:
 - `da_agent_message_schedule_log`
 - `da_agent_profile`
 - `da_agent_sdk_record`
+- `da_agent_widget_event`
 
 The legacy `da_chat_*` tables are out of scope because they are dropped by `20260323_000004_magic_task_model.py`.
 
@@ -35,7 +36,7 @@ No public API, runtime behavior, persistence contract, or deployment contract ch
 
 ## Solution
 
-Add a new Alembic migration after `20260529_000013_add_agent_preset_questions.py` that applies MySQL table and column comments to the current DataAgent schema.
+Add a new Alembic migration after the current DataAgent Alembic head `20260529_000014_add_widget_event_log.py` that applies MySQL table and column comments to the current DataAgent schema.
 
 The migration will be defensive:
 

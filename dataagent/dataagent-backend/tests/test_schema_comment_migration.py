@@ -91,3 +91,17 @@ def test_build_column_definition_preserves_auto_increment() -> None:
     assert migration._build_column_definition(row, "自增主键") == (
         "bigint NOT NULL AUTO_INCREMENT COMMENT '自增主键'"
     )
+
+
+def test_comment_migration_extends_current_dataagent_head() -> None:
+    migration = _load_migration()
+
+    assert migration.down_revision == "20260529_000014"
+
+
+def test_comment_migration_covers_widget_event_table() -> None:
+    migration = _load_migration()
+
+    assert migration.TABLE_COMMENTS["da_agent_widget_event"] == "DataAgent嵌入组件事件埋点表"
+    assert migration.COLUMN_COMMENTS["da_agent_widget_event"]["event_type"] == "事件类型"
+    assert migration.COLUMN_COMMENTS["da_agent_widget_event"]["payload_json"] == "事件负载JSON"
