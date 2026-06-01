@@ -61,7 +61,12 @@
           <!-- Message loop -->
           <template v-for="msg in messages" :key="msg.id">
             <!-- User message -->
-            <div v-if="msg.role === 'user'" class="v2-msg-row v2-msg-user">
+            <div
+              v-if="msg.role === 'user'"
+              class="v2-msg-row v2-msg-user"
+              :class="{ 'is-target-message': msg.id === targetMessageId }"
+              :data-message-id="msg.id"
+            >
               <div class="v2-user-shell">
                 <div class="v2-user-bubble">{{ msg.content }}</div>
                 <div class="v2-msg-footer">
@@ -74,7 +79,12 @@
             </div>
 
             <!-- Assistant message -->
-            <div v-else class="v2-msg-row v2-msg-assistant">
+            <div
+              v-else
+              class="v2-msg-row v2-msg-assistant"
+              :class="{ 'is-target-message': msg.id === targetMessageId }"
+              :data-message-id="msg.id"
+            >
               <div class="v2-assistant-body">
                 <!-- Streaming: render turns from v2 state -->
                 <template v-if="msg._v2state">
@@ -286,6 +296,7 @@ const currentAgentName = computed(() => {
 const thinkingExpanded = reactive({})
 const messagesScrollbarRef = ref(null)
 const textareaRef = ref(null)
+const targetMessageId = ref('')
 
 let abortController = null
 
@@ -358,6 +369,78 @@ function handleScroll({ scrollTop, scrollHeight, clientHeight }) {
   autoScroll.value = scrollHeight - scrollTop - clientHeight < 60
 }
 
+function normalizeQueryValue(value) {
+  const first = Array.isArray(value) ? value[0] : value
+  return String(first || '').trim()
+}
+
+function routeTopicId() {
+  return normalizeQueryValue(route.query.topic_id)
+}
+
+function routeMessageId() {
+  return normalizeQueryValue(route.query.message_id)
+}
+
+function replaceRouteTopic(topicId, messageId = '') {
+  const query = { ...route.query, tab: 'chat-v2' }
+  const normalizedTopicId = normalizeQueryValue(topicId)
+  const normalizedMessageId = normalizeQueryValue(messageId)
+
+  if (normalizedTopicId) {
+    query.topic_id = normalizedTopicId
+  } else {
+    delete query.topic_id
+  }
+
+  if (normalizedMessageId) {
+    query.message_id = normalizedMessageId
+  } else {
+    delete query.message_id
+  }
+
+  const navigation = router.replace({
+    path: route.path || '/intelligent-query',
+    query,
+  })
+  if (navigation?.catch) {
+    navigation.catch(() => {})
+  }
+}
+
+function messageRootElement() {
+  const scrollbar = messagesScrollbarRef.value
+  return scrollbar?.$el || scrollbar?.wrapRef || null
+}
+
+function findMessageElement(messageId) {
+  const normalizedMessageId = normalizeQueryValue(messageId)
+  const root = messageRootElement()
+  if (!root || !normalizedMessageId) return null
+  return Array.from(root.querySelectorAll('[data-message-id]'))
+    .find((el) => el.getAttribute('data-message-id') === normalizedMessageId) || null
+}
+
+function focusMessage(messageId) {
+  const normalizedMessageId = normalizeQueryValue(messageId)
+  if (!normalizedMessageId) {
+    targetMessageId.value = ''
+    scrollToBottom(true)
+    return
+  }
+
+  targetMessageId.value = normalizedMessageId
+  nextTick(() => {
+    const el = findMessageElement(normalizedMessageId)
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      return
+    }
+    targetMessageId.value = ''
+    scrollToBottom(true)
+  })
+}
+
 // ── Data loading ───────────────────────────────────────────────────────────
 async function loadSettings() {
   try {
@@ -405,7 +488,10 @@ async function loadTopics() {
     if (route.query.agent_id) params.agent_id = route.query.agent_id
     const data = await topicApi.listTopics(params)
     topics.value = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
-    if (topics.value.length && !activeTopicId.value) {
+    const requestedTopicId = routeTopicId()
+    if (requestedTopicId) {
+      await selectTopic(requestedTopicId, { messageId: routeMessageId() })
+    } else if (topics.value.length && !activeTopicId.value) {
       await selectTopic(topics.value[0].topic_id)
     }
   } catch {
@@ -413,15 +499,38 @@ async function loadTopics() {
   }
 }
 
-async function selectTopic(topicId) {
-  activeTopicId.value = topicId
+async function ensureTopicListed(topicId) {
+  const normalizedTopicId = normalizeQueryValue(topicId)
+  if (!normalizedTopicId || topics.value.some((topic) => String(topic?.topic_id || '') === normalizedTopicId)) return
   try {
-    const data = await topicApi.getTopicMessages(topicId, { page: 1, page_size: 500, order: 'asc' })
+    const topic = await topicApi.getTopic(normalizedTopicId)
+    if (topic?.topic_id) {
+      topics.value.unshift(topic)
+    }
+  } catch {
+    // The message list can still load even when the topic summary lookup fails.
+  }
+}
+
+async function selectTopic(topicId, options = {}) {
+  const normalizedTopicId = normalizeQueryValue(topicId)
+  if (!normalizedTopicId) return
+  activeTopicId.value = normalizedTopicId
+  await ensureTopicListed(normalizedTopicId)
+  try {
+    const data = await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
     messages.value = list.map((m) => hydrateHistoryMessage(m))
-    scrollToBottom(true)
+    const messageId = normalizeQueryValue(options.messageId)
+    if (messageId) {
+      focusMessage(messageId)
+    } else {
+      targetMessageId.value = ''
+      scrollToBottom(true)
+    }
   } catch {
     messages.value = []
+    targetMessageId.value = ''
   }
 }
 
@@ -540,13 +649,20 @@ async function handleNewTopic() {
   if (isStreaming.value) return
   activeTopicId.value = ''
   messages.value = []
+  targetMessageId.value = ''
   searchKeyword.value = ''
+  replaceRouteTopic('')
 }
 
 async function handleSelectTopic(topicId) {
-  if (topicId === activeTopicId.value) return
+  if (topicId === activeTopicId.value) {
+    targetMessageId.value = ''
+    replaceRouteTopic(topicId)
+    return
+  }
   if (isStreaming.value) handleCancel()
   await selectTopic(topicId)
+  replaceRouteTopic(topicId)
 }
 
 function handleAgentChange(agentId) {
@@ -559,7 +675,10 @@ function handleAgentChange(agentId) {
   } else {
     delete query.agent_id
   }
-  router.replace({ path: route.path, query }).catch(() => {})
+  const navigation = router.replace({ path: route.path, query })
+  if (navigation?.catch) {
+    navigation.catch(() => {})
+  }
 }
 
 function handleModelCommand(command) {
@@ -653,6 +772,7 @@ async function handleSend() {
       return
     }
   }
+  replaceRouteTopic(topicId)
 
   // Append user message locally
   messages.value.push({
@@ -732,6 +852,28 @@ watch(() => route.query.agent_id, async () => {
   messages.value = []
   await loadTopics()
 })
+
+watch(
+  () => [route.query.topic_id, route.query.message_id],
+  async ([topicId, messageId]) => {
+    const normalizedTopicId = normalizeQueryValue(topicId)
+    const normalizedMessageId = normalizeQueryValue(messageId)
+    if (!normalizedTopicId) {
+      targetMessageId.value = ''
+      return
+    }
+    if (normalizedTopicId !== activeTopicId.value) {
+      if (isStreaming.value) handleCancel()
+      await selectTopic(normalizedTopicId, { messageId: normalizedMessageId })
+      return
+    }
+    if (normalizedMessageId) {
+      focusMessage(normalizedMessageId)
+    } else {
+      targetMessageId.value = ''
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   abortController?.abort()
@@ -983,6 +1125,14 @@ onBeforeUnmount(() => {
 
 /* ── Message rows ────────────────────────────────────────────────────────── */
 .v2-msg-row { display: flex; }
+
+.v2-msg-row.is-target-message {
+  border-radius: 12px;
+  background: rgba(32, 80, 166, 0.06);
+  box-shadow: 0 0 0 1px rgba(32, 80, 166, 0.16);
+  padding: 8px;
+  margin: -8px;
+}
 
 .v2-msg-user { justify-content: flex-end; }
 
