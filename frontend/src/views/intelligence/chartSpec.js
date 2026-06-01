@@ -27,6 +27,47 @@ export const parseMaybeJson = (value) => {
   }
 }
 
+export const extractTextParts = (value) => {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === 'string') return item
+      if (isPlainObject(item)) {
+        if (typeof item.text === 'string') return item.text
+        if (typeof item.content === 'string') return item.content
+      }
+      return ''
+    }).filter(Boolean).join('\n')
+  }
+  if (isPlainObject(value)) {
+    if (typeof value.text === 'string') return value.text
+    if (typeof value.content === 'string') return value.content
+    if (typeof value.stdout === 'string') return value.stdout
+    if (typeof value.result === 'string') return value.result
+  }
+  return ''
+}
+
+// Deeply locate a chart_spec inside a tool output, which can arrive as a raw
+// object, an array of tool-result content blocks, or JSON embedded in stdout
+// text. Both the in-box renderer and the conclusion-area promotion logic rely
+// on this single source of truth so detection and rendering never diverge.
+export const extractChartSpec = (value) => {
+  const direct = parseChartSpec(value)
+  if (direct) return direct
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const itemChart = parseChartSpec(item)
+      if (itemChart) return itemChart
+      const itemTextChart = parseChartSpec(extractTextParts(item))
+      if (itemTextChart) return itemTextChart
+    }
+  }
+
+  return parseChartSpec(extractTextParts(value))
+}
+
 const normalizeDataset = (value) => (
   Array.isArray(value)
     ? value.filter(isPlainObject).map((row) => ({ ...row }))

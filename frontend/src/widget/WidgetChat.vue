@@ -104,7 +104,7 @@
                         </div>
                       </div>
 
-                      <!-- Tool use block -->
+                      <!-- Tool use block (chart-producing tools are also re-rendered in the conclusion area below) -->
                       <div v-else-if="block.type === 'tool_use'" class="query-tool-row">
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
@@ -121,6 +121,15 @@
                       </div>
                     </template>
                   </template>
+
+                  <!-- Conclusion area: only the chart itself (not the full tool-call box) -->
+                  <div
+                    v-for="(block, ci) in conclusionChartBlocks(msg)"
+                    :key="'chart-' + ci"
+                    class="query-final-chart"
+                  >
+                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
+                  </div>
 
                   <div v-if="msg._v2state.status === 'error'" class="query-error-card">
                     <span class="query-error-label">错误</span>
@@ -160,7 +169,7 @@
               rows="1"
               :disabled="!providers.length || !availableModels.length"
               placeholder="输入数据问题…"
-              @keydown.enter.exact.prevent="send"
+              @keydown.enter="onEnterKey"
               @input="autoResizeTextarea"
             />
             <button
@@ -181,6 +190,7 @@
           </div>
           <!-- Toolbar row -->
           <div class="query-composer-toolbar">
+            <div class="query-composer-hint">Enter 发送，Shift + Enter 换行</div>
             <div class="query-model-selector">
               <select v-model="selectedProvider" class="query-model-select" :disabled="!providers.length || isBusy" title="切换提供商">
                 <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
@@ -219,7 +229,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch 
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
-import { extractChartSpecsFromText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
+import { extractChartSpec, extractChartSpecsFromText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -405,6 +415,21 @@ const extractedChartSpecs = (content) => extractChartSpecsFromText(String(conten
 
 const chartSpecToToolProp = (spec) => ({ name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true })
 
+// Chart-producing tool blocks are also surfaced in the conclusion area below the
+// answer text, in addition to their inline tool row.
+const isToolChartBlock = (block) => block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
+
+const conclusionChartBlocks = (msg) => {
+  const turns = Array.isArray(msg?._v2state?.turns) ? msg._v2state.turns : []
+  const blocks = []
+  for (const turn of turns) {
+    for (const block of (turn.blocks || [])) {
+      if (isToolChartBlock(block)) blocks.push(block)
+    }
+  }
+  return blocks
+}
+
 const buildV2StateFromStoredBlocks = (item) => {
   const v2state = createChatState()
   v2state.status = 'done'
@@ -515,7 +540,9 @@ const loadTopics = async () => {
     const list = await api.topicApi.listTopics({ agent_id: agentId.value || undefined })
     topics.value = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
     sortTopics()
-    const nextTopicId = topicId.value || topics.value[0]?.topic_id || ''
+    // Default to a fresh conversation on open instead of auto-selecting the latest topic,
+    // so users can ask a new question immediately. Existing topics remain in history.
+    const nextTopicId = topicId.value || ''
     topicId.value = nextTopicId
     await loadTopicMessages(nextTopicId)
   } catch (_error) {
@@ -843,6 +870,15 @@ const autoResizeTextarea = (event) => {
   const el = event.target
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+}
+
+// Enter 发送，Shift + Enter 换行。
+// 输入法（如中文）组合输入期间的回车用于确认候选词，不应触发发送。
+const onEnterKey = (event) => {
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
+  event.preventDefault()
+  send()
 }
 
 watch(

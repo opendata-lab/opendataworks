@@ -61,7 +61,12 @@
           <!-- Message loop -->
           <template v-for="msg in messages" :key="msg.id">
             <!-- User message -->
-            <div v-if="msg.role === 'user'" class="v2-msg-row v2-msg-user">
+            <div
+              v-if="msg.role === 'user'"
+              class="v2-msg-row v2-msg-user"
+              :class="{ 'is-target-message': msg.id === targetMessageId }"
+              :data-message-id="msg.id"
+            >
               <div class="v2-user-shell">
                 <div class="v2-user-bubble">{{ msg.content }}</div>
                 <div class="v2-msg-footer">
@@ -74,7 +79,12 @@
             </div>
 
             <!-- Assistant message -->
-            <div v-else class="v2-msg-row v2-msg-assistant">
+            <div
+              v-else
+              class="v2-msg-row v2-msg-assistant"
+              :class="{ 'is-target-message': msg.id === targetMessageId }"
+              :data-message-id="msg.id"
+            >
               <div class="v2-assistant-body">
                 <!-- Streaming: render turns from v2 state -->
                 <template v-if="msg._v2state">
@@ -107,7 +117,7 @@
                         </el-scrollbar>
                       </div>
 
-                      <!-- Tool use block -->
+                      <!-- Tool use block (chart-producing tools are also re-rendered in the conclusion area below) -->
                       <div v-else-if="block.type === 'tool_use'" class="v2-tool-row">
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
@@ -124,6 +134,15 @@
                       </div>
                     </template>
                   </template>
+
+                  <!-- Conclusion area: only the chart itself (not the full tool-call box) -->
+                  <div
+                    v-for="(block, ci) in conclusionChartBlocks(msg)"
+                    :key="'v2-chart-' + ci"
+                    class="v2-final-chart"
+                  >
+                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
+                  </div>
 
                   <!-- Error from stream -->
                   <div v-if="msg._v2state.status === 'error'" class="v2-error-card">
@@ -192,7 +211,9 @@
           </div>
           <!-- Bottom toolbar -->
           <div class="v2-composer-toolbar">
-            <div class="v2-composer-toolbar-left" />
+            <div class="v2-composer-toolbar-left">
+              <span class="v2-composer-hint">Enter 发送，Shift + Enter 换行</span>
+            </div>
             <div class="v2-composer-toolbar-right">
               <el-dropdown trigger="click" @command="handleModelCommand">
                 <button type="button" class="v2-model-btn" title="切换模型">
@@ -243,7 +264,7 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
-import { extractChartSpecsFromText, stripChartSpecsFromText } from './chartSpec'
+import { extractChartSpec, extractChartSpecsFromText, stripChartSpecsFromText } from './chartSpec'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -275,6 +296,7 @@ const currentAgentName = computed(() => {
 const thinkingExpanded = reactive({})
 const messagesScrollbarRef = ref(null)
 const textareaRef = ref(null)
+const targetMessageId = ref('')
 
 let abortController = null
 
@@ -347,6 +369,78 @@ function handleScroll({ scrollTop, scrollHeight, clientHeight }) {
   autoScroll.value = scrollHeight - scrollTop - clientHeight < 60
 }
 
+function normalizeQueryValue(value) {
+  const first = Array.isArray(value) ? value[0] : value
+  return String(first || '').trim()
+}
+
+function routeTopicId() {
+  return normalizeQueryValue(route.query.topic_id)
+}
+
+function routeMessageId() {
+  return normalizeQueryValue(route.query.message_id)
+}
+
+function replaceRouteTopic(topicId, messageId = '') {
+  const query = { ...route.query, tab: 'chat-v2' }
+  const normalizedTopicId = normalizeQueryValue(topicId)
+  const normalizedMessageId = normalizeQueryValue(messageId)
+
+  if (normalizedTopicId) {
+    query.topic_id = normalizedTopicId
+  } else {
+    delete query.topic_id
+  }
+
+  if (normalizedMessageId) {
+    query.message_id = normalizedMessageId
+  } else {
+    delete query.message_id
+  }
+
+  const navigation = router.replace({
+    path: route.path || '/intelligent-query',
+    query,
+  })
+  if (navigation?.catch) {
+    navigation.catch(() => {})
+  }
+}
+
+function messageRootElement() {
+  const scrollbar = messagesScrollbarRef.value
+  return scrollbar?.$el || scrollbar?.wrapRef || null
+}
+
+function findMessageElement(messageId) {
+  const normalizedMessageId = normalizeQueryValue(messageId)
+  const root = messageRootElement()
+  if (!root || !normalizedMessageId) return null
+  return Array.from(root.querySelectorAll('[data-message-id]'))
+    .find((el) => el.getAttribute('data-message-id') === normalizedMessageId) || null
+}
+
+function focusMessage(messageId) {
+  const normalizedMessageId = normalizeQueryValue(messageId)
+  if (!normalizedMessageId) {
+    targetMessageId.value = ''
+    scrollToBottom(true)
+    return
+  }
+
+  targetMessageId.value = normalizedMessageId
+  nextTick(() => {
+    const el = findMessageElement(normalizedMessageId)
+    if (el?.scrollIntoView) {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+      return
+    }
+    targetMessageId.value = ''
+    scrollToBottom(true)
+  })
+}
+
 // ── Data loading ───────────────────────────────────────────────────────────
 async function loadSettings() {
   try {
@@ -394,7 +488,10 @@ async function loadTopics() {
     if (route.query.agent_id) params.agent_id = route.query.agent_id
     const data = await topicApi.listTopics(params)
     topics.value = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
-    if (topics.value.length && !activeTopicId.value) {
+    const requestedTopicId = routeTopicId()
+    if (requestedTopicId) {
+      await selectTopic(requestedTopicId, { messageId: routeMessageId() })
+    } else if (topics.value.length && !activeTopicId.value) {
       await selectTopic(topics.value[0].topic_id)
     }
   } catch {
@@ -402,15 +499,38 @@ async function loadTopics() {
   }
 }
 
-async function selectTopic(topicId) {
-  activeTopicId.value = topicId
+async function ensureTopicListed(topicId) {
+  const normalizedTopicId = normalizeQueryValue(topicId)
+  if (!normalizedTopicId || topics.value.some((topic) => String(topic?.topic_id || '') === normalizedTopicId)) return
   try {
-    const data = await topicApi.getTopicMessages(topicId, { page: 1, page_size: 500, order: 'asc' })
+    const topic = await topicApi.getTopic(normalizedTopicId)
+    if (topic?.topic_id) {
+      topics.value.unshift(topic)
+    }
+  } catch {
+    // The message list can still load even when the topic summary lookup fails.
+  }
+}
+
+async function selectTopic(topicId, options = {}) {
+  const normalizedTopicId = normalizeQueryValue(topicId)
+  if (!normalizedTopicId) return
+  activeTopicId.value = normalizedTopicId
+  await ensureTopicListed(normalizedTopicId)
+  try {
+    const data = await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
     messages.value = list.map((m) => hydrateHistoryMessage(m))
-    scrollToBottom(true)
+    const messageId = normalizeQueryValue(options.messageId)
+    if (messageId) {
+      focusMessage(messageId)
+    } else {
+      targetMessageId.value = ''
+      scrollToBottom(true)
+    }
   } catch {
     messages.value = []
+    targetMessageId.value = ''
   }
 }
 
@@ -487,6 +607,23 @@ function chartSpecToToolProp(spec) {
   return { name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true }
 }
 
+// A tool_use block whose output resolves to a chart_spec is also surfaced in the
+// conclusion area below the answer text, in addition to its inline tool row.
+function isToolChartBlock(block) {
+  return block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
+}
+
+function conclusionChartBlocks(msg) {
+  const turns = Array.isArray(msg?._v2state?.turns) ? msg._v2state.turns : []
+  const blocks = []
+  for (const turn of turns) {
+    for (const block of (turn.blocks || [])) {
+      if (isToolChartBlock(block)) blocks.push(block)
+    }
+  }
+  return blocks
+}
+
 // ── Suggestions ───────────────────────────────────────────────────────────
 const DEFAULT_SUGGESTIONS = [
   '最近 30 天工作流发布次数趋势',
@@ -512,13 +649,20 @@ async function handleNewTopic() {
   if (isStreaming.value) return
   activeTopicId.value = ''
   messages.value = []
+  targetMessageId.value = ''
   searchKeyword.value = ''
+  replaceRouteTopic('')
 }
 
 async function handleSelectTopic(topicId) {
-  if (topicId === activeTopicId.value) return
+  if (topicId === activeTopicId.value) {
+    targetMessageId.value = ''
+    replaceRouteTopic(topicId)
+    return
+  }
   if (isStreaming.value) handleCancel()
   await selectTopic(topicId)
+  replaceRouteTopic(topicId)
 }
 
 function handleAgentChange(agentId) {
@@ -531,7 +675,10 @@ function handleAgentChange(agentId) {
   } else {
     delete query.agent_id
   }
-  router.replace({ path: route.path, query }).catch(() => {})
+  const navigation = router.replace({ path: route.path, query })
+  if (navigation?.catch) {
+    navigation.catch(() => {})
+  }
 }
 
 function handleModelCommand(command) {
@@ -625,6 +772,7 @@ async function handleSend() {
       return
     }
   }
+  replaceRouteTopic(topicId)
 
   // Append user message locally
   messages.value.push({
@@ -704,6 +852,28 @@ watch(() => route.query.agent_id, async () => {
   messages.value = []
   await loadTopics()
 })
+
+watch(
+  () => [route.query.topic_id, route.query.message_id],
+  async ([topicId, messageId]) => {
+    const normalizedTopicId = normalizeQueryValue(topicId)
+    const normalizedMessageId = normalizeQueryValue(messageId)
+    if (!normalizedTopicId) {
+      targetMessageId.value = ''
+      return
+    }
+    if (normalizedTopicId !== activeTopicId.value) {
+      if (isStreaming.value) handleCancel()
+      await selectTopic(normalizedTopicId, { messageId: normalizedMessageId })
+      return
+    }
+    if (normalizedMessageId) {
+      focusMessage(normalizedMessageId)
+    } else {
+      targetMessageId.value = ''
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   abortController?.abort()
@@ -956,6 +1126,14 @@ onBeforeUnmount(() => {
 /* ── Message rows ────────────────────────────────────────────────────────── */
 .v2-msg-row { display: flex; }
 
+.v2-msg-row.is-target-message {
+  border-radius: 12px;
+  background: rgba(32, 80, 166, 0.06);
+  box-shadow: 0 0 0 1px rgba(32, 80, 166, 0.16);
+  padding: 8px;
+  margin: -8px;
+}
+
 .v2-msg-user { justify-content: flex-end; }
 
 .v2-user-shell { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; max-width: 72%; }
@@ -1095,6 +1273,7 @@ onBeforeUnmount(() => {
 
 /* ── Tool output row ─────────────────────────────────────────────────────── */
 .v2-tool-row { border-radius: 10px; overflow: hidden; }
+.v2-final-chart { margin-top: 12px; }
 
 /* ── Text block ──────────────────────────────────────────────────────────── */
 .v2-text-block {
@@ -1233,6 +1412,13 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.v2-composer-hint {
+  color: #9aa5b1;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .v2-composer-toolbar-right {

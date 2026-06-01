@@ -7,6 +7,9 @@
         class="shell-trace-summary"
         @click="togglePanel"
       >
+        <svg class="tool-output-icon shell-trace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
+        </svg>
         <span class="shell-trace-summary-text">
           {{ traceSummaryText }}
         </span>
@@ -17,6 +20,9 @@
       </button>
 
       <div v-else class="shell-trace-summary shell-trace-summary-static">
+        <svg class="tool-output-icon shell-trace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
+        </svg>
         <span class="shell-trace-summary-text">
           {{ traceSummaryText }}
         </span>
@@ -56,14 +62,19 @@
       :class="{ 'is-interactive': showMainToggle }"
       @click="showMainToggle ? togglePanel() : null"
     >
-      <div class="tool-output-head-content">
-        <div class="tool-output-label">{{ displayLabel }}</div>
+      <div class="tool-output-head-main">
+        <svg class="tool-output-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
+        </svg>
+        <div class="tool-output-head-content">
+          <div class="tool-output-label">{{ displayLabel }}</div>
 
-        <div class="tool-output-meta" v-if="metaItems.length > 0">
-          <span v-for="(item, index) in metaItems" :key="index">
-            <template v-if="index > 0"> · </template>
-            <span :class="{ 'is-failed': hasError && item === statusLabel }">{{ item }}</span>
-          </span>
+          <div class="tool-output-meta" v-if="metaItems.length > 0">
+            <span v-for="(item, index) in metaItems" :key="index">
+              <template v-if="index > 0"> · </template>
+              <span :class="{ 'is-failed': hasError && item === statusLabel }">{{ item }}</span>
+            </span>
+          </div>
         </div>
       </div>
       <div class="tool-output-head-right">
@@ -196,7 +207,7 @@ import {
   TooltipComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { buildChartRenderModel, parseChartSpec, parseMaybeJson } from './chartSpec'
+import { buildChartRenderModel, extractChartSpec, extractTextParts, parseMaybeJson } from './chartSpec'
 import { describeToolAction, formatSkillBootstrapLabel } from './toolPresentation'
 
 use([
@@ -227,6 +238,20 @@ const rawMarkdownExpanded = ref(false)
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value)
 
 const MARKDOWN_PREVIEW_LINES = 5
+
+// Leading icons so each tool-call box is recognizable without expanding it.
+const TOOL_ICON_PATHS = {
+  shell: ['M4 17l6-6-6-6', 'M12 19h8'],
+  read: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M9 13h6', 'M9 17h4'],
+  list: ['M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'],
+  search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M21 21l-4.5-4.5'],
+  edit: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
+  skill: ['M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z'],
+  sql: ['M12 3c4.97 0 9 1.34 9 3s-4.03 3-9 3-9-1.34-9-3 4.03-3 9-3z', 'M21 6v6c0 1.66-4.03 3-9 3s-9-1.34-9-3V6', 'M21 12v6c0 1.66-4.03 3-9 3s-9-1.34-9-3v-6'],
+  chart: ['M3 21h18', 'M7 21V11', 'M12 21V5', 'M17 21v-7'],
+  python: ['M8 18l-6-6 6-6', 'M16 6l6 6-6 6'],
+  tool: ['M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z']
+}
 
 const escapeHtml = (text) => String(text || '')
   .replace(/&/g, '&amp;')
@@ -270,48 +295,20 @@ const looksLikeMarkdown = (text) => {
     || /\[[^\]]+\]\([^)]+\)/.test(value)
 }
 
-const extractTextParts = (value) => {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) {
-    return value.map((item) => {
-      if (typeof item === 'string') return item
-      if (isPlainObject(item)) {
-        if (typeof item.text === 'string') return item.text
-        if (typeof item.content === 'string') return item.content
-      }
-      return ''
-    }).filter(Boolean).join('\n')
-  }
-  if (isPlainObject(value)) {
-    if (typeof value.text === 'string') return value.text
-    if (typeof value.content === 'string') return value.content
-    if (typeof value.stdout === 'string') return value.stdout
-    if (typeof value.result === 'string') return value.result
-  }
-  return ''
-}
-
 const normalizeOutput = (value) => {
-  const normalizedChart = parseChartSpec(value)
+  const normalizedChart = extractChartSpec(value)
   if (normalizedChart) return normalizedChart
+
   if (isPlainObject(value) && value.kind) return value
   if (Array.isArray(value)) {
     for (const item of value) {
-      const normalizedItemChart = parseChartSpec(item)
-      if (normalizedItemChart) return normalizedItemChart
       if (isPlainObject(item) && item.kind) return item
-      const text = extractTextParts(item)
-      const parsed = parseMaybeJson(text)
-      const normalizedParsedChart = parseChartSpec(parsed)
-      if (normalizedParsedChart) return normalizedParsedChart
+      const parsed = parseMaybeJson(extractTextParts(item))
       if (isPlainObject(parsed) && parsed.kind) return parsed
     }
   }
 
-  const text = extractTextParts(value)
-  const parsed = parseMaybeJson(text)
-  const normalizedParsedChart = parseChartSpec(parsed)
-  if (normalizedParsedChart) return normalizedParsedChart
+  const parsed = parseMaybeJson(extractTextParts(value))
   if (isPlainObject(parsed) && parsed.kind) return parsed
   return null
 }
@@ -387,6 +384,16 @@ const displayLabel = computed(() => {
 })
 
 const isStructuredKind = computed(() => ['sql_execution', 'chart_spec', 'python_execution'].includes(kind.value))
+
+const iconKind = computed(() => {
+  if (kind.value === 'sql_execution') return 'sql'
+  if (kind.value === 'chart_spec') return 'chart'
+  if (kind.value === 'python_execution') return 'python'
+  if (toolAction.value.kind === 'tool' && toolNameLower.value.includes('image')) return 'chart'
+  const actionKind = toolAction.value.kind
+  return TOOL_ICON_PATHS[actionKind] ? actionKind : 'tool'
+})
+const iconPaths = computed(() => TOOL_ICON_PATHS[iconKind.value] || TOOL_ICON_PATHS.tool)
 
 const traceKind = computed(() => {
   if (toolAction.value.isTrace) return toolAction.value.kind
@@ -686,13 +693,28 @@ const toolInstanceKey = computed(() => {
 
 let chartRefreshFrame = 0
 let chartInstance = null
+let chartResizeObserver = null
 let statusTimer = 0
 
 const disposeChart = () => {
+  if (chartResizeObserver) {
+    chartResizeObserver.disconnect()
+    chartResizeObserver = null
+  }
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
   }
+}
+
+// Keep the chart in sync with its container so it always fits the conversation
+// width/height instead of overflowing with horizontal/vertical scrollbars.
+const observeChartResize = (container) => {
+  if (chartResizeObserver || typeof window === 'undefined' || typeof window.ResizeObserver === 'undefined') return
+  chartResizeObserver = new window.ResizeObserver(() => {
+    if (chartInstance) chartInstance.resize()
+  })
+  chartResizeObserver.observe(container)
 }
 
 const refreshChart = async () => {
@@ -705,6 +727,7 @@ const refreshChart = async () => {
     try {
       if (!chartInstance) {
         chartInstance = echarts.init(container, undefined, { renderer: 'canvas' })
+        observeChartResize(container)
       }
       chartInstance.clear()
       chartInstance.setOption(chartOption.value, { notMerge: true, lazyUpdate: false })
@@ -1027,9 +1050,40 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.tool-output-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
 .tool-output-head-content {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.tool-output-icon {
+  width: 16px;
+  height: 16px;
+  color: #4F81FF;
+  flex-shrink: 0;
+}
+
+.tool-output.failed .tool-output-icon {
+  color: #be185d;
+}
+
+.shell-trace-icon {
+  width: 15px;
+  height: 15px;
+  color: #6b7280;
+}
+
+.shell-trace-summary-static .shell-trace-icon,
+.shell-trace-summary .shell-trace-icon {
+  color: #6b7280;
 }
 
 .tool-output-head-right {
@@ -1148,9 +1202,11 @@ onBeforeUnmount(() => {
 .tool-chart {
   display: block;
   margin-top: 8px;
+  box-sizing: border-box;
   min-height: 340px;
   height: 340px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   border-radius: 14px;
   background: #F9FAFC;

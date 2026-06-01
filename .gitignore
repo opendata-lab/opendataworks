@@ -27,9 +27,8 @@ frontend/yarn-debug.log*
 frontend/yarn-error.log*
 
 # Python
-dolphinscheduler-service/__pycache__/
-dolphinscheduler-service/**/__pycache__/
-dolphinscheduler-service/*.pyc
+**/__pycache__/
+**/*.pyc
 dolphinscheduler-service/.pytest_cache/
 dolphinscheduler-service/venv/
 dolphinscheduler-service/.venv/

@@ -323,7 +323,6 @@
                       v-model="tabStates[tab.id].query.sql"
                       class="sql-editor"
                       placeholder="-- 输入 SQL，支持查询与变更语句（高风险语句需强确认）"
-                      :table-names="getSqlCompletionTables(tab.id)"
                       :completion-context="getSqlCompletionContext(tab.id)"
                       @selection-change="(payload) => handleSqlSelectionChange(tab.id, payload)"
                     />
@@ -3247,16 +3246,6 @@ const searchCompletionTables = async (sourceId, keyword) => {
     console.error('搜索 SQL 补全表失败', error)
     return []
   }
-}
-
-const getSqlCompletionTables = (tabId) => {
-  const state = tabStates[String(tabId || '')]
-  if (!state) return []
-  const sourceId = String(state.table?.sourceId || '')
-  const dbName = String(state.table?.dbName || '')
-  if (!sourceId || !dbName) return []
-  const list = tableStore[sourceId]?.[dbName] || []
-  return list.map((item) => item.tableName).filter(Boolean)
 }
 
 const getSqlCompletionContext = (tabId) => {
