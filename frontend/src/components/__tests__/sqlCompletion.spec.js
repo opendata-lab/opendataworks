@@ -91,27 +91,31 @@ describe('sql completion source', () => {
     ]))
   })
 
-  it('keeps implicit bare-word completion lightweight while typing', async () => {
-    const ctx = completionContext()
-    const getTableNames = vi.fn(() => ['legacy_table'])
-    const getCompletionContext = vi.fn(() => ctx)
+  it('tokenizes long inputs in linear time (no catastrophic backtracking)', async () => {
     const source = createSqlCompletionSource({
-      getCompletionContext,
-      getTableNames
+      getCompletionContext: () => null,
+      getTableNames: () => []
+    })
+
+    // A long word-character run followed by a non-identifier boundary used to
+    // trigger exponential regex backtracking (~18s freeze) in getToken.
+    const doc = `SELECT col_${'a'.repeat(60)} `
+    const started = Date.now()
+    await source(editorContext(doc, true))
+    expect(Date.now() - started).toBeLessThan(1000)
+  })
+
+  it('suggests current-schema tables while typing bare words', async () => {
+    const ctx = completionContext()
+    const source = createSqlCompletionSource({
+      getCompletionContext: () => ctx,
+      getTableNames: () => []
     })
 
     const result = await source(editorContext('fa', false))
 
-    expect(getCompletionContext).not.toHaveBeenCalled()
-    expect(getTableNames).not.toHaveBeenCalled()
-    expect(ctx.loadTables).not.toHaveBeenCalled()
-    expect(ctx.searchTables).not.toHaveBeenCalled()
-    expect(result.options).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: 'SELECT' }),
-      expect.objectContaining({ label: 'COUNT' })
-    ]))
-    expect(result.options.some((item) => item.label === 'legacy_table')).toBe(false)
-    expect(result.options.some((item) => item.label === 'fact_orders')).toBe(false)
+    expect(result.options.some((item) => item.label === 'fact_orders')).toBe(true)
+    expect(result.options.some((item) => item.label === 'SELECT')).toBe(true)
   })
 
   it('keeps legacy tableNames completion for existing callers', async () => {
