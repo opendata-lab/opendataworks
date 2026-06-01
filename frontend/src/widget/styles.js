@@ -954,9 +954,18 @@ export const WIDGET_STYLES = `
 .query-composer-toolbar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 5px;
   padding-inline: 4px;
+}
+
+.query-composer-hint {
+  flex-shrink: 0;
+  color: #9aa5b1;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .query-model-selector {
