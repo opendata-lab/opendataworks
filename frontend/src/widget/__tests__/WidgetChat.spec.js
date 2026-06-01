@@ -286,8 +286,8 @@ describe('WidgetChat history conversations', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    // Chart is promoted to the conclusion area, not left inline in the tool stream.
+    // Chart is surfaced in the conclusion area, while the inline tool row is kept.
     expect(wrapper.find('.query-final-chart').exists()).toBe(true)
-    expect(wrapper.find('.query-tool-row').exists()).toBe(false)
+    expect(wrapper.find('.query-tool-row').exists()).toBe(true)
   })
 })

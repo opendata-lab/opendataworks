@@ -104,8 +104,8 @@
                         </div>
                       </div>
 
-                      <!-- Tool use block (chart-producing tools are promoted to the conclusion area below) -->
-                      <div v-else-if="block.type === 'tool_use' && !isToolChartBlock(block)" class="query-tool-row">
+                      <!-- Tool use block (chart-producing tools are also re-rendered in the conclusion area below) -->
+                      <div v-else-if="block.type === 'tool_use'" class="query-tool-row">
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
@@ -414,8 +414,8 @@ const extractedChartSpecs = (content) => extractChartSpecsFromText(String(conten
 
 const chartSpecToToolProp = (spec) => ({ name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true })
 
-// Chart-producing tool blocks are promoted from the inline tool stream into the
-// conclusion area below the answer text.
+// Chart-producing tool blocks are also surfaced in the conclusion area below the
+// answer text, in addition to their inline tool row.
 const isToolChartBlock = (block) => block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
 
 const conclusionChartBlocks = (msg) => {

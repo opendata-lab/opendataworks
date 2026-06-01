@@ -75,7 +75,7 @@
 - **结论区**：`finalBlocksForMessage` 在输出文本块（`main_text`）的同时，允许输出 `isChartBlock`。
 - 模板中在结论区通过 `<ToolOutputRenderer>` 渲染图表 block，得益于 `ToolOutputRenderer` 对 `chart_spec` 的直观渲染（直接显示折线/柱状/饼图），图表将在文本回答下方优雅呈递。
 - **内联 chart_spec 边界**：当前 `main_text` 中的 `<chart_spec>` 或 ```chart fenced block 已通过 `stripChartSpecsFromText` 从正文中隐藏。本设计不改变该行为，也不把它合成为图表 block；如果后续要展示内联图表，需要同步更新 `NL2SqlChat.spec.js` 中“does not inject inline chart tools into the conclusion area”的既有预期，并补充兼容方案。
-- **Chat V2 与 Widget Chat 对齐**：`NL2SqlChatV2.vue` 与 `widget/WidgetChat.vue` 采用 `_v2state.turns[].blocks` 的逐块渲染模型，不存在 `finalBlocksForMessage` 的分区结构。两者各自实现等价的 `isToolChartBlock` / `conclusionChartBlocks`（同样复用 `extractChartSpec`）：内联工具流跳过图表型 `tool_use` 块，在所有 turn 渲染完成后于回答文本下方的结论区统一渲染这些图表，保持与 `NL2SqlChat` 一致的“图表外置”体验。
+- **Chat V2 与 Widget Chat 对齐**：`NL2SqlChatV2.vue` 与 `widget/WidgetChat.vue` 采用 `_v2state.turns[].blocks` 的逐块渲染模型，不存在 `finalBlocksForMessage` 的分区结构。两者各自实现等价的 `isToolChartBlock` / `conclusionChartBlocks`（同样复用 `extractChartSpec`）：图表型 `tool_use` 块在内联工具流中保留（仍展示工具执行与图表），并在所有 turn 渲染完成后于回答文本下方的结论区**额外再渲染一次**，即“附加到结论区”而非移出工具流。
 
 ---
 

@@ -107,8 +107,8 @@
                         </el-scrollbar>
                       </div>
 
-                      <!-- Tool use block (chart-producing tools are promoted to the conclusion area below) -->
-                      <div v-else-if="block.type === 'tool_use' && !isToolChartBlock(block)" class="v2-tool-row">
+                      <!-- Tool use block (chart-producing tools are also re-rendered in the conclusion area below) -->
+                      <div v-else-if="block.type === 'tool_use'" class="v2-tool-row">
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
@@ -496,8 +496,8 @@ function chartSpecToToolProp(spec) {
   return { name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true }
 }
 
-// A tool_use block whose output resolves to a chart_spec is promoted out of the
-// inline tool stream into the conclusion area below the answer text.
+// A tool_use block whose output resolves to a chart_spec is also surfaced in the
+// conclusion area below the answer text, in addition to its inline tool row.
 function isToolChartBlock(block) {
   return block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
 }
