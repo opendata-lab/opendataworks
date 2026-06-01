@@ -408,6 +408,32 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.find('.tool-output-panel').exists()).toBe(false)
   })
 
+  it('labels a chart-producing shell step as 生成图表 instead of a generic command', async () => {
+    const wrapper = mountRenderer({
+      name: 'Bash',
+      status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
+      input: {
+        command: 'python scripts/build_chart_spec.py --chart-type line'
+      },
+      output: {
+        kind: 'chart_spec',
+        version: 1,
+        chart_type: 'line',
+        title: '发布趋势',
+        x_field: 'stat_day',
+        series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+        dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }],
+        error: null
+      }
+    })
+
+    expect(wrapper.text()).toContain('生成图表：发布趋势')
+    expect(wrapper.text()).toContain('已生成图表')
+    expect(wrapper.text()).not.toContain('执行命令：')
+  })
+
   it('shows a leading tool-type icon on the shell-trace summary line', () => {
     const wrapper = mountRenderer({
       name: 'Bash',

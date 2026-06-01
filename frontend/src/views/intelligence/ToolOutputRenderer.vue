@@ -454,7 +454,14 @@ const traceDescription = computed(() => {
 const traceSummaryText = computed(() => {
   if (bootstrapSkillLabel.value) return bootstrapSkillLabel.value
   const detail = traceCommand.value || traceDescription.value
-  
+
+  // A shell step that produces a chart_spec is the chart-generation tool call;
+  // label it as such so it stays recognizable alongside the conclusion chart.
+  if (kind.value === 'chart_spec') {
+    const title = String(outputPayload.value.title || '').trim()
+    return title ? `生成图表：${title}` : '生成图表'
+  }
+
   if (traceKind.value === 'read') {
     return detail ? `读取文件：${detail}` : '正在读取文件'
   }
@@ -496,6 +503,15 @@ const statusLabel = computed(() => {
   const status = String(props.tool?.status || 'success')
   const callComplete = Boolean(props.tool?._callComplete)
   const runtimeStarted = Boolean(props.tool?._runtimeStarted)
+
+  if (kind.value === 'chart_spec') {
+    if (!callComplete) return '正在发起生成图表'
+    if (callComplete && !runtimeStarted) return '已发起生成图表'
+    if (status === 'pending' || status === 'streaming') return '正在生成图表'
+    if (status === 'failed') return '生成图表失败'
+    return '已生成图表'
+  }
+
   if (traceKind.value === 'shell') {
     if (!callComplete) return '正在发起命令'
     if (callComplete && !runtimeStarted) return '已发起命令'
