@@ -192,7 +192,9 @@
           </div>
           <!-- Bottom toolbar -->
           <div class="v2-composer-toolbar">
-            <div class="v2-composer-toolbar-left" />
+            <div class="v2-composer-toolbar-left">
+              <span class="v2-composer-hint">Enter 发送，Shift + Enter 换行</span>
+            </div>
             <div class="v2-composer-toolbar-right">
               <el-dropdown trigger="click" @command="handleModelCommand">
                 <button type="button" class="v2-model-btn" title="切换模型">
@@ -1233,6 +1235,13 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.v2-composer-hint {
+  color: #9aa5b1;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 
 .v2-composer-toolbar-right {

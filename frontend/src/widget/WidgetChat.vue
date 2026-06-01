@@ -181,6 +181,7 @@
           </div>
           <!-- Toolbar row -->
           <div class="query-composer-toolbar">
+            <div class="query-composer-hint">Enter 发送，Shift + Enter 换行</div>
             <div class="query-model-selector">
               <select v-model="selectedProvider" class="query-model-select" :disabled="!providers.length || isBusy" title="切换提供商">
                 <option v-for="provider in providers" :key="provider.provider_id" :value="provider.provider_id">
