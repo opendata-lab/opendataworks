@@ -1,7 +1,7 @@
 """add dataagent schema comments
 
 Revision ID: 20260601_000014
-Revises: 20260529_000013
+Revises: 20260529_000014
 Create Date: 2026-06-01 10:00:00
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from alembic import op
 
 
 revision = "20260601_000014"
-down_revision = "20260529_000013"
+down_revision = "20260529_000014"
 branch_labels = None
 depends_on = None
 
@@ -33,6 +33,7 @@ TABLE_COMMENTS: dict[str, str] = {
     "da_agent_message_schedule_log": "DataAgent定时消息执行日志表",
     "da_agent_profile": "DataAgent智能体配置表",
     "da_agent_sdk_record": "DataAgent SDK原始流记录表",
+    "da_agent_widget_event": "DataAgent嵌入组件事件埋点表",
 }
 
 
@@ -241,6 +242,21 @@ COLUMN_COMMENTS: dict[str, dict[str, str]] = {
         "event_type": "事件类型",
         "data": "SDK原始事件数据JSON",
         "created_at": "创建时间",
+    },
+    "da_agent_widget_event": {
+        "id": "自增主键",
+        "event_type": "事件类型",
+        "source": "事件来源，portal或widget",
+        "website_id": "嵌入站点ID",
+        "external_user_id": "外部用户ID",
+        "visitor_id": "访客ID",
+        "agent_id": "智能体ID",
+        "topic_id": "关联会话主题ID",
+        "task_id": "关联任务ID",
+        "message_id": "关联消息ID",
+        "payload_json": "事件负载JSON",
+        "client_ts": "客户端事件时间",
+        "created_at": "服务端创建时间",
     },
 }
 
