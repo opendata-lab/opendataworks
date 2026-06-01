@@ -104,7 +104,7 @@
                         </div>
                       </div>
 
-                      <!-- Tool use block -->
+                      <!-- Tool use block (chart-producing tools are also re-rendered in the conclusion area below) -->
                       <div v-else-if="block.type === 'tool_use'" class="query-tool-row">
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
@@ -121,6 +121,15 @@
                       </div>
                     </template>
                   </template>
+
+                  <!-- Conclusion area: charts produced by tools, rendered below the answer -->
+                  <div
+                    v-for="(block, ci) in conclusionChartBlocks(msg)"
+                    :key="'chart-' + ci"
+                    class="query-final-chart"
+                  >
+                    <ToolOutputRenderer :tool="blockToToolProp(block)" />
+                  </div>
 
                   <div v-if="msg._v2state.status === 'error'" class="query-error-card">
                     <span class="query-error-label">错误</span>
@@ -220,7 +229,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch 
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
-import { extractChartSpecsFromText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
+import { extractChartSpec, extractChartSpecsFromText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -405,6 +414,21 @@ const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content 
 const extractedChartSpecs = (content) => extractChartSpecsFromText(String(content || ''))
 
 const chartSpecToToolProp = (spec) => ({ name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true })
+
+// Chart-producing tool blocks are also surfaced in the conclusion area below the
+// answer text, in addition to their inline tool row.
+const isToolChartBlock = (block) => block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
+
+const conclusionChartBlocks = (msg) => {
+  const turns = Array.isArray(msg?._v2state?.turns) ? msg._v2state.turns : []
+  const blocks = []
+  for (const turn of turns) {
+    for (const block of (turn.blocks || [])) {
+      if (isToolChartBlock(block)) blocks.push(block)
+    }
+  }
+  return blocks
+}
 
 const buildV2StateFromStoredBlocks = (item) => {
   const v2state = createChatState()

@@ -801,6 +801,10 @@ export const WIDGET_STYLES = `
   overflow: hidden;
 }
 
+.query-final-chart {
+  margin-top: 12px;
+}
+
 .query-process-label {
   display: inline-flex;
   align-items: center;
