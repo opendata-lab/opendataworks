@@ -125,13 +125,13 @@
                     </template>
                   </template>
 
-                  <!-- Conclusion area: charts produced by tools, rendered below the answer -->
+                  <!-- Conclusion area: only the chart itself (not the full tool-call box) -->
                   <div
                     v-for="(block, ci) in conclusionChartBlocks(msg)"
                     :key="'v2-chart-' + ci"
                     class="v2-final-chart"
                   >
-                    <ToolOutputRenderer :tool="blockToToolProp(block)" />
+                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
                   </div>
 
                   <!-- Error from stream -->

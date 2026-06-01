@@ -72,10 +72,10 @@
 修改 `processBlocksForMessage` 与 `finalBlocksForMessage` 两个 computed 属性：
 - **isChartBlock**：判断当前块是否是 `kind === 'tool'`，并且 `ToolOutputRenderer` 可将 `block.tool.output` 解析为 `chart_spec`。检测逻辑与 `ToolOutputRenderer` 共用 `chartSpec.js` 导出的 `extractChartSpec`，作为唯一真源，避免“工具框能渲染图表、但结论区检测不到”的不一致。`extractChartSpec` 不仅识别结构化对象，还会从工具结果的内容块数组（`[{type:'text', text}]`）以及 build 脚本 stdout 文本中深度提取 chart spec，因此通过 Bash/Shell 执行 build 脚本输出的图表也能被外置到结论区。
 - **思考区**：保留 `isChartBlock` 块，深度思考面板中仍展示图表工具的执行（与 shell 运行、文件读写等调试追踪信息并列），便于回溯图表是如何生成的。
-- **结论区**：`finalBlocksForMessage` 在输出文本块（`main_text`）的同时，额外输出 `isChartBlock`，即图表在思考区保留的基础上「附加到结论区」再渲染一次，置于回答文本下方直观呈现。
+- **结论区**：`finalBlocksForMessage` 在输出文本块（`main_text`）的同时，额外输出 `isChartBlock`，即图表在思考区保留的基础上「附加到结论区」再渲染一次，置于回答文本下方直观呈现。结论区只渲染图表本身：通过 `chartOnlyToolProp` 把 `extractChartSpec` 提取到的 chart_spec 包装成合成工具（`name: 'render_chart'`，无 trace），让 `ToolOutputRenderer` 走 `isDirectChart` 分支直接画图，不再带工具调用框的标题、元信息与可展开 trace，避免把整个工具调用重复搬到结论区。
 - 模板中在结论区通过 `<ToolOutputRenderer>` 渲染图表 block，得益于 `ToolOutputRenderer` 对 `chart_spec` 的直观渲染（直接显示折线/柱状/饼图），图表将在文本回答下方优雅呈递。
 - **内联 chart_spec 边界**：当前 `main_text` 中的 `<chart_spec>` 或 ```chart fenced block 已通过 `stripChartSpecsFromText` 从正文中隐藏。本设计不改变该行为，也不把它合成为图表 block；如果后续要展示内联图表，需要同步更新 `NL2SqlChat.spec.js` 中“does not inject inline chart tools into the conclusion area”的既有预期，并补充兼容方案。
-- **Chat V2 与 Widget Chat 对齐**：`NL2SqlChatV2.vue` 与 `widget/WidgetChat.vue` 采用 `_v2state.turns[].blocks` 的逐块渲染模型，不存在 `finalBlocksForMessage` 的分区结构。两者各自实现等价的 `isToolChartBlock` / `conclusionChartBlocks`（同样复用 `extractChartSpec`）：图表型 `tool_use` 块在内联工具流中保留（仍展示工具执行与图表），并在所有 turn 渲染完成后于回答文本下方的结论区**额外再渲染一次**，即“附加到结论区”而非移出工具流。
+- **Chat V2 与 Widget Chat 对齐**：`NL2SqlChatV2.vue` 与 `widget/WidgetChat.vue` 采用 `_v2state.turns[].blocks` 的逐块渲染模型，不存在 `finalBlocksForMessage` 的分区结构。两者各自实现等价的 `isToolChartBlock` / `conclusionChartBlocks`（同样复用 `extractChartSpec`）：图表型 `tool_use` 块在内联工具流中保留（仍展示工具执行与图表），并在所有 turn 渲染完成后于回答文本下方的结论区**额外再渲染一次**，即“附加到结论区”而非移出工具流。结论区同样只渲染图表本身：用 `chartSpecToToolProp(extractChartSpec(block.output))` 走 `isDirectChart` 直接画图，不重复搬运整个工具调用框。
 
 ---
 
