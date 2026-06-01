@@ -2,6 +2,7 @@ import {
   buildChartRenderModel,
   extractChartSpec,
   extractChartSpecsFromText,
+  extractRenderableChartSpec,
   parseChartSpec,
   stripChartSpecsFromText,
   validateChartSpec
@@ -134,6 +135,29 @@ describe('chartSpec', () => {
 
     // Non-chart output stays null so unrelated tools are not promoted.
     expect(extractChartSpec([{ type: 'text', text: 'no chart here' }])).toBeNull()
+  })
+
+  it('only returns renderable specs so the conclusion area never shows raw JSON', () => {
+    const renderable = {
+      kind: 'chart_spec',
+      version: 1,
+      chart_type: 'line',
+      title: '发布趋势',
+      x_field: 'stat_day',
+      series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+      dataset: [{ stat_day: '2026-03-01', publish_cnt: 3 }],
+      error: null
+    }
+    expect(extractRenderableChartSpec(renderable)?.chart_type).toBe('line')
+
+    // Parses as a chart_spec but fails validation (bar without x_field/series).
+    const invalid = { kind: 'chart_spec', version: 1, chart_type: 'bar', title: 'x', dataset: [{ a: 1 }] }
+    expect(extractChartSpec(invalid)).not.toBeNull()
+    expect(extractRenderableChartSpec(invalid)).toBeNull()
+
+    // Valid shape but empty dataset is not renderable either.
+    const empty = { ...renderable, dataset: [] }
+    expect(extractRenderableChartSpec(empty)).toBeNull()
   })
 
   it('extracts and strips xml-style chart spec blocks', () => {

@@ -70,7 +70,7 @@
 
 ### 2.5 结论区图表渲染
 修改 `processBlocksForMessage` 与 `finalBlocksForMessage` 两个 computed 属性：
-- **isChartBlock**：判断当前块是否是 `kind === 'tool'`，并且 `ToolOutputRenderer` 可将 `block.tool.output` 解析为 `chart_spec`。检测逻辑与 `ToolOutputRenderer` 共用 `chartSpec.js` 导出的 `extractChartSpec`，作为唯一真源，避免“工具框能渲染图表、但结论区检测不到”的不一致。`extractChartSpec` 不仅识别结构化对象，还会从工具结果的内容块数组（`[{type:'text', text}]`）以及 build 脚本 stdout 文本中深度提取 chart spec，因此通过 Bash/Shell 执行 build 脚本输出的图表也能被外置到结论区。
+- **isChartBlock**：判断当前块是否是 `kind === 'tool'`，并且 `block.tool.output` 可解析为**可渲染**的 `chart_spec`。检测逻辑与 `ToolOutputRenderer` 共用 `chartSpec.js` 导出的 `extractChartSpec`，作为唯一真源，避免“工具框能渲染图表、但结论区检测不到”的不一致。`extractChartSpec` 不仅识别结构化对象，还会从工具结果的内容块数组（`[{type:'text', text}]`）以及 build 脚本 stdout 文本中深度提取 chart spec，因此通过 Bash/Shell 执行 build 脚本输出的图表也能被外置到结论区。结论区进一步使用 `extractRenderableChartSpec`（在 `extractChartSpec` 基础上要求 `buildChartRenderModel().state === 'renderable'`）：只有真正能画出图表/表格的 spec 才进入结论区，`invalid`/`error`/`empty` 的 spec 不外置，从而避免结论区回退展示 `chart_spec` 原始 JSON 文本（这类错误详情仍保留在工具调用框中）。
 - **思考区**：保留 `isChartBlock` 块，深度思考面板中仍展示图表工具的执行（与 shell 运行、文件读写等调试追踪信息并列），便于回溯图表是如何生成的。
 - **结论区**：`finalBlocksForMessage` 在输出文本块（`main_text`）的同时，额外输出 `isChartBlock`，即图表在思考区保留的基础上「附加到结论区」再渲染一次，置于回答文本下方直观呈现。结论区只渲染图表本身：通过 `chartOnlyToolProp` 把 `extractChartSpec` 提取到的 chart_spec 包装成合成工具（`name: 'render_chart'`，无 trace），让 `ToolOutputRenderer` 走 `isDirectChart` 分支直接画图，不再带工具调用框的标题、元信息与可展开 trace，避免把整个工具调用重复搬到结论区。
 - 模板中在结论区通过 `<ToolOutputRenderer>` 渲染图表 block，得益于 `ToolOutputRenderer` 对 `chart_spec` 的直观渲染（直接显示折线/柱状/饼图），图表将在文本回答下方优雅呈递。

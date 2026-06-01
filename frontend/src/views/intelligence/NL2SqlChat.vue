@@ -370,7 +370,7 @@ import { ElMessage } from 'element-plus'
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
-import { extractChartSpec, stripChartSpecsFromText } from './chartSpec'
+import { extractRenderableChartSpec, stripChartSpecsFromText } from './chartSpec'
 import { describeToolAction, extractToolSkillName, formatSkillBootstrapLabel, isSkillBootstrapPlaceholder } from './toolPresentation'
 import {
   createAssistantMessageState,
@@ -825,9 +825,11 @@ const shouldRenderToolBlock = (tool) => {
   return Boolean(detail || hasMeaningfulToolPayload(tool.output))
 }
 
+// Only promote a tool block to the conclusion area when its chart_spec is
+// actually renderable, so the conclusion never shows raw chart_spec JSON.
 const isChartBlock = (block) => block?.kind === 'tool'
   && block.tool
-  && Boolean(extractChartSpec(block.tool.output))
+  && Boolean(extractRenderableChartSpec(block.tool.output))
 
 // In the conclusion area we only want the chart itself, not the full tool-call
 // box (header, meta, expandable trace). Wrap the extracted chart_spec into a
@@ -835,7 +837,7 @@ const isChartBlock = (block) => block?.kind === 'tool'
 const chartOnlyToolProp = (tool) => ({
   name: 'render_chart',
   input: null,
-  output: extractChartSpec(tool?.output),
+  output: extractRenderableChartSpec(tool?.output),
   status: 'success',
   id: tool?.id || null,
   _callComplete: true,

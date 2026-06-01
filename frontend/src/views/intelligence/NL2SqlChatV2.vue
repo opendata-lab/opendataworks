@@ -131,7 +131,7 @@
                     :key="'v2-chart-' + ci"
                     class="v2-final-chart"
                   >
-                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
+                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractRenderableChartSpec(block.output))" />
                   </div>
 
                   <!-- Error from stream -->
@@ -252,7 +252,7 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
-import { extractChartSpec, extractChartSpecsFromText, stripChartSpecsFromText } from './chartSpec'
+import { extractChartSpecsFromText, extractRenderableChartSpec, stripChartSpecsFromText } from './chartSpec'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -496,10 +496,12 @@ function chartSpecToToolProp(spec) {
   return { name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true }
 }
 
-// A tool_use block whose output resolves to a chart_spec is also surfaced in the
-// conclusion area below the answer text, in addition to its inline tool row.
+// A tool_use block whose output resolves to a renderable chart_spec is also
+// surfaced in the conclusion area below the answer text, in addition to its
+// inline tool row. Non-renderable specs are skipped so the conclusion never
+// shows raw chart_spec JSON.
 function isToolChartBlock(block) {
-  return block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
+  return block?.type === 'tool_use' && Boolean(extractRenderableChartSpec(block.output))
 }
 
 function conclusionChartBlocks(msg) {

@@ -128,7 +128,7 @@
                     :key="'chart-' + ci"
                     class="query-final-chart"
                   >
-                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
+                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractRenderableChartSpec(block.output))" />
                   </div>
 
                   <div v-if="msg._v2state.status === 'error'" class="query-error-card">
@@ -228,7 +228,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch 
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
-import { extractChartSpec, extractChartSpecsFromText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
+import { extractChartSpecsFromText, extractRenderableChartSpec, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -415,8 +415,9 @@ const extractedChartSpecs = (content) => extractChartSpecsFromText(String(conten
 const chartSpecToToolProp = (spec) => ({ name: 'render_chart', input: null, output: spec, status: 'success', id: null, _callComplete: true, _runtimeStarted: true })
 
 // Chart-producing tool blocks are also surfaced in the conclusion area below the
-// answer text, in addition to their inline tool row.
-const isToolChartBlock = (block) => block?.type === 'tool_use' && Boolean(extractChartSpec(block.output))
+// answer text, in addition to their inline tool row. Only renderable specs are
+// promoted so the conclusion never shows raw chart_spec JSON.
+const isToolChartBlock = (block) => block?.type === 'tool_use' && Boolean(extractRenderableChartSpec(block.output))
 
 const conclusionChartBlocks = (msg) => {
   const turns = Array.isArray(msg?._v2state?.turns) ? msg._v2state.turns : []

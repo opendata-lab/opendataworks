@@ -328,6 +328,15 @@ export const buildChartOption = (specInput) => {
   return model.kind === 'echarts' ? model.option : null
 }
 
+// Like extractChartSpec, but only returns a spec that can actually be drawn as a
+// chart or table. Used by the conclusion area so it never falls back to showing
+// raw chart_spec JSON for invalid/empty/error specs — those stay in the tool box.
+export const extractRenderableChartSpec = (value) => {
+  const spec = extractChartSpec(value)
+  if (!spec) return null
+  return buildChartRenderModel(spec).state === 'renderable' ? spec : null
+}
+
 const CHART_SPEC_BLOCK_PATTERNS = [
   /```chart\s*([\s\S]*?)```/gi,
   /<chart_spec>\s*([\s\S]*?)<\/chart_spec>/gi
