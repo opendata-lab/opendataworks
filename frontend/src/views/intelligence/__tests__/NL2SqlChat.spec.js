@@ -1321,7 +1321,7 @@ describe('NL2SqlChat', () => {
     expect(wrapper.find('.query-followup-suggestion').exists()).toBe(false)
   })
 
-  it('renders tool chart_spec blocks in the conclusion area instead of the process panel', async () => {
+  it('keeps tool chart_spec blocks in the process panel and also renders them in the conclusion area', async () => {
     apiMocks.topicApi.getTopicMessages.mockResolvedValue({
       topic_id: 'topic-1',
       page: 1,
@@ -1376,12 +1376,18 @@ describe('NL2SqlChat', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(wrapper.find('.query-process-content').exists()).toBe(false)
+    // Chart is surfaced in the conclusion area below the answer.
     expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').exists()).toBe(true)
     expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').attributes('data-output-kind')).toBe('chart_spec')
+
+    // ...and is also kept inside the 深度思考 process panel (visible once expanded).
+    expect(wrapper.find('.query-process-panel').exists()).toBe(true)
+    expect(wrapper.find('.query-process-content').exists()).toBe(false)
+    await wrapper.find('.query-process-summary').trigger('click')
+    expect(wrapper.find('.query-process-content .tool-output-renderer-stub[data-output-kind="chart_spec"]').exists()).toBe(true)
   })
 
-  it('promotes chart_spec to the conclusion area when the tool emits it as stdout content blocks', async () => {
+  it('surfaces chart_spec in the conclusion area when the tool emits it as stdout content blocks', async () => {
     const chartSpecJson = JSON.stringify({
       kind: 'chart_spec',
       chart_type: 'line',
@@ -1433,9 +1439,10 @@ describe('NL2SqlChat', () => {
     await flushPromises()
     await flushPromises()
 
-    // Chart moves out of the (now absent) process panel into the conclusion area.
-    expect(wrapper.find('.query-process-content').exists()).toBe(false)
+    // Chart from stdout content blocks is detected and rendered in the conclusion area,
+    // while the tool block is still kept in the process panel.
     expect(wrapper.find('.query-final-chart .tool-output-renderer-stub').exists()).toBe(true)
+    expect(wrapper.find('.query-process-panel').exists()).toBe(true)
   })
 
   it('allows another topic to submit while the current topic is still awaiting acceptance', async () => {

@@ -872,8 +872,10 @@ const markFollowupToolWithSkillContext = (blocks) => {
   }, [])
 }
 
+// Chart blocks stay in the 深度思考 process panel (showing the tool execution) and
+// are additionally surfaced in the conclusion area below the answer text.
 const processBlocksForMessage = (msg) => markFollowupToolWithSkillContext(renderBlocksForMessage(msg))
-  .filter((block) => ['thinking', 'tool'].includes(block.kind) && !isChartBlock(block))
+  .filter((block) => ['thinking', 'tool'].includes(block.kind))
 
 const finalBlocksForMessage = (msg) => renderBlocksForMessage(msg)
   .filter((block) => ['main_text', 'error'].includes(block.kind) || isChartBlock(block))
