@@ -198,6 +198,38 @@ describe('WidgetChat history conversations', () => {
     resolveStream()
   })
 
+  it('sends on plain Enter but keeps Shift+Enter / IME Enter as a newline', async () => {
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    const textarea = wrapper.get('textarea')
+    await textarea.setValue('你好')
+
+    // Shift+Enter must not send and must not block the default newline.
+    const shiftEvent = new KeyboardEvent('keydown', { key: 'Enter', shiftKey: true, cancelable: true, bubbles: true })
+    textarea.element.dispatchEvent(shiftEvent)
+    await flushPromises()
+    expect(shiftEvent.defaultPrevented).toBe(false)
+    expect(apiMocks.taskApi.deliverMessage).not.toHaveBeenCalled()
+
+    // IME composition Enter (confirming candidates) must not send.
+    const imeEvent = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true })
+    Object.defineProperty(imeEvent, 'isComposing', { value: true })
+    textarea.element.dispatchEvent(imeEvent)
+    await flushPromises()
+    expect(apiMocks.taskApi.deliverMessage).not.toHaveBeenCalled()
+
+    // Plain Enter sends and prevents the newline.
+    const enterEvent = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true })
+    textarea.element.dispatchEvent(enterEvent)
+    await flushPromises()
+    expect(enterEvent.defaultPrevented).toBe(true)
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: '你好',
+      agent_id: 'agent_widget'
+    }))
+  })
+
   it('queues outbound messages until runtime config is ready', async () => {
     let resolveConfig
     apiMocks.runtimeApi.getConfig.mockReturnValue(new Promise((resolve) => {

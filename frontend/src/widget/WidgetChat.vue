@@ -160,7 +160,7 @@
               rows="1"
               :disabled="!providers.length || !availableModels.length"
               placeholder="输入数据问题…"
-              @keydown.enter.exact.prevent="send"
+              @keydown.enter="onEnterKey"
               @input="autoResizeTextarea"
             />
             <button
@@ -844,6 +844,15 @@ const autoResizeTextarea = (event) => {
   const el = event.target
   el.style.height = 'auto'
   el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+}
+
+// Enter 发送，Shift + Enter 换行。
+// 输入法（如中文）组合输入期间的回车用于确认候选词，不应触发发送。
+const onEnterKey = (event) => {
+  if (event.isComposing || event.keyCode === 229) return
+  if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
+  event.preventDefault()
+  send()
 }
 
 watch(
