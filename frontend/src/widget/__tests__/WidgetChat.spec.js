@@ -276,7 +276,7 @@ describe('WidgetChat history conversations', () => {
     }))
   })
 
-  it('promotes tool-produced chart_spec into the conclusion area below the answer', async () => {
+  it('renders a tool-produced chart inline below its tool-call block (no conclusion duplicate)', async () => {
     const chartSpec = JSON.stringify({
       kind: 'chart_spec',
       version: 1,
@@ -307,8 +307,9 @@ describe('WidgetChat history conversations', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    // Chart is surfaced in the conclusion area, while the inline tool row is kept.
-    expect(wrapper.find('.query-final-chart').exists()).toBe(true)
+    // Chart renders directly below its tool-call block, not in a separate conclusion area.
     expect(wrapper.find('.query-tool-row').exists()).toBe(true)
+    expect(wrapper.find('.query-tool-row .tool-chart-below').exists()).toBe(true)
+    expect(wrapper.find('.query-final-chart').exists()).toBe(false)
   })
 })

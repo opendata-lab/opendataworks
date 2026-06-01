@@ -92,10 +92,10 @@ describe('ToolOutputRenderer', () => {
     })
 
     expect(wrapper.find('.tool-chart').exists()).toBe(true)
-    expect(wrapper.find('.tool-output-chart-direct').exists()).toBe(true)
+    expect(wrapper.find('.tool-chart-below').exists()).toBe(true)
   })
 
-  it('shows explicit invalid-spec feedback and raw payloads', () => {
+  it('shows a short invalid-spec message below the block instead of raw chart_spec JSON', () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',
       status: 'streaming',
@@ -110,7 +110,8 @@ describe('ToolOutputRenderer', () => {
     })
 
     expect(wrapper.text()).toContain('bar 类型必须提供 x_field')
-    expect(wrapper.text()).toContain('"chart_type": "bar"')
+    // Raw chart_spec JSON must never be dumped into the UI.
+    expect(wrapper.text()).not.toContain('"chart_type": "bar"')
   })
 
   it('renders bash tools as collapsible shell traces', async () => {

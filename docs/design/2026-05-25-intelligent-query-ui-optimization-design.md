@@ -68,15 +68,16 @@
 - **交互**：
   - 点击推荐块，复用 `handleSuggestion` 和 `handleSend` 的现有禁用逻辑提交发送，界面滚动到最下方。
 
-### 2.5 结论区图表渲染
-修改 `processBlocksForMessage` 与 `finalBlocksForMessage` 两个 computed 属性：
-- **isChartBlock**：判断当前块是否是 `kind === 'tool'`，并且 `block.tool.output` 可解析为**可渲染**的 `chart_spec`。检测逻辑与 `ToolOutputRenderer` 共用 `chartSpec.js` 导出的 `extractChartSpec`，作为唯一真源，避免“工具框能渲染图表、但结论区检测不到”的不一致。`extractChartSpec` 不仅识别结构化对象，还会从工具结果的内容块数组（`[{type:'text', text}]`）以及 build 脚本 stdout 文本中深度提取 chart spec，因此通过 Bash/Shell 执行 build 脚本输出的图表也能被外置到结论区。结论区进一步使用 `extractRenderableChartSpec`（在 `extractChartSpec` 基础上要求 `buildChartRenderModel().state === 'renderable'`）：只有真正能画出图表/表格的 spec 才进入结论区，`invalid`/`error`/`empty` 的 spec 不外置，从而避免结论区回退展示 `chart_spec` 原始 JSON 文本（这类错误详情仍保留在工具调用框中）。
-- **思考区**：保留 `isChartBlock` 块，深度思考面板中仍展示图表工具的执行（与 shell 运行、文件读写等调试追踪信息并列），便于回溯图表是如何生成的。
-- **图表生成步骤的可识别性**：图表由 `build_chart_spec.py` 经 Bash 运行产出，默认会在工具流中显示为通用的「执行命令：…build_chart_spec.py」。为避免结论区出现图表、但前面工具流找不到对应「生成图表」步骤的割裂感，`ToolOutputRenderer` 在工具输出 `kind === 'chart_spec'` 时把 trace 概要与状态文案改为「生成图表 / 正在生成图表 / 已生成图表」，使该工具调用与结论区图表一一对应。
-- **结论区**：`finalBlocksForMessage` 在输出文本块（`main_text`）的同时，额外输出 `isChartBlock`，即图表在思考区保留的基础上「附加到结论区」再渲染一次，置于回答文本下方直观呈现。结论区只渲染图表本身：通过 `chartOnlyToolProp` 把 `extractChartSpec` 提取到的 chart_spec 包装成合成工具（`name: 'render_chart'`，无 trace），让 `ToolOutputRenderer` 走 `isDirectChart` 分支直接画图，不再带工具调用框的标题、元信息与可展开 trace，避免把整个工具调用重复搬到结论区。
-- 模板中在结论区通过 `<ToolOutputRenderer>` 渲染图表 block，得益于 `ToolOutputRenderer` 对 `chart_spec` 的直观渲染（直接显示折线/柱状/饼图），图表将在文本回答下方优雅呈递。
-- **内联 chart_spec 边界**：当前 `main_text` 中的 `<chart_spec>` 或 ```chart fenced block 已通过 `stripChartSpecsFromText` 从正文中隐藏。本设计不改变该行为，也不把它合成为图表 block；如果后续要展示内联图表，需要同步更新 `NL2SqlChat.spec.js` 中“does not inject inline chart tools into the conclusion area”的既有预期，并补充兼容方案。
-- **Chat V2 与 Widget Chat 对齐**：`NL2SqlChatV2.vue` 与 `widget/WidgetChat.vue` 采用 `_v2state.turns[].blocks` 的逐块渲染模型，不存在 `finalBlocksForMessage` 的分区结构。两者各自实现等价的 `isToolChartBlock` / `conclusionChartBlocks`（同样复用 `extractChartSpec`）：图表型 `tool_use` 块在内联工具流中保留（仍展示工具执行与图表），并在所有 turn 渲染完成后于回答文本下方的结论区**额外再渲染一次**，即“附加到结论区”而非移出工具流。结论区同样只渲染图表本身：用 `chartSpecToToolProp(extractChartSpec(block.output))` 走 `isDirectChart` 直接画图，不重复搬运整个工具调用框。
+### 2.5 图表渲染（图表跟随工具调用，不再外置结论区）
+
+经过多轮迭代，最终定稿为**纯 UI 逻辑、后台记录不变**的简化模型：图表不再单独外置到「结论区」，而是按正常工具调用输出渲染，并把图表直接画在产出它的工具调用块**正下方**，使「工具调用 → 图表」读起来连贯。
+
+- **图表跟随工具块（`ToolOutputRenderer`）**：当工具输出 `kind === 'chart_spec'` 时，组件在正常的工具标题/trace 概要下方直接渲染图表（`tool-chart-below`），始终可见、不依赖展开、永不回退成原始 JSON 文本。
+  - 检测与解析共用 `chartSpec.js` 的 `extractChartSpec`（识别结构化对象、工具结果内容块数组 `[{type:'text', text}]`、以及 build 脚本 stdout 文本中的 chart_spec），经 `buildChartRenderModel` 判定：`renderable` 画图/表，`empty` 显示「图表暂无可渲染数据」，`invalid`/`error` 只显示一行简短错误（如「bar 类型必须提供 x_field」），**不再 dump `chart_spec` 原始 JSON**。
+  - 原始命令与输出仍可在工具块的可展开 trace 面板里查看（调试用途）。
+- **图表生成步骤的可识别性**：图表由 `build_chart_spec.py` 经 Bash 运行产出，`ToolOutputRenderer` 在 `kind === 'chart_spec'` 时把 trace 概要与状态文案改为「生成图表 / 正在生成图表 / 已生成图表」，避免显示为无法辨认的通用「执行命令」。
+- **不再外置结论区**：`NL2SqlChat` 的 `finalBlocksForMessage` 只保留 `main_text` 与 `error`；图表型工具块和其它工具一样留在 `深度思考` 的 `processBlocksForMessage` 中（不再有 `isChartBlock` / `chartOnlyToolProp` / `query-final-chart`）。`NL2SqlChatV2.vue` 与 `widget/WidgetChat.vue` 移除了 `conclusionChartBlocks` / `isToolChartBlock`，工具块按 `_v2state.turns[].blocks` 正常内联渲染，图表由 `ToolOutputRenderer` 画在工具块下方。
+- **内联 chart_spec 一律不渲染（前端口径收紧）**：三个界面都通过 `stripChartSpecsFromText` 把正文中的 `<chart_spec>` / ```chart 代码块剥离，并移除了 `extractChartSpecsFromText` / `extractedChartSpecs` 的文本内联渲染路径。图表只能来自真实的 `build_chart_spec` 工具调用——若模型把 chart_spec 直接写进正文，前端既不渲染也会剥离，从而倒逼走工具路径（配合系统提示中的强制约束）。
 
 ---
 
