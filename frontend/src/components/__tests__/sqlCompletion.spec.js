@@ -91,6 +91,29 @@ describe('sql completion source', () => {
     ]))
   })
 
+  it('keeps implicit bare-word completion lightweight while typing', async () => {
+    const ctx = completionContext()
+    const getTableNames = vi.fn(() => ['legacy_table'])
+    const getCompletionContext = vi.fn(() => ctx)
+    const source = createSqlCompletionSource({
+      getCompletionContext,
+      getTableNames
+    })
+
+    const result = await source(editorContext('fa', false))
+
+    expect(getCompletionContext).not.toHaveBeenCalled()
+    expect(getTableNames).not.toHaveBeenCalled()
+    expect(ctx.loadTables).not.toHaveBeenCalled()
+    expect(ctx.searchTables).not.toHaveBeenCalled()
+    expect(result.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'SELECT' }),
+      expect.objectContaining({ label: 'COUNT' })
+    ]))
+    expect(result.options.some((item) => item.label === 'legacy_table')).toBe(false)
+    expect(result.options.some((item) => item.label === 'fact_orders')).toBe(false)
+  })
+
   it('keeps legacy tableNames completion for existing callers', async () => {
     const source = createSqlCompletionSource({
       getCompletionContext: () => null,
