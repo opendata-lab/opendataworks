@@ -387,13 +387,13 @@ const displayLabel = computed(() => {
 })
 
 const isStructuredKind = computed(() => ['sql_execution', 'chart_spec', 'python_execution'].includes(kind.value))
-const isMcpTool = computed(() => /^mcp__/i.test(toolName.value))
 
 const traceKind = computed(() => {
   if (toolAction.value.isTrace) return toolAction.value.kind
-  // MCP tools with unstructured output share the same flat trace presentation
-  // as 执行命令/读取文件 so all tool calls render consistently.
-  if (isMcpTool.value && !isStructuredKind.value) return 'tool'
+  // Generic tools (custom tools, MCP tools, ...) with unstructured output share
+  // the same flat trace presentation as 执行命令/读取文件 so every tool call
+  // renders consistently instead of as a bordered card.
+  if (toolAction.value.kind === 'tool' && !isStructuredKind.value) return 'tool'
   return ''
 })
 

@@ -400,16 +400,23 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.find('.tool-output-head.is-interactive').exists()).toBe(true)
   })
 
-  it('strips numbered arrow prefixes in the raw text branch', async () => {
+  it('renders generic tools as flat traces and strips numbered arrow prefixes', async () => {
     const wrapper = mountRenderer({
       id: 'tool-raw-preview',
       name: 'CustomTool',
       status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
       output: '1→alpha\n2→beta'
     })
 
-    expect(wrapper.find('.tool-output-panel').exists()).toBe(false)
-    await wrapper.find('.tool-output-head.is-interactive').trigger('click')
+    // Generic tools share the flat trace presentation, not the bordered card.
+    expect(wrapper.find('.shell-trace-summary').exists()).toBe(true)
+    expect(wrapper.find('.tool-output-head').exists()).toBe(false)
+    expect(wrapper.text()).toContain('执行工具：CustomTool')
+    expect(wrapper.find('.shell-trace-panel').exists()).toBe(false)
+
+    await wrapper.find('.shell-trace-summary').trigger('click')
 
     expect(wrapper.find('.tool-output-body-scroll').exists()).toBe(true)
     expect(wrapper.text()).toContain('alpha')
