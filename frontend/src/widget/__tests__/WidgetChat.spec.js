@@ -182,6 +182,72 @@ describe('WidgetChat history conversations', () => {
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
   })
 
+  it('creates the first sent conversation at the top of the history list', async () => {
+    apiMocks.topicApi.createTopic.mockResolvedValue(topic('topic-new', '新话题', {
+      message_count: 0,
+      last_message_preview: '',
+      updated_at: '2026-04-30T09:00:00'
+    }))
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="new-conversation"]').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
+
+    await wrapper.get('textarea').setValue('首次输入创建会话')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('首次输入创建会话', { agent_id: 'agent_widget' })
+    expect(wrapper.findAll('.query-session-title').map((item) => item.text())).toEqual([
+      '首次输入创建会话',
+      '最近 30 天工作流发布趋势',
+      'smoke-ok 测试'
+    ])
+    expect(wrapper.get('[data-testid="history-topic-topic-new"]').classes()).toContain('active')
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      topic_id: 'topic-new',
+      content: '首次输入创建会话',
+      agent_id: 'agent_widget'
+    }))
+  })
+
+  it('keeps the first sent conversation at the top when initial history load resolves late', async () => {
+    let resolveTopics
+    apiMocks.topicApi.listTopics.mockReturnValue(new Promise((resolve) => {
+      resolveTopics = resolve
+    }))
+    apiMocks.topicApi.createTopic.mockResolvedValue(topic('topic-new', '新话题', {
+      message_count: 0,
+      last_message_preview: '',
+      updated_at: '2026-04-30T09:00:00'
+    }))
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="new-conversation"]').trigger('click')
+    await wrapper.get('textarea').setValue('首次输入创建会话')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    resolveTopics([
+      topic('topic-1', '最近 30 天工作流发布趋势'),
+      topic('topic-2', 'smoke-ok 测试')
+    ])
+    await flushPromises()
+
+    expect(wrapper.findAll('.query-session-title').map((item) => item.text())).toEqual([
+      '首次输入创建会话',
+      '最近 30 天工作流发布趋势',
+      'smoke-ok 测试'
+    ])
+    expect(wrapper.get('[data-testid="history-topic-topic-new"]').classes()).toContain('active')
+  })
+
   it('loads topics without agent id filter when agentId is not configured', async () => {
     const { wrapper } = mountChat({ config: { agentId: '', displayMode: 'inline' } })
 

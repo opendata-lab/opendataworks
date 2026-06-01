@@ -388,6 +388,17 @@ const sortTopics = () => {
   topics.value = [...topics.value].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
 }
 
+const moveTopicToTop = (targetTopicId) => {
+  const target = topics.value.find((topic) => topic.topic_id === targetTopicId)
+  if (!target) return
+  topics.value = [target, ...topics.value.filter((topic) => topic.topic_id !== targetTopicId)]
+}
+
+const upsertTopicAtTop = (topic) => {
+  if (!topic?.topic_id) return
+  topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
+}
+
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
 const appendUserMessage = (content) => {
@@ -538,8 +549,16 @@ const loadTopicMessages = async (targetTopicId) => {
 const loadTopics = async () => {
   try {
     const list = await api.topicApi.listTopics({ agent_id: agentId.value || undefined })
-    topics.value = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
+    const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
+    const nextTopics = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
+    if (currentTopic?.topic_id && !nextTopics.some((topic) => topic.topic_id === currentTopic.topic_id)) {
+      nextTopics.unshift(currentTopic)
+    }
+    topics.value = nextTopics
     sortTopics()
+    if (currentTopic?.topic_id && currentTopic.topic_id === topicId.value) {
+      moveTopicToTop(currentTopic.topic_id)
+    }
     // Default to a fresh conversation on open instead of auto-selecting the latest topic,
     // so users can ask a new question immediately. Existing topics remain in history.
     const nextTopicId = topicId.value || ''
@@ -602,7 +621,7 @@ const ensureTopic = async (title) => {
   if (topicId.value) return topicId.value
   const topic = normalizeTopic(await api.topicApi.createTopic(title || '新会话', { agent_id: agentId.value || undefined }))
   if (!topic.topic_id) return ''
-  topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
+  upsertTopicAtTop(topic)
   topicId.value = topic.topic_id
   hydratedTopicIds.add(topic.topic_id)
   return topic.topic_id
@@ -682,7 +701,7 @@ const updateActiveTopicAfterSend = (text, taskId) => {
   target.last_message_preview = text
   target.message_count = Number(target.message_count || 0) + 1
   target.updated_at = new Date().toISOString()
-  sortTopics()
+  moveTopicToTop(target.topic_id)
 }
 
 const send = async () => {
@@ -717,7 +736,7 @@ const send = async () => {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       }
-      topics.value = [newTopic, ...topics.value]
+      upsertTopicAtTop(newTopic)
       topicId.value = mockTopicId
       hydratedTopicIds.add(mockTopicId)
     } else {
