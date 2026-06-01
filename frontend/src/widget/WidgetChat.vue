@@ -516,7 +516,9 @@ const loadTopics = async () => {
     const list = await api.topicApi.listTopics({ agent_id: agentId.value || undefined })
     topics.value = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
     sortTopics()
-    const nextTopicId = topicId.value || topics.value[0]?.topic_id || ''
+    // Default to a fresh conversation on open instead of auto-selecting the latest topic,
+    // so users can ask a new question immediately. Existing topics remain in history.
+    const nextTopicId = topicId.value || ''
     topicId.value = nextTopicId
     await loadTopicMessages(nextTopicId)
   } catch (_error) {
