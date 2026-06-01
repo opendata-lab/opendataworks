@@ -7,6 +7,9 @@
         class="shell-trace-summary"
         @click="togglePanel"
       >
+        <svg class="tool-output-icon shell-trace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
+        </svg>
         <span class="shell-trace-summary-text">
           {{ traceSummaryText }}
         </span>
@@ -17,6 +20,9 @@
       </button>
 
       <div v-else class="shell-trace-summary shell-trace-summary-static">
+        <svg class="tool-output-icon shell-trace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
+        </svg>
         <span class="shell-trace-summary-text">
           {{ traceSummaryText }}
         </span>
@@ -56,14 +62,19 @@
       :class="{ 'is-interactive': showMainToggle }"
       @click="showMainToggle ? togglePanel() : null"
     >
-      <div class="tool-output-head-content">
-        <div class="tool-output-label">{{ displayLabel }}</div>
+      <div class="tool-output-head-main">
+        <svg class="tool-output-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
+        </svg>
+        <div class="tool-output-head-content">
+          <div class="tool-output-label">{{ displayLabel }}</div>
 
-        <div class="tool-output-meta" v-if="metaItems.length > 0">
-          <span v-for="(item, index) in metaItems" :key="index">
-            <template v-if="index > 0"> · </template>
-            <span :class="{ 'is-failed': hasError && item === statusLabel }">{{ item }}</span>
-          </span>
+          <div class="tool-output-meta" v-if="metaItems.length > 0">
+            <span v-for="(item, index) in metaItems" :key="index">
+              <template v-if="index > 0"> · </template>
+              <span :class="{ 'is-failed': hasError && item === statusLabel }">{{ item }}</span>
+            </span>
+          </div>
         </div>
       </div>
       <div class="tool-output-head-right">
@@ -228,6 +239,20 @@ const isPlainObject = (value) => value && typeof value === 'object' && !Array.is
 
 const MARKDOWN_PREVIEW_LINES = 5
 
+// Leading icons so each tool-call box is recognizable without expanding it.
+const TOOL_ICON_PATHS = {
+  shell: ['M4 17l6-6-6-6', 'M12 19h8'],
+  read: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M9 13h6', 'M9 17h4'],
+  list: ['M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'],
+  search: ['M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z', 'M21 21l-4.5-4.5'],
+  edit: ['M12 20h9', 'M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z'],
+  skill: ['M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z'],
+  sql: ['M12 3c4.97 0 9 1.34 9 3s-4.03 3-9 3-9-1.34-9-3 4.03-3 9-3z', 'M21 6v6c0 1.66-4.03 3-9 3s-9-1.34-9-3V6', 'M21 12v6c0 1.66-4.03 3-9 3s-9-1.34-9-3v-6'],
+  chart: ['M3 21h18', 'M7 21V11', 'M12 21V5', 'M17 21v-7'],
+  python: ['M8 18l-6-6 6-6', 'M16 6l6 6-6 6'],
+  tool: ['M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z']
+}
+
 const escapeHtml = (text) => String(text || '')
   .replace(/&/g, '&amp;')
   .replace(/</g, '&lt;')
@@ -385,6 +410,16 @@ const displayLabel = computed(() => {
 
   return toolAction.value.label
 })
+
+const iconKind = computed(() => {
+  if (kind.value === 'sql_execution') return 'sql'
+  if (kind.value === 'chart_spec') return 'chart'
+  if (kind.value === 'python_execution') return 'python'
+  if (toolAction.value.kind === 'tool' && toolNameLower.value.includes('image')) return 'chart'
+  const actionKind = toolAction.value.kind
+  return TOOL_ICON_PATHS[actionKind] ? actionKind : 'tool'
+})
+const iconPaths = computed(() => TOOL_ICON_PATHS[iconKind.value] || TOOL_ICON_PATHS.tool)
 
 const traceKind = computed(() => (toolAction.value.isTrace ? toolAction.value.kind : ''))
 
@@ -1007,9 +1042,40 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.tool-output-head-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
 .tool-output-head-content {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+}
+
+.tool-output-icon {
+  width: 16px;
+  height: 16px;
+  color: #4F81FF;
+  flex-shrink: 0;
+}
+
+.tool-output.failed .tool-output-icon {
+  color: #be185d;
+}
+
+.shell-trace-icon {
+  width: 15px;
+  height: 15px;
+  color: #6b7280;
+}
+
+.shell-trace-summary-static .shell-trace-icon,
+.shell-trace-summary .shell-trace-icon {
+  color: #6b7280;
 }
 
 .tool-output-head-right {

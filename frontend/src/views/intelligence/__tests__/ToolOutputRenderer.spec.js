@@ -388,4 +388,40 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('1→alpha')
     expect(wrapper.text()).not.toContain('2→beta')
   })
+
+  it('shows a leading tool-type icon on the collapsed header without expanding', () => {
+    const wrapper = mountRenderer({
+      name: 'SQLQuery',
+      status: 'success',
+      output: {
+        kind: 'sql_execution',
+        sql: 'select 1',
+        columns: ['workflow_id'],
+        rows: [{ workflow_id: 1 }]
+      }
+    })
+
+    const headerIcon = wrapper.find('.tool-output-head .tool-output-icon')
+    expect(headerIcon.exists()).toBe(true)
+    expect(headerIcon.findAll('path').length).toBeGreaterThan(0)
+    // The collapsible panel stays closed, so the icon must be visible up front.
+    expect(wrapper.find('.tool-output-panel').exists()).toBe(false)
+  })
+
+  it('shows a leading tool-type icon on the shell-trace summary line', () => {
+    const wrapper = mountRenderer({
+      name: 'Bash',
+      status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
+      input: {
+        command: 'python scripts/run_sql.py --question trend'
+      },
+      output: 'done'
+    })
+
+    const traceIcon = wrapper.find('.shell-trace-summary .shell-trace-icon')
+    expect(traceIcon.exists()).toBe(true)
+    expect(traceIcon.findAll('path').length).toBeGreaterThan(0)
+  })
 })
