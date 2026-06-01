@@ -383,6 +383,8 @@ const displayLabel = computed(() => {
   return toolAction.value.label
 })
 
+const isStructuredKind = computed(() => ['sql_execution', 'chart_spec', 'python_execution'].includes(kind.value))
+
 const iconKind = computed(() => {
   if (kind.value === 'sql_execution') return 'sql'
   if (kind.value === 'chart_spec') return 'chart'
@@ -393,7 +395,14 @@ const iconKind = computed(() => {
 })
 const iconPaths = computed(() => TOOL_ICON_PATHS[iconKind.value] || TOOL_ICON_PATHS.tool)
 
-const traceKind = computed(() => (toolAction.value.isTrace ? toolAction.value.kind : ''))
+const traceKind = computed(() => {
+  if (toolAction.value.isTrace) return toolAction.value.kind
+  // Generic tools (custom tools, MCP tools, ...) with unstructured output share
+  // the same flat trace presentation as 执行命令/读取文件 so every tool call
+  // renders consistently instead of as a bordered card.
+  if (toolAction.value.kind === 'tool' && !isStructuredKind.value) return 'tool'
+  return ''
+})
 
 const showTrace = computed(() => Boolean(traceKind.value))
 const showMainHeader = computed(() => {
@@ -470,7 +479,10 @@ const traceSummaryText = computed(() => {
   if (traceKind.value === 'skill') {
     return detail ? `执行技能：${detail}` : '正在准备技能上下文'
   }
-  
+  if (traceKind.value === 'tool') {
+    return displayLabel.value || (detail ? `执行工具：${detail}` : '执行工具')
+  }
+
   const leading = detail || displayLabel.value || toolName.value
   return leading ? `执行命令：${leading}` : '正在执行命令'
 })
@@ -542,6 +554,14 @@ const statusLabel = computed(() => {
     if (status === 'pending' || status === 'streaming') return '正在加载技能'
     if (status === 'failed') return '技能加载失败'
     return '已加载技能'
+  }
+
+  if (traceKind.value === 'tool') {
+    if (!callComplete) return '正在发起调用'
+    if (callComplete && !runtimeStarted) return '已发起调用'
+    if (status === 'pending' || status === 'streaming') return '正在执行'
+    if (status === 'failed') return '执行失败'
+    return '已执行'
   }
 
   if (status === 'pending') return '等待执行'

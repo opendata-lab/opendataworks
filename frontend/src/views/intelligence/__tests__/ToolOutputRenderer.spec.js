@@ -282,6 +282,35 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('工具调用')
   })
 
+  it('renders MCP tools with the same flat trace style as command/read traces', () => {
+    const wrapper = mountRenderer({
+      name: 'mcp__github__get_me',
+      status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
+      output: '{"login":"octocat"}'
+    })
+
+    expect(wrapper.find('.shell-trace-summary').exists()).toBe(true)
+    expect(wrapper.find('.tool-output-head').exists()).toBe(false)
+    expect(wrapper.text()).toContain('执行工具：github / get_me')
+    expect(wrapper.text()).not.toContain('mcp__github__get_me')
+  })
+
+  it('does not misclassify MCP tool names containing search/read substrings', () => {
+    const wrapper = mountRenderer({
+      name: 'mcp__github__search_code',
+      status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
+      output: 'ok'
+    })
+
+    expect(wrapper.find('.shell-trace-summary').exists()).toBe(true)
+    expect(wrapper.text()).toContain('执行工具：github / search_code')
+    expect(wrapper.text()).not.toContain('搜索文件')
+  })
+
   it('uses the bootstrap skill label on the concrete follow-up tool', () => {
     const wrapper = mountRenderer({
       name: 'Bash',
@@ -371,16 +400,23 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.find('.tool-output-head.is-interactive').exists()).toBe(true)
   })
 
-  it('strips numbered arrow prefixes in the raw text branch', async () => {
+  it('renders generic tools as flat traces and strips numbered arrow prefixes', async () => {
     const wrapper = mountRenderer({
       id: 'tool-raw-preview',
       name: 'CustomTool',
       status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
       output: '1→alpha\n2→beta'
     })
 
-    expect(wrapper.find('.tool-output-panel').exists()).toBe(false)
-    await wrapper.find('.tool-output-head.is-interactive').trigger('click')
+    // Generic tools share the flat trace presentation, not the bordered card.
+    expect(wrapper.find('.shell-trace-summary').exists()).toBe(true)
+    expect(wrapper.find('.tool-output-head').exists()).toBe(false)
+    expect(wrapper.text()).toContain('执行工具：CustomTool')
+    expect(wrapper.find('.shell-trace-panel').exists()).toBe(false)
+
+    await wrapper.find('.shell-trace-summary').trigger('click')
 
     expect(wrapper.find('.tool-output-body-scroll').exists()).toBe(true)
     expect(wrapper.text()).toContain('alpha')

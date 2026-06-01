@@ -131,8 +131,14 @@ export const describeToolAction = (tool = {}) => {
     input.note
   )
 
+  const isMcp = lowerName.startsWith('mcp__')
+
   let kind = 'tool'
-  if (lowerName.includes('skill') || skillName) {
+  if (isMcp) {
+    // Keep MCP tools generic; never let substrings like "search"/"read" in the
+    // qualified name (mcp__server__tool) misclassify them as file traces.
+    kind = 'tool'
+  } else if (lowerName.includes('skill') || skillName) {
     kind = 'skill'
   } else if (
     lowerName.includes('bash')
@@ -178,6 +184,11 @@ export const describeToolAction = (tool = {}) => {
     kind = 'read'
   }
 
+  // Render MCP tool names (mcp__<server>__<tool>) as "<server> / <tool>"
+  // instead of the raw double-underscore identifier.
+  const mcpMatch = name.match(/^mcp__(.+?)__(.+)$/i)
+  const displayName = mcpMatch ? `${mcpMatch[1]} / ${mcpMatch[2]}` : name
+
   const labelMap = {
     shell: '执行命令',
     read: '读取文件',
@@ -185,7 +196,7 @@ export const describeToolAction = (tool = {}) => {
     search: '搜索文件',
     edit: '修改文件',
     skill: '执行技能',
-    tool: name ? `执行工具：${name}` : '执行工具'
+    tool: displayName ? `执行工具：${displayName}` : '执行工具'
   }
 
   let detail = ''

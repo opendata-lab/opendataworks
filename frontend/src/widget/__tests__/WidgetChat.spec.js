@@ -152,13 +152,15 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('.query-model-selector').text()).toContain('claude-opus-4-6')
     expect(wrapper.text()).toContain('最近 30 天工作流发布趋势')
     expect(wrapper.text()).toContain('smoke-ok 测试')
-    expect(wrapper.text()).toContain('topic-1 历史回复')
+    // Opens on a fresh conversation instead of auto-selecting the latest topic,
+    // so the previous topic's history is not loaded on mount.
+    expect(wrapper.text()).not.toContain('topic-1 历史回复')
     expect(wrapper.find('[data-testid^="delete-topic-"]').exists()).toBe(false)
     expect(apiMocks.createClient).toHaveBeenCalledWith(expect.objectContaining({
       defaultHeaders: baseConfig.headers
     }))
     expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: 'agent_widget' })
-    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenCalledWith('topic-1', { page: 1, page_size: 200, order: 'asc' })
+    expect(apiMocks.topicApi.getTopicMessages).not.toHaveBeenCalled()
   })
 
   it('filters, switches, and creates conversations through the portal-style history UI', async () => {
