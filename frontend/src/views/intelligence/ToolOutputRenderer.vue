@@ -673,13 +673,28 @@ const toolInstanceKey = computed(() => {
 
 let chartRefreshFrame = 0
 let chartInstance = null
+let chartResizeObserver = null
 let statusTimer = 0
 
 const disposeChart = () => {
+  if (chartResizeObserver) {
+    chartResizeObserver.disconnect()
+    chartResizeObserver = null
+  }
   if (chartInstance) {
     chartInstance.dispose()
     chartInstance = null
   }
+}
+
+// Keep the chart in sync with its container so it always fits the conversation
+// width/height instead of overflowing with horizontal/vertical scrollbars.
+const observeChartResize = (container) => {
+  if (chartResizeObserver || typeof window === 'undefined' || typeof window.ResizeObserver === 'undefined') return
+  chartResizeObserver = new window.ResizeObserver(() => {
+    if (chartInstance) chartInstance.resize()
+  })
+  chartResizeObserver.observe(container)
 }
 
 const refreshChart = async () => {
@@ -692,6 +707,7 @@ const refreshChart = async () => {
     try {
       if (!chartInstance) {
         chartInstance = echarts.init(container, undefined, { renderer: 'canvas' })
+        observeChartResize(container)
       }
       chartInstance.clear()
       chartInstance.setOption(chartOption.value, { notMerge: true, lazyUpdate: false })
