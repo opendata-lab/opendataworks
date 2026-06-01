@@ -70,7 +70,7 @@
 
 ### 2.5 结论区图表渲染
 修改 `processBlocksForMessage` 与 `finalBlocksForMessage` 两个 computed 属性：
-- **isChartBlock**：判断当前块是否是 `kind === 'tool'`，并且 `ToolOutputRenderer` 可将 `block.tool.output` 解析为 `chart_spec`。可通过复用 `parseChartSpec` 识别对象、JSON 字符串或数组中的 chart spec。
+- **isChartBlock**：判断当前块是否是 `kind === 'tool'`，并且 `ToolOutputRenderer` 可将 `block.tool.output` 解析为 `chart_spec`。检测逻辑与 `ToolOutputRenderer` 共用 `chartSpec.js` 导出的 `extractChartSpec`，作为唯一真源，避免“工具框能渲染图表、但结论区检测不到”的不一致。`extractChartSpec` 不仅识别结构化对象，还会从工具结果的内容块数组（`[{type:'text', text}]`）以及 build 脚本 stdout 文本中深度提取 chart spec，因此通过 Bash/Shell 执行 build 脚本输出的图表也能被外置到结论区。
 - **思考区**：过滤掉 `isChartBlock` 块，确保深度思考面板中不显示图表，仅保留 shell 运行、文件读写等调试追踪信息。
 - **结论区**：`finalBlocksForMessage` 在输出文本块（`main_text`）的同时，允许输出 `isChartBlock`。
 - 模板中在结论区通过 `<ToolOutputRenderer>` 渲染图表 block，得益于 `ToolOutputRenderer` 对 `chart_spec` 的直观渲染（直接显示折线/柱状/饼图），图表将在文本回答下方优雅呈递。

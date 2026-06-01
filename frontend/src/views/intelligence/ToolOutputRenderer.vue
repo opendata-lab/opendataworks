@@ -207,7 +207,7 @@ import {
   TooltipComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { buildChartRenderModel, parseChartSpec, parseMaybeJson } from './chartSpec'
+import { buildChartRenderModel, extractChartSpec, extractTextParts, parseMaybeJson } from './chartSpec'
 import { describeToolAction, formatSkillBootstrapLabel } from './toolPresentation'
 
 use([
@@ -295,48 +295,20 @@ const looksLikeMarkdown = (text) => {
     || /\[[^\]]+\]\([^)]+\)/.test(value)
 }
 
-const extractTextParts = (value) => {
-  if (typeof value === 'string') return value
-  if (Array.isArray(value)) {
-    return value.map((item) => {
-      if (typeof item === 'string') return item
-      if (isPlainObject(item)) {
-        if (typeof item.text === 'string') return item.text
-        if (typeof item.content === 'string') return item.content
-      }
-      return ''
-    }).filter(Boolean).join('\n')
-  }
-  if (isPlainObject(value)) {
-    if (typeof value.text === 'string') return value.text
-    if (typeof value.content === 'string') return value.content
-    if (typeof value.stdout === 'string') return value.stdout
-    if (typeof value.result === 'string') return value.result
-  }
-  return ''
-}
-
 const normalizeOutput = (value) => {
-  const normalizedChart = parseChartSpec(value)
+  const normalizedChart = extractChartSpec(value)
   if (normalizedChart) return normalizedChart
+
   if (isPlainObject(value) && value.kind) return value
   if (Array.isArray(value)) {
     for (const item of value) {
-      const normalizedItemChart = parseChartSpec(item)
-      if (normalizedItemChart) return normalizedItemChart
       if (isPlainObject(item) && item.kind) return item
-      const text = extractTextParts(item)
-      const parsed = parseMaybeJson(text)
-      const normalizedParsedChart = parseChartSpec(parsed)
-      if (normalizedParsedChart) return normalizedParsedChart
+      const parsed = parseMaybeJson(extractTextParts(item))
       if (isPlainObject(parsed) && parsed.kind) return parsed
     }
   }
 
-  const text = extractTextParts(value)
-  const parsed = parseMaybeJson(text)
-  const normalizedParsedChart = parseChartSpec(parsed)
-  if (normalizedParsedChart) return normalizedParsedChart
+  const parsed = parseMaybeJson(extractTextParts(value))
   if (isPlainObject(parsed) && parsed.kind) return parsed
   return null
 }
