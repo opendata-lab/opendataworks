@@ -572,15 +572,15 @@ export const WIDGET_STYLES = `
 }
 
 .query-landing-greeting {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 26px;
+  font-weight: 700;
   color: #162131;
   margin-bottom: 18px;
   text-align: center;
 }
 
 .query-workbench.is-floating .query-landing-greeting {
-  font-size: 15px;
+  font-size: 20px;
   margin-bottom: 14px;
 }
 
