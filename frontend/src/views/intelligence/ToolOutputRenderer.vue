@@ -629,7 +629,12 @@ const metaItems = computed(() => {
     items.push(statusLabel.value)
   }
   
-  if (toolName.value && toolName.value !== 'Tool' && toolName.value !== displayLabel.value) {
+  if (
+    toolName.value
+    && toolName.value !== 'Tool'
+    && toolName.value !== displayLabel.value
+    && !displayLabel.value.includes(toolName.value)
+  ) {
     items.push(toolName.value)
   }
   
