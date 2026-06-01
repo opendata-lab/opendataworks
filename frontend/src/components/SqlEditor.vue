@@ -289,20 +289,11 @@ watch(
   }
 )
 
-watch(
-  () => props.tableNames,
-  () => {
-    reconfigure(
-      completionCompartment,
-      autocompletion({
-        override: [completionSource],
-        activateOnTyping: true
-      })
-    )
-  },
-  { deep: true }
-)
-
+// NOTE: props.tableNames / props.completionContext are read lazily by the
+// completion source (see getTableNames / getCompletionContext closures above),
+// so the autocompletion extension never needs reconfiguring when they change.
+// A previous deep watcher reconfigured the extension on every keystroke (the
+// parent passes a fresh array each render), which caused severe input lag.
 
 watch(
   () => props.highlights,
