@@ -386,7 +386,16 @@ const displayLabel = computed(() => {
   return toolAction.value.label
 })
 
-const traceKind = computed(() => (toolAction.value.isTrace ? toolAction.value.kind : ''))
+const isStructuredKind = computed(() => ['sql_execution', 'chart_spec', 'python_execution'].includes(kind.value))
+const isMcpTool = computed(() => /^mcp__/i.test(toolName.value))
+
+const traceKind = computed(() => {
+  if (toolAction.value.isTrace) return toolAction.value.kind
+  // MCP tools with unstructured output share the same flat trace presentation
+  // as 执行命令/读取文件 so all tool calls render consistently.
+  if (isMcpTool.value && !isStructuredKind.value) return 'tool'
+  return ''
+})
 
 const showTrace = computed(() => Boolean(traceKind.value))
 const showMainHeader = computed(() => {
@@ -463,7 +472,10 @@ const traceSummaryText = computed(() => {
   if (traceKind.value === 'skill') {
     return detail ? `执行技能：${detail}` : '正在准备技能上下文'
   }
-  
+  if (traceKind.value === 'tool') {
+    return displayLabel.value || (detail ? `执行工具：${detail}` : '执行工具')
+  }
+
   const leading = detail || displayLabel.value || toolName.value
   return leading ? `执行命令：${leading}` : '正在执行命令'
 })
@@ -535,6 +547,14 @@ const statusLabel = computed(() => {
     if (status === 'pending' || status === 'streaming') return '正在加载技能'
     if (status === 'failed') return '技能加载失败'
     return '已加载技能'
+  }
+
+  if (traceKind.value === 'tool') {
+    if (!callComplete) return '正在发起调用'
+    if (callComplete && !runtimeStarted) return '已发起调用'
+    if (status === 'pending' || status === 'streaming') return '正在执行'
+    if (status === 'failed') return '执行失败'
+    return '已执行'
   }
 
   if (status === 'pending') return '等待执行'
