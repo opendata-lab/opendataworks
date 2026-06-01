@@ -4,6 +4,27 @@ import { nextTick, reactive } from 'vue'
 
 import WidgetChat from '../WidgetChat.vue'
 
+// ECharts touches the canvas API, which jsdom doesn't fully implement. The chart
+// promotion tests only care about which container the chart lands in, so stub the
+// renderer to keep the conclusion-area direct chart from emitting canvas errors.
+const echartsMocks = vi.hoisted(() => {
+  const instance = { setOption: vi.fn(), resize: vi.fn(), clear: vi.fn(), dispose: vi.fn() }
+  return { instance, init: vi.fn(() => instance) }
+})
+
+vi.mock('echarts/core', () => ({
+  use: () => {},
+  init: echartsMocks.init
+}))
+vi.mock('echarts/charts', () => ({ BarChart: {}, LineChart: {}, PieChart: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {},
+  LegendComponent: {},
+  TitleComponent: {},
+  TooltipComponent: {}
+}))
+vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
+
 const apiMocks = vi.hoisted(() => ({
   createClient: vi.fn(),
   runtimeApi: {

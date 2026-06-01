@@ -173,7 +173,7 @@
                   </div>
 
                   <div v-else-if="block.kind === 'tool' && block.tool" class="query-final-chart">
-                    <ToolOutputRenderer :tool="block.tool" />
+                    <ToolOutputRenderer :tool="chartOnlyToolProp(block.tool)" />
                   </div>
                 </div>
 
@@ -828,6 +828,19 @@ const shouldRenderToolBlock = (tool) => {
 const isChartBlock = (block) => block?.kind === 'tool'
   && block.tool
   && Boolean(extractChartSpec(block.tool.output))
+
+// In the conclusion area we only want the chart itself, not the full tool-call
+// box (header, meta, expandable trace). Wrap the extracted chart_spec into a
+// synthetic tool so ToolOutputRenderer renders it as a clean direct chart.
+const chartOnlyToolProp = (tool) => ({
+  name: 'render_chart',
+  input: null,
+  output: extractChartSpec(tool?.output),
+  status: 'success',
+  id: tool?.id || null,
+  _callComplete: true,
+  _runtimeStarted: true
+})
 
 const renderBlocksForMessage = (msg) => (Array.isArray(msg?.renderBlocks) ? msg.renderBlocks : []).filter((block) => {
   if (!block || typeof block !== 'object') return false

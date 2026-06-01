@@ -122,13 +122,13 @@
                     </template>
                   </template>
 
-                  <!-- Conclusion area: charts produced by tools, rendered below the answer -->
+                  <!-- Conclusion area: only the chart itself (not the full tool-call box) -->
                   <div
                     v-for="(block, ci) in conclusionChartBlocks(msg)"
                     :key="'chart-' + ci"
                     class="query-final-chart"
                   >
-                    <ToolOutputRenderer :tool="blockToToolProp(block)" />
+                    <ToolOutputRenderer :tool="chartSpecToToolProp(extractChartSpec(block.output))" />
                   </div>
 
                   <div v-if="msg._v2state.status === 'error'" class="query-error-card">
