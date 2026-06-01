@@ -1182,9 +1182,11 @@ onBeforeUnmount(() => {
 .tool-chart {
   display: block;
   margin-top: 8px;
+  box-sizing: border-box;
   min-height: 340px;
   height: 340px;
   width: 100%;
+  max-width: 100%;
   min-width: 0;
   border-radius: 14px;
   background: #F9FAFC;
