@@ -1191,6 +1191,108 @@ let demoTopicSeq = 1
 let demoTaskSeq = 1
 const demoTopics = [
   {
+    topic_id: 'demo-topic-chart',
+    title: '最近 7 天工作流执行成功率趋势',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: '',
+    current_task_status: 'finished',
+    last_message_preview: '成功率稳定在 96% 以上，6/23 达到峰值 99.1%',
+    created_at: '2026-05-24T14:20:00+08:00',
+    updated_at: '2026-05-24T14:20:32+08:00',
+    messages: [
+      {
+        message_id: 'demo-chart-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '最近 7 天工作流执行成功率趋势',
+        created_at: '2026-05-24T14:20:00+08:00'
+      },
+      {
+        message_id: 'demo-chart-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '最近 7 天工作流执行成功率稳定在 96% 以上，5 月 23 日达到峰值 99.1%；5 月 20 日略低（95.8%），主要受当天批量重跑影响。整体执行质量健康。',
+        status: 'finished',
+        feedback: 'like',
+        task_id: 'demo-task-chart',
+        blocks: [
+          {
+            block_id: 'chart-think',
+            type: 'thinking',
+            status: 'success',
+            text: '问题类型：趋势分析。指标为工作流执行成功率（成功实例数 / 总实例数），按天聚合，时间范围最近 7 天。命中 task_instance 的只读快路径，直接生成 SQL 并执行。'
+          },
+          {
+            block_id: 'chart-sql',
+            type: 'tool_use',
+            kind: 'tool_use',
+            status: 'success',
+            is_error: false,
+            tool_id: 'demo-tool-chart-sql',
+            tool_name: 'run_sql.py',
+            input: {
+              sql: 'SELECT stat_day, total_cnt, success_rate FROM wf_exec_daily_stat WHERE stat_day >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY stat_day'
+            },
+            output: {
+              kind: 'sql_execution',
+              sql: 'SELECT stat_day, total_cnt, success_rate FROM wf_exec_daily_stat WHERE stat_day >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY stat_day',
+              columns: ['stat_day', 'total_cnt', 'success_rate'],
+              rows: [
+                { stat_day: '2026-05-18', total_cnt: 120, success_rate: 96.2 },
+                { stat_day: '2026-05-19', total_cnt: 134, success_rate: 97.1 },
+                { stat_day: '2026-05-20', total_cnt: 128, success_rate: 95.8 },
+                { stat_day: '2026-05-21', total_cnt: 142, success_rate: 98.0 },
+                { stat_day: '2026-05-22', total_cnt: 138, success_rate: 97.6 },
+                { stat_day: '2026-05-23', total_cnt: 151, success_rate: 99.1 },
+                { stat_day: '2026-05-24', total_cnt: 147, success_rate: 98.4 }
+              ],
+              row_count: 7,
+              duration_ms: 23,
+              error: null
+            }
+          },
+          {
+            block_id: 'chart-spec',
+            type: 'tool_use',
+            kind: 'tool_use',
+            status: 'success',
+            is_error: false,
+            tool_id: 'demo-tool-chart-spec',
+            tool_name: 'build_chart_spec.py',
+            output: {
+              kind: 'chart_spec',
+              version: 1,
+              chart_type: 'line',
+              title: '最近 7 天工作流执行成功率趋势',
+              description: '单位：%',
+              x_field: 'stat_day',
+              unit: '%',
+              series: [{ name: '成功率', field: 'success_rate', type: 'line' }],
+              dataset: [
+                { stat_day: '2026-05-18', success_rate: 96.2 },
+                { stat_day: '2026-05-19', success_rate: 97.1 },
+                { stat_day: '2026-05-20', success_rate: 95.8 },
+                { stat_day: '2026-05-21', success_rate: 98.0 },
+                { stat_day: '2026-05-22', success_rate: 97.6 },
+                { stat_day: '2026-05-23', success_rate: 99.1 },
+                { stat_day: '2026-05-24', success_rate: 98.4 }
+              ],
+              error: null
+            }
+          },
+          {
+            block_id: 'chart-main',
+            type: 'main_text',
+            status: 'success',
+            text: '最近 7 天工作流执行成功率稳定在 96% 以上，5 月 23 日达到峰值 99.1%；5 月 20 日略低（95.8%），主要受当天批量重跑影响。整体执行质量健康。'
+          }
+        ],
+        created_at: '2026-05-24T14:20:32+08:00'
+      }
+    ]
+  },
+  {
     topic_id: 'demo-topic-running',
     title: '最近 30 天工作流发布次数趋势',
     agent_id: 'agent_default',

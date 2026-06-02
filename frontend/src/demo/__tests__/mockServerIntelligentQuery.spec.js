@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { demoAdapter } from '../mockServer'
+import { buildChartRenderModel } from '../../views/intelligence/chartSpec'
 
 const request = async (method, url, options = {}) => {
   const response = await demoAdapter({
@@ -97,5 +98,22 @@ describe('demoAdapter intelligent query admin endpoints', () => {
     const assistant = result.data.items.find((m) => m.sender_type === 'assistant')
     expect(assistant.status).toBe('error')
     expect(assistant.error?.message).toContain('SQL 执行失败')
+  })
+
+  it('ships a finished demo conversation with a renderable SQL table and chart', async () => {
+    const result = await request('get', '/api/v1/nl2sql/topics/demo-topic-chart/messages')
+    const assistant = result.data.items.find((m) => m.sender_type === 'assistant')
+    expect(assistant.status).toBe('finished')
+
+    const sqlBlock = assistant.blocks.find((b) => b.output?.kind === 'sql_execution')
+    expect(sqlBlock.output.columns).toContain('success_rate')
+    expect(sqlBlock.output.rows.length).toBeGreaterThan(0)
+
+    const chartBlock = assistant.blocks.find((b) => b.output?.kind === 'chart_spec')
+    // The real chart validator must accept the spec (no error) so it renders.
+    const model = buildChartRenderModel(chartBlock.output)
+    expect(model.errorText).toBeFalsy()
+    expect(model.state).toBe('renderable')
+    expect(model.spec.chart_type).toBe('line')
   })
 })
