@@ -119,10 +119,6 @@ export const WIDGET_STYLES = `
   transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.odw-widget.is-history-open:not(.is-inline) .odw-panel {
-  width: min(clamp(720px, 52vw, 1080px), calc(100vw - 24px));
-}
-
 .odw-widget.is-dragged {
   right: auto;
   bottom: auto;
@@ -291,6 +287,25 @@ export const WIDGET_STYLES = `
   grid-template-columns: 220px minmax(0, 1fr);
 }
 
+/* Floating mode: history panel is an overlay drawer so opening/closing it
+   never changes the panel width or squeezes the chat area. */
+.query-workbench.is-floating.is-history-open {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.query-workbench.is-floating .query-sidebar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 8;
+  width: min(240px, 80%);
+  box-shadow: 16px 0 34px rgba(15, 23, 42, 0.16);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+.query-workbench.is-floating .query-sidebar-backdrop {
+  display: block;
+}
+
 .query-workbench .query-sidebar-backdrop {
   display: none;
 }
@@ -301,33 +316,6 @@ export const WIDGET_STYLES = `
   gap: 12px;
   min-width: 0;
   flex: 1;
-}
-
-.query-btn-history-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--sidebar-bg);
-  color: var(--text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 0.2s ease;
-}
-
-.query-btn-history-toggle:hover {
-  background: var(--surface-soft);
-  color: var(--text);
-  border-color: var(--accent);
-}
-
-.query-icon-svg {
-  width: 16px;
-  height: 16px;
-  display: block;
 }
 
 @container (max-width: 600px) {
@@ -571,18 +559,6 @@ export const WIDGET_STYLES = `
 .query-workbench.is-floating .query-messages-inner {
   padding: 14px 16px 120px;
 }
-
-.query-top-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 24px 12px;
-  border-bottom: 1px solid var(--line-soft);
-  flex-shrink: 0;
-  background: #fff;
-  min-height: 52px;
-}
-
 
 .query-config-empty {
   margin: 44px auto 0;
