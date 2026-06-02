@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   RESULT_GRID_ROW_KEY,
   buildResultGridColumns,
-  buildResultGridRows
+  buildResultGridRows,
+  distributeColumnWidths
 } from '../components/resultGridModel'
 import { buildCsvContent } from '../csvExport'
 
@@ -27,6 +28,36 @@ describe('resultGridModel', () => {
     })
     expect(columns[1].width).toBeGreaterThan(120)
     expect(columns[2].width).toBe(360)
+  })
+
+  it('marks every column resizable so widths can be dragged', () => {
+    const columns = buildResultGridColumns(['id', 'name'])
+
+    expect(columns.every((column) => column.resizable === true)).toBe(true)
+    expect(columns.every((column) => column.minWidth === 120)).toBe(true)
+  })
+
+  it('widens columns to fit cell content, not just the header', () => {
+    const rows = [{ id: 1, note: 'short' }, { id: 2, note: 'x'.repeat(40) }]
+    const [, noteColumn] = buildResultGridColumns(['id', 'note'], rows)
+
+    expect(noteColumn.width).toBeGreaterThan(120)
+  })
+
+  it('stretches columns to fill the available width when space is left over', () => {
+    const columns = buildResultGridColumns(['a', 'b'])
+    const stretched = distributeColumnWidths(columns, 1000)
+
+    const total = stretched.reduce((sum, column) => sum + column.width, 0)
+    expect(total).toBe(1000)
+    expect(stretched[0].width).toBeGreaterThan(120)
+  })
+
+  it('keeps column widths untouched when they already exceed the available width', () => {
+    const columns = buildResultGridColumns(['a', 'b'])
+    const result = distributeColumnWidths(columns, 100)
+
+    expect(result).toBe(columns)
   })
 
   it('adds stable row keys even when rows contain duplicate values and nulls', () => {
