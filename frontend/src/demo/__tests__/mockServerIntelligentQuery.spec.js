@@ -116,4 +116,39 @@ describe('demoAdapter intelligent query admin endpoints', () => {
     expect(model.state).toBe('renderable')
     expect(model.spec.chart_type).toBe('line')
   })
+
+  it('lists demo widget conversations and filters by site and keyword', async () => {
+    const all = await request('get', '/api/v1/nl2sql-admin/widget-topics')
+    expect(all.code).toBe(200)
+    expect(all.data.total).toBe(4)
+    expect(all.data.items).toHaveLength(4)
+    expect(all.data.items[0]).toMatchObject({
+      source: 'widget',
+      website_id: expect.any(String)
+    })
+
+    const bySite = await request('get', '/api/v1/nl2sql-admin/widget-topics', {
+      params: { website_id: 'ops-console' }
+    })
+    expect(bySite.data.total).toBe(2)
+    expect(bySite.data.items.every((item) => item.website_id === 'ops-console')).toBe(true)
+
+    const byKeyword = await request('get', '/api/v1/nl2sql-admin/widget-topics', {
+      params: { keyword: '转化率' }
+    })
+    expect(byKeyword.data.total).toBe(1)
+    expect(byKeyword.data.items[0].topic_id).toBe('demo-widget-topic-1')
+  })
+
+  it('returns demo widget conversation messages and 404 for unknown topics', async () => {
+    const messages = await request('get', '/api/v1/nl2sql-admin/widget-topics/demo-widget-topic-1/messages')
+    expect(messages.code).toBe(200)
+    expect(messages.data.topic_id).toBe('demo-widget-topic-1')
+    expect(messages.data.items).toHaveLength(4)
+    expect(messages.data.items[0]).toMatchObject({ sender_type: 'user', topic_id: 'demo-widget-topic-1' })
+
+    await expect(
+      request('get', '/api/v1/nl2sql-admin/widget-topics/unknown/messages')
+    ).rejects.toMatchObject({ response: { status: 404 } })
+  })
 })
