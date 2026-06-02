@@ -119,10 +119,6 @@ export const WIDGET_STYLES = `
   transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
 
-.odw-widget.is-history-open:not(.is-inline) .odw-panel {
-  width: min(clamp(720px, 52vw, 1080px), calc(100vw - 24px));
-}
-
 .odw-widget.is-dragged {
   right: auto;
   bottom: auto;
@@ -289,6 +285,25 @@ export const WIDGET_STYLES = `
 
 .query-workbench.is-history-open {
   grid-template-columns: 220px minmax(0, 1fr);
+}
+
+/* Floating mode: history panel is an overlay drawer so opening/closing it
+   never changes the panel width or squeezes the chat area. */
+.query-workbench.is-floating.is-history-open {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.query-workbench.is-floating .query-sidebar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 8;
+  width: min(240px, 80%);
+  box-shadow: 16px 0 34px rgba(15, 23, 42, 0.16);
+  border-right: 1px solid var(--sidebar-border);
+}
+
+.query-workbench.is-floating .query-sidebar-backdrop {
+  display: block;
 }
 
 .query-workbench .query-sidebar-backdrop {
