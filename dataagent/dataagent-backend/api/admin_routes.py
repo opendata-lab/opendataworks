@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 
 from core.agent_profile_service import (
     agent_capabilities,
@@ -27,9 +27,12 @@ from core.skill_admin_service import (
     update_skill_runtime,
 )
 from core.skill_discovery import resolve_skills_root_dir
+from core.topic_task_store import get_topic_task_store
 from models.schemas import (
     AdminSettingsResponse,
     AdminSettingsUpdateRequest,
+    AdminWidgetTopicPage,
+    AdminWidgetTopicSummary,
     AgentCapabilitiesResponse,
     AgentDataScopeOption,
     AgentProfile,
@@ -47,6 +50,7 @@ from models.schemas import (
     SkillRuntimeConfig,
     SkillRuntimeUpdateRequest,
     SkillUninstallResponse,
+    TopicMessagePageResponse,
 )
 
 router = APIRouter()
@@ -108,6 +112,60 @@ async def create_model_detection(request: ModelDetectionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ModelDetectionResponse.model_validate(result)
+
+
+@settings_router.get("/widget-topics", response_model=AdminWidgetTopicPage)
+async def admin_list_widget_topics(
+    website_id: str | None = Query(default=None),
+    external_user_id: str | None = Query(default=None),
+    visitor_id: str | None = Query(default=None),
+    agent_id: str | None = Query(default=None),
+    keyword: str | None = Query(default=None),
+    start: str | None = Query(default=None),
+    end: str | None = Query(default=None),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+):
+    """Read-only admin listing of widget-sourced conversations across all
+    sites/users. Bypasses per-user isolation by design; portal session
+    listing is unaffected."""
+    payload = get_topic_task_store().admin_list_topics(
+        source="widget",
+        website_id=website_id,
+        external_user_id=external_user_id,
+        visitor_id=visitor_id,
+        agent_id=agent_id,
+        keyword=keyword,
+        start=start,
+        end=end,
+        page=page,
+        page_size=page_size,
+    )
+    return AdminWidgetTopicPage(
+        items=[AdminWidgetTopicSummary.model_validate(item) for item in payload.get("items") or []],
+        total=int(payload.get("total") or 0),
+        page=int(payload.get("page") or page),
+        page_size=int(payload.get("page_size") or page_size),
+    )
+
+
+@settings_router.get("/widget-topics/{topic_id}/messages", response_model=TopicMessagePageResponse)
+async def admin_list_widget_topic_messages(
+    topic_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=200, ge=1, le=500),
+    order: str = Query(default="asc", pattern="^(asc|desc)$"),
+):
+    """Read-only admin view of a conversation's messages. Resolved by
+    topic_id without owner check, since `context=None` reuses the existing
+    `1 = 1` predicate path in the store."""
+    store = get_topic_task_store()
+    if not store.get_topic(topic_id, context=None):
+        raise HTTPException(status_code=404, detail="Topic not found")
+    payload = store.list_topic_messages_page(
+        topic_id=topic_id, page=page, page_size=page_size, order=order, context=None
+    )
+    return TopicMessagePageResponse.model_validate(payload)
 
 
 @skills_router.get("/skills/documents", response_model=list[SkillDocumentSummary])

@@ -30,6 +30,10 @@
           <el-icon><Monitor /></el-icon>
           <span>Widget 接入</span>
         </el-menu-item>
+        <el-menu-item index="widget-sessions">
+          <el-icon><ChatLineSquare /></el-icon>
+          <span>Widget 会话</span>
+        </el-menu-item>
       </el-menu>
     </aside>
 
@@ -40,6 +44,7 @@
       <SkillStudio v-else-if="activeTab === 'skills'" />
       <DataAgentConfig v-else-if="activeTab === 'models'" />
       <WidgetAccessConfig v-else-if="activeTab === 'widget'" />
+      <WidgetConversations v-else-if="activeTab === 'widget-sessions'" />
       <NL2SqlChatV2 v-else-if="activeTab === 'chat-v2'" />
       <NL2SqlChat v-else />
     </main>
@@ -49,7 +54,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Collection, Cpu, MagicStick, Monitor, User } from '@element-plus/icons-vue'
+import { ChatDotRound, ChatLineSquare, Collection, Cpu, MagicStick, Monitor, User } from '@element-plus/icons-vue'
 import NL2SqlChat from './NL2SqlChat.vue'
 import NL2SqlChatV2 from './NL2SqlChatV2.vue'
 import AgentStudio from './AgentStudio.vue'
@@ -57,11 +62,12 @@ import AgentDetailView from './AgentDetailView.vue'
 import SkillStudio from '../settings/SkillStudio.vue'
 import DataAgentConfig from '../settings/DataAgentConfig.vue'
 import WidgetAccessConfig from '../settings/WidgetAccessConfig.vue'
+import WidgetConversations from '../settings/WidgetConversations.vue'
 import SkillDetailView from '../settings/SkillDetailView.vue'
 
 const route = useRoute()
 const router = useRouter()
-const validTabs = new Set(['chat', 'chat-v2', 'skills', 'agents', 'models', 'widget'])
+const validTabs = new Set(['chat', 'chat-v2', 'skills', 'agents', 'models', 'widget', 'widget-sessions'])
 
 const isSkillDetailRoute = computed(() => (
   route.name === 'IntelligentQuerySkillDetail' || route.path.startsWith('/intelligent-query/skills/')

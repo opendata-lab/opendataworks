@@ -510,6 +510,24 @@ class TopicMessagePageResponse(BaseModel):
     items: List[TopicMessage] = Field(default_factory=list)
 
 
+class AdminWidgetTopicSummary(TopicSummary):
+    """Topic summary for the admin (read-only) widget-session view. Extends
+    TopicSummary with the isolation dimensions so operators can tell which
+    site / external user / visitor a conversation belongs to."""
+
+    source: str = "portal"
+    website_id: str = ""
+    external_user_id: str = ""
+    visitor_id: str = ""
+
+
+class AdminWidgetTopicPage(BaseModel):
+    items: List[AdminWidgetTopicSummary] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    page_size: int = 20
+
+
 class UpdateMessageFeedbackRequest(BaseModel):
     feedback: str = ""
 

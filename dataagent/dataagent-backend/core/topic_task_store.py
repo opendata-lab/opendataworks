@@ -608,6 +608,110 @@ class TopicTaskStore:
                 item["messages"] = self.list_topic_messages(item["topic_id"])
         return result
 
+    def admin_list_topics(
+        self,
+        *,
+        source: str = "widget",
+        website_id: str | None = None,
+        external_user_id: str | None = None,
+        visitor_id: str | None = None,
+        agent_id: str | None = None,
+        keyword: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> dict[str, Any]:
+        """Admin-only paginated read across topics, bypassing the per-user
+        context isolation used by `list_topics`. Defaults to widget-sourced
+        topics. All filters are explicit and additive so the isolation
+        semantics in `_topic_context_predicate` are never reused or weakened.
+        """
+        self._ensure_ready()
+        filters: list[str] = []
+        params: list[Any] = []
+
+        safe_source = str(source or "").strip().lower()
+        if safe_source:
+            filters.append("t.source = %s")
+            params.append(safe_source)
+
+        for column, value in (
+            ("website_id", website_id),
+            ("external_user_id", external_user_id),
+            ("visitor_id", visitor_id),
+            ("agent_id", agent_id),
+        ):
+            safe_value = str(value or "").strip()
+            if safe_value:
+                filters.append(f"t.{column} = %s")
+                params.append(safe_value)
+
+        safe_keyword = str(keyword or "").strip()
+        if safe_keyword:
+            filters.append("t.title LIKE %s")
+            params.append(f"%{safe_keyword}%")
+
+        safe_start = str(start or "").strip()
+        if safe_start:
+            filters.append("t.created_at >= %s")
+            params.append(safe_start)
+        safe_end = str(end or "").strip()
+        if safe_end:
+            filters.append("t.created_at <= %s")
+            params.append(safe_end)
+
+        where_sql = " AND ".join(filters) if filters else "1 = 1"
+        safe_page = max(1, int(page or 1))
+        safe_page_size = max(1, min(200, int(page_size or 20)))
+        offset = (safe_page - 1) * safe_page_size
+
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT COUNT(*) AS total FROM da_agent_topic t WHERE {where_sql}",
+                    params,
+                )
+                total_row = cur.fetchone() or {}
+                cur.execute(
+                    f"""
+                    SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
+                           t.current_task_id, t.current_task_status, t.source, t.website_id,
+                           t.external_user_id, t.visitor_id, t.agent_id, t.agent_snapshot_json,
+                           t.created_at, t.updated_at,
+                           COALESCE(stats.message_count, 0) AS message_count,
+                           COALESCE(stats.last_message_preview, '') AS last_message_preview
+                    FROM da_agent_topic t
+                    LEFT JOIN (
+                        SELECT topic_id,
+                               COUNT(*) AS message_count,
+                               SUBSTRING_INDEX(
+                                   GROUP_CONCAT(COALESCE(NULLIF(content, ''), '') ORDER BY seq_id DESC SEPARATOR '\n'),
+                                   '\n',
+                                   1
+                               ) AS last_message_preview
+                        FROM da_agent_message
+                        WHERE show_in_ui = 1
+                        GROUP BY topic_id
+                    ) stats ON stats.topic_id = t.topic_id
+                    WHERE {where_sql}
+                    ORDER BY t.updated_at DESC, t.created_at DESC
+                    LIMIT %s OFFSET %s
+                    """,
+                    [*params, safe_page_size, offset],
+                )
+                rows = cur.fetchall() or []
+        finally:
+            conn.close()
+
+        return {
+            "items": [self._normalize_topic_row(row, include_messages=False) for row in rows],
+            "total": int(total_row.get("total") or 0),
+            "page": safe_page,
+            "page_size": safe_page_size,
+        }
+
     def get_topic(self, topic_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
         context_sql, context_params = self._topic_context_predicate(context, alias="t")
