@@ -1108,7 +1108,166 @@ const demoProviderSettings = {
         }
       }
     }
+  ],
+  widget_allowed_sites: [
+    {
+      website_id: 'mall-portal',
+      project_name: '商城官网',
+      project_color: '#4A90A4',
+      allowed_origins: ['https://mall.demo.example.com']
+    },
+    {
+      website_id: 'ops-console',
+      project_name: '运营后台',
+      project_color: '#7C5CFC',
+      allowed_origins: ['https://ops.demo.example.com']
+    }
   ]
+}
+
+const demoWidgetMessage = (seq, sender, content, ts) => ({
+  message_id: `demo-widget-msg-${seq}`,
+  topic_id: '',
+  task_id: sender === 'assistant' ? `demo-widget-task-${seq}` : '',
+  sender_type: sender,
+  type: sender === 'user' ? 'chat' : 'assistant',
+  status: 'success',
+  content,
+  event: '',
+  seq_id: seq,
+  feedback: '',
+  show_in_ui: 1,
+  created_at: ts,
+  updated_at: ts
+})
+
+const demoWidgetTopics = [
+  {
+    topic_id: 'demo-widget-topic-1',
+    title: '最近 7 天的下单转化率',
+    chat_topic_id: 'demo-widget-chat-1',
+    chat_conversation_id: 'demo-widget-conv-1',
+    agent_id: 'agent_default',
+    current_task_id: null,
+    current_task_status: null,
+    message_count: 4,
+    last_message_preview: '最近 7 天整体下单转化率为 18.6%，较上周提升 1.2 个百分点。',
+    source: 'widget',
+    website_id: 'mall-portal',
+    external_user_id: 'u_10086',
+    visitor_id: '',
+    created_at: '2026-06-01T09:12:00+08:00',
+    updated_at: '2026-06-01T09:15:33+08:00',
+    messages: [
+      demoWidgetMessage(1, 'user', '最近 7 天的下单转化率是多少？', '2026-06-01T09:12:00+08:00'),
+      demoWidgetMessage(2, 'assistant', '正在查询最近 7 天的访问与下单数据……', '2026-06-01T09:12:08+08:00'),
+      demoWidgetMessage(3, 'user', '和上一周对比怎么样？', '2026-06-01T09:14:20+08:00'),
+      demoWidgetMessage(4, 'assistant', '最近 7 天整体下单转化率为 18.6%，较上周提升 1.2 个百分点，其中移动端贡献了主要增量。', '2026-06-01T09:15:33+08:00')
+    ]
+  },
+  {
+    topic_id: 'demo-widget-topic-2',
+    title: '华东区门店销售排行',
+    chat_topic_id: 'demo-widget-chat-2',
+    chat_conversation_id: 'demo-widget-conv-2',
+    agent_id: 'agent_default',
+    current_task_id: null,
+    current_task_status: null,
+    message_count: 2,
+    last_message_preview: '华东区销售额 Top3 门店为：上海徐汇店、杭州西湖店、南京新街口店。',
+    source: 'widget',
+    website_id: 'mall-portal',
+    external_user_id: '',
+    visitor_id: 'visitor-7f3a2b',
+    created_at: '2026-05-31T20:01:10+08:00',
+    updated_at: '2026-05-31T20:02:45+08:00',
+    messages: [
+      demoWidgetMessage(1, 'user', '帮我看看华东区门店销售排行', '2026-05-31T20:01:10+08:00'),
+      demoWidgetMessage(2, 'assistant', '华东区销售额 Top3 门店为：上海徐汇店（¥182.4 万）、杭州西湖店（¥156.7 万）、南京新街口店（¥141.2 万）。', '2026-05-31T20:02:45+08:00')
+    ]
+  },
+  {
+    topic_id: 'demo-widget-topic-3',
+    title: '昨日风控拦截订单明细',
+    chat_topic_id: 'demo-widget-chat-3',
+    chat_conversation_id: 'demo-widget-conv-3',
+    agent_id: 'agent_default',
+    current_task_id: null,
+    current_task_status: null,
+    message_count: 3,
+    last_message_preview: '昨日共拦截 23 笔高风险订单，主要风险原因为「异常收货地址」。',
+    source: 'widget',
+    website_id: 'ops-console',
+    external_user_id: 'ops_zhang',
+    visitor_id: '',
+    created_at: '2026-05-31T08:30:00+08:00',
+    updated_at: '2026-05-31T08:33:12+08:00',
+    messages: [
+      demoWidgetMessage(1, 'user', '昨天风控拦截了多少订单？', '2026-05-31T08:30:00+08:00'),
+      demoWidgetMessage(2, 'assistant', '昨日共拦截 23 笔高风险订单。', '2026-05-31T08:31:40+08:00'),
+      demoWidgetMessage(3, 'assistant', '主要风险原因分布：异常收货地址 11 笔、高频下单 7 笔、设备指纹异常 5 笔。', '2026-05-31T08:33:12+08:00')
+    ]
+  },
+  {
+    topic_id: 'demo-widget-topic-4',
+    title: '会员等级分布',
+    chat_topic_id: 'demo-widget-chat-4',
+    chat_conversation_id: 'demo-widget-conv-4',
+    agent_id: 'agent_default',
+    current_task_id: null,
+    current_task_status: null,
+    message_count: 2,
+    last_message_preview: '当前注册会员共 12.8 万人，其中黄金及以上等级占比 21%。',
+    source: 'widget',
+    website_id: 'ops-console',
+    external_user_id: '',
+    visitor_id: 'visitor-aa19c0',
+    created_at: '2026-05-30T15:48:00+08:00',
+    updated_at: '2026-05-30T15:49:05+08:00',
+    messages: [
+      demoWidgetMessage(1, 'user', '现在各等级会员分别有多少？', '2026-05-30T15:48:00+08:00'),
+      demoWidgetMessage(2, 'assistant', '当前注册会员共 12.8 万人，其中普通 79%、白银 0%、黄金 15%、铂金 6%，黄金及以上等级占比 21%。', '2026-05-30T15:49:05+08:00')
+    ]
+  }
+]
+
+const handleDemoWidgetTopics = (params = {}) => {
+  const page = Math.max(1, Number(params.page) || 1)
+  const pageSize = Math.max(1, Number(params.page_size) || 20)
+  const keyword = String(params.keyword || '').trim().toLowerCase()
+  const filtered = demoWidgetTopics.filter((topic) => {
+    if (params.website_id && topic.website_id !== params.website_id) return false
+    if (params.external_user_id && topic.external_user_id !== params.external_user_id) return false
+    if (params.visitor_id && topic.visitor_id !== params.visitor_id) return false
+    if (params.agent_id && topic.agent_id !== params.agent_id) return false
+    if (keyword && !String(topic.title || '').toLowerCase().includes(keyword)) return false
+    return true
+  })
+  const start = (page - 1) * pageSize
+  const items = filtered.slice(start, start + pageSize).map((topic) => {
+    const { messages, ...summary } = topic
+    return clone(summary)
+  })
+  return { items, total: filtered.length, page, page_size: pageSize }
+}
+
+const handleDemoWidgetTopicMessages = (topicId, params = {}) => {
+  const page = Math.max(1, Number(params.page) || 1)
+  const pageSize = Math.max(1, Number(params.page_size) || 200)
+  const order = String(params.order || 'asc').toLowerCase() === 'desc' ? 'desc' : 'asc'
+  const topic = demoWidgetTopics.find((item) => item.topic_id === topicId)
+  if (!topic) return null
+  const all = (topic.messages || []).map((msg) => clone({ ...msg, topic_id: topicId }))
+  if (order === 'desc') all.reverse()
+  const start = (page - 1) * pageSize
+  return {
+    topic_id: topicId,
+    page,
+    page_size: pageSize,
+    order,
+    total: all.length,
+    items: all.slice(start, start + pageSize)
+  }
 }
 
 const demoAgents = [
@@ -2380,6 +2539,18 @@ export const demoAdapter = async (config) => {
       message: '演示模型检测通过',
       checked_at: demoNow()
     })
+  }
+
+  if (method === 'get' && pathname === '/v1/nl2sql-admin/widget-topics') {
+    return createResponse(config, handleDemoWidgetTopics(params))
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/nl2sql-admin\/widget-topics\/[^/]+\/messages$/)) {
+    const topicId = decodeURIComponent(pathname.split('/')[4])
+    const payload = handleDemoWidgetTopicMessages(topicId, params)
+    return payload
+      ? createResponse(config, payload)
+      : createRejectedResponse(config, '会话不存在', 404)
   }
 
   if (method === 'get' && pathname === '/v1/dataagent/agents') {
