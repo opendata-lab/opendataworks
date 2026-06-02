@@ -37,13 +37,17 @@
             @click="handleSelectTopic(topic.topic_id)"
           >
             <span class="v2-session-title">{{ topic.title || '新话题' }}</span>
-            <span v-if="topic.topic_id === activeTopicId && isStreaming" class="v2-session-loading" title="正在分析中...">
+            <span v-if="isTopicWorking(topic)" class="v2-session-loading" title="正在分析中...">
               <svg class="v2-session-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <circle class="v2-session-spinner-track" cx="12" cy="12" r="10" stroke-width="3" />
                 <path class="v2-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
               </svg>
             </span>
-            <span v-else class="v2-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</span>
+            <span v-else class="v2-session-meta">
+              <span v-if="topicBadgeKind(topic) === 'error'" class="v2-session-dot is-error" title="执行失败" />
+              <span v-else-if="topicBadgeKind(topic) === 'suspended'" class="v2-session-dot is-suspended" title="已取消" />
+              {{ formatTime(topic.updated_at || topic.created_at) }}
+            </span>
           </button>
           <div v-if="!filteredTopics.length" class="v2-empty-sessions">暂无话题</div>
         </div>
@@ -251,6 +255,7 @@ import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
 import { stripChartSpecsFromText } from './chartSpec'
+import { topicStatusKind } from './topicStatus'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -295,6 +300,13 @@ const filteredTopics = computed(() => {
 })
 
 const activeTopic = computed(() => topics.value.find((t) => t.topic_id === activeTopicId.value) || null)
+
+// Session-list status badge: the active topic shows the spinner while streaming
+// locally; any topic whose server status is waiting/running also shows it.
+const isTopicWorking = (topic) =>
+  (topic?.topic_id === activeTopicId.value && isStreaming.value) ||
+  topicStatusKind(topic?.current_task_status) === 'running'
+const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
 
 const agentSelectOptions = computed(() => agents.value.map((a) => ({ label: a.name, value: a.agent_id })))
 
@@ -981,6 +993,9 @@ onBeforeUnmount(() => {
 }
 
 .v2-session-meta { flex-shrink: 0; font-size: 11px; color: #8C8C8C; }
+.v2-session-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+.v2-session-dot.is-error { background: #F56C6C; }
+.v2-session-dot.is-suspended { background: #A0AABF; }
 
 .v2-session-loading {
   display: inline-flex;

@@ -33,13 +33,17 @@
             @click="selectTopic(topic.topic_id)"
           >
             <div class="query-session-title">{{ truncate(topic.title || '新话题', 26) }}</div>
-            <div v-if="topic.topic_id === topicId && activeTaskId" class="query-session-loading" title="正在分析中...">
+            <div v-if="isTopicWorking(topic)" class="query-session-loading" title="正在分析中...">
               <svg class="query-session-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <circle class="query-session-spinner-track" cx="12" cy="12" r="10" stroke-width="3" />
                 <path class="query-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
               </svg>
             </div>
-            <div v-else class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</div>
+            <div v-else class="query-session-meta">
+              <span v-if="topicBadgeKind(topic) === 'error'" class="query-session-dot is-error" title="执行失败" />
+              <span v-else-if="topicBadgeKind(topic) === 'suspended'" class="query-session-dot is-suspended" title="已取消" />
+              {{ formatTime(topic.updated_at || topic.created_at) }}
+            </div>
           </button>
           <div v-if="!filteredTopics.length" class="query-empty-sessions">暂无话题</div>
         </div>
@@ -217,6 +221,7 @@ import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
+import { topicStatusKind } from '@/views/intelligence/topicStatus'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -302,6 +307,20 @@ const filteredTopics = computed(() => {
   if (!keyword) return topics.value
   return topics.value.filter((topic) => String(topic.title || '').toLowerCase().includes(keyword))
 })
+
+// Session-list status badge: spinner for the live active task or any topic whose
+// server status is waiting/running; red/grey dot for error/suspended.
+const isTopicWorking = (topic) =>
+  (topic?.topic_id === topicId.value && Boolean(activeTaskId.value)) ||
+  topicStatusKind(topic?.current_task_status) === 'running'
+const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
+
+// Reflect a task's terminal/active status onto its topic in the list so the
+// badge stays accurate (the widget does not reload the topic list after a run).
+const setTopicTaskStatus = (targetTopicId, status) => {
+  const target = topics.value.find((topic) => topic.topic_id === targetTopicId)
+  if (target) target.current_task_status = String(status || '')
+}
 
 watch(
   isBusy,
@@ -667,6 +686,7 @@ const subscribe = async (taskId, assistant) => {
       } catch { /* keep current state if status lookup fails */ }
     }
     assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
+    setTopicTaskStatus(topicId.value, assistant._v2state.status === 'error' ? 'error' : 'finished')
     emit('event', { name: 'message:done', payload: { taskId } })
   } catch (error) {
     if (abortController.value?.signal?.aborted) return
@@ -674,6 +694,7 @@ const subscribe = async (taskId, assistant) => {
     assistant.error = { message: String(error?.message || '请求失败') }
     assistant._v2state.status = 'error'
     assistant._v2state.errorText = assistant.error.message
+    setTopicTaskStatus(topicId.value, 'error')
     emit('event', { name: 'error', payload: assistant.error.message })
   } finally {
     activeTaskId.value = ''
@@ -842,6 +863,7 @@ const cancel = async () => {
   abortController.value?.abort()
   await api.taskApi.cancelTask(taskId)
   activeTaskId.value = ''
+  setTopicTaskStatus(topicId.value, 'suspended')
   const assistant = messages.value.find((item) => item.id === activeAssistantId.value)
   if (assistant) {
     assistant.status = 'cancelled'

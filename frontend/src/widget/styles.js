@@ -496,6 +496,23 @@ export const WIDGET_STYLES = `
   font-size: 11px;
 }
 
+.query-session-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.query-session-dot.is-error {
+  background: #F56C6C;
+}
+
+.query-session-dot.is-suspended {
+  background: #A0AABF;
+}
+
 .query-empty-sessions {
   padding: 18px 12px;
   color: var(--text-soft);

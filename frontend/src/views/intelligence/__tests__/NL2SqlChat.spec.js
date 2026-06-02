@@ -337,6 +337,24 @@ describe('NL2SqlChat', () => {
     }
   })
 
+  it('shows status dots in the session list driven by current_task_status', async () => {
+    apiMocks.topicApi.listTopics.mockResolvedValue([
+      { ...makeTopicSummary('topic-err', '失败的话题'), current_task_status: 'error' },
+      { ...makeTopicSummary('topic-sus', '取消的话题'), current_task_status: 'suspended' },
+      { ...makeTopicSummary('topic-ok', '完成的话题'), current_task_status: 'finished' }
+    ])
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await flushPromises()
+
+    const items = wrapper.findAll('.query-session-item')
+    expect(items[0].find('.query-session-dot.is-error').exists()).toBe(true)
+    expect(items[1].find('.query-session-dot.is-suspended').exists()).toBe(true)
+    expect(items[2].find('.query-session-dot').exists()).toBe(false)
+  })
+
   it('shows empty config state when admin settings has no enabled provider', async () => {
     apiMocks.adminApi.getSettings.mockResolvedValue({
       provider_id: '',

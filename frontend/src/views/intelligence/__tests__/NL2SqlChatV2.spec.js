@@ -234,6 +234,26 @@ describe('NL2SqlChatV2 URL location', () => {
     })
   })
 
+  it('shows status dots in the session list driven by current_task_status', async () => {
+    apiMocks.topicApi.listTopics.mockResolvedValue({
+      list: [
+        { ...makeTopic('topic-err', 'Failed topic'), current_task_status: 'error' },
+        { ...makeTopic('topic-sus', 'Cancelled topic'), current_task_status: 'suspended' },
+        { ...makeTopic('topic-ok', 'Done topic'), current_task_status: 'finished' }
+      ]
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    const items = wrapper.findAll('.v2-session-item')
+    expect(items[0].find('.v2-session-dot.is-error').exists()).toBe(true)
+    expect(items[1].find('.v2-session-dot.is-suspended').exists()).toBe(true)
+    expect(items[2].find('.v2-session-dot').exists()).toBe(false)
+  })
+
   it('surfaces the error card when reloading a failed (status=error) assistant message', async () => {
     routeState.query = {
       tab: 'chat-v2',
