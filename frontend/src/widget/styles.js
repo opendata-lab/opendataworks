@@ -296,7 +296,7 @@ export const WIDGET_STYLES = `
 .query-workbench.is-floating .query-sidebar {
   position: absolute;
   inset: 0 auto 0 0;
-  z-index: 8;
+  z-index: 12;
   width: min(240px, 80%);
   box-shadow: 16px 0 34px rgba(15, 23, 42, 0.16);
   border-right: 1px solid var(--sidebar-border);
@@ -325,7 +325,7 @@ export const WIDGET_STYLES = `
   .query-workbench .query-sidebar {
     position: absolute;
     inset: 0 auto 0 0;
-    z-index: 8;
+    z-index: 12;
     width: min(240px, 80%);
     box-shadow: 16px 0 34px rgba(15, 23, 42, 0.16);
     border-right: 1px solid var(--sidebar-border);
@@ -354,7 +354,7 @@ export const WIDGET_STYLES = `
 .query-sidebar-backdrop {
   position: absolute;
   inset: 0;
-  z-index: 7;
+  z-index: 11;
   background: rgba(15, 23, 42, 0.34);
 }
 
