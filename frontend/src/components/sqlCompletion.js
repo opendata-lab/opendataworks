@@ -307,6 +307,19 @@ export const createSqlCompletionSource = ({ getCompletionContext, getTableNames 
           )
         ))
       }
+
+      // Suggest columns from the tables referenced in the current FROM/JOIN
+      // clauses so bare (unqualified) field names are completed too, not only
+      // the `alias.column` / `schema.table.column` qualified forms.
+      const referencedTables = extractAliases(getDocText(context), currentSchema)
+      const seenTables = new Set()
+      for (const target of referencedTables.values()) {
+        const key = `${target.schema}::${target.table}`
+        if (seenTables.has(key)) continue
+        seenTables.add(key)
+        const columns = await getColumnsFromContext(ctx, target.schema, target.table)
+        options.push(...columns.map(columnOption))
+      }
     }
 
     options.push(...functionOptions(), ...keywordOptions())

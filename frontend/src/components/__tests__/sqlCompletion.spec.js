@@ -91,6 +91,30 @@ describe('sql completion source', () => {
     ]))
   })
 
+  it('suggests columns of FROM tables for bare (unqualified) field completion', async () => {
+    const ctx = completionContext()
+    const source = createSqlCompletionSource({
+      getCompletionContext: () => ctx,
+      getTableNames: () => []
+    })
+
+    const doc = 'SELECT order_ FROM dw.fact_orders'
+    const result = await source({
+      pos: 'SELECT order_'.length,
+      explicit: true,
+      state: { doc: { toString: () => doc, sliceString: (from, to) => doc.slice(from, to) } }
+    })
+
+    expect(ctx.loadColumns).toHaveBeenCalledWith({ schema: 'dw', table: 'fact_orders' })
+    expect(result.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        label: 'order_id',
+        type: 'property',
+        detail: 'BIGINT'
+      })
+    ]))
+  })
+
   it('tokenizes long inputs in linear time (no catastrophic backtracking)', async () => {
     const source = createSqlCompletionSource({
       getCompletionContext: () => null,
