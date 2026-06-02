@@ -520,6 +520,15 @@ async function selectTopic(topicId, options = {}) {
   }
 }
 
+// Extract a human-readable message from a persisted task/message error object
+// ({ code, message, detail }) or a raw string.
+function extractErrorText(error) {
+  if (!error) return ''
+  if (typeof error === 'string') return error
+  if (typeof error === 'object') return String(error.message || error.detail || error.code || '')
+  return String(error)
+}
+
 function buildV2StateFromStoredBlocks(item) {
   const v2state = createChatState()
   v2state.status = 'done'
@@ -554,6 +563,13 @@ function buildV2StateFromStoredBlocks(item) {
     const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
     turn.blocks.push(block)
     v2state.blocks.push(block)
+  }
+  // A failed run persists message.status === 'error' (+ error_json). Surface it so
+  // the error card renders on reload / topic restore, not just during live streaming.
+  if (String(item?.status || '') === 'error') {
+    v2state.status = 'error'
+    turn.status = 'error'
+    v2state.errorText = extractErrorText(item?.error) || '会话执行失败'
   }
   return v2state
 }
@@ -784,6 +800,20 @@ async function handleSend() {
         scrollToBottom()
       },
     })
+    // On a hard backend failure the SDK stream can end without a terminal
+    // 'done'/'error' record, leaving v2state stuck on 'streaming'. Reconcile
+    // against the persisted task status so failed runs surface the error card.
+    if (v2state.status !== 'error' && !abortController?.signal.aborted) {
+      try {
+        const taskState = await taskApi.getTask(taskId)
+        if (String(taskState?.task_status || '') === 'error') {
+          v2state.status = 'error'
+          v2state.errorText = extractErrorText(taskState?.error) || v2state.errorText || '会话执行失败'
+        } else if (v2state.status !== 'done') {
+          v2state.status = 'done'
+        }
+      } catch { /* keep current state if status lookup fails */ }
+    }
   } catch (err) {
     if (err?.name !== 'AbortError') {
       v2state.status = 'error'

@@ -1305,7 +1305,7 @@ const subscribeTask = (taskId, assistantMsg) => {
       const task = await taskApi.getTask(key)
       if (!task) return false
       const taskStatus = String(task.task_status || task.status || '').trim()
-      if (taskStatus === 'suspended' && assistantMsg.status === 'queued') {
+      if (taskStatus === 'suspended' && isActiveTaskStatus(assistantMsg.status)) {
         processEvent(assistantMsg, {
           task_id: key,
           message_id: assistantMsg.message_id,
@@ -1316,7 +1316,7 @@ const subscribeTask = (taskId, assistantMsg) => {
             error: { code: 'task_cancelled', message: '任务已取消' }
           }
         })
-      } else if (taskStatus === 'error' && assistantMsg.status === 'queued') {
+      } else if (taskStatus === 'error' && isActiveTaskStatus(assistantMsg.status)) {
         assistantMsg.status = 'failed'
         if (task.error?.message) {
           assistantMsg.error = { message: String(task.error.message) }
