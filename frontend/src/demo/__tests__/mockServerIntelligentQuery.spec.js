@@ -82,4 +82,20 @@ describe('demoAdapter intelligent query admin endpoints', () => {
       })
     })
   })
+
+  it('seeds demo topics covering running / error / suspended task statuses for the session list', async () => {
+    const result = await request('get', '/api/v1/nl2sql/topics')
+    const topics = result.data
+    const byStatus = Object.fromEntries(topics.map((t) => [t.topic_id, t.current_task_status]))
+    expect(byStatus['demo-topic-running']).toBe('running')
+    expect(byStatus['demo-topic-error']).toBe('error')
+    expect(byStatus['demo-topic-suspended']).toBe('suspended')
+  })
+
+  it('exposes the failed demo conversation with an error message for the chat error card', async () => {
+    const result = await request('get', '/api/v1/nl2sql/topics/demo-topic-error/messages')
+    const assistant = result.data.items.find((m) => m.sender_type === 'assistant')
+    expect(assistant.status).toBe('error')
+    expect(assistant.error?.message).toContain('SQL 执行失败')
+  })
 })

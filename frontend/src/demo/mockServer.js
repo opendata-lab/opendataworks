@@ -1191,12 +1191,157 @@ let demoTopicSeq = 1
 let demoTaskSeq = 1
 const demoTopics = [
   {
+    topic_id: 'demo-topic-running',
+    title: '最近 30 天工作流发布次数趋势',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: 'demo-task-running',
+    current_task_status: 'running',
+    last_message_preview: '正在生成只读 SQL 并执行……',
+    created_at: '2026-05-24T09:30:00+08:00',
+    updated_at: '2026-05-24T09:31:12+08:00',
+    messages: [
+      {
+        message_id: 'demo-running-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '最近 30 天工作流发布次数趋势',
+        created_at: '2026-05-24T09:30:00+08:00'
+      },
+      {
+        message_id: 'demo-running-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '',
+        status: 'running',
+        feedback: '',
+        task_id: 'demo-task-running',
+        blocks: [
+          {
+            block_id: 'running-think',
+            type: 'thinking',
+            status: 'streaming',
+            text: '问题类型：趋势分析。指标为 workflow_publish_record 的发布次数，按天聚合，时间范围最近 30 天。正在生成只读 SQL 并执行……'
+          },
+          {
+            block_id: 'running-tool',
+            type: 'tool_use',
+            status: 'streaming',
+            tool_id: 'demo-tool-running',
+            tool_name: 'run_sql',
+            input: { question: '最近 30 天工作流发布次数趋势' },
+            output: ''
+          }
+        ],
+        created_at: '2026-05-24T09:31:12+08:00'
+      }
+    ]
+  },
+  {
+    topic_id: 'demo-topic-error',
+    title: '各数据层表数量对比',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: 'demo-task-error',
+    current_task_status: 'error',
+    last_message_preview: 'SQL 执行失败：字段 layer_name 不存在',
+    created_at: '2026-05-23T16:10:00+08:00',
+    updated_at: '2026-05-23T16:10:48+08:00',
+    messages: [
+      {
+        message_id: 'demo-error-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '各数据层表数量对比',
+        created_at: '2026-05-23T16:10:00+08:00'
+      },
+      {
+        message_id: 'demo-error-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '',
+        status: 'error',
+        feedback: '',
+        task_id: 'demo-task-error',
+        error: {
+          code: 'sql_execution_error',
+          message: 'SQL 执行失败：字段 layer_name 在表 dim_data_layer 中不存在，请确认口径后重试。'
+        },
+        blocks: [
+          {
+            block_id: 'error-think',
+            type: 'thinking',
+            status: 'success',
+            text: '问题类型：分布对比。需要按数据层统计表数量，候选维度表为 dim_data_layer，事实表为 meta_table_catalog。'
+          },
+          {
+            block_id: 'error-tool',
+            type: 'tool_use',
+            status: 'failed',
+            is_error: true,
+            tool_id: 'demo-tool-error',
+            tool_name: 'run_sql',
+            input: { sql: 'SELECT layer_name, COUNT(*) FROM dim_data_layer GROUP BY layer_name' },
+            output: 'ERROR 1054 (42S22): Unknown column \'layer_name\' in \'field list\''
+          }
+        ],
+        created_at: '2026-05-23T16:10:48+08:00'
+      }
+    ]
+  },
+  {
+    topic_id: 'demo-topic-suspended',
+    title: '有哪些失败的任务实例',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: 'demo-task-suspended',
+    current_task_status: 'suspended',
+    last_message_preview: '任务已被用户取消',
+    created_at: '2026-05-23T11:05:00+08:00',
+    updated_at: '2026-05-23T11:05:26+08:00',
+    messages: [
+      {
+        message_id: 'demo-suspended-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '有哪些失败的任务实例',
+        created_at: '2026-05-23T11:05:00+08:00'
+      },
+      {
+        message_id: 'demo-suspended-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '正在统计最近失败的任务实例……（已被用户取消）',
+        status: 'suspended',
+        feedback: '',
+        task_id: 'demo-task-suspended',
+        error: { code: 'task_cancelled', message: '任务已取消' },
+        blocks: [
+          {
+            block_id: 'suspended-think',
+            type: 'thinking',
+            status: 'success',
+            text: '问题类型：明细筛选。需要从 task_instance 中筛选 status = failed 的记录，按结束时间倒序返回。'
+          },
+          {
+            block_id: 'suspended-text',
+            type: 'main_text',
+            status: 'streaming',
+            text: '正在统计最近失败的任务实例……（已被用户取消）'
+          }
+        ],
+        created_at: '2026-05-23T11:05:26+08:00'
+      }
+    ]
+  },
+  {
     topic_id: 'demo-topic-1',
     title: '演示问数会话',
     agent_id: 'agent_default',
     message_count: 2,
     current_task_id: '',
-    current_task_status: '',
+    current_task_status: 'finished',
+    last_message_preview: 'demo_order_detail 的上下游血缘',
     created_at: '2026-05-22T10:00:00+08:00',
     updated_at: '2026-05-22T10:02:00+08:00',
     messages: [
