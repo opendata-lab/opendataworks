@@ -52,7 +52,11 @@
                 <path class="query-session-spinner-head" d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
               </svg>
             </span>
-            <span v-else class="query-session-meta">{{ formatTime(topic.updated_at || topic.created_at) }}</span>
+            <span v-else class="query-session-meta">
+              <span v-if="topicBadgeKind(topic) === 'error'" class="query-session-dot is-error" title="执行失败" />
+              <span v-else-if="topicBadgeKind(topic) === 'suspended'" class="query-session-dot is-suspended" title="已取消" />
+              {{ formatTime(topic.updated_at || topic.created_at) }}
+            </span>
           </button>
           <div v-if="!filteredTopics.length" class="query-empty-sessions">暂无话题</div>
         </div>
@@ -367,6 +371,7 @@ import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { stripChartSpecsFromText } from './chartSpec'
+import { topicStatusKind } from './topicStatus'
 import { describeToolAction, extractToolSkillName, formatSkillBootstrapLabel, isSkillBootstrapPlaceholder } from './toolPresentation'
 import {
   createAssistantMessageState,
@@ -506,9 +511,13 @@ const isTopicSubmitting = (topicId) => pendingSubmitKeys.value.has(normalizePend
 const isTopicWorking = (topic) => {
   if (!topic) return false
   if (isTopicSubmitting(topic.topic_id)) return true
+  if (topicStatusKind(topic.current_task_status) === 'running') return true
   const msgs = topic.messages || []
   return msgs.some((msg) => msg && msg.role === 'assistant' && isActiveTaskStatus(msg.status))
 }
+
+// Badge kind for a topic that is NOT working (error / suspended); '' otherwise.
+const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
 
 const markTopicSubmitting = (topicId) => {
   const key = normalizePendingTopicKey(topicId)
@@ -1305,7 +1314,11 @@ const subscribeTask = (taskId, assistantMsg) => {
       const task = await taskApi.getTask(key)
       if (!task) return false
       const taskStatus = String(task.task_status || task.status || '').trim()
-      if (taskStatus === 'suspended' && assistantMsg.status === 'queued') {
+      // Keep the session-list badge in sync with the authoritative task status so a
+      // background-running topic shows the spinner and a terminal one shows its dot.
+      const listTopic = topics.value.find((t) => t.topic_id === String(task.topic_id || ''))
+      if (listTopic && taskStatus) listTopic.current_task_status = taskStatus
+      if (taskStatus === 'suspended' && isActiveTaskStatus(assistantMsg.status)) {
         processEvent(assistantMsg, {
           task_id: key,
           message_id: assistantMsg.message_id,
@@ -1316,7 +1329,7 @@ const subscribeTask = (taskId, assistantMsg) => {
             error: { code: 'task_cancelled', message: '任务已取消' }
           }
         })
-      } else if (taskStatus === 'error' && assistantMsg.status === 'queued') {
+      } else if (taskStatus === 'error' && isActiveTaskStatus(assistantMsg.status)) {
         assistantMsg.status = 'failed'
         if (task.error?.message) {
           assistantMsg.error = { message: String(task.error.message) }
@@ -2005,6 +2018,23 @@ defineExpose({ handleNewTopic })
   color: #A0AABF;
   white-space: nowrap;
   text-align: right;
+}
+
+.query-session-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.query-session-dot.is-error {
+  background: #F56C6C;
+}
+
+.query-session-dot.is-suspended {
+  background: #A0AABF;
 }
 
 .query-session-loading {

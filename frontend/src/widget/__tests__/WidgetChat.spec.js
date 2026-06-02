@@ -182,6 +182,48 @@ describe('WidgetChat history conversations', () => {
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
   })
 
+  it('shows status dots in the history list driven by current_task_status', async () => {
+    apiMocks.topicApi.listTopics.mockResolvedValue([
+      topic('topic-err', '失败的会话', { current_task_status: 'error' }),
+      topic('topic-sus', '取消的会话', { current_task_status: 'suspended' }),
+      topic('topic-ok', '完成的会话', { current_task_status: 'finished' })
+    ])
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="history-topic-topic-err"] .query-session-dot.is-error').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="history-topic-topic-sus"] .query-session-dot.is-suspended').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="history-topic-topic-ok"] .query-session-dot').exists()).toBe(false)
+  })
+
+  it('surfaces the error card when opening a failed (status=error) history conversation', async () => {
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => ({
+      topic_id: topicId,
+      total: 1,
+      items: [
+        {
+          message_id: `msg-${topicId}`,
+          sender_type: 'assistant',
+          content: '',
+          status: 'error',
+          error: { code: 'model_error', message: '模型会话异常结束' },
+          seq_id: 1
+        }
+      ]
+    }))
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
+    await flushPromises()
+
+    const errorCard = wrapper.find('.query-error-card')
+    expect(errorCard.exists()).toBe(true)
+    expect(errorCard.text()).toContain('模型会话异常结束')
+  })
+
   it('creates the first sent conversation at the top of the history list', async () => {
     apiMocks.topicApi.createTopic.mockResolvedValue(topic('topic-new', '新话题', {
       message_count: 0,

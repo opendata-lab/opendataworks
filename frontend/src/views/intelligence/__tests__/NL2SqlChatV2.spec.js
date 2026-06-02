@@ -94,6 +94,24 @@ const topicMessages = {
       content: 'second answer',
       created_at: '2026-05-30T03:01:00Z'
     }
+  ],
+  'topic-3': [
+    {
+      message_id: 'u3',
+      topic_id: 'topic-3',
+      sender_type: 'user',
+      content: 'failing question',
+      created_at: '2026-05-30T04:00:00Z'
+    },
+    {
+      message_id: 'a3',
+      topic_id: 'topic-3',
+      sender_type: 'assistant',
+      status: 'error',
+      content: '',
+      error: { code: 'model_error', message: '模型会话异常结束' },
+      created_at: '2026-05-30T04:01:00Z'
+    }
   ]
 }
 
@@ -171,7 +189,8 @@ describe('NL2SqlChatV2 URL location', () => {
     apiMocks.topicApi.listTopics.mockResolvedValue({
       list: [
         makeTopic('topic-1', 'First topic'),
-        makeTopic('topic-2', 'Second topic')
+        makeTopic('topic-2', 'Second topic'),
+        makeTopic('topic-3', 'Failed topic')
       ]
     })
     apiMocks.topicApi.getTopic.mockImplementation(async (topicId) => makeTopic(topicId, `Topic ${topicId}`))
@@ -213,6 +232,42 @@ describe('NL2SqlChatV2 URL location', () => {
       block: 'center',
       behavior: 'smooth'
     })
+  })
+
+  it('shows status dots in the session list driven by current_task_status', async () => {
+    apiMocks.topicApi.listTopics.mockResolvedValue({
+      list: [
+        { ...makeTopic('topic-err', 'Failed topic'), current_task_status: 'error' },
+        { ...makeTopic('topic-sus', 'Cancelled topic'), current_task_status: 'suspended' },
+        { ...makeTopic('topic-ok', 'Done topic'), current_task_status: 'finished' }
+      ]
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    const items = wrapper.findAll('.v2-session-item')
+    expect(items[0].find('.v2-session-dot.is-error').exists()).toBe(true)
+    expect(items[1].find('.v2-session-dot.is-suspended').exists()).toBe(true)
+    expect(items[2].find('.v2-session-dot').exists()).toBe(false)
+  })
+
+  it('surfaces the error card when reloading a failed (status=error) assistant message', async () => {
+    routeState.query = {
+      tab: 'chat-v2',
+      topic_id: 'topic-3'
+    }
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    const errorCard = wrapper.find('.v2-error-card')
+    expect(errorCard.exists()).toBe(true)
+    expect(errorCard.text()).toContain('模型会话异常结束')
   })
 
   it('writes the selected topic to the URL and clears the previous message target', async () => {
