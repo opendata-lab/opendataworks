@@ -1191,12 +1191,259 @@ let demoTopicSeq = 1
 let demoTaskSeq = 1
 const demoTopics = [
   {
+    topic_id: 'demo-topic-chart',
+    title: '最近 7 天工作流执行成功率趋势',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: '',
+    current_task_status: 'finished',
+    last_message_preview: '成功率稳定在 96% 以上，6/23 达到峰值 99.1%',
+    created_at: '2026-05-24T14:20:00+08:00',
+    updated_at: '2026-05-24T14:20:32+08:00',
+    messages: [
+      {
+        message_id: 'demo-chart-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '最近 7 天工作流执行成功率趋势',
+        created_at: '2026-05-24T14:20:00+08:00'
+      },
+      {
+        message_id: 'demo-chart-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '最近 7 天工作流执行成功率稳定在 96% 以上，5 月 23 日达到峰值 99.1%；5 月 20 日略低（95.8%），主要受当天批量重跑影响。整体执行质量健康。',
+        status: 'finished',
+        feedback: 'like',
+        task_id: 'demo-task-chart',
+        blocks: [
+          {
+            block_id: 'chart-think',
+            type: 'thinking',
+            status: 'success',
+            text: '问题类型：趋势分析。指标为工作流执行成功率（成功实例数 / 总实例数），按天聚合，时间范围最近 7 天。命中 task_instance 的只读快路径，直接生成 SQL 并执行。'
+          },
+          {
+            block_id: 'chart-sql',
+            type: 'tool_use',
+            kind: 'tool_use',
+            status: 'success',
+            is_error: false,
+            tool_id: 'demo-tool-chart-sql',
+            tool_name: 'run_sql.py',
+            input: {
+              sql: 'SELECT stat_day, total_cnt, success_rate FROM wf_exec_daily_stat WHERE stat_day >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY stat_day'
+            },
+            output: {
+              kind: 'sql_execution',
+              sql: 'SELECT stat_day, total_cnt, success_rate FROM wf_exec_daily_stat WHERE stat_day >= DATE_SUB(CURDATE(), INTERVAL 7 DAY) ORDER BY stat_day',
+              columns: ['stat_day', 'total_cnt', 'success_rate'],
+              rows: [
+                { stat_day: '2026-05-18', total_cnt: 120, success_rate: 96.2 },
+                { stat_day: '2026-05-19', total_cnt: 134, success_rate: 97.1 },
+                { stat_day: '2026-05-20', total_cnt: 128, success_rate: 95.8 },
+                { stat_day: '2026-05-21', total_cnt: 142, success_rate: 98.0 },
+                { stat_day: '2026-05-22', total_cnt: 138, success_rate: 97.6 },
+                { stat_day: '2026-05-23', total_cnt: 151, success_rate: 99.1 },
+                { stat_day: '2026-05-24', total_cnt: 147, success_rate: 98.4 }
+              ],
+              row_count: 7,
+              duration_ms: 23,
+              error: null
+            }
+          },
+          {
+            block_id: 'chart-spec',
+            type: 'tool_use',
+            kind: 'tool_use',
+            status: 'success',
+            is_error: false,
+            tool_id: 'demo-tool-chart-spec',
+            tool_name: 'build_chart_spec.py',
+            output: {
+              kind: 'chart_spec',
+              version: 1,
+              chart_type: 'line',
+              title: '最近 7 天工作流执行成功率趋势',
+              description: '单位：%',
+              x_field: 'stat_day',
+              unit: '%',
+              series: [{ name: '成功率', field: 'success_rate', type: 'line' }],
+              dataset: [
+                { stat_day: '2026-05-18', success_rate: 96.2 },
+                { stat_day: '2026-05-19', success_rate: 97.1 },
+                { stat_day: '2026-05-20', success_rate: 95.8 },
+                { stat_day: '2026-05-21', success_rate: 98.0 },
+                { stat_day: '2026-05-22', success_rate: 97.6 },
+                { stat_day: '2026-05-23', success_rate: 99.1 },
+                { stat_day: '2026-05-24', success_rate: 98.4 }
+              ],
+              error: null
+            }
+          },
+          {
+            block_id: 'chart-main',
+            type: 'main_text',
+            status: 'success',
+            text: '最近 7 天工作流执行成功率稳定在 96% 以上，5 月 23 日达到峰值 99.1%；5 月 20 日略低（95.8%），主要受当天批量重跑影响。整体执行质量健康。'
+          }
+        ],
+        created_at: '2026-05-24T14:20:32+08:00'
+      }
+    ]
+  },
+  {
+    topic_id: 'demo-topic-running',
+    title: '最近 30 天工作流发布次数趋势',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: 'demo-task-running',
+    current_task_status: 'running',
+    last_message_preview: '正在生成只读 SQL 并执行……',
+    created_at: '2026-05-24T09:30:00+08:00',
+    updated_at: '2026-05-24T09:31:12+08:00',
+    messages: [
+      {
+        message_id: 'demo-running-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '最近 30 天工作流发布次数趋势',
+        created_at: '2026-05-24T09:30:00+08:00'
+      },
+      {
+        message_id: 'demo-running-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '',
+        status: 'running',
+        feedback: '',
+        task_id: 'demo-task-running',
+        blocks: [
+          {
+            block_id: 'running-think',
+            type: 'thinking',
+            status: 'streaming',
+            text: '问题类型：趋势分析。指标为 workflow_publish_record 的发布次数，按天聚合，时间范围最近 30 天。正在生成只读 SQL 并执行……'
+          },
+          {
+            block_id: 'running-tool',
+            type: 'tool_use',
+            status: 'streaming',
+            tool_id: 'demo-tool-running',
+            tool_name: 'run_sql',
+            input: { question: '最近 30 天工作流发布次数趋势' },
+            output: ''
+          }
+        ],
+        created_at: '2026-05-24T09:31:12+08:00'
+      }
+    ]
+  },
+  {
+    topic_id: 'demo-topic-error',
+    title: '各数据层表数量对比',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: 'demo-task-error',
+    current_task_status: 'error',
+    last_message_preview: 'SQL 执行失败：字段 layer_name 不存在',
+    created_at: '2026-05-23T16:10:00+08:00',
+    updated_at: '2026-05-23T16:10:48+08:00',
+    messages: [
+      {
+        message_id: 'demo-error-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '各数据层表数量对比',
+        created_at: '2026-05-23T16:10:00+08:00'
+      },
+      {
+        message_id: 'demo-error-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '',
+        status: 'error',
+        feedback: '',
+        task_id: 'demo-task-error',
+        error: {
+          code: 'sql_execution_error',
+          message: 'SQL 执行失败：字段 layer_name 在表 dim_data_layer 中不存在，请确认口径后重试。'
+        },
+        blocks: [
+          {
+            block_id: 'error-think',
+            type: 'thinking',
+            status: 'success',
+            text: '问题类型：分布对比。需要按数据层统计表数量，候选维度表为 dim_data_layer，事实表为 meta_table_catalog。'
+          },
+          {
+            block_id: 'error-tool',
+            type: 'tool_use',
+            status: 'failed',
+            is_error: true,
+            tool_id: 'demo-tool-error',
+            tool_name: 'run_sql',
+            input: { sql: 'SELECT layer_name, COUNT(*) FROM dim_data_layer GROUP BY layer_name' },
+            output: 'ERROR 1054 (42S22): Unknown column \'layer_name\' in \'field list\''
+          }
+        ],
+        created_at: '2026-05-23T16:10:48+08:00'
+      }
+    ]
+  },
+  {
+    topic_id: 'demo-topic-suspended',
+    title: '有哪些失败的任务实例',
+    agent_id: 'agent_default',
+    message_count: 2,
+    current_task_id: 'demo-task-suspended',
+    current_task_status: 'suspended',
+    last_message_preview: '任务已被用户取消',
+    created_at: '2026-05-23T11:05:00+08:00',
+    updated_at: '2026-05-23T11:05:26+08:00',
+    messages: [
+      {
+        message_id: 'demo-suspended-user-1',
+        sender_type: 'user',
+        role: 'user',
+        content: '有哪些失败的任务实例',
+        created_at: '2026-05-23T11:05:00+08:00'
+      },
+      {
+        message_id: 'demo-suspended-assistant-1',
+        sender_type: 'assistant',
+        role: 'assistant',
+        content: '正在统计最近失败的任务实例……（已被用户取消）',
+        status: 'suspended',
+        feedback: '',
+        task_id: 'demo-task-suspended',
+        error: { code: 'task_cancelled', message: '任务已取消' },
+        blocks: [
+          {
+            block_id: 'suspended-think',
+            type: 'thinking',
+            status: 'success',
+            text: '问题类型：明细筛选。需要从 task_instance 中筛选 status = failed 的记录，按结束时间倒序返回。'
+          },
+          {
+            block_id: 'suspended-text',
+            type: 'main_text',
+            status: 'streaming',
+            text: '正在统计最近失败的任务实例……（已被用户取消）'
+          }
+        ],
+        created_at: '2026-05-23T11:05:26+08:00'
+      }
+    ]
+  },
+  {
     topic_id: 'demo-topic-1',
     title: '演示问数会话',
     agent_id: 'agent_default',
     message_count: 2,
     current_task_id: '',
-    current_task_status: '',
+    current_task_status: 'finished',
+    last_message_preview: 'demo_order_detail 的上下游血缘',
     created_at: '2026-05-22T10:00:00+08:00',
     updated_at: '2026-05-22T10:02:00+08:00',
     messages: [

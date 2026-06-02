@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { demoAdapter } from '../mockServer'
+import { buildChartRenderModel } from '../../views/intelligence/chartSpec'
 
 const request = async (method, url, options = {}) => {
   const response = await demoAdapter({
@@ -81,5 +82,38 @@ describe('demoAdapter intelligent query admin endpoints', () => {
         ]
       })
     })
+  })
+
+  it('seeds demo topics covering running / error / suspended task statuses for the session list', async () => {
+    const result = await request('get', '/api/v1/nl2sql/topics')
+    const topics = result.data
+    const byStatus = Object.fromEntries(topics.map((t) => [t.topic_id, t.current_task_status]))
+    expect(byStatus['demo-topic-running']).toBe('running')
+    expect(byStatus['demo-topic-error']).toBe('error')
+    expect(byStatus['demo-topic-suspended']).toBe('suspended')
+  })
+
+  it('exposes the failed demo conversation with an error message for the chat error card', async () => {
+    const result = await request('get', '/api/v1/nl2sql/topics/demo-topic-error/messages')
+    const assistant = result.data.items.find((m) => m.sender_type === 'assistant')
+    expect(assistant.status).toBe('error')
+    expect(assistant.error?.message).toContain('SQL 执行失败')
+  })
+
+  it('ships a finished demo conversation with a renderable SQL table and chart', async () => {
+    const result = await request('get', '/api/v1/nl2sql/topics/demo-topic-chart/messages')
+    const assistant = result.data.items.find((m) => m.sender_type === 'assistant')
+    expect(assistant.status).toBe('finished')
+
+    const sqlBlock = assistant.blocks.find((b) => b.output?.kind === 'sql_execution')
+    expect(sqlBlock.output.columns).toContain('success_rate')
+    expect(sqlBlock.output.rows.length).toBeGreaterThan(0)
+
+    const chartBlock = assistant.blocks.find((b) => b.output?.kind === 'chart_spec')
+    // The real chart validator must accept the spec (no error) so it renders.
+    const model = buildChartRenderModel(chartBlock.output)
+    expect(model.errorText).toBeFalsy()
+    expect(model.state).toBe('renderable')
+    expect(model.spec.chart_type).toBe('line')
   })
 })
