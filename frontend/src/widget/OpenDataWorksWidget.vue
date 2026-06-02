@@ -13,15 +13,19 @@
 
     <section v-else ref="panelEl" class="odw-panel" :style="panelStyle" aria-label="OpenDataWorks intelligent query widget">
       <header v-if="!isInline" class="odw-panel__header" @pointerdown="startDrag">
-        <button class="odw-icon-button odw-history-toggle" type="button" aria-label="历史会话" title="历史会话" @click="toggleHistory">
-          <Menu class="odw-icon-svg" aria-hidden="true" />
-        </button>
         <div class="odw-panel__heading">
           <div class="odw-panel__title">{{ config.projectName }}</div>
         </div>
         <div class="odw-panel__actions">
           <button class="odw-icon-button" type="button" aria-label="新建会话" title="新建会话" :disabled="state.isBusy" @click="newConversation">
             <Plus class="odw-icon-svg" aria-hidden="true" />
+          </button>
+          <button class="odw-icon-button odw-history-toggle" type="button" aria-label="历史会话" title="历史会话" @click="toggleHistory">
+            <svg class="odw-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3 3v5h5" />
+              <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
+              <path d="M12 7v5l4 2" />
+            </svg>
           </button>
           <button v-if="!isInline" class="odw-icon-button odw-close-button" type="button" aria-label="关闭小窗" title="关闭小窗" @click="close">
             <Close class="odw-icon-svg" aria-hidden="true" />
@@ -53,7 +57,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { Close, Menu, Plus } from '@element-plus/icons-vue'
+import { Close, Plus } from '@element-plus/icons-vue'
 import WidgetChat from './WidgetChat.vue'
 import { useWidgetGeometry } from './useWidgetGeometry'
 
