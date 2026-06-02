@@ -1,18 +1,30 @@
 export const RESULT_GRID_ROW_KEY = '__odwResultGridRowKey'
 
-const MIN_COLUMN_WIDTH = 120
+export const MIN_COLUMN_WIDTH = 120
 const MAX_COLUMN_WIDTH = 360
 const HEADER_PADDING_WIDTH = 48
+const CELL_PADDING_WIDTH = 24
 const AVERAGE_CHARACTER_WIDTH = 9
+const WIDTH_SAMPLE_ROW_LIMIT = 50
 
-const clampColumnWidth = (width) => Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, width))
+const clampColumnWidth = (width) => Math.max(MIN_COLUMN_WIDTH, Math.min(MAX_COLUMN_WIDTH, Math.round(width)))
 
-const estimateColumnWidth = (column) => {
-  const textLength = String(column ?? '').length
-  return clampColumnWidth(textLength * AVERAGE_CHARACTER_WIDTH + HEADER_PADDING_WIDTH)
+const measureTextWidth = (value) => String(value ?? '').length * AVERAGE_CHARACTER_WIDTH
+
+const estimateColumnWidth = (key, rows) => {
+  let widest = measureTextWidth(key) + HEADER_PADDING_WIDTH
+  if (Array.isArray(rows)) {
+    const sample = rows.slice(0, WIDTH_SAMPLE_ROW_LIMIT)
+    for (const row of sample) {
+      if (!row || typeof row !== 'object') continue
+      const cellWidth = measureTextWidth(row[key]) + CELL_PADDING_WIDTH
+      if (cellWidth > widest) widest = cellWidth
+    }
+  }
+  return clampColumnWidth(widest)
 }
 
-export const buildResultGridColumns = (columns = []) => {
+export const buildResultGridColumns = (columns = [], rows = []) => {
   if (!Array.isArray(columns)) return []
   return columns.map((column) => {
     const key = String(column ?? '')
@@ -20,8 +32,29 @@ export const buildResultGridColumns = (columns = []) => {
       key,
       dataKey: key,
       title: key,
-      width: estimateColumnWidth(key)
+      width: estimateColumnWidth(key, rows),
+      minWidth: MIN_COLUMN_WIDTH,
+      resizable: true
     }
+  })
+}
+
+// Stretch columns to fill the available width when the natural content widths
+// leave empty space (e.g. only two short columns in a wide grid). Extra space
+// is distributed proportionally so the table never leaves an awkward gap.
+export const distributeColumnWidths = (columns = [], availableWidth = 0) => {
+  if (!Array.isArray(columns) || !columns.length) return Array.isArray(columns) ? columns : []
+  const total = columns.reduce((sum, column) => sum + (Number(column.width) || 0), 0)
+  if (!(availableWidth > 0) || total <= 0 || total >= availableWidth) return columns
+  const extra = availableWidth - total
+  let allocated = 0
+  return columns.map((column, index) => {
+    const base = Number(column.width) || 0
+    const add = index === columns.length - 1
+      ? extra - allocated
+      : Math.floor((base / total) * extra)
+    allocated += add
+    return { ...column, width: base + add }
   })
 }
 
