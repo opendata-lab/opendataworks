@@ -443,6 +443,14 @@ const buildV2StateFromStoredBlocks = (item) => {
     turn.blocks.push(block)
     v2state.blocks.push(block)
   }
+  // A failed run persists message.status === 'error' (+ error). Assistant messages
+  // always carry _v2state, so the error must surface through _v2state.status here —
+  // the separate msg.error card only renders for non-_v2state messages.
+  if (String(item?.status || '') === 'error') {
+    v2state.status = 'error'
+    turn.status = 'error'
+    v2state.errorText = errorMessage(item?.error) || '会话执行失败'
+  }
   return v2state
 }
 
@@ -643,6 +651,21 @@ const subscribe = async (taskId, assistant) => {
         triggerRef(messages)
       }
     })
+    // A hard backend failure can end the stream without a terminal done/error
+    // record, leaving _v2state on 'streaming'. Reconcile against the task status
+    // so failed runs surface the error instead of being marked success.
+    if (assistant._v2state.status !== 'error' && !abortController.value?.signal?.aborted) {
+      try {
+        const taskState = await api.taskApi.getTask(taskId)
+        if (String(taskState?.task_status || '') === 'error') {
+          assistant._v2state.status = 'error'
+          assistant._v2state.errorText = errorMessage(taskState?.error) || '会话执行失败'
+          assistant.error = { message: assistant._v2state.errorText }
+        } else if (assistant._v2state.status !== 'done') {
+          assistant._v2state.status = 'done'
+        }
+      } catch { /* keep current state if status lookup fails */ }
+    }
     assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
     emit('event', { name: 'message:done', payload: { taskId } })
   } catch (error) {

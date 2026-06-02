@@ -182,6 +182,33 @@ describe('WidgetChat history conversations', () => {
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
   })
 
+  it('surfaces the error card when opening a failed (status=error) history conversation', async () => {
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => ({
+      topic_id: topicId,
+      total: 1,
+      items: [
+        {
+          message_id: `msg-${topicId}`,
+          sender_type: 'assistant',
+          content: '',
+          status: 'error',
+          error: { code: 'model_error', message: '模型会话异常结束' },
+          seq_id: 1
+        }
+      ]
+    }))
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
+    await flushPromises()
+
+    const errorCard = wrapper.find('.query-error-card')
+    expect(errorCard.exists()).toBe(true)
+    expect(errorCard.text()).toContain('模型会话异常结束')
+  })
+
   it('creates the first sent conversation at the top of the history list', async () => {
     apiMocks.topicApi.createTopic.mockResolvedValue(topic('topic-new', '新话题', {
       message_count: 0,
