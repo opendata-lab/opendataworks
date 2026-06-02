@@ -415,3 +415,83 @@ def test_agent_profile_routes_contract(monkeypatch):
     deleted = client.delete("/api/v1/dataagent/agents/agent_1")
     assert deleted.status_code == 200
     assert deleted.json()["status"] == "ok"
+
+
+class _FakeWidgetStore:
+    """Records admin store calls so the route contract can be asserted without MySQL."""
+
+    def __init__(self):
+        self.list_calls = []
+        self.message_calls = []
+
+    def admin_list_topics(self, **kwargs):
+        self.list_calls.append(kwargs)
+        return {
+            "items": [
+                {
+                    "topic_id": "topic_widget_1",
+                    "title": "嵌入站会话",
+                    "chat_topic_id": "chat_1",
+                    "chat_conversation_id": "conv_1",
+                    "agent_id": "agent_default",
+                    "current_task_id": None,
+                    "current_task_status": None,
+                    "message_count": 4,
+                    "last_message_preview": "最近一条",
+                    "source": "widget",
+                    "website_id": "site_a",
+                    "external_user_id": "",
+                    "visitor_id": "visitor_x",
+                    "created_at": "2026-06-01T10:00:00",
+                    "updated_at": "2026-06-01T12:00:00",
+                }
+            ],
+            "total": 1,
+            "page": kwargs.get("page", 1),
+            "page_size": kwargs.get("page_size", 20),
+        }
+
+    def get_topic(self, topic_id, context=None):
+        return {"topic_id": topic_id} if topic_id == "topic_widget_1" else None
+
+    def list_topic_messages_page(self, *, topic_id, page, page_size, order, context=None):
+        self.message_calls.append({"topic_id": topic_id, "context": context, "order": order})
+        return {
+            "topic_id": topic_id,
+            "page": page,
+            "page_size": page_size,
+            "order": order,
+            "total": 1,
+            "items": [],
+        }
+
+
+def test_admin_widget_topics_routes_contract(monkeypatch):
+    store = _FakeWidgetStore()
+    monkeypatch.setattr(admin_routes, "get_topic_task_store", lambda: store)
+
+    client = TestClient(app)
+
+    listing = client.get(
+        "/api/v1/nl2sql-admin/widget-topics",
+        params={"website_id": "site_a", "keyword": "嵌入", "page": 1, "page_size": 20},
+    )
+    assert listing.status_code == 200
+    body = listing.json()
+    assert body["total"] == 1
+    assert body["items"][0]["source"] == "widget"
+    assert body["items"][0]["website_id"] == "site_a"
+    assert body["items"][0]["visitor_id"] == "visitor_x"
+    # Admin listing must always scope to widget source and forward filters.
+    assert store.list_calls[0]["source"] == "widget"
+    assert store.list_calls[0]["website_id"] == "site_a"
+    assert store.list_calls[0]["keyword"] == "嵌入"
+
+    messages = client.get("/api/v1/nl2sql-admin/widget-topics/topic_widget_1/messages")
+    assert messages.status_code == 200
+    assert messages.json()["topic_id"] == "topic_widget_1"
+    # Admin message read bypasses owner isolation via context=None.
+    assert store.message_calls[0]["context"] is None
+
+    missing = client.get("/api/v1/nl2sql-admin/widget-topics/unknown/messages")
+    assert missing.status_code == 404

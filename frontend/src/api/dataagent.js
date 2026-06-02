@@ -100,5 +100,13 @@ export const dataagentApi = {
 
   listDataScopeOptions() {
     return dataagentRequest.get('/v1/dataagent/data-scope/options')
+  },
+
+  listWidgetTopics(params = {}) {
+    return dataagentRequest.get('/v1/nl2sql-admin/widget-topics', { params })
+  },
+
+  getWidgetTopicMessages(topicId, params = {}) {
+    return dataagentRequest.get(`/v1/nl2sql-admin/widget-topics/${encodeURIComponent(topicId)}/messages`, { params })
   }
 }

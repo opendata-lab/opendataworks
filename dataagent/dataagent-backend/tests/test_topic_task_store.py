@@ -416,3 +416,77 @@ def test_widget_event_types_allowlist_contains_expected_values():
     assert "history_close" in WIDGET_EVENT_TYPES
     assert "conversation_new" in WIDGET_EVENT_TYPES
     assert "message_send" in WIDGET_EVENT_TYPES
+
+
+def test_admin_list_topics_scopes_to_widget_and_forwards_filters(monkeypatch):
+    class FakeCursor:
+        def __init__(self, conn):
+            self.conn = conn
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def execute(self, sql, params):
+            self.conn.executed.append((sql, list(params)))
+
+        def fetchone(self):
+            return {"total": 1}
+
+        def fetchall(self):
+            return [
+                {
+                    "topic_id": "topic_widget_1",
+                    "title": "嵌入站会话",
+                    "chat_topic_id": "chat_1",
+                    "chat_conversation_id": "conv_1",
+                    "current_task_id": None,
+                    "current_task_status": None,
+                    "source": "widget",
+                    "website_id": "site_a",
+                    "external_user_id": "",
+                    "visitor_id": "visitor_x",
+                    "agent_id": "agent_default",
+                    "agent_snapshot_json": None,
+                    "created_at": None,
+                    "updated_at": None,
+                    "message_count": 3,
+                    "last_message_preview": "最近一条",
+                }
+            ]
+
+    class FakeConnection:
+        def __init__(self):
+            self.executed = []
+
+        def cursor(self):
+            return FakeCursor(self)
+
+        def close(self):
+            return None
+
+    store = TopicTaskStore()
+    conn = FakeConnection()
+    monkeypatch.setattr(store, "_ensure_ready", lambda: None)
+    monkeypatch.setattr(store, "_connect", lambda database: conn)
+
+    result = store.admin_list_topics(website_id="site_a", visitor_id="visitor_x", page=2, page_size=10)
+
+    assert result["total"] == 1
+    assert result["page"] == 2
+    assert result["items"][0]["source"] == "widget"
+    assert result["items"][0]["website_id"] == "site_a"
+
+    count_sql, count_params = conn.executed[0]
+    assert "COUNT(*)" in count_sql
+    assert "t.source = %s" in count_sql
+    assert count_params == ["widget", "site_a", "visitor_x"]
+
+    list_sql, list_params = conn.executed[1]
+    assert "LIMIT %s OFFSET %s" in list_sql
+    # widget source + filters first, then pagination (page 2, size 10 -> offset 10)
+    assert list_params == ["widget", "site_a", "visitor_x", 10, 10]
+    # Per-user isolation predicate must never be reused by the admin path.
+    assert "COALESCE(t.source" not in list_sql
