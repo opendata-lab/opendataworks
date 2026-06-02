@@ -51,23 +51,6 @@
     </aside>
 
     <main class="query-main">
-      <!-- Top bar: only when messages exist and inline mode (floating has no top-bar content) -->
-      <div v-if="(messages.length || errorText) && isInline" class="query-top-bar">
-        <button
-          class="query-btn-history-toggle"
-          type="button"
-          aria-label="历史会话"
-          title="历史会话"
-          @click="toggleHistory"
-        >
-          <svg class="query-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 3v5h5" />
-            <path d="M3.05 13A9 9 0 1 0 6 5.3L3 8" />
-            <path d="M12 7v5l4 2" />
-          </svg>
-        </button>
-      </div>
-
       <div class="query-messages">
         <div class="query-messages-inner" :class="{ 'is-empty': !messages.length }">
           <div v-if="errorText" class="query-error-card query-error-banner">
@@ -579,10 +562,6 @@ const guardIdle = () => {
 
 const closeHistory = () => {
   props.state.historyOpen = false
-}
-
-const toggleHistory = () => {
-  props.state.historyOpen = !props.state.historyOpen
 }
 
 const selectTopic = async (targetTopicId) => {
