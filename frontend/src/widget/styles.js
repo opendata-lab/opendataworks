@@ -97,8 +97,8 @@ export const WIDGET_STYLES = `
 }
 
 .odw-launcher__icon {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
 }
 
