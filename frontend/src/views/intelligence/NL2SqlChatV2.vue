@@ -24,20 +24,7 @@
       </div>
 
       <div class="v2-sidebar-toolbar">
-        <div class="v2-source-tabs" role="tablist">
-          <button
-            type="button"
-            class="v2-source-tab"
-            :class="{ active: sourceMode === 'portal' }"
-            @click="handleSourceChange('portal')"
-          >门户</button>
-          <button
-            type="button"
-            class="v2-source-tab"
-            :class="{ active: sourceMode === 'widget' }"
-            @click="handleSourceChange('widget')"
-          >Widget</button>
-        </div>
+        <input v-model="searchKeyword" class="v2-search-input" type="text" placeholder="搜索话题">
         <el-popover
           v-model:visible="filterPopoverVisible"
           placement="bottom-end"
@@ -49,13 +36,30 @@
             <button
               type="button"
               class="v2-filter-btn"
-              :class="{ active: filterStatus || sortOrder !== 'updated_desc' || filterUser }"
+              :class="{ active: hasActiveFilters }"
               title="筛选与排序"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
             </button>
           </template>
           <div class="v2-filter-panel">
+            <div class="v2-filter-group">
+              <div class="v2-filter-label">来源</div>
+              <div class="v2-source-tabs" role="tablist">
+                <button
+                  type="button"
+                  class="v2-source-tab"
+                  :class="{ active: sourceMode === 'portal' }"
+                  @click="handleSourceChange('portal')"
+                >门户</button>
+                <button
+                  type="button"
+                  class="v2-source-tab"
+                  :class="{ active: sourceMode === 'widget' }"
+                  @click="handleSourceChange('widget')"
+                >Widget</button>
+              </div>
+            </div>
             <div v-if="isWidgetMode" class="v2-filter-group">
               <div class="v2-filter-label">用户</div>
               <el-select
@@ -100,10 +104,6 @@
             </div>
           </div>
         </el-popover>
-      </div>
-
-      <div class="v2-sidebar-search">
-        <input v-model="searchKeyword" class="v2-search-input" type="text" placeholder="搜索话题">
       </div>
 
       <el-scrollbar class="v2-session-scroll">
@@ -373,6 +373,9 @@ const filterUser = ref('')              // widget only: 'ext:<id>' | 'vis:<id>'
 const sortOrder = ref('updated_desc')   // 'updated_desc' | 'created_desc' | 'title_asc'
 const filterPopoverVisible = ref(false)
 const isWidgetMode = computed(() => sourceMode.value === 'widget')
+const hasActiveFilters = computed(() =>
+  sourceMode.value !== 'portal' || filterStatus.value !== '' || sortOrder.value !== 'updated_desc' || filterUser.value !== ''
+)
 
 const currentAgentName = computed(() => {
   const currentId = agentSelectValue.value
@@ -841,6 +844,9 @@ watch(filterUser, async () => {
 })
 
 function resetFilters() {
+  if (sourceMode.value !== 'portal') {
+    handleSourceChange('portal')
+  }
   filterStatus.value = ''
   filterUser.value = ''
   sortOrder.value = 'updated_desc'
@@ -1163,10 +1169,17 @@ onBeforeUnmount(() => {
 
 .v2-btn-new:hover { background: var(--odw-primary-light); }
 
-.v2-sidebar-search { padding: 0 8px 12px; }
+/* ── Source tabs + filter ────────────────────────────────────────────────── */
+.v2-sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 12px;
+}
 
-.v2-search-input {
-  width: 100%;
+.v2-sidebar-toolbar .v2-search-input {
+  flex: 1;
+  min-width: 0;
   box-sizing: border-box;
   padding: 6px 10px;
   border: 1px solid #dbe3ef;
@@ -1176,16 +1189,7 @@ onBeforeUnmount(() => {
   background: #f9fafc;
 }
 
-.v2-search-input:focus { border-color: var(--odw-primary); }
-
-/* ── Source tabs + filter ────────────────────────────────────────────────── */
-.v2-sidebar-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 0 8px 12px;
-}
+.v2-sidebar-toolbar .v2-search-input:focus { border-color: var(--odw-primary); }
 
 .v2-source-tabs {
   display: inline-flex;
