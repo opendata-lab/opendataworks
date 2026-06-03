@@ -205,9 +205,12 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
-                      <!-- Text block -->
+                      <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
-                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
+                        <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
+                          <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                          <ChartSpecView v-else :spec="seg.spec" />
+                        </template>
                         <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
                       </div>
                     </template>
@@ -222,7 +225,12 @@
 
                 <!-- Fallback for non-assistant or empty v2state -->
                 <template v-else>
-                  <div v-if="msg.content" class="v2-text-block" v-html="renderMarkdown(msg.content)" />
+                  <div v-if="msg.content" class="v2-text-block">
+                    <template v-for="(seg, si) in answerSegments(msg.content)" :key="si">
+                      <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                      <ChartSpecView v-else :spec="seg.spec" />
+                    </template>
+                  </div>
                 </template>
 
                 <!-- Message footer -->
@@ -339,8 +347,9 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
+import ChartSpecView from './ChartSpecView.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
-import { stripChartSpecsFromText } from './chartSpec'
+import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -795,6 +804,12 @@ function hydrateHistoryMessage(m) {
 // charts must come from a real tool call (rendered below that tool block).
 function cleanTextForDisplay(content) {
   return stripChartSpecsFromText(String(content || '')).trim()
+}
+
+// Split answer prose into ordered text/chart segments so an inline chart_spec
+// (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
+function answerSegments(content) {
+  return splitChartSpecText(String(content || ''))
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────

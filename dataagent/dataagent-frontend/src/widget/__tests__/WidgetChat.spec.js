@@ -454,4 +454,39 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('.query-tool-row .tool-chart-below').exists()).toBe(true)
     expect(wrapper.find('.query-final-chart').exists()).toBe(false)
   })
+
+  it('renders a raw chart_spec embedded in the conclusion prose as a chart instead of JSON', async () => {
+    const chartSpec = JSON.stringify({
+      kind: 'chart_spec',
+      version: 1,
+      chart_type: 'line',
+      title: '发布趋势',
+      x_field: 'stat_day',
+      series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+      dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }],
+      error: null
+    })
+
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, options) => {
+      options.onRecord({ record_type: 'stream', data: { type: 'message_start', usage: {} } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: `结论：发布次数上升。\n${chartSpec}\n以上为结论。` } } })
+      options.onRecord({ record_type: 'stream', data: { type: 'content_block_stop', index: 0 } })
+      options.onRecord({ record_type: 'done', data: {} })
+    })
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('最近发布趋势')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    const mainText = wrapper.find('.query-main-text')
+    expect(mainText.exists()).toBe(true)
+    expect(mainText.find('.chart-spec-view').exists()).toBe(true)
+    expect(mainText.text()).toContain('结论：发布次数上升。')
+    expect(mainText.text()).toContain('以上为结论。')
+    expect(mainText.text()).not.toContain('chart_type')
+  })
 })
