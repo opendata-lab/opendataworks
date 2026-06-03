@@ -5,6 +5,13 @@ Paired design: `docs/design/2026-06-03-nl2sql-chat-shared-engine-design.md`.
 Stack: DataAgent frontend (`dataagent/dataagent-frontend`). No backend or
 deployment changes.
 
+## Status
+
+- Phase 1: done (`chatMessage.js` + tests; both components consume it).
+- Phase 2: done (`useNl2SqlChat.js` + tests; `WidgetChat.vue` migrated; 167 tests green).
+- Phase 3: pending — implementation is mechanical, but its verification needs the
+  local NL2SQL smoke flow, which is unavailable in the current environment.
+
 ## Phase 1 — Pure helper module (low risk)
 
 Extract verbatim-duplicated, stateless logic; no lifecycle change.
