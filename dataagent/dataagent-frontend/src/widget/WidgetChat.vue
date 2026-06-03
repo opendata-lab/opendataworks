@@ -29,7 +29,6 @@
             type="button"
             :class="{ active: topic.topic_id === topicId }"
             :data-testid="`history-topic-${topic.topic_id}`"
-            :disabled="isBusy"
             @click="selectTopic(topic.topic_id)"
           >
             <div class="query-session-title">{{ truncate(topic.title || '新话题', 26) }}</div>
@@ -553,19 +552,15 @@ const loadTopics = async () => {
 
 const ensureAgentConfigured = () => true
 
-const guardIdle = () => {
-  if (!isBusy.value) return true
-  errorText.value = '回答中，请先停止'
-  emit('event', { name: 'error', payload: errorText.value })
-  return false
-}
-
 const closeHistory = () => {
   props.state.historyOpen = false
 }
 
 const selectTopic = async (targetTopicId) => {
-  if (!targetTopicId || targetTopicId === topicId.value || !guardIdle()) return
+  if (!targetTopicId || targetTopicId === topicId.value) return
+  // Consistent with chat v2 (handleSelectTopic): switching away from a running
+  // conversation detaches the in-flight run instead of blocking it.
+  if (isBusy.value) detachActiveRun()
   topicId.value = targetTopicId
   errorText.value = ''
   await loadTopicMessages(targetTopicId)
@@ -597,7 +592,10 @@ const newConversation = async () => {
 }
 
 const deleteConversation = async (targetTopicId) => {
-  if (!targetTopicId || !guardIdle()) return
+  if (!targetTopicId) return
+  // Deleting the conversation that owns the in-flight run detaches it first
+  // (same leave-while-running idiom as chat v2).
+  if (isBusy.value && targetTopicId === topicId.value) detachActiveRun()
   await api.topicApi.deleteTopic(targetTopicId)
   topics.value = topics.value.filter((topic) => topic.topic_id !== targetTopicId)
   hydratedTopicIds.delete(targetTopicId)

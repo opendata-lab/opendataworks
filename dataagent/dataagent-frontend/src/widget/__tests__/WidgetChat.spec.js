@@ -311,7 +311,7 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('[data-testid^="delete-topic-"]').exists()).toBe(false)
   })
 
-  it('prevents switching to an existing topic while an answer is running', async () => {
+  it('allows switching to an existing topic while an answer is running, detaching the run', async () => {
     let resolveStream
     apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => {
       resolveStream = resolve
@@ -323,7 +323,18 @@ describe('WidgetChat history conversations', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="history-topic-topic-2"]').attributes('disabled')).toBeDefined()
+    // History items stay clickable mid-run (consistent with chat v2's session list).
+    const topicButton = wrapper.get('[data-testid="history-topic-topic-2"]')
+    expect(topicButton.attributes('disabled')).toBeUndefined()
+
+    await topicButton.trigger('click')
+    await flushPromises()
+
+    // Switching detaches the run locally without cancelling the backend task,
+    // and loads the selected topic's history.
+    expect(apiMocks.taskApi.cancelTask).not.toHaveBeenCalled()
+    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 200, order: 'asc' })
+    expect(wrapper.text()).toContain('topic-2 历史回复')
 
     resolveStream()
   })
