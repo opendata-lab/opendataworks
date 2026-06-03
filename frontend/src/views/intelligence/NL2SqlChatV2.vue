@@ -49,13 +49,25 @@
             <button
               type="button"
               class="v2-filter-btn"
-              :class="{ active: filterStatus || sortOrder !== 'updated_desc' }"
+              :class="{ active: filterStatus || sortOrder !== 'updated_desc' || filterUser }"
               title="筛选与排序"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
             </button>
           </template>
           <div class="v2-filter-panel">
+            <div v-if="isWidgetMode" class="v2-filter-group">
+              <div class="v2-filter-label">用户</div>
+              <el-select
+                v-model="filterUser"
+                size="small"
+                clearable
+                placeholder="全部用户"
+                class="v2-filter-select"
+              >
+                <el-option v-for="u in widgetUserOptions" :key="u.value" :label="u.label" :value="u.value" />
+              </el-select>
+            </div>
             <div class="v2-filter-group">
               <div class="v2-filter-label">状态</div>
               <el-radio-group v-model="filterStatus" size="small" class="v2-filter-radios">
@@ -348,9 +360,26 @@ const autoScroll = ref(true)
 // sessions are a read-only audit view served by the admin endpoint.
 const sourceMode = ref('portal')        // 'portal' | 'widget'
 const filterStatus = ref('')            // '' | 'running' | 'error' | 'suspended' | 'finished'
+const filterUser = ref('')              // widget only: 'ext:<id>' | 'vis:<id>'
 const sortOrder = ref('updated_desc')   // 'updated_desc' | 'created_desc' | 'title_asc'
 const filterPopoverVisible = ref(false)
 const isWidgetMode = computed(() => sourceMode.value === 'widget')
+
+// Widget sessions carry the visitor identity (logged-in external_user_id or
+// anonymous visitor_id); collapse them into a single filterable user key.
+function topicUserKey(topic) {
+  const ext = String(topic?.external_user_id || '').trim()
+  if (ext) return 'ext:' + ext
+  const vis = String(topic?.visitor_id || '').trim()
+  return vis ? 'vis:' + vis : ''
+}
+
+function topicUserLabel(topic) {
+  const ext = String(topic?.external_user_id || '').trim()
+  if (ext) return '用户 ' + ext
+  const vis = String(topic?.visitor_id || '').trim()
+  return vis ? '访客 ' + vis : '匿名'
+}
 
 const currentAgentName = computed(() => {
   const currentId = agentSelectValue.value
@@ -380,6 +409,10 @@ const filteredTopics = computed(() => {
     list = list.filter((t) => topicStatusKind(t.current_task_status) === wanted)
   }
 
+  if (isWidgetMode.value && filterUser.value) {
+    list = list.filter((t) => topicUserKey(t) === filterUser.value)
+  }
+
   const order = sortOrder.value
   return list.slice().sort((a, b) => {
     if (order === 'title_asc') {
@@ -389,6 +422,16 @@ const filteredTopics = computed(() => {
     const bv = order === 'created_desc' ? b.created_at : (b.updated_at || b.created_at)
     return new Date(bv || 0).getTime() - new Date(av || 0).getTime()
   })
+})
+
+// Distinct users present in the loaded widget sessions, for the user filter.
+const widgetUserOptions = computed(() => {
+  const seen = new Map()
+  for (const t of topics.value) {
+    const key = topicUserKey(t)
+    if (key && !seen.has(key)) seen.set(key, topicUserLabel(t))
+  }
+  return Array.from(seen, ([value, label]) => ({ value, label }))
 })
 
 const activeTopic = computed(() => topics.value.find((t) => t.topic_id === activeTopicId.value) || null)
@@ -759,12 +802,14 @@ async function handleSourceChange(mode) {
   targetMessageId.value = ''
   searchKeyword.value = ''
   filterStatus.value = ''
+  filterUser.value = ''
   topics.value = []
   await loadTopics()
 }
 
 function resetFilters() {
   filterStatus.value = ''
+  filterUser.value = ''
   sortOrder.value = 'updated_desc'
 }
 
@@ -1156,6 +1201,7 @@ onBeforeUnmount(() => {
 .v2-filter-label { font-size: 12px; font-weight: 600; color: #8C8C8C; }
 .v2-filter-radios { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .v2-filter-radios :deep(.el-radio) { margin-right: 0; height: 26px; }
+.v2-filter-select { width: 100%; }
 
 .v2-filter-actions { display: flex; justify-content: flex-end; border-top: 1px solid #eef1f5; padding-top: 10px; }
 
