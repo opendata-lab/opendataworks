@@ -111,17 +111,13 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
-                      <!-- Text block -->
+                      <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="query-main-text">
-                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
+                        <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
+                          <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                          <ChartSpecView v-else :spec="seg.spec" />
+                        </template>
                         <span v-if="block.status === 'streaming'" class="query-cursor">|</span>
-                        <div
-                          v-for="tool in buildInlineChartTools(block.content, `${msg.id}-${ti}-${block.blockIndex}`)"
-                          :key="tool.id"
-                          class="query-inline-chart"
-                        >
-                          <ToolOutputRenderer :tool="tool" />
-                        </div>
                       </div>
                     </template>
                   </template>
@@ -134,14 +130,10 @@
 
                 <template v-else>
                   <div v-if="msg.content" class="query-main-text">
-                    <div v-if="cleanTextForDisplay(msg.content)" v-html="renderMarkdown(cleanTextForDisplay(msg.content))" />
-                    <div
-                      v-for="tool in buildInlineChartTools(msg.content, msg.id)"
-                      :key="tool.id"
-                      class="query-inline-chart"
-                    >
-                      <ToolOutputRenderer :tool="tool" />
-                    </div>
+                    <template v-for="(seg, si) in answerSegments(msg.content)" :key="si">
+                      <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                      <ChartSpecView v-else :spec="seg.spec" />
+                    </template>
                   </div>
                   <div v-if="msg.error" class="query-error-card">
                     <span class="query-error-label">错误</span>
@@ -266,9 +258,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, triggerRef, watch } from 'vue'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
-import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
+import ChartSpecView from '@/views/intelligence/ChartSpecView.vue'
+import { splitChartSpecText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
-import { buildInlineChartTools, extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
+import { extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
 import { useNl2SqlChat } from '@/views/intelligence/useNl2SqlChat'
 import { useChatMessageActions } from '@/views/intelligence/useChatMessageActions'
 
@@ -389,9 +382,13 @@ const formatTime = (value) => {
 
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
-// Inline chart_spec written into the model's prose is stripped from display;
-// charts must come from a real tool call (rendered below that tool block).
+// Inline chart_spec written into the model's prose is stripped from plain-text
+// uses (copy/preview); rendering splits it into text/chart segments instead.
 const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content || '')).trim()
+
+// Split answer prose into ordered text/chart segments so an inline chart_spec
+// (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
+const answerSegments = (content) => splitChartSpecText(String(content || ''))
 
 const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
   api,
@@ -400,7 +397,6 @@ const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
   notifyError: (message) => emit('event', { name: 'error', payload: message }),
   emitEvent: (event) => emit('event', event),
 })
-
 const closeHistory = () => {
   props.state.historyOpen = false
 }
@@ -706,9 +702,5 @@ onBeforeUnmount(() => {
 .query-message-feedback-dislike.active {
   background: #fff1f0;
   color: #d93025;
-}
-
-.query-inline-chart {
-  margin-top: 10px;
 }
 </style>

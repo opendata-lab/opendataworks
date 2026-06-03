@@ -328,118 +328,117 @@ export const buildChartOption = (specInput) => {
   return model.kind === 'echarts' ? model.option : null
 }
 
-const CHART_SPEC_BLOCK_PATTERNS = [
-  /```chart\s*([\s\S]*?)```/gi,
+// Wrapped forms a model may use to embed a chart_spec inside answer prose:
+// a ```chart / ```json fence, or an <chart_spec> tag. The raw-object form
+// ({ "kind": "chart_spec", ... } written inline without any wrapper) is handled
+// separately via brace scanning below.
+const CHART_SPEC_FENCE_PATTERNS = [
+  /```(?:chart|json)?\s*([\s\S]*?)```/gi,
   /<chart_spec>\s*([\s\S]*?)<\/chart_spec>/gi
 ]
 
-const CHART_SPEC_CONDITIONAL_BLOCK_PATTERNS = [
-  /```json\s*([\s\S]*?)```/gi
-]
-
-const findJsonObjectEnd = (source, start) => {
+// Locate the index of the brace that closes the object opened at `start`,
+// ignoring braces inside JSON strings. Returns -1 when unbalanced (e.g. a spec
+// still streaming in), so partial output is left as plain text until complete.
+const findMatchingBrace = (source, start) => {
   let depth = 0
   let inString = false
-  let escaped = false
-
-  for (let index = start; index < source.length; index += 1) {
-    const char = source[index]
+  let quote = ''
+  for (let i = start; i < source.length; i += 1) {
+    const ch = source[i]
     if (inString) {
-      if (escaped) {
-        escaped = false
-      } else if (char === '\\') {
-        escaped = true
-      } else if (char === '"') {
+      if (ch === '\\') {
+        i += 1
+      } else if (ch === quote) {
         inString = false
       }
       continue
     }
-
-    if (char === '"') {
+    if (ch === '"' || ch === "'") {
       inString = true
-    } else if (char === '{') {
+      quote = ch
+    } else if (ch === '{') {
       depth += 1
-    } else if (char === '}') {
+    } else if (ch === '}') {
       depth -= 1
-      if (depth === 0) return index + 1
+      if (depth === 0) return i
     }
   }
-
   return -1
 }
 
-const findRawChartSpecJsonMatches = (source) => {
-  const matches = []
-  const text = String(source || '')
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== '{') continue
-    const end = findJsonObjectEnd(text, index)
-    if (end < 0) break
-    const raw = text.slice(index, end)
-    const parsed = parseChartSpec(raw)
-    if (parsed) {
-      matches.push({ start: index, end, spec: parsed })
-      index = end - 1
+// Collect every chart_spec occurrence in `source` as a non-overlapping range,
+// covering fenced, tagged, and raw-JSON forms so detection never diverges from
+// what the conclusion area renders.
+const collectChartSpecRanges = (source) => {
+  const ranges = []
+
+  for (const pattern of CHART_SPEC_FENCE_PATTERNS) {
+    pattern.lastIndex = 0
+    let match
+    while ((match = pattern.exec(source)) !== null) {
+      const spec = parseChartSpec(match[1])
+      if (spec) ranges.push({ start: match.index, end: match.index + match[0].length, spec })
     }
   }
-  return matches
-}
 
-const stripConditionalChartSpecBlocks = (source) => {
-  let output = String(source || '')
-  for (const pattern of CHART_SPEC_CONDITIONAL_BLOCK_PATTERNS) {
-    pattern.lastIndex = 0
-    output = output.replace(pattern, (match, content) => (
-      parseChartSpec(content) ? '' : match
-    ))
+  const isClaimed = (index) => ranges.some((range) => index >= range.start && index < range.end)
+  const marker = 'chart_spec'
+  let searchFrom = 0
+  while (true) {
+    const hit = source.indexOf(marker, searchFrom)
+    if (hit < 0) break
+    const start = source.lastIndexOf('{', hit)
+    if (start >= 0 && !isClaimed(start)) {
+      const end = findMatchingBrace(source, start)
+      if (end > start) {
+        const spec = parseChartSpec(source.slice(start, end + 1))
+        if (spec) {
+          ranges.push({ start, end: end + 1, spec })
+          searchFrom = end + 1
+          continue
+        }
+      }
+    }
+    searchFrom = hit + marker.length
   }
-  return output
+
+  const sorted = ranges.sort((a, b) => a.start - b.start || b.end - a.end)
+  const resolved = []
+  for (const range of sorted) {
+    const last = resolved[resolved.length - 1]
+    if (last && range.start < last.end) continue
+    resolved.push(range)
+  }
+  return resolved
 }
 
-export const extractChartSpecsFromText = (text) => {
+export const extractChartSpecsFromText = (text) => collectChartSpecRanges(String(text || '')).map((range) => range.spec)
+
+// Split answer text into ordered segments so the conclusion area can render the
+// surrounding prose as markdown and each embedded chart_spec as a real chart,
+// instead of leaking the JSON as raw text.
+export const splitChartSpecText = (text) => {
   const source = String(text || '')
-  const specs = []
-  for (const pattern of CHART_SPEC_BLOCK_PATTERNS) {
-    pattern.lastIndex = 0
-    const matches = source.matchAll(pattern)
-    for (const match of matches) {
-      const parsed = parseChartSpec(match[1])
-      if (parsed) specs.push(parsed)
-    }
+  const ranges = collectChartSpecRanges(source)
+  const segments = []
+  const pushText = (raw) => {
+    const value = String(raw || '').replace(/\n{3,}/g, '\n\n').trim()
+    if (value) segments.push({ type: 'text', value })
   }
-  for (const pattern of CHART_SPEC_CONDITIONAL_BLOCK_PATTERNS) {
-    pattern.lastIndex = 0
-    const matches = source.matchAll(pattern)
-    for (const match of matches) {
-      const parsed = parseChartSpec(match[1])
-      if (parsed) specs.push(parsed)
-    }
+
+  let cursor = 0
+  for (const range of ranges) {
+    pushText(source.slice(cursor, range.start))
+    segments.push({ type: 'chart', spec: range.spec })
+    cursor = range.end
   }
-  let rawSource = source
-  for (const pattern of CHART_SPEC_BLOCK_PATTERNS) {
-    pattern.lastIndex = 0
-    rawSource = rawSource.replace(pattern, '')
-  }
-  rawSource = stripConditionalChartSpecBlocks(rawSource)
-  for (const match of findRawChartSpecJsonMatches(rawSource)) {
-    specs.push(match.spec)
-  }
-  return specs
+  pushText(source.slice(cursor))
+  return segments
 }
 
-export const stripChartSpecsFromText = (text) => {
-  let output = String(text || '')
-  for (const pattern of CHART_SPEC_BLOCK_PATTERNS) {
-    pattern.lastIndex = 0
-    output = output.replace(pattern, '')
-  }
-  output = stripConditionalChartSpecBlocks(output)
-  const rawMatches = findRawChartSpecJsonMatches(output)
-  for (let index = rawMatches.length - 1; index >= 0; index -= 1) {
-    const match = rawMatches[index]
-    output = `${output.slice(0, match.start)}${output.slice(match.end)}`
-  }
-  return output
-    .replace(/\n{3,}/g, '\n\n')
-    .trim()
-}
+export const stripChartSpecsFromText = (text) => splitChartSpecText(text)
+  .filter((segment) => segment.type === 'text')
+  .map((segment) => segment.value)
+  .join('\n\n')
+  .trim()

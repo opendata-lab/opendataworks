@@ -822,10 +822,6 @@ export const WIDGET_STYLES = `
   overflow: hidden;
 }
 
-.query-inline-chart {
-  margin-top: 10px;
-}
-
 .query-process-label {
   display: inline-flex;
   align-items: center;

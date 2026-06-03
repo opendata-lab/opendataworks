@@ -205,17 +205,13 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
-                      <!-- Text block -->
+                      <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
-                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
+                        <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
+                          <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                          <ChartSpecView v-else :spec="seg.spec" />
+                        </template>
                         <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
-                        <div
-                          v-for="tool in buildInlineChartTools(block.content, `${msg.id}-${ti}-${block.blockIndex}`)"
-                          :key="tool.id"
-                          class="v2-inline-chart"
-                        >
-                          <ToolOutputRenderer :tool="tool" />
-                        </div>
                       </div>
                     </template>
                   </template>
@@ -230,14 +226,10 @@
                 <!-- Fallback for non-assistant or empty v2state -->
                 <template v-else>
                   <div v-if="msg.content" class="v2-text-block">
-                    <div v-if="cleanTextForDisplay(msg.content)" v-html="renderMarkdown(cleanTextForDisplay(msg.content))" />
-                    <div
-                      v-for="tool in buildInlineChartTools(msg.content, msg.id)"
-                      :key="tool.id"
-                      class="v2-inline-chart"
-                    >
-                      <ToolOutputRenderer :tool="tool" />
-                    </div>
+                    <template v-for="(seg, si) in answerSegments(msg.content)" :key="si">
+                      <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                      <ChartSpecView v-else :spec="seg.spec" />
+                    </template>
                   </div>
                 </template>
 
@@ -354,10 +346,11 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
+import ChartSpecView from './ChartSpecView.vue'
 import { blockToToolProp } from './v2StreamParser'
-import { stripChartSpecsFromText } from './chartSpec'
+import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-import { buildInlineChartTools, hydrateMessageFromApi, renderMarkdown } from './chatMessage'
+import { hydrateMessageFromApi, renderMarkdown } from './chatMessage'
 import { useNl2SqlChat } from './useNl2SqlChat'
 import { useChatMessageActions } from './useChatMessageActions'
 
@@ -689,6 +682,9 @@ async function loadTopics() {
 async function loadWidgetTopics() {
   try {
     const params = { page: 1, page_size: 50 }
+    // Assistant filter mirrors portal mode so the same agent selector narrows
+    // both sources; the admin widget endpoint accepts agent_id server-side.
+    if (route.query.agent_id) params.agent_id = route.query.agent_id
     // User filter is applied server-side so it stays accurate across pages.
     if (filterUser.value.startsWith('ext:')) params.external_user_id = filterUser.value.slice(4)
     else if (filterUser.value.startsWith('vis:')) params.visitor_id = filterUser.value.slice(4)
@@ -748,6 +744,12 @@ async function selectTopic(topicId, options = {}) {
 // charts must come from a real tool call (rendered below that tool block).
 function cleanTextForDisplay(content) {
   return stripChartSpecsFromText(String(content || '')).trim()
+}
+
+// Split answer prose into ordered text/chart segments so an inline chart_spec
+// (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
+function answerSegments(content) {
+  return splitChartSpecText(String(content || ''))
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────
@@ -887,7 +889,7 @@ onMounted(async () => {
 })
 
 watch(() => route.query.agent_id, async () => {
-  if (isWidgetMode.value) return
+  // Re-query both sources: widget mode also honors the assistant filter.
   activeTopicId.value = ''
   messages.value = []
   await loadTopics()
@@ -1392,10 +1394,6 @@ onBeforeUnmount(() => {
 
 /* ── Tool output row ─────────────────────────────────────────────────────── */
 .v2-tool-row { border-radius: 10px; overflow: hidden; }
-
-.v2-inline-chart {
-  margin-top: 10px;
-}
 
 /* ── Text block ──────────────────────────────────────────────────────────── */
 .v2-text-block {

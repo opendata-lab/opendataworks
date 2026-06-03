@@ -4,7 +4,6 @@
 
 import { reactive } from 'vue'
 import { marked } from 'marked'
-import { extractChartSpecsFromText } from './chartSpec'
 import { createChatState } from './v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -158,14 +157,4 @@ export function getMessageCopyText(message, options = {}) {
     if (texts.length) text = texts.join('\n\n')
   }
   return text.trim()
-}
-
-export function buildInlineChartTools(content, keyPrefix = 'inline-chart') {
-  return extractChartSpecsFromText(content).map((spec, index) => ({
-    id: `${keyPrefix}-${index}`,
-    name: 'inline_chart_spec',
-    status: 'success',
-    input: null,
-    output: spec,
-  }))
 }

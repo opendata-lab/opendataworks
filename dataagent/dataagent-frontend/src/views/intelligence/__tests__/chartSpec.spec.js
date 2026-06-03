@@ -3,6 +3,7 @@ import {
   extractChartSpec,
   extractChartSpecsFromText,
   parseChartSpec,
+  splitChartSpecText,
   stripChartSpecsFromText,
   validateChartSpec
 } from '../chartSpec'
@@ -155,18 +156,55 @@ describe('chartSpec', () => {
     expect(stripped).not.toContain('"chart_type":"line"')
   })
 
-  it('extracts and strips raw chart_spec JSON embedded in assistant text', () => {
-    const rawJson = '{"kind":"chart_spec","version":1,"chart_type":"bar","title":"各数据层表数量","x_field":"layer","series":[{"name":"表数量","field":"table_cnt","type":"bar"}],"dataset":[{"layer":"DWD","table_cnt":18}],"error":null}'
-    const message = `结论如下：\n${rawJson}\n以上是最近情况。`
+  it('extracts and strips raw inline chart_spec JSON written in the conclusion prose', () => {
+    const message = `结论如下：发布次数整体上升。
+{"kind":"chart_spec","version":1,"chart_type":"line","title":"最近30天工作流发布趋势","x_field":"stat_day","series":[{"name":"发布次数","field":"publish_cnt","type":"line"}],"dataset":[{"stat_day":"2026-03-10","publish_cnt":3}],"error":null}
+以上为本次结论。`
 
     const specs = extractChartSpecsFromText(message)
     const stripped = stripChartSpecsFromText(message)
 
     expect(specs).toHaveLength(1)
+    expect(specs[0].chart_type).toBe('line')
+    expect(stripped).toContain('结论如下：发布次数整体上升。')
+    expect(stripped).toContain('以上为本次结论。')
+    expect(stripped).not.toContain('chart_type')
+    expect(stripped).not.toContain('{')
+  })
+
+  it('extracts chart specs from ```json fences', () => {
+    const message = '前置说明\n\n```json\n{"kind":"chart_spec","version":1,"chart_type":"bar","title":"各数据层表数量对比","x_field":"layer","series":[{"name":"表数量","field":"table_cnt","type":"bar"}],"dataset":[{"layer":"DWD","table_cnt":18}],"error":null}\n```'
+
+    const specs = extractChartSpecsFromText(message)
+    expect(specs).toHaveLength(1)
     expect(specs[0].chart_type).toBe('bar')
-    expect(stripped).toContain('结论如下：')
-    expect(stripped).toContain('以上是最近情况。')
-    expect(stripped).not.toContain('"kind":"chart_spec"')
-    expect(stripped).not.toContain('"chart_type":"bar"')
+  })
+
+  it('splits prose into ordered text and chart segments', () => {
+    const message = `开头说明。
+{"kind":"chart_spec","version":1,"chart_type":"line","title":"趋势","x_field":"stat_day","series":[{"name":"次数","field":"cnt","type":"line"}],"dataset":[{"stat_day":"2026-03-10","cnt":3}],"error":null}
+结尾说明。`
+
+    const segments = splitChartSpecText(message)
+
+    expect(segments.map((seg) => seg.type)).toEqual(['text', 'chart', 'text'])
+    expect(segments[0].value).toBe('开头说明。')
+    expect(segments[1].spec.chart_type).toBe('line')
+    expect(segments[2].value).toBe('结尾说明。')
+  })
+
+  it('leaves an incomplete streaming chart_spec as plain text until it closes', () => {
+    const partial = '结论：\n{"kind":"chart_spec","version":1,"chart_type":"line","dataset":[{"stat_day":"2026-03-10"'
+
+    const segments = splitChartSpecText(partial)
+
+    expect(segments.every((seg) => seg.type === 'text')).toBe(true)
+    expect(extractChartSpecsFromText(partial)).toHaveLength(0)
+  })
+
+  it('keeps non-chart json fences untouched', () => {
+    const message = '说明\n\n```json\n{"foo":"bar"}\n```'
+    expect(extractChartSpecsFromText(message)).toHaveLength(0)
+    expect(stripChartSpecsFromText(message)).toContain('"foo":"bar"')
   })
 })

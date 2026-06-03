@@ -32,8 +32,18 @@ const routeState = vi.hoisted(() => ({
 
 const routerReplace = vi.hoisted(() => vi.fn())
 
+const dataagentApiMock = vi.hoisted(() => ({
+  listWidgetTopics: vi.fn(),
+  listWidgetUsers: vi.fn(),
+  getWidgetTopicMessages: vi.fn()
+}))
+
 vi.mock('@/api/nl2sql', () => ({
   createNl2SqlApiClient: () => apiMocks
+}))
+
+vi.mock('@/api/dataagent', () => ({
+  dataagentApi: dataagentApiMock
 }))
 
 vi.mock('vue-router', () => ({
@@ -167,6 +177,10 @@ const mountChat = () => mount(NL2SqlChatV2, {
       ToolOutputRenderer: {
         props: ['tool'],
         template: '<div class="tool-output-renderer-stub" :data-output-kind="tool?.output?.kind || \'\'" />'
+      },
+      ChartSpecView: {
+        props: ['spec'],
+        template: '<div class="chart-spec-view-stub" :data-chart-type="spec?.chart_type || \'\'" />'
       }
     }
   }
@@ -178,8 +192,15 @@ describe('NL2SqlChatV2 URL location', () => {
     Object.values(apiMocks.taskApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.adminApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.agentApi).forEach((fn) => fn.mockReset())
+    Object.values(dataagentApiMock).forEach((fn) => fn.mockReset())
     routerReplace.mockReset()
     scrollbarSetScrollTop.mockReset()
+
+    dataagentApiMock.listWidgetTopics.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50 })
+    dataagentApiMock.listWidgetUsers.mockResolvedValue({ items: [] })
+    dataagentApiMock.getWidgetTopicMessages.mockResolvedValue({
+      topic_id: '', page: 1, page_size: 500, order: 'asc', total: 0, items: []
+    })
 
     routeState.path = '/intelligent-query'
     routeState.name = 'IntelligentQuery'
@@ -330,7 +351,7 @@ describe('NL2SqlChatV2 URL location', () => {
     expect(wrapper.text()).toContain('以上是最近发布情况。')
     expect(wrapper.text()).not.toContain('"kind":"chart_spec"')
     expect(wrapper.text()).not.toContain('"chart_type"')
-    expect(wrapper.find('.v2-inline-chart .tool-output-renderer-stub[data-output-kind="chart_spec"]').exists()).toBe(true)
+    expect(wrapper.find('.chart-spec-view-stub[data-chart-type="line"]').exists()).toBe(true)
   })
 
   it('writes the selected topic to the URL and clears the previous message target', async () => {
@@ -422,5 +443,23 @@ describe('NL2SqlChatV2 URL location', () => {
     expect(buttonWithTask.attributes('disabled')).toBeUndefined()
 
     resolveStream()
+  })
+
+  it('forwards the selected assistant to the widget topic query', async () => {
+    routeState.query = { tab: 'chat-v2', agent_id: 'agent_sales' }
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    const widgetTab = wrapper.findAll('.v2-source-tab').find((b) => b.text() === 'Widget')
+    expect(widgetTab).toBeTruthy()
+    await widgetTab.trigger('click')
+    await flushPromises()
+
+    expect(dataagentApiMock.listWidgetTopics).toHaveBeenCalled()
+    expect(dataagentApiMock.listWidgetTopics).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agent_id: 'agent_sales' })
+    )
   })
 })

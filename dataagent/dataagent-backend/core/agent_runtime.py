@@ -41,6 +41,10 @@ _FILE_BOUNDARY_PATH_KEYS = {
     "LS": ("path",),
     "Glob": ("path", "pattern"),
     "Grep": ("path", "glob"),
+    "Write": ("file_path",),
+    "Edit": ("file_path",),
+    "MultiEdit": ("file_path",),
+    "NotebookEdit": ("notebook_path",),
 }
 _BASH_PARENT_SEGMENT_RE = re.compile(r"(^|[\s;&|()])\.\.(?=$|[/\s;&|()])")
 _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
