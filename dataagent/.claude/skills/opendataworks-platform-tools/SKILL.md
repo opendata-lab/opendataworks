@@ -49,6 +49,7 @@ OpenDataWorks Platform Tools Skill。平台工具 Skill。
 8. `SELECT` 查询默认带 `LIMIT`，除非已验证的语句类型不支持。
 9. 不暴露数据源账号密码或直连数据库细节。
 10. 首个足够平台结果或不可重试失败归因出现后就停止。
+11. 大结果或要落盘的场景，必须用导出脚本 `export_query.py`，让全量数据写工作区文件、只把路径与预览回给模型；不要用 `portal_query_readonly` 或 `run_sql.py` 把全量结果拉进上下文（会被结果字节守卫截断，且可能撑爆运行时缓冲）。
 
 ## 读取顺序
 
@@ -67,6 +68,7 @@ OpenDataWorks Platform Tools Skill。平台工具 Skill。
 | 解析数据源 | SQL 执行前需要执行引擎/database 路由 | portal MCP 数据源解析，失败再脚本回退 |
 | 验证 SQL | SQL 已就绪，准备脚本回退执行 | 验证脚本 |
 | 执行只读 SQL | SQL 已验证通过，且需要真实结果 | 只读 SQL 执行脚本 |
+| 导出结果到文件 | 结果行数多、或需落盘供后续 Python 处理（如生成 Excel） | 导出脚本 `export_query.py`，全量写工作区 CSV，只回路径+预览 |
 | 图表契约 | SQL 结果形态适合前端图表渲染 | 图表契约脚本 |
 
 ## 最终输出

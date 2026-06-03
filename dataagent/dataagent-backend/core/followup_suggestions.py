@@ -268,6 +268,7 @@ async def _default_model_runner(
         "allowed_tools": [],
         "mcp_servers": {},
         "include_partial_messages": bool(runtime_target.get("supports_partial_messages", True)),
+        "max_buffer_size": max(1024 * 1024, int(cfg.agent_max_buffer_size_bytes)),
         "env": runtime_env,
         "stderr": lambda line: logger.error(
             "followup_suggestions.stderr provider=%s model=%s %s",

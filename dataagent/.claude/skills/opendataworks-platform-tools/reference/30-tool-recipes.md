@@ -6,9 +6,10 @@
 
 - fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
 - 若运行时暴露了 `mcp__portal__portal_*`，优先直接调用 MCP tools，不要先绕回脚本。
-- 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
-- validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py`。
+- 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`export_query.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
+- validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py` 或 `export_query.py`。
 - run_sql.py 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
+- 大结果或需落盘的场景改用 `export_query.py`（结果写文件、不进上下文）；它服务于导出，不替代 run_sql.py 把结果回上下文的入口地位。
 - 标准链路：语义确认 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口。
 - 语义技能只提供语义；不要在语义技能中寻找或维护 SQL 验证/执行脚本。
 - 不要自己拼脚本路径或脚本名；禁止使用 primary `DATAAGENT_SKILL_ROOT`、部署绝对路径、裸相对路径或猜测脚本名。
@@ -76,6 +77,16 @@
   - `result_state=empty_result`：查询成功但无数据，说明口径和空结果，不换表试探。
   - `result_state=failed`：按 `error_code`、`failure_attribution`、`stop_reason` 说明原因。
 - 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" --database <db> --engine <mysql|doris> --sql "<SQL>"`
+- 注意：`run_sql.py` 与 `portal_query_readonly` 的结果会进模型上下文，受结果字节守卫（默认 512KB）约束；超限会返回 `truncated_by_size=true` 与 `error_code=result_truncated`。大结果或要落盘时改用 `export_query.py`。
+
+## export_query.py
+
+- 用途：把只读 SQL 的**全量结果**写入工作区 CSV 文件，只把路径、列、行数与少量预览回给模型；全量数据不进模型上下文，因此不触发结果字节守卫，也不会撑爆运行时缓冲。
+- 适用场景：结果行数多、或需要落盘供后续 Python 处理（如读 CSV 生成多 sheet Excel）。
+- 固定链路：`export_query.py -> backend 只读查询 API（导出模式，绕过字节守卫，仍受行数上限保护）`。
+- 行数上限：默认且最大 10000 行；命中上限时 `has_more=true`，应改用更精确的过滤或聚合。
+- 后续处理：模型用 Bash/Python 读取返回的 `file_path`（CSV）再生成最终文件，不要把 CSV 内容整体读进上下文。
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output <relative/or/abs/path.csv>`
 
 ## build_chart_spec.py
 

@@ -25,5 +25,10 @@ public class AgentReadQueryResponse {
     @JsonProperty("duration_ms")
     private Integer durationMs;
 
+    @JsonProperty("truncated_by_size")
+    private Boolean truncatedBySize;
+
+    private String notice;
+
     private List<Map<String, Object>> rows = new ArrayList<>();
 }

@@ -162,17 +162,27 @@ def main():
         preview_rows = list(result.get("rows") or [])[:limit]
         serialized_rows = serializable_rows(preview_rows)
         columns = list(serialized_rows[0].keys()) if serialized_rows else []
-        execution_detail = (
-            empty_result_detail()
-            if not serialized_rows
-            else {
+        truncated_by_size = bool(result.get("truncated_by_size"))
+        notice = str(result.get("notice") or "").strip()
+        if not serialized_rows:
+            execution_detail = empty_result_detail()
+        elif truncated_by_size:
+            execution_detail = {
+                "result_state": "success",
+                "error_code": "result_truncated",
+                "failure_attribution": [],
+                "retryable": False,
+                "stop_reason": notice
+                or "结果过大已按体积截断，已返回前若干行；如需完整或精确结果请缩小查询范围（增加过滤、聚合或降低 LIMIT），不要对同一口径重复执行。",
+            }
+        else:
+            execution_detail = {
                 "result_state": "success",
                 "error_code": None,
                 "failure_attribution": [],
                 "retryable": False,
                 "stop_reason": "",
             }
-        )
 
         print_json(
             {
@@ -186,7 +196,13 @@ def main():
                 "row_count": len(serialized_rows),
                 "has_more": bool(result.get("has_more")),
                 "duration_ms": int(result.get("duration_ms") or 0),
-                "summary": f"返回 {len(serialized_rows)} 行结果",
+                "truncated_by_size": truncated_by_size,
+                "notice": notice or None,
+                "summary": (
+                    f"返回 {len(serialized_rows)} 行结果（已按体积截断）"
+                    if truncated_by_size
+                    else f"返回 {len(serialized_rows)} 行结果"
+                ),
                 "error": None,
                 **execution_detail,
             }
