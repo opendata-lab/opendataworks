@@ -6,9 +6,9 @@
         class="intelligent-query-menu"
         @select="handleMenuSelect"
       >
-        <el-menu-item index="chat">
-          <el-icon><ChatDotRound /></el-icon>
-          <span>Agent问答</span>
+        <el-menu-item index="chat-v2">
+          <el-icon><MagicStick /></el-icon>
+          <span>Chat</span>
         </el-menu-item>
         <el-menu-item index="skills">
           <el-icon><Collection /></el-icon>
@@ -17,10 +17,6 @@
         <el-menu-item index="agents">
           <el-icon><User /></el-icon>
           <span>智能体</span>
-        </el-menu-item>
-        <el-menu-item index="chat-v2">
-          <el-icon><MagicStick /></el-icon>
-          <span>Chat V2</span>
         </el-menu-item>
         <el-menu-item index="models">
           <el-icon><Cpu /></el-icon>
@@ -49,7 +45,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ChatDotRound, Collection, Cpu, MagicStick, Monitor, User } from '@element-plus/icons-vue'
+import { Collection, Cpu, MagicStick, Monitor, User } from '@element-plus/icons-vue'
 import NL2SqlChat from './NL2SqlChat.vue'
 import NL2SqlChatV2 from './NL2SqlChatV2.vue'
 import AgentStudio from './AgentStudio.vue'
@@ -78,21 +74,21 @@ const activeTab = computed(() => {
   if (isAgentDetailRoute.value) {
     return 'agents'
   }
-  const tab = String(route.query.tab || 'chat')
-  return validTabs.has(tab) ? tab : 'chat'
+  const tab = String(route.query.tab || 'chat-v2')
+  return validTabs.has(tab) ? tab : 'chat-v2'
 })
 
 const activeMenu = computed(() => activeTab.value)
 
 const handleMenuSelect = (index) => {
-  const tab = validTabs.has(index) ? index : 'chat'
+  const tab = validTabs.has(index) ? index : 'chat-v2'
   if (tab === activeTab.value && !isSkillDetailRoute.value) {
     return
   }
 
   router.replace({
     path: '/intelligent-query',
-    query: tab === 'chat' ? {} : { tab }
+    query: tab === 'chat-v2' ? {} : { tab }
   })
 
 }
