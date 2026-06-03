@@ -11,7 +11,7 @@
 
     <aside v-if="historyVisible" class="query-sidebar" aria-label="历史会话">
       <div class="query-sidebar-head">
-        <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy" @click="newConversation">
+        <button class="query-btn-new" type="button" data-testid="new-conversation" @click="newConversation">
           新建会话
         </button>
       </div>
@@ -29,7 +29,6 @@
             type="button"
             :class="{ active: topic.topic_id === topicId }"
             :data-testid="`history-topic-${topic.topic_id}`"
-            :disabled="isBusy"
             @click="selectTopic(topic.topic_id)"
           >
             <div class="query-session-title">{{ truncate(topic.title || '新话题', 26) }}</div>
@@ -60,7 +59,21 @@
 
           <template v-for="msg in messages" :key="msg.id">
             <div v-if="msg.role === 'user'" class="query-message-row query-message-user">
-              <div class="query-user-bubble">{{ msg.content }}</div>
+              <div class="query-user-message-shell">
+                <div class="query-user-bubble">{{ msg.content }}</div>
+                <div class="query-message-footer query-message-footer-user">
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-copy"
+                    title="复制"
+                    aria-label="复制消息"
+                    :data-testid="`copy-message-${msg.id}`"
+                    @click.stop="handleCopyMessage(msg)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div v-else class="query-message-row query-message-assistant">
@@ -124,9 +137,43 @@
                   </div>
                   <div v-if="msg.error" class="query-error-card">
                     <span class="query-error-label">错误</span>
-                    <span>{{ errorMessage(msg.error) }}</span>
+                    <span>{{ extractErrorText(msg.error) || '请求失败' }}</span>
                   </div>
                 </template>
+                <div class="query-message-footer query-message-footer-assistant">
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-copy"
+                    title="复制"
+                    aria-label="复制消息"
+                    :data-testid="`copy-message-${msg.id}`"
+                    @click.stop="handleCopyMessage(msg)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-feedback query-message-feedback-like"
+                    :class="{ active: msg.feedback === 'like' }"
+                    title="有帮助"
+                    aria-label="有帮助"
+                    :data-testid="`feedback-like-${msg.id}`"
+                    @click.stop="toggleMessageFeedback(msg, 'like')"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M7 11v10H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3Z" /><path d="M7 11 12 2a3 3 0 0 1 3 3v4h4a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-feedback query-message-feedback-dislike"
+                    :class="{ active: msg.feedback === 'dislike' }"
+                    title="没帮助"
+                    aria-label="没帮助"
+                    :data-testid="`feedback-dislike-${msg.id}`"
+                    @click.stop="toggleMessageFeedback(msg, 'dislike')"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M17 13V3h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3Z" /><path d="M17 13 12 22a3 3 0 0 1-3-3v-4H5a2 2 0 0 1-2-2l1-8a2 2 0 0 1 2-2h11" /></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </template>
@@ -150,7 +197,7 @@
               v-model="inputText"
               class="query-textarea"
               rows="1"
-              :disabled="!providers.length || !availableModels.length"
+              :disabled="isBusy"
               placeholder="输入数据问题…"
               @keydown.enter="onEnterKey"
               @input="autoResizeTextarea"
@@ -208,16 +255,15 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
-import { marked } from 'marked'
+import { computed, onBeforeUnmount, onMounted, ref, triggerRef, watch } from 'vue'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import ChartSpecView from '@/views/intelligence/ChartSpecView.vue'
 import { splitChartSpecText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
-import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
-import { topicStatusKind } from '@/views/intelligence/topicStatus'
-
-marked.setOptions({ breaks: true, gfm: true })
+import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
+import { extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
+import { useNl2SqlChat } from '@/views/intelligence/useNl2SqlChat'
+import { useChatMessageActions } from '@/views/intelligence/useChatMessageActions'
 
 const props = defineProps({
   config: {
@@ -248,73 +294,45 @@ const agentPresetQuestions = ref([])
 const agentName = ref('智能数据助手')
 const suggestions = computed(() => agentPresetQuestions.value.length ? agentPresetQuestions.value : DEFAULT_SUGGESTIONS)
 
-const inputText = ref('')
+// widget-only UI state
 const inputSource = ref('typed')
-const searchKeyword = ref('')
-const topicId = ref('')
-const isSubmitting = ref(false)
-const activeTaskId = ref('')
-const activeAssistantId = ref('')
-const topics = ref([])
-const messages = ref([])
-const errorText = ref('')
-const abortController = ref(null)
-const defaultProviderId = ref('')
-const defaultModel = ref('')
-const providers = ref([])
-const selectedProvider = ref('')
-const selectedModel = ref('')
 const pendingOutboundMessage = ref('')
-const hydratedTopicIds = new Set()
 
 const isInline = computed(() => props.config.displayMode === 'inline')
-const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
-const isBusy = computed(() => isSubmitting.value || Boolean(activeTaskId.value))
 const agentId = computed(() => String(props.config.agentId || '').trim())
-const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === topicId.value) || null)
-const activeProviderConfig = computed(() => (
-  providers.value.find((provider) => provider.provider_id === selectedProvider.value)
-  || providers.value[0]
-  || null
-))
-const availableModels = computed(() => {
-  const provider = activeProviderConfig.value
-  const models = Array.isArray(provider?.models) ? [...provider.models] : []
-  const fallbackModel = provider?.default_model || defaultModel.value
-  if (fallbackModel && !models.includes(fallbackModel)) models.unshift(fallbackModel)
-  return models
+
+// Shared NL2SQL conversation engine. The widget keeps its own demo/mock send,
+// tracking, outbound API, and shadow-DOM template; everything else is the engine.
+const chat = useNl2SqlChat({
+  api,
+  getAgentId: () => agentId.value,
+  messagePageSize: 500,
+  topicTitleLength: 60,
+  listTopicsParams: () => ({ page: 1, page_size: 50, agent_id: agentId.value || undefined }),
+  afterRun: () => loadTopics(),
+  emitEvent: (event) => emit('event', event),
 })
-const canSend = computed(() => (
-  Boolean(inputText.value.trim())
-  && !isBusy.value
-  && Boolean(selectedProvider.value)
-  && Boolean(selectedModel.value)
-))
+const {
+  topicId, messages, errorText,
+  providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
+  inputText, searchKeyword,
+  isSubmitting, activeTaskId, activeAssistantId, abortController, hydratedTopicIds,
+  isBusy, availableModels, canSend, filteredTopics,
+  isTopicWorking, topicBadgeKind, upsertTopicAtTop, updateActiveTopicAfterSend,
+  appendUserMessage, appendAssistantMessage,
+  toggleThinking, isThinkingExpanded, isActiveTask,
+  loadConfig: loadRuntimeConfig, loadTopics,
+  send: sendReal, cancel,
+  selectTopic: selectTopicEngine, newConversation: newConversationEngine, deleteConversation,
+} = chat
+
+const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
 const canDeliverPendingOutbound = computed(() => (
   Boolean(pendingOutboundMessage.value)
   && !isBusy.value
   && Boolean(selectedProvider.value)
   && Boolean(selectedModel.value)
 ))
-const filteredTopics = computed(() => {
-  const keyword = searchKeyword.value.trim().toLowerCase()
-  if (!keyword) return topics.value
-  return topics.value.filter((topic) => String(topic.title || '').toLowerCase().includes(keyword))
-})
-
-// Session-list status badge: spinner for the live active task or any topic whose
-// server status is waiting/running; red/grey dot for error/suspended.
-const isTopicWorking = (topic) =>
-  (topic?.topic_id === topicId.value && Boolean(activeTaskId.value)) ||
-  topicStatusKind(topic?.current_task_status) === 'running'
-const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
-
-// Reflect a task's terminal/active status onto its topic in the list so the
-// badge stays accurate (the widget does not reload the topic list after a run).
-const setTopicTaskStatus = (targetTopicId, status) => {
-  const target = topics.value.find((topic) => topic.topic_id === targetTopicId)
-  if (target) target.current_task_status = String(status || '')
-}
 
 watch(
   isBusy,
@@ -323,16 +341,6 @@ watch(
   },
   { immediate: true }
 )
-
-watch(availableModels, (models) => {
-  if (!models.length) {
-    selectedModel.value = ''
-    return
-  }
-  if (!models.includes(selectedModel.value)) {
-    selectedModel.value = models[0]
-  }
-})
 
 const truncate = (value, max) => {
   const text = String(value || '新话题')
@@ -372,52 +380,7 @@ const formatTime = (value) => {
   return fmtDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
-const normalizeTopic = (topic) => ({
-  topic_id: String(topic?.topic_id || ''),
-  title: String(topic?.title || '新话题'),
-  message_count: Number(topic?.message_count || 0),
-  last_message_preview: String(topic?.last_message_preview || ''),
-  current_task_id: String(topic?.current_task_id || ''),
-  current_task_status: String(topic?.current_task_status || ''),
-  created_at: String(topic?.created_at || new Date().toISOString()),
-  updated_at: String(topic?.updated_at || new Date().toISOString())
-})
-
-const sortTopics = () => {
-  topics.value = [...topics.value].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
-}
-
-const moveTopicToTop = (targetTopicId) => {
-  const target = topics.value.find((topic) => topic.topic_id === targetTopicId)
-  if (!target) return
-  topics.value = [target, ...topics.value.filter((topic) => topic.topic_id !== targetTopicId)]
-}
-
-const upsertTopicAtTop = (topic) => {
-  if (!topic?.topic_id) return
-  topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
-}
-
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-
-const appendUserMessage = (content) => {
-  messages.value.push({
-    id: `u_${uid()}`,
-    role: 'user',
-    content,
-    created_at: new Date().toISOString()
-  })
-}
-
-const thinkingExpanded = reactive({})
-
-const toggleThinking = (key) => {
-  thinkingExpanded[key] = !thinkingExpanded[key]
-}
-
-const isThinkingExpanded = (key) => Boolean(thinkingExpanded[key])
-
-const isActiveTask = (msg) => Boolean(activeTaskId.value && msg.task_id === activeTaskId.value)
 
 // Inline chart_spec written into the model's prose is stripped from plain-text
 // uses (copy/preview); rendering splits it into text/chart segments instead.
@@ -427,210 +390,34 @@ const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content 
 // (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
 const answerSegments = (content) => splitChartSpecText(String(content || ''))
 
-const buildV2StateFromStoredBlocks = (item) => {
-  const v2state = createChatState()
-  v2state.status = 'done'
-  const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
-  const turn = { turnIndex: 0, blocks: [], status: 'done' }
-  v2state.turns.push(turn)
-  let blockIdx = 0
-  for (const b of storedBlocks) {
-    const kind = String(b?.kind || b?.type || '')
-    if (kind === 'thinking' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'main_text' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool_use') {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool' && b?.tool) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    }
-  }
-  const content = String(item?.content || '')
-  if (!turn.blocks.length && content) {
-    const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-    turn.blocks.push(block)
-    v2state.blocks.push(block)
-  }
-  // A failed run persists message.status === 'error' (+ error). Assistant messages
-  // always carry _v2state, so the error must surface through _v2state.status here —
-  // the separate msg.error card only renders for non-_v2state messages.
-  if (String(item?.status || '') === 'error') {
-    v2state.status = 'error'
-    turn.status = 'error'
-    v2state.errorText = errorMessage(item?.error) || '会话执行失败'
-  }
-  return v2state
-}
-
-const appendAssistantMessage = (taskId) => {
-  const id = `a_${uid()}`
-  const assistant = reactive({
-    id,
-    role: 'assistant',
-    content: '',
-    status: 'queued',
-    task_id: taskId || '',
-    error: null,
-    created_at: new Date().toISOString(),
-    _v2state: reactive(createChatState()),
-  })
-  messages.value.push(assistant)
-  return assistant
-}
-
-const messageContent = (message) => {
-  const content = String(message?.content || '').trim()
-  if (content) return content
-  const blocks = Array.isArray(message?.blocks) ? message.blocks : []
-  return blocks
-    .map((block) => String(block?.text || block?.output || '').trim())
-    .filter(Boolean)
-    .join('\n')
-}
-
-const messageFromApi = (item) => {
-  if (item?.sender_type === 'user') {
-    return {
-      id: String(item.message_id || `user_${item.seq_id || uid()}`),
-      role: 'user',
-      content: messageContent(item),
-      created_at: item.created_at || '',
-      _v2state: null,
-    }
-  }
-  const id = String(item?.message_id || `assistant_${item?.seq_id || uid()}`)
-  return reactive({
-    id,
-    role: 'assistant',
-    content: messageContent(item),
-    status: item?.status || 'success',
-    task_id: String(item?.task_id || ''),
-    error: item?.error || null,
-    created_at: item?.created_at || '',
-    _v2state: reactive(buildV2StateFromStoredBlocks(item)),
-  })
-}
-
-const loadTopicMessages = async (targetTopicId) => {
-  if (!targetTopicId) {
-    messages.value = []
-    return
-  }
-  if (String(targetTopicId).startsWith('topic_mock_')) {
-    return
-  }
-  try {
-    const page = await api.topicApi.getTopicMessages(targetTopicId, { page: 1, page_size: 200, order: 'asc' })
-    messages.value = (page?.items || [])
-      .filter((item) => item?.sender_type === 'user' || item?.sender_type === 'assistant')
-      .map(messageFromApi)
-    hydratedTopicIds.add(targetTopicId)
-  } catch (error) {
-    console.warn('[OpenDataWorksWidget] failed to load messages:', error)
-    messages.value = []
-  }
-}
-
-const loadTopics = async () => {
-  try {
-    const list = await api.topicApi.listTopics({ agent_id: agentId.value || undefined })
-    const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
-    const nextTopics = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
-    if (currentTopic?.topic_id && !nextTopics.some((topic) => topic.topic_id === currentTopic.topic_id)) {
-      nextTopics.unshift(currentTopic)
-    }
-    topics.value = nextTopics
-    sortTopics()
-    if (currentTopic?.topic_id && currentTopic.topic_id === topicId.value) {
-      moveTopicToTop(currentTopic.topic_id)
-    }
-    // Default to a fresh conversation on open instead of auto-selecting the latest topic,
-    // so users can ask a new question immediately. Existing topics remain in history.
-    const nextTopicId = topicId.value || ''
-    topicId.value = nextTopicId
-    await loadTopicMessages(nextTopicId)
-  } catch (_error) {
-    topics.value = []
-    messages.value = []
-  }
-}
-
-const ensureAgentConfigured = () => true
-
-const guardIdle = () => {
-  if (!isBusy.value) return true
-  errorText.value = '回答中，请先停止'
-  emit('event', { name: 'error', payload: errorText.value })
-  return false
-}
-
+const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
+  api,
+  topicId,
+  cleanText: cleanTextForDisplay,
+  notifyError: (message) => emit('event', { name: 'error', payload: message }),
+  emitEvent: (event) => emit('event', event),
+})
 const closeHistory = () => {
   props.state.historyOpen = false
 }
 
+// Engine navigation, plus closing the floating history drawer.
 const selectTopic = async (targetTopicId) => {
-  if (!targetTopicId || targetTopicId === topicId.value || !guardIdle()) return
-  topicId.value = targetTopicId
-  errorText.value = ''
-  await loadTopicMessages(targetTopicId)
+  if (!targetTopicId || targetTopicId === topicId.value) return
+  await selectTopicEngine(targetTopicId)
   closeHistory()
 }
 
 const newConversation = async () => {
-  if (!ensureAgentConfigured()) return
-  if (!guardIdle()) return
-  errorText.value = ''
-  searchKeyword.value = ''
-  topicId.value = ''
-  messages.value = []
+  await newConversationEngine()
   closeHistory()
 }
 
-const deleteConversation = async (targetTopicId) => {
-  if (!targetTopicId || !guardIdle()) return
-  await api.topicApi.deleteTopic(targetTopicId)
-  topics.value = topics.value.filter((topic) => topic.topic_id !== targetTopicId)
-  hydratedTopicIds.delete(targetTopicId)
-  if (topicId.value !== targetTopicId) return
-  const nextTopicId = topics.value[0]?.topic_id || ''
-  topicId.value = nextTopicId
-  await loadTopicMessages(nextTopicId)
-}
-
-const ensureTopic = async (title) => {
-  if (!ensureAgentConfigured()) return ''
-  if (topicId.value) return topicId.value
-  const topic = normalizeTopic(await api.topicApi.createTopic(title || '新会话', { agent_id: agentId.value || undefined }))
-  if (!topic.topic_id) return ''
-  upsertTopicAtTop(topic)
-  topicId.value = topic.topic_id
-  hydratedTopicIds.add(topic.topic_id)
-  return topic.topic_id
-}
-
+// Runtime config with the widget's demo/mock fallback when the backend is
+// unreachable (only for the built-in demo agent).
 const loadConfig = async () => {
   try {
-    const config = await api.runtimeApi.getConfig()
-    const enabledProviders = Array.isArray(config?.providers)
-      ? config.providers.filter((provider) => provider?.enabled !== false && Array.isArray(provider?.models) && provider.models.length)
-      : []
-    providers.value = enabledProviders
-    defaultProviderId.value = config?.default_provider_id || enabledProviders[0]?.provider_id || ''
-    defaultModel.value = config?.default_model || enabledProviders[0]?.default_model || enabledProviders[0]?.models?.[0] || ''
-    const resolvedProvider = enabledProviders.find((provider) => provider.provider_id === defaultProviderId.value) || enabledProviders[0] || null
-    selectedProvider.value = resolvedProvider?.provider_id || ''
-    selectedModel.value = resolvedProvider?.models?.includes(defaultModel.value)
-      ? defaultModel.value
-      : (resolvedProvider?.default_model || resolvedProvider?.models?.[0] || '')
+    await loadRuntimeConfig()
   } catch (error) {
     if (agentId.value === 'demo') {
       const mockProviders = [{
@@ -653,110 +440,39 @@ const loadConfig = async () => {
   }
 }
 
-const subscribe = async (taskId, assistant) => {
-  abortController.value = new AbortController()
-  try {
-    await api.taskApi.streamSdkEvents(taskId, {
-      signal: abortController.value.signal,
-      afterId: 0,
-      onRecord: (record) => {
-        processV2Record(assistant._v2state, record)
-        triggerRef(messages)
-      }
-    })
-    // A hard backend failure can end the stream without a terminal done/error
-    // record, leaving _v2state on 'streaming'. Reconcile against the task status
-    // so failed runs surface the error instead of being marked success.
-    if (assistant._v2state.status !== 'error' && !abortController.value?.signal?.aborted) {
-      try {
-        const taskState = await api.taskApi.getTask(taskId)
-        if (String(taskState?.task_status || '') === 'error') {
-          assistant._v2state.status = 'error'
-          assistant._v2state.errorText = errorMessage(taskState?.error) || '会话执行失败'
-          assistant.error = { message: assistant._v2state.errorText }
-        } else if (assistant._v2state.status !== 'done') {
-          assistant._v2state.status = 'done'
-        }
-      } catch { /* keep current state if status lookup fails */ }
-    }
-    assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
-    setTopicTaskStatus(topicId.value, assistant._v2state.status === 'error' ? 'error' : 'finished')
-    emit('event', { name: 'message:done', payload: { taskId } })
-  } catch (error) {
-    if (abortController.value?.signal?.aborted) return
-    assistant.status = 'failed'
-    assistant.error = { message: String(error?.message || '请求失败') }
-    assistant._v2state.status = 'error'
-    assistant._v2state.errorText = assistant.error.message
-    setTopicTaskStatus(topicId.value, 'error')
-    emit('event', { name: 'error', payload: assistant.error.message })
-  } finally {
-    activeTaskId.value = ''
-    activeAssistantId.value = ''
-    abortController.value = null
-  }
-}
-
-const updateActiveTopicAfterSend = (text, taskId) => {
-  const target = topics.value.find((topic) => topic.topic_id === topicId.value)
-  if (!target) return
-  if (!target.title || target.title === '新话题') {
-    target.title = truncate(text, 30)
-  }
-  target.current_task_id = taskId
-  target.current_task_status = 'waiting'
-  target.last_message_preview = text
-  target.message_count = Number(target.message_count || 0) + 1
-  target.updated_at = new Date().toISOString()
-  moveTopicToTop(target.topic_id)
-}
-
-const send = async () => {
-  const text = inputText.value.trim()
-  if (!text || isBusy.value) return
-  if (!ensureAgentConfigured()) return
-  const currentInputSource = inputSource.value
-  inputSource.value = 'typed'
+// Demo/mock send: drives the engine's message primitives locally with a
+// scripted reply when running the built-in demo agent without a backend.
+const runMockSend = async (text) => {
   isSubmitting.value = true
   inputText.value = ''
-  try {
-    props.state.track?.('message_send', {
-      input_source: currentInputSource,
-      length: text.length,
-      provider_id: selectedProvider.value,
-      model: selectedModel.value,
-      topic_id: topicId.value || null
-    })
-  } catch (_e) { /* best-effort */ }
   errorText.value = ''
   const mockTaskId = `task_mock_${uid()}`
   appendUserMessage(text)
-  const assistant = appendAssistantMessage(selectedProvider.value === 'mock' ? mockTaskId : '')
+  const assistant = appendAssistantMessage(mockTaskId)
 
-  if (selectedProvider.value === 'mock') {
-    if (!topicId.value) {
-      const mockTopicId = `topic_mock_${uid()}`
-      const newTopic = {
-        topic_id: mockTopicId,
-        title: truncate(text, 30),
-        message_count: 2,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-      upsertTopicAtTop(newTopic)
-      topicId.value = mockTopicId
-      hydratedTopicIds.add(mockTopicId)
-    } else {
-      updateActiveTopicAfterSend(text, '')
+  if (!topicId.value) {
+    const mockTopicId = `topic_mock_${uid()}`
+    const newTopic = {
+      topic_id: mockTopicId,
+      title: truncate(text, 30),
+      message_count: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }
+    upsertTopicAtTop(newTopic)
+    topicId.value = mockTopicId
+    hydratedTopicIds.add(mockTopicId)
+  } else {
+    updateActiveTopicAfterSend(text, '')
+  }
 
-    activeTaskId.value = mockTaskId
-    activeAssistantId.value = assistant.id
-    assistant.status = 'running'
+  activeTaskId.value = mockTaskId
+  activeAssistantId.value = assistant.id
+  assistant.status = 'running'
 
-    emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
+  emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
 
-    const replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
+  const replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
 
 这是模拟的 AI 回复：
 - 您提问的内容是：”${text}”
@@ -809,36 +525,27 @@ const send = async () => {
       activeTaskId.value = ''
       isSubmitting.value = false
     }
-    return
-  }
+}
 
+// Track the send, then dispatch to the demo/mock flow or the shared engine.
+const send = async () => {
+  const text = inputText.value.trim()
+  if (!text || isBusy.value) return
+  const currentInputSource = inputSource.value
+  inputSource.value = 'typed'
   try {
-    const currentTopicId = await ensureTopic(truncate(text, 30))
-    const response = await api.taskApi.deliverMessage({
-      topic_id: currentTopicId,
-      content: text,
+    props.state.track?.('message_send', {
+      input_source: currentInputSource,
+      length: text.length,
       provider_id: selectedProvider.value,
       model: selectedModel.value,
-      agent_id: agentId.value || undefined,
-      debug: false,
-      execution_mode: 'auto'
+      topic_id: topicId.value || null
     })
-    activeTaskId.value = String(response?.task_id || '')
-    activeAssistantId.value = assistant.id
-    assistant.task_id = activeTaskId.value
-    updateActiveTopicAfterSend(text, activeTaskId.value)
-    emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
-    if (activeTaskId.value) {
-      await subscribe(activeTaskId.value, assistant)
-    }
-  } catch (error) {
-    assistant.status = 'failed'
-    assistant.error = { message: String(error?.message || '请求失败') }
-    assistant._v2state.status = 'error'
-    assistant._v2state.errorText = assistant.error.message
-    emit('event', { name: 'error', payload: assistant.error.message })
-  } finally {
-    isSubmitting.value = false
+  } catch (_e) { /* best-effort */ }
+  if (selectedProvider.value === 'mock') {
+    await runMockSend(text)
+  } else {
+    await sendReal()
   }
 }
 
@@ -851,20 +558,6 @@ const sendPendingOutbound = () => {
   void send()
 }
 
-const cancel = async () => {
-  const taskId = activeTaskId.value
-  if (!taskId) return
-  abortController.value?.abort()
-  await api.taskApi.cancelTask(taskId)
-  activeTaskId.value = ''
-  setTopicTaskStatus(topicId.value, 'suspended')
-  const assistant = messages.value.find((item) => item.id === activeAssistantId.value)
-  if (assistant) {
-    assistant.status = 'cancelled'
-    assistant.error = assistant.error || { message: '任务已取消' }
-  }
-}
-
 const handleSuggestion = (suggestion) => {
   if (isBusy.value) return
   inputText.value = suggestion
@@ -872,26 +565,6 @@ const handleSuggestion = (suggestion) => {
   void send()
 }
 
-const errorMessage = (error) => {
-  if (!error) return ''
-  if (typeof error === 'string') return error
-  if (typeof error === 'object') return String(error.message || error.detail || '请求失败')
-  return String(error)
-}
-
-const escapeHtml = (text) => String(text || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-
-const renderMarkdown = (text) => {
-  if (!text) return ''
-  try {
-    return marked.parse(escapeHtml(text))
-  } catch (_error) {
-    return escapeHtml(text)
-  }
-}
 
 const autoResizeTextarea = (event) => {
   const el = event.target
@@ -975,3 +648,59 @@ onBeforeUnmount(() => {
   abortController.value?.abort()
 })
 </script>
+
+<style scoped>
+.query-user-message-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 100%;
+}
+
+.query-message-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-height: 24px;
+}
+
+.query-message-footer-user {
+  justify-content: flex-end;
+}
+
+.query-message-footer-assistant {
+  justify-content: flex-start;
+}
+
+.query-message-tool {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a96a8;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.query-message-tool svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.query-message-tool:hover,
+.query-message-tool.active {
+  background: #eef4ff;
+  color: var(--odw-widget-color, #4A90A4);
+}
+
+.query-message-feedback-dislike.active {
+  background: #fff1f0;
+  color: #d93025;
+}
+</style>

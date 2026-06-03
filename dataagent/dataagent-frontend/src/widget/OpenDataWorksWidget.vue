@@ -17,7 +17,7 @@
           <div class="odw-panel__title">{{ config.projectName }}</div>
         </div>
         <div class="odw-panel__actions">
-          <button class="odw-icon-button" type="button" aria-label="新建会话" title="新建会话" :disabled="state.isBusy" @click="newConversation">
+          <button class="odw-icon-button" type="button" aria-label="新建会话" title="新建会话" @click="newConversation">
             <Plus class="odw-icon-svg" aria-hidden="true" />
           </button>
           <button class="odw-icon-button odw-history-toggle" type="button" aria-label="历史会话" title="历史会话" @click="toggleHistory">

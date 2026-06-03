@@ -284,11 +284,11 @@
             <button
               type="button"
               class="v2-send-btn"
-              :class="{ 'v2-cancel-btn': isStreaming }"
-              :disabled="!isStreaming && !inputText.trim()"
-              @click="isStreaming ? handleCancel() : handleSend()"
+              :class="{ 'v2-cancel-btn': activeTaskId }"
+              :disabled="activeTaskId ? false : (!inputText.trim() || isStreaming)"
+              @click="activeTaskId ? handleCancel() : handleSend()"
             >
-              <svg v-if="isStreaming" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
+              <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
               <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
             </button>
           </div>
@@ -342,37 +342,57 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import ChartSpecView from './ChartSpecView.vue'
-import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
+import { blockToToolProp } from './v2StreamParser'
 import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-
-marked.setOptions({ breaks: true, gfm: true })
+import { hydrateMessageFromApi, renderMarkdown } from './chatMessage'
+import { useNl2SqlChat } from './useNl2SqlChat'
+import { useChatMessageActions } from './useChatMessageActions'
 
 const route = useRoute()
 const router = useRouter()
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
-const { topicApi, taskApi, adminApi, agentApi } = api
+const { topicApi, adminApi, agentApi } = api
 
 // ── State ────────────────────────────────────────────────────────────────────
-const topics = ref([])
 const agents = ref([])
-const activeTopicId = ref('')
-const messages = ref([])
 const settings = reactive({ providers: [], default_provider_id: '', default_model: '' })
-const selectedProvider = ref('')
-const selectedModel = ref('')
 const agentSelectValue = ref('')
 const searchKeyword = ref('')
-const inputText = ref('')
-const isStreaming = ref(false)
 const autoScroll = ref(true)
+
+// Shared NL2SQL conversation engine. The portal keeps its own routing, session
+// audit facets, agent selector, feedback, copy, and scroll; the engine owns the
+// send -> deliver -> stream -> reconcile -> detach/cancel lifecycle and the
+// shared conversation refs.
+const chat = useNl2SqlChat({
+  api,
+  getAgentId: () => agentSelectValue.value || '',
+  topicTitleLength: 60,
+  afterRun: () => loadTopics(),
+  onTopicEnsured: (id) => { if (!isWidgetMode.value) replaceRouteTopic(id) },
+  notifyError: (message) => ElMessage.error('请求失败: ' + message),
+})
+const {
+  topics, topicId: activeTopicId, messages, inputText,
+  providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
+  isBusy: isStreaming,
+  activeTaskId,
+  send: engineSend, cancel: engineCancel, detach,
+} = chat
+const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
+  api,
+  topicId: activeTopicId,
+  cleanText: cleanTextForDisplay,
+  notifyCopied: (message) => ElMessage.success(message),
+  notifyError: (message) => ElMessage.error(message),
+})
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.
@@ -395,8 +415,6 @@ const thinkingExpanded = reactive({})
 const messagesScrollbarRef = ref(null)
 const textareaRef = ref(null)
 const targetMessageId = ref('')
-
-let abortController = null
 
 // ── Computed ─────────────────────────────────────────────────────────────────
 // Status filter values map to topicStatusKind(): '' (finished/none) is the
@@ -473,16 +491,6 @@ const isTopicWorking = (topic) =>
 const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
 
 const agentSelectOptions = computed(() => agents.value.map((a) => ({ label: a.name, value: a.agent_id })))
-
-// ── Markdown ──────────────────────────────────────────────────────────────────
-function renderMarkdown(text) {
-  if (!text) return ''
-  try {
-    return marked.parse(String(text))
-  } catch {
-    return String(text)
-  }
-}
 
 // ── Thinking toggle ────────────────────────────────────────────────────────
 function toggleThinking(key) {
@@ -610,6 +618,10 @@ async function loadSettings() {
     settings.providers = Array.isArray(data?.providers) ? data.providers : []
     settings.default_provider_id = String(data?.default_provider_id || '')
     settings.default_model = String(data?.default_model || '')
+    // Mirror into the engine so its model-validity guard sees real providers.
+    providers.value = settings.providers
+    defaultProviderId.value = settings.default_provider_id
+    defaultModel.value = settings.default_model
     if (!selectedModel.value) {
       selectedProvider.value = settings.default_provider_id
       selectedModel.value = settings.default_model
@@ -712,7 +724,7 @@ async function selectTopic(topicId, options = {}) {
       ? await dataagentApi.getWidgetTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
       : await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    messages.value = list.map((m) => hydrateHistoryMessage(m))
+    messages.value = list.map(hydrateMessageFromApi)
     const messageId = normalizeQueryValue(options.messageId)
     if (messageId) {
       focusMessage(messageId)
@@ -726,81 +738,6 @@ async function selectTopic(topicId, options = {}) {
   }
 }
 
-// Extract a human-readable message from a persisted task/message error object
-// ({ code, message, detail }) or a raw string.
-function extractErrorText(error) {
-  if (!error) return ''
-  if (typeof error === 'string') return error
-  if (typeof error === 'object') return String(error.message || error.detail || error.code || '')
-  return String(error)
-}
-
-function buildV2StateFromStoredBlocks(item) {
-  const v2state = createChatState()
-  v2state.status = 'done'
-  const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
-  const turn = { turnIndex: 0, blocks: [], status: 'done' }
-  v2state.turns.push(turn)
-  let blockIdx = 0
-  for (const b of storedBlocks) {
-    const kind = String(b?.kind || b?.type || '')
-    if (kind === 'thinking' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'main_text' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool_use') {
-      // SDK-derived format: flat fields tool_id / tool_name / input / output / is_error
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool' && b?.tool) {
-      // Legacy magic-event format: nested b.tool object
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    }
-  }
-  const content = String(item?.content || '')
-  if (!turn.blocks.length && content) {
-    const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-    turn.blocks.push(block)
-    v2state.blocks.push(block)
-  }
-  // A failed run persists message.status === 'error' (+ error_json). Surface it so
-  // the error card renders on reload / topic restore, not just during live streaming.
-  if (String(item?.status || '') === 'error') {
-    v2state.status = 'error'
-    turn.status = 'error'
-    v2state.errorText = extractErrorText(item?.error) || '会话执行失败'
-  }
-  return v2state
-}
-
-function hydrateHistoryMessage(m) {
-  const role = String(m?.role || m?.sender_type || 'user')
-  const content = String(m?.content || '')
-  if (role !== 'assistant') {
-    return {
-      id: String(m?.message_id || m?.id || Math.random()),
-      role: 'user',
-      content,
-      created_at: m?.created_at || null,
-      _v2state: null,
-    }
-  }
-  return reactive({
-    id: String(m?.message_id || m?.id || Math.random()),
-    role: 'assistant',
-    content,
-    feedback: String(m?.feedback || ''),
-    created_at: m?.created_at || null,
-    _v2state: reactive(buildV2StateFromStoredBlocks(m)),
-  })
-}
 
 // ── Chart spec helpers ────────────────────────────────────────────────────
 // Inline chart_spec written into the model's prose is stripped from display;
@@ -838,7 +775,7 @@ function handleSuggestion(text) {
 // ── Source / filter ──────────────────────────────────────────────────────
 async function handleSourceChange(mode) {
   if (mode === sourceMode.value) return
-  if (isStreaming.value) handleCancel()
+  if (isStreaming.value) detach()
   sourceMode.value = mode
   activeTopicId.value = ''
   messages.value = []
@@ -872,7 +809,10 @@ function resetFilters() {
 
 // ── Topic management ───────────────────────────────────────────────────────
 async function handleNewTopic() {
-  if (isStreaming.value || isWidgetMode.value) return
+  if (isWidgetMode.value) return
+  // Leaving a running conversation detaches it (the backend task keeps running,
+  // recoverable from history) instead of blocking, matching the widget.
+  if (isStreaming.value) detach()
   activeTopicId.value = ''
   messages.value = []
   targetMessageId.value = ''
@@ -888,7 +828,7 @@ async function handleSelectTopic(topicId) {
     }
     return
   }
-  if (isStreaming.value) handleCancel()
+  if (isStreaming.value) detach()
   await selectTopic(topicId)
   if (!isWidgetMode.value) replaceRouteTopic(topicId)
 }
@@ -917,172 +857,30 @@ function handleModelCommand(command) {
   }
 }
 
-// ── Message Tools ─────────────────────────────────────────────────────────
-async function handleCopyMessage(msg) {
-  let text = String(msg?.content || '')
-  if (msg?._v2state?.turns) {
-    const texts = []
-    for (const turn of msg._v2state.turns) {
-      if (!turn.blocks) continue
-      for (const block of turn.blocks) {
-        if (block.type === 'text' && block.content) {
-          texts.push(cleanTextForDisplay(block.content))
-        }
-      }
-    }
-    if (texts.length) text = texts.join('\n\n')
-  }
-  text = text.trim()
-  if (!text) return
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.left = '-9999px'
-      ta.style.top = '-9999px'
-      document.body.appendChild(ta)
-      ta.focus()
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    ElMessage.success('已复制')
-  } catch (_error) {
-    ElMessage.error('复制失败，请手动复制')
-  }
-}
-
-async function toggleMessageFeedback(msg, value) {
-  if (!msg || typeof msg !== 'object') return
-  const previousFeedback = String(msg.feedback || '')
-  const nextFeedback = previousFeedback === value ? '' : value
-  const topicId = String(activeTopicId.value || '')
-  const messageId = String(msg.id || '')
-
-  msg.feedback = nextFeedback
-  if (!topicId || !messageId) {
-    msg.feedback = previousFeedback
-    ElMessage.error('反馈保存失败，请稍后重试')
-    return
-  }
-
-  try {
-    const updated = await topicApi.updateMessageFeedback(topicId, messageId, nextFeedback)
-    msg.feedback = String(updated?.feedback ?? nextFeedback)
-  } catch (_error) {
-    msg.feedback = previousFeedback
-    ElMessage.error('反馈保存失败，请稍后重试')
-  }
-}
-
 // ── Send message ───────────────────────────────────────────────────────────
+// The send -> deliver -> stream -> reconcile lifecycle lives in the shared
+// engine. Routing (onTopicEnsured), scroll (messages watcher), topic-list
+// refresh (reloadTopicsAfterRun), and error toasts (notifyError) are wired
+// through the engine options at setup.
 async function handleSend() {
   if (isWidgetMode.value) return
-  const text = inputText.value.trim()
-  if (!text || isStreaming.value) return
-
-  inputText.value = ''
-  autoResize()
-
-  let topicId = activeTopicId.value
-  if (!topicId) {
-    try {
-      const topic = await topicApi.createTopic(text.slice(0, 60), {
-        agent_id: agentSelectValue.value || undefined,
-      })
-      topicId = topic.topic_id
-      activeTopicId.value = topicId
-      topics.value.unshift(topic)
-    } catch (err) {
-      ElMessage.error('创建话题失败: ' + String(err?.message || err))
-      return
-    }
-  }
-  replaceRouteTopic(topicId)
-
-  // Append user message locally
-  messages.value.push({
-    id: 'user-' + Date.now(),
-    role: 'user',
-    content: text,
-    created_at: new Date().toISOString(),
-    _v2state: null,
-  })
-  scrollToBottom(true)
-
-  // Prepare assistant placeholder
-  const v2state = reactive(createChatState())
-  const assistantMsg = reactive({
-    id: 'asst-' + Date.now(),
-    role: 'assistant',
-    content: '',
-    thinkingText: '',
-    feedback: '',
-    created_at: new Date().toISOString(),
-    _v2state: v2state,
-  })
-  messages.value.push(assistantMsg)
-
-  isStreaming.value = true
-  abortController = new AbortController()
-
-  try {
-    // Deliver message (creates task)
-    const taskResp = await taskApi.deliverMessage({
-      topic_id: topicId,
-      content: text,
-      provider_id: selectedProvider.value || undefined,
-      model: selectedModel.value || undefined,
-      agent_id: agentSelectValue.value || undefined,
-    })
-    const taskId = taskResp?.task_id
-    if (!taskId) throw new Error('任务创建失败，未获取到 task_id')
-
-    // Stream SDK events
-    await taskApi.streamSdkEvents(taskId, {
-      signal: abortController.signal,
-      afterId: 0,
-      onRecord: (record) => {
-        processV2Record(v2state, record)
-        scrollToBottom()
-      },
-    })
-    // On a hard backend failure the SDK stream can end without a terminal
-    // 'done'/'error' record, leaving v2state stuck on 'streaming'. Reconcile
-    // against the persisted task status so failed runs surface the error card.
-    if (v2state.status !== 'error' && !abortController?.signal.aborted) {
-      try {
-        const taskState = await taskApi.getTask(taskId)
-        if (String(taskState?.task_status || '') === 'error') {
-          v2state.status = 'error'
-          v2state.errorText = extractErrorText(taskState?.error) || v2state.errorText || '会话执行失败'
-        } else if (v2state.status !== 'done') {
-          v2state.status = 'done'
-        }
-      } catch { /* keep current state if status lookup fails */ }
-    }
-  } catch (err) {
-    if (err?.name !== 'AbortError') {
-      v2state.status = 'error'
-      v2state.errorText = String(err?.message || '请求失败')
-      ElMessage.error('请求失败: ' + String(err?.message || err))
-    }
-  } finally {
-    isStreaming.value = false
-    abortController = null
-    // Refresh topic list to update title
-    loadTopics()
-    scrollToBottom(true)
-  }
+  if (!inputText.value.trim() || isStreaming.value) return
+  await engineSend()
 }
 
+// Explicit stop: cancel the backend task (engine marks the topic suspended).
 function handleCancel() {
-  abortController?.abort()
-  isStreaming.value = false
+  void engineCancel()
 }
+
+// Keep the view pinned to the latest content as the engine streams (the engine
+// triggers messages reactively); reloads / focus still force-scroll explicitly.
+watch(messages, () => scrollToBottom(), { deep: true, flush: 'post' })
+
+// The engine clears inputText on send; resize the composer back down.
+watch(inputText, (value) => {
+  if (!value) nextTick(() => autoResize())
+})
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -1110,7 +908,7 @@ watch(
       return
     }
     if (normalizedTopicId !== activeTopicId.value) {
-      if (isStreaming.value) handleCancel()
+      if (isStreaming.value) detach()
       await selectTopic(normalizedTopicId, { messageId: normalizedMessageId })
       return
     }
@@ -1123,7 +921,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  abortController?.abort()
+  detach()
 })
 </script>
 

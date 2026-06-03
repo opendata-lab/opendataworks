@@ -34,7 +34,8 @@ const apiMocks = vi.hoisted(() => ({
     createTopic: vi.fn(),
     listTopics: vi.fn(),
     getTopicMessages: vi.fn(),
-    deleteTopic: vi.fn()
+    deleteTopic: vi.fn(),
+    updateMessageFeedback: vi.fn()
   },
   taskApi: {
     deliverMessage: vi.fn(),
@@ -130,6 +131,7 @@ describe('WidgetChat history conversations', () => {
     apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => messagePage(topicId, `${topicId} 历史回复`))
     apiMocks.topicApi.createTopic.mockResolvedValue(topic('topic-new', 'Widget 会话', { message_count: 0, last_message_preview: '' }))
     apiMocks.topicApi.deleteTopic.mockResolvedValue({ status: 'ok' })
+    apiMocks.topicApi.updateMessageFeedback.mockImplementation(async (_topicId, messageId, feedback) => ({ message_id: messageId, feedback }))
     apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-1' })
     apiMocks.taskApi.getTask.mockResolvedValue({ task_status: 'finished' })
     apiMocks.taskApi.streamSdkEvents.mockResolvedValue()
@@ -159,7 +161,7 @@ describe('WidgetChat history conversations', () => {
     expect(apiMocks.createClient).toHaveBeenCalledWith(expect.objectContaining({
       defaultHeaders: baseConfig.headers
     }))
-    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: 'agent_widget' })
+    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ page: 1, page_size: 50, agent_id: 'agent_widget' })
     expect(apiMocks.topicApi.getTopicMessages).not.toHaveBeenCalled()
   })
 
@@ -172,7 +174,7 @@ describe('WidgetChat history conversations', () => {
 
     await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 200, order: 'asc' })
+    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 500, order: 'asc' })
     expect(wrapper.text()).toContain('topic-2 历史回复')
 
     await wrapper.get('[data-testid="new-conversation"]').trigger('click')
@@ -222,6 +224,71 @@ describe('WidgetChat history conversations', () => {
     const errorCard = wrapper.find('.query-error-card')
     expect(errorCard.exists()).toBe(true)
     expect(errorCard.text()).toContain('模型会话异常结束')
+  })
+
+  it('supports copying and feedback on assistant messages like chat v2', async () => {
+    const writeText = vi.fn().mockResolvedValue()
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    })
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: true
+    })
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="copy-message-msg-topic-2"]').trigger('click')
+    expect(writeText).toHaveBeenCalledWith('topic-2 历史回复')
+
+    await wrapper.get('[data-testid="feedback-like-msg-topic-2"]').trigger('click')
+    expect(apiMocks.topicApi.updateMessageFeedback).toHaveBeenCalledWith('topic-2', 'msg-topic-2', 'like')
+    expect(wrapper.get('[data-testid="feedback-like-msg-topic-2"]').classes()).toContain('active')
+
+    await wrapper.get('[data-testid="feedback-dislike-msg-topic-2"]').trigger('click')
+    expect(apiMocks.topicApi.updateMessageFeedback).toHaveBeenCalledWith('topic-2', 'msg-topic-2', 'dislike')
+    expect(wrapper.get('[data-testid="feedback-dislike-msg-topic-2"]').classes()).toContain('active')
+  })
+
+  it('renders inline chart specs from assistant text without showing raw spec markup', async () => {
+    const chartSpec = JSON.stringify({
+      kind: 'chart_spec',
+      version: 1,
+      chart_type: 'line',
+      title: '发布趋势',
+      x_field: 'stat_day',
+      series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+      dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }]
+    })
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => ({
+      topic_id: topicId,
+      total: 1,
+      items: [
+        {
+          message_id: `msg-${topicId}`,
+          sender_type: 'assistant',
+          status: 'success',
+          content: `趋势如下。\n${chartSpec}\n以上是最近发布情况。`,
+          seq_id: 1
+        }
+      ]
+    }))
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('趋势如下。')
+    expect(wrapper.text()).toContain('以上是最近发布情况。')
+    expect(wrapper.text()).not.toContain('"kind":"chart_spec"')
+    expect(wrapper.text()).not.toContain('"chart_type"')
+    expect(wrapper.find('.chart-spec-view').exists()).toBe(true)
   })
 
   it('creates the first sent conversation at the top of the history list', async () => {
@@ -296,7 +363,7 @@ describe('WidgetChat history conversations', () => {
     await flushPromises()
 
     expect(wrapper.find('.query-workbench').exists()).toBe(true)
-    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ agent_id: undefined })
+    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledWith({ page: 1, page_size: 50, agent_id: undefined })
     expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
   })
 
@@ -311,7 +378,7 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('[data-testid^="delete-topic-"]').exists()).toBe(false)
   })
 
-  it('prevents switching and creating while an answer is running', async () => {
+  it('allows switching to an existing topic while an answer is running, detaching the run', async () => {
     let resolveStream
     apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => {
       resolveStream = resolve
@@ -323,8 +390,55 @@ describe('WidgetChat history conversations', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="new-conversation"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.get('[data-testid="history-topic-topic-2"]').attributes('disabled')).toBeDefined()
+    // History items stay clickable mid-run (consistent with chat v2's session list).
+    const topicButton = wrapper.get('[data-testid="history-topic-topic-2"]')
+    expect(topicButton.attributes('disabled')).toBeUndefined()
+
+    await topicButton.trigger('click')
+    await flushPromises()
+
+    // Switching detaches the run locally without cancelling the backend task,
+    // and loads the selected topic's history.
+    expect(apiMocks.taskApi.cancelTask).not.toHaveBeenCalled()
+    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 500, order: 'asc' })
+    expect(wrapper.text()).toContain('topic-2 历史回复')
+
+    resolveStream()
+  })
+
+  it('allows starting a new conversation mid-run, detaching the backend task instead of cancelling it', async () => {
+    let resolveStream
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => {
+      resolveStream = resolve
+    }))
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('你好')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // New conversation stays available while an answer is running.
+    const newButton = wrapper.get('[data-testid="new-conversation"]')
+    expect(newButton.attributes('disabled')).toBeUndefined()
+
+    await newButton.trigger('click')
+    await flushPromises()
+
+    // The in-flight run is detached locally; the backend task is left running.
+    expect(apiMocks.taskApi.cancelTask).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('您可以问我以下问题')
+
+    // The fresh conversation immediately accepts a new question.
+    apiMocks.taskApi.deliverMessage.mockClear()
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-2' })
+    await wrapper.get('textarea').setValue('第二个问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: '第二个问题'
+    }))
 
     resolveStream()
   })
@@ -397,6 +511,22 @@ describe('WidgetChat history conversations', () => {
   })
 
   it('renders messageStream-style text deltas in the portal-style assistant body', async () => {
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => {
+      if (topicId === 'topic-new') {
+        return {
+          topic_id: topicId,
+          total: 1,
+          items: [{
+            message_id: 'msg-topic-new',
+            sender_type: 'assistant',
+            status: 'success',
+            blocks: [{ kind: 'main_text', text: 'smoke-ok' }],
+            seq_id: 1
+          }]
+        }
+      }
+      return messagePage(topicId, `${topicId} 历史回复`)
+    })
     apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, options) => {
       options.onRecord({ record_type: 'stream', data: { type: 'message_start', usage: {} } })
       options.onRecord({ record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
@@ -428,6 +558,25 @@ describe('WidgetChat history conversations', () => {
       series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
       dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }],
       error: null
+    })
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => {
+      if (topicId === 'topic-new') {
+        return {
+          topic_id: topicId,
+          total: 1,
+          items: [{
+            message_id: 'msg-topic-new',
+            sender_type: 'assistant',
+            status: 'success',
+            blocks: [
+              { kind: 'tool_use', tool_id: 'tool-chart', tool_name: 'Bash', input: null, output: `build ok\n${chartSpec}`, is_error: false },
+              { kind: 'main_text', text: '最近发布趋势如下。' }
+            ],
+            seq_id: 1
+          }]
+        }
+      }
+      return messagePage(topicId, `${topicId} 历史回复`)
     })
 
     apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, options) => {
@@ -465,6 +614,22 @@ describe('WidgetChat history conversations', () => {
       series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
       dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }],
       error: null
+    })
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => {
+      if (topicId === 'topic-new') {
+        return {
+          topic_id: topicId,
+          total: 1,
+          items: [{
+            message_id: 'msg-topic-new',
+            sender_type: 'assistant',
+            status: 'success',
+            content: `结论：发布次数上升。\n${chartSpec}\n以上为结论。`,
+            seq_id: 1
+          }]
+        }
+      }
+      return messagePage(topicId, `${topicId} 历史回复`)
     })
 
     apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, options) => {
