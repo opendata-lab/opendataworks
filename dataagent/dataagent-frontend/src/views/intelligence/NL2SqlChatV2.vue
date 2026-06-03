@@ -334,7 +334,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
@@ -342,8 +341,7 @@ import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
 import { stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-
-marked.setOptions({ breaks: true, gfm: true })
+import { extractErrorText, hydrateMessageFromApi, renderMarkdown } from './chatMessage'
 
 const route = useRoute()
 const router = useRouter()
@@ -464,16 +462,6 @@ const isTopicWorking = (topic) =>
 const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
 
 const agentSelectOptions = computed(() => agents.value.map((a) => ({ label: a.name, value: a.agent_id })))
-
-// ── Markdown ──────────────────────────────────────────────────────────────────
-function renderMarkdown(text) {
-  if (!text) return ''
-  try {
-    return marked.parse(String(text))
-  } catch {
-    return String(text)
-  }
-}
 
 // ── Thinking toggle ────────────────────────────────────────────────────────
 function toggleThinking(key) {
@@ -700,7 +688,7 @@ async function selectTopic(topicId, options = {}) {
       ? await dataagentApi.getWidgetTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
       : await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    messages.value = list.map((m) => hydrateHistoryMessage(m))
+    messages.value = list.map(hydrateMessageFromApi)
     const messageId = normalizeQueryValue(options.messageId)
     if (messageId) {
       focusMessage(messageId)
@@ -714,81 +702,6 @@ async function selectTopic(topicId, options = {}) {
   }
 }
 
-// Extract a human-readable message from a persisted task/message error object
-// ({ code, message, detail }) or a raw string.
-function extractErrorText(error) {
-  if (!error) return ''
-  if (typeof error === 'string') return error
-  if (typeof error === 'object') return String(error.message || error.detail || error.code || '')
-  return String(error)
-}
-
-function buildV2StateFromStoredBlocks(item) {
-  const v2state = createChatState()
-  v2state.status = 'done'
-  const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
-  const turn = { turnIndex: 0, blocks: [], status: 'done' }
-  v2state.turns.push(turn)
-  let blockIdx = 0
-  for (const b of storedBlocks) {
-    const kind = String(b?.kind || b?.type || '')
-    if (kind === 'thinking' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'main_text' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool_use') {
-      // SDK-derived format: flat fields tool_id / tool_name / input / output / is_error
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool' && b?.tool) {
-      // Legacy magic-event format: nested b.tool object
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    }
-  }
-  const content = String(item?.content || '')
-  if (!turn.blocks.length && content) {
-    const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-    turn.blocks.push(block)
-    v2state.blocks.push(block)
-  }
-  // A failed run persists message.status === 'error' (+ error_json). Surface it so
-  // the error card renders on reload / topic restore, not just during live streaming.
-  if (String(item?.status || '') === 'error') {
-    v2state.status = 'error'
-    turn.status = 'error'
-    v2state.errorText = extractErrorText(item?.error) || '会话执行失败'
-  }
-  return v2state
-}
-
-function hydrateHistoryMessage(m) {
-  const role = String(m?.role || m?.sender_type || 'user')
-  const content = String(m?.content || '')
-  if (role !== 'assistant') {
-    return {
-      id: String(m?.message_id || m?.id || Math.random()),
-      role: 'user',
-      content,
-      created_at: m?.created_at || null,
-      _v2state: null,
-    }
-  }
-  return reactive({
-    id: String(m?.message_id || m?.id || Math.random()),
-    role: 'assistant',
-    content,
-    feedback: String(m?.feedback || ''),
-    created_at: m?.created_at || null,
-    _v2state: reactive(buildV2StateFromStoredBlocks(m)),
-  })
-}
 
 // ── Chart spec helpers ────────────────────────────────────────────────────
 // Inline chart_spec written into the model's prose is stripped from display;

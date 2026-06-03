@@ -115,7 +115,7 @@
                   <div v-if="msg.content" class="query-main-text" v-html="renderMarkdown(msg.content)" />
                   <div v-if="msg.error" class="query-error-card">
                     <span class="query-error-label">错误</span>
-                    <span>{{ errorMessage(msg.error) }}</span>
+                    <span>{{ extractErrorText(msg.error) || '请求失败' }}</span>
                   </div>
                 </template>
               </div>
@@ -200,14 +200,18 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
-import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
 import { topicStatusKind } from '@/views/intelligence/topicStatus'
-
-marked.setOptions({ breaks: true, gfm: true })
+import {
+  compareTopicsByRecency,
+  extractErrorText,
+  hydrateMessageFromApi,
+  normalizeTopic,
+  renderMarkdown,
+} from '@/views/intelligence/chatMessage'
 
 const props = defineProps({
   config: {
@@ -362,19 +366,8 @@ const formatTime = (value) => {
   return fmtDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
-const normalizeTopic = (topic) => ({
-  topic_id: String(topic?.topic_id || ''),
-  title: String(topic?.title || '新话题'),
-  message_count: Number(topic?.message_count || 0),
-  last_message_preview: String(topic?.last_message_preview || ''),
-  current_task_id: String(topic?.current_task_id || ''),
-  current_task_status: String(topic?.current_task_status || ''),
-  created_at: String(topic?.created_at || new Date().toISOString()),
-  updated_at: String(topic?.updated_at || new Date().toISOString())
-})
-
 const sortTopics = () => {
-  topics.value = [...topics.value].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)))
+  topics.value = [...topics.value].sort(compareTopicsByRecency)
 }
 
 const moveTopicToTop = (targetTopicId) => {
@@ -413,50 +406,6 @@ const isActiveTask = (msg) => Boolean(activeTaskId.value && msg.task_id === acti
 // charts must come from a real tool call (rendered below that tool block).
 const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content || '')).trim()
 
-const buildV2StateFromStoredBlocks = (item) => {
-  const v2state = createChatState()
-  v2state.status = 'done'
-  const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
-  const turn = { turnIndex: 0, blocks: [], status: 'done' }
-  v2state.turns.push(turn)
-  let blockIdx = 0
-  for (const b of storedBlocks) {
-    const kind = String(b?.kind || b?.type || '')
-    if (kind === 'thinking' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'main_text' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool_use') {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool' && b?.tool) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    }
-  }
-  const content = String(item?.content || '')
-  if (!turn.blocks.length && content) {
-    const block = { turnIndex: 0, blockIndex: 0, type: 'text', content, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-    turn.blocks.push(block)
-    v2state.blocks.push(block)
-  }
-  // A failed run persists message.status === 'error' (+ error). Assistant messages
-  // always carry _v2state, so the error must surface through _v2state.status here —
-  // the separate msg.error card only renders for non-_v2state messages.
-  if (String(item?.status || '') === 'error') {
-    v2state.status = 'error'
-    turn.status = 'error'
-    v2state.errorText = errorMessage(item?.error) || '会话执行失败'
-  }
-  return v2state
-}
-
 const appendAssistantMessage = (taskId) => {
   const id = `a_${uid()}`
   const assistant = reactive({
@@ -473,39 +422,6 @@ const appendAssistantMessage = (taskId) => {
   return assistant
 }
 
-const messageContent = (message) => {
-  const content = String(message?.content || '').trim()
-  if (content) return content
-  const blocks = Array.isArray(message?.blocks) ? message.blocks : []
-  return blocks
-    .map((block) => String(block?.text || block?.output || '').trim())
-    .filter(Boolean)
-    .join('\n')
-}
-
-const messageFromApi = (item) => {
-  if (item?.sender_type === 'user') {
-    return {
-      id: String(item.message_id || `user_${item.seq_id || uid()}`),
-      role: 'user',
-      content: messageContent(item),
-      created_at: item.created_at || '',
-      _v2state: null,
-    }
-  }
-  const id = String(item?.message_id || `assistant_${item?.seq_id || uid()}`)
-  return reactive({
-    id,
-    role: 'assistant',
-    content: messageContent(item),
-    status: item?.status || 'success',
-    task_id: String(item?.task_id || ''),
-    error: item?.error || null,
-    created_at: item?.created_at || '',
-    _v2state: reactive(buildV2StateFromStoredBlocks(item)),
-  })
-}
-
 const loadTopicMessages = async (targetTopicId) => {
   if (!targetTopicId) {
     messages.value = []
@@ -518,7 +434,7 @@ const loadTopicMessages = async (targetTopicId) => {
     const page = await api.topicApi.getTopicMessages(targetTopicId, { page: 1, page_size: 200, order: 'asc' })
     messages.value = (page?.items || [])
       .filter((item) => item?.sender_type === 'user' || item?.sender_type === 'assistant')
-      .map(messageFromApi)
+      .map(hydrateMessageFromApi)
     hydratedTopicIds.add(targetTopicId)
   } catch (error) {
     console.warn('[OpenDataWorksWidget] failed to load messages:', error)
@@ -675,7 +591,7 @@ const subscribe = async (taskId, assistant) => {
         const taskState = await api.taskApi.getTask(taskId)
         if (String(taskState?.task_status || '') === 'error') {
           assistant._v2state.status = 'error'
-          assistant._v2state.errorText = errorMessage(taskState?.error) || '会话执行失败'
+          assistant._v2state.errorText = extractErrorText(taskState?.error) || '会话执行失败'
           assistant.error = { message: assistant._v2state.errorText }
         } else if (assistant._v2state.status !== 'done') {
           assistant._v2state.status = 'done'
@@ -884,26 +800,6 @@ const handleSuggestion = (suggestion) => {
   void send()
 }
 
-const errorMessage = (error) => {
-  if (!error) return ''
-  if (typeof error === 'string') return error
-  if (typeof error === 'object') return String(error.message || error.detail || '请求失败')
-  return String(error)
-}
-
-const escapeHtml = (text) => String(text || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-
-const renderMarkdown = (text) => {
-  if (!text) return ''
-  try {
-    return marked.parse(escapeHtml(text))
-  } catch (_error) {
-    return escapeHtml(text)
-  }
-}
 
 const autoResizeTextarea = (event) => {
   const el = event.target
