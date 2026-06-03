@@ -661,6 +661,9 @@ async function loadTopics() {
 async function loadWidgetTopics() {
   try {
     const params = { page: 1, page_size: 50 }
+    // Assistant filter mirrors portal mode so the same agent selector narrows
+    // both sources; the admin widget endpoint accepts agent_id server-side.
+    if (route.query.agent_id) params.agent_id = route.query.agent_id
     // User filter is applied server-side so it stays accurate across pages.
     if (filterUser.value.startsWith('ext:')) params.external_user_id = filterUser.value.slice(4)
     else if (filterUser.value.startsWith('vis:')) params.visitor_id = filterUser.value.slice(4)
@@ -1073,7 +1076,7 @@ onMounted(async () => {
 })
 
 watch(() => route.query.agent_id, async () => {
-  if (isWidgetMode.value) return
+  // Re-query both sources: widget mode also honors the assistant filter.
   activeTopicId.value = ''
   messages.value = []
   await loadTopics()
