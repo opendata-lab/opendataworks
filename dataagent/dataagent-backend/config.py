@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     agent_interactive_sql_read_timeout_seconds: int = 300
     agent_background_sql_read_timeout_seconds: int = 900
     agent_sql_write_timeout_seconds: int = 60
+    # Max bytes when buffering a single CLI stdout JSON message before decoding.
+    # The SDK default is 1MB; large NL2SQL tool results / partial messages can
+    # exceed it and trigger "JSON message exceeded maximum buffer size".
+    agent_max_buffer_size_bytes: int = 10 * 1024 * 1024
     followup_suggestions_timeout_seconds: int = 20
     run_events_stream_poll_interval_seconds: int = 1
     run_events_stream_ping_seconds: int = 10

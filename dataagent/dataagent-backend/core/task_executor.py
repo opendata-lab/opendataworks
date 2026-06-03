@@ -863,6 +863,7 @@ async def execute_task_stream(
         allowed_tools=allowed_tools,
         mcp_servers=mcp_servers,
         include_partial_messages=supports_partial_messages,
+        max_buffer_size=max(1024 * 1024, int(cfg.agent_max_buffer_size_bytes)),
         env=runtime_env,
         hooks=_build_workspace_boundary_hooks(project_cwd, skill_runtime, runtime_env),
         stderr=lambda line: logger.error(

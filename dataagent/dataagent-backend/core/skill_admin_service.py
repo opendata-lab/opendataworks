@@ -676,6 +676,7 @@ async def _run_model_detection(
         allowed_tools=[],
         mcp_servers={},
         include_partial_messages=supports_partial_messages,
+        max_buffer_size=max(1024 * 1024, int(get_settings().agent_max_buffer_size_bytes)),
         env=runtime_env,
         stderr=lambda line: logger.error(
             "model_detection.stderr provider=%s model=%s %s",
