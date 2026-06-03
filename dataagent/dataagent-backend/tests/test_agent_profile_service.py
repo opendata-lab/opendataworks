@@ -38,6 +38,19 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     assert payload["is_builtin"] is True
 
 
+def test_ontology_modeling_agent_payload_is_builtin_with_modeling_skill():
+    payload = agent_profile_service.ontology_modeling_agent_payload()
+
+    assert payload["agent_id"] == "agent_ontology_modeling"
+    assert payload["name"] == "本体建模助手"
+    assert payload["allowed_tools"] == ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
+    assert payload["mcp_server_ids"] == ["portal"]
+    assert payload["skill_folders"] == ["ontology-modeling-assistant"]
+    assert "本体" in payload["description"]
+    assert payload["is_default"] is False
+    assert payload["is_builtin"] is True
+
+
 def test_resolved_agent_workdir_uses_managed_workspace_root_for_all_profiles(monkeypatch, tmp_path: Path):
     original_runtime_cwd = get_settings().dataagent_runtime_project_cwd
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -156,6 +169,7 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
                 {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
             ]
         },
+        "preset_questions": [],
         "is_default": False,
         "is_builtin": False,
     }

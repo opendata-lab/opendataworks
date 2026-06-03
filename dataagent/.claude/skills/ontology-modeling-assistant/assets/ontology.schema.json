@@ -1,0 +1,498 @@
+{
+  "$defs": {
+    "Metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name_en": {
+          "title": "Name En",
+          "type": "string"
+        },
+        "name_zh": {
+          "title": "Name Zh",
+          "type": "string"
+        },
+        "owner": {
+          "title": "Owner",
+          "type": "string"
+        },
+        "version": {
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name_zh",
+        "name_en",
+        "owner",
+        "version"
+      ],
+      "title": "Metadata",
+      "type": "object"
+    },
+    "ObjectRelation": {
+      "additionalProperties": false,
+      "properties": {
+        "cardinality": {
+          "enum": [
+            "one_to_one",
+            "one_to_many",
+            "many_to_one",
+            "many_to_many"
+          ],
+          "title": "Cardinality",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "from_object": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "From Object",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "modeling_guidance": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Modeling Guidance",
+          "type": "array"
+        },
+        "needs_confirmation": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Needs Confirmation"
+        },
+        "relation_kind": {
+          "enum": [
+            "covers",
+            "supports_scope",
+            "supports",
+            "has_attribute",
+            "measures",
+            "connects",
+            "semantic_mapping",
+            "caliber_rule"
+          ],
+          "title": "Relation Kind",
+          "type": "string"
+        },
+        "to_object": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "To Object",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "from_object",
+        "to_object",
+        "relation_kind",
+        "cardinality",
+        "description"
+      ],
+      "title": "ObjectRelation",
+      "type": "object"
+    },
+    "ObjectType": {
+      "additionalProperties": false,
+      "properties": {
+        "default_filters": {
+          "additionalProperties": true,
+          "title": "Default Filters",
+          "type": "object"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "domain",
+            "entity",
+            "attribute",
+            "metric",
+            "physical_source",
+            "document",
+            "skill",
+            "query_function",
+            "relation"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name_en": {
+          "title": "Name En",
+          "type": "string"
+        },
+        "name_zh": {
+          "title": "Name Zh",
+          "type": "string"
+        },
+        "needs_confirmation": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Needs Confirmation"
+        },
+        "physical_sources": {
+          "items": {
+            "$ref": "#/$defs/PhysicalSource"
+          },
+          "title": "Physical Sources",
+          "type": "array"
+        },
+        "properties": {
+          "items": {
+            "$ref": "#/$defs/OntologyProperty"
+          },
+          "title": "Properties",
+          "type": "array"
+        },
+        "query_functions": {
+          "items": {
+            "$ref": "#/$defs/QueryFunction"
+          },
+          "title": "Query Functions",
+          "type": "array"
+        },
+        "synonyms": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Synonyms",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name_zh",
+        "name_en",
+        "kind",
+        "description",
+        "synonyms"
+      ],
+      "title": "ObjectType",
+      "type": "object"
+    },
+    "OntologyProperty": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "name_en": {
+          "title": "Name En",
+          "type": "string"
+        },
+        "name_zh": {
+          "title": "Name Zh",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name_zh",
+        "name_en",
+        "description"
+      ],
+      "title": "OntologyProperty",
+      "type": "object"
+    },
+    "PhysicalSource": {
+      "additionalProperties": false,
+      "properties": {
+        "columns": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns",
+          "type": "array"
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Purpose"
+        },
+        "table": {
+          "title": "Table",
+          "type": "string"
+        }
+      },
+      "required": [
+        "table"
+      ],
+      "title": "PhysicalSource",
+      "type": "object"
+    },
+    "QueryFunction": {
+      "additionalProperties": false,
+      "properties": {
+        "function_name": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Function Name",
+          "type": "string"
+        },
+        "grain": {
+          "title": "Grain",
+          "type": "string"
+        },
+        "intent": {
+          "title": "Intent",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "output_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Fields",
+          "type": "array"
+        },
+        "params": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Params",
+          "type": "array"
+        }
+      },
+      "required": [
+        "function_name",
+        "intent",
+        "grain",
+        "params",
+        "output_fields",
+        "notes"
+      ],
+      "title": "QueryFunction",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "$ref": "#/$defs/Metadata"
+    },
+    "object_relations": {
+      "items": {
+        "$ref": "#/$defs/ObjectRelation"
+      },
+      "title": "Object Relations",
+      "type": "array"
+    },
+    "object_types": {
+      "items": {
+        "$ref": "#/$defs/ObjectType"
+      },
+      "title": "Object Types",
+      "type": "array"
+    }
+  },
+  "required": [
+    "metadata",
+    "object_types",
+    "object_relations"
+  ],
+  "title": "OntologyFile",
+  "type": "object",
+  "x-field-dictionary": {
+    "object_relations.cardinality": {
+      "title": "object_relations.cardinality",
+      "values": {
+        "many_to_many": {
+          "label_zh": "多对多"
+        },
+        "many_to_one": {
+          "label_zh": "多对一"
+        },
+        "one_to_many": {
+          "label_zh": "一对多"
+        },
+        "one_to_one": {
+          "label_zh": "一对一"
+        }
+      }
+    },
+    "object_relations.relation_kind": {
+      "title": "object_relations.relation_kind",
+      "values": {
+        "caliber_rule": {
+          "example": "domain_metric -> physical_table、domain_query_function -> domain_ontology_skill",
+          "label_zh": "口径规则"
+        },
+        "connects": {
+          "example": "semantic_relation -> domain_entity",
+          "label_zh": "连接实体"
+        },
+        "covers": {
+          "example": "domain_ontology_skill -> business_domain",
+          "label_zh": "覆盖"
+        },
+        "has_attribute": {
+          "example": "domain_entity -> domain_attribute",
+          "label_zh": "拥有属性"
+        },
+        "measures": {
+          "example": "domain_metric -> domain_entity",
+          "label_zh": "度量实体"
+        },
+        "semantic_mapping": {
+          "example": "domain_attribute -> physical_table",
+          "label_zh": "语义映射"
+        },
+        "supports": {
+          "example": "physical_table -> domain_entity",
+          "label_zh": "支撑对象"
+        },
+        "supports_scope": {
+          "example": "source_document -> business_domain",
+          "label_zh": "支撑范围"
+        }
+      }
+    },
+    "object_types.kind": {
+      "title": "object_types.kind",
+      "values": {
+        "attribute": {
+          "description": "实体属性、状态、分类、时间字段、标识字段",
+          "label_zh": "业务属性"
+        },
+        "document": {
+          "description": "上传文档或外部说明",
+          "label_zh": "文档来源"
+        },
+        "domain": {
+          "description": "本体覆盖的业务边界",
+          "label_zh": "业务域"
+        },
+        "entity": {
+          "description": "可解释、可查询的核心业务对象",
+          "label_zh": "业务实体"
+        },
+        "metric": {
+          "description": "指标、口径、公式、聚合规则",
+          "label_zh": "业务指标"
+        },
+        "physical_source": {
+          "description": "数据库表、字段集合、DDL、血缘信息",
+          "label_zh": "物理来源"
+        },
+        "query_function": {
+          "description": "下游问数链路的语义交接函数",
+          "label_zh": "查询函数"
+        },
+        "relation": {
+          "description": "当关系本身需要被解释、归类或复用时使用",
+          "label_zh": "关系对象"
+        },
+        "skill": {
+          "description": "目标本体 skill 本身",
+          "label_zh": "领域 skill"
+        }
+      }
+    },
+    "query_functions": {
+      "title": "query_functions 字段",
+      "values": {
+        "function_name": {
+          "description": "snake_case 函数名",
+          "required": "是",
+          "type": "string"
+        },
+        "grain": {
+          "description": "查询语义粒度",
+          "required": "是",
+          "type": "string"
+        },
+        "intent": {
+          "description": "函数服务的用户意图",
+          "required": "是",
+          "type": "string"
+        },
+        "notes": {
+          "description": "口径、边界和注意事项",
+          "required": "是",
+          "type": "string"
+        },
+        "output_fields": {
+          "description": "输出字段",
+          "required": "是",
+          "type": "string[]"
+        },
+        "params": {
+          "description": "参数槽位",
+          "required": "是",
+          "type": "string[]"
+        }
+      }
+    },
+    "top_level_fields": {
+      "title": "顶层字段",
+      "values": {
+        "metadata": {
+          "description": "本体基本信息",
+          "required": "是",
+          "type": "object"
+        },
+        "object_relations": {
+          "description": "统一关系清单，所有关系类型由 relation_kind 表达",
+          "required": "是",
+          "type": "object[]"
+        },
+        "object_types": {
+          "description": "本体对象清单",
+          "required": "是",
+          "type": "object[]"
+        }
+      }
+    }
+  }
+}

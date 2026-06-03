@@ -9,6 +9,7 @@ SYSTEM_PROMPT = Path(__file__).resolve().parents[1] / "prompts" / "data_agent_sy
 SQL_SKILL_ROOT = SKILLS_ROOT / "dataagent-nl2sql"
 BUSINESS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-business-knowledge"
 PLATFORM_TOOLS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-platform-tools"
+ONTOLOGY_MODELING_SKILL_ROOT = SKILLS_ROOT / "ontology-modeling-assistant"
 
 
 def _skill_text_snapshot(root: Path) -> str:
@@ -207,3 +208,70 @@ def test_business_ontology_supports_platform_table_troubleshooting():
         "table_downstream_lineage",
         "task_latest_execution_log",
     } <= set(relations)
+
+
+def test_ontology_modeling_skill_contains_modeling_assets_without_sql_execution_entrypoints():
+    snapshot = _skill_text_snapshot(ONTOLOGY_MODELING_SKILL_ROOT)
+
+    required_tokens = [
+        "Ontology Modeling Assistant Skill",
+        "本体建模",
+        "上传文档",
+        "数据库表",
+        "ontology.json",
+        "ontology.schema.json",
+        "ontology_schema.py",
+        "lookup_ontology.py",
+        "validate_ontology.py",
+        "x-field-dictionary",
+        "domain_ontology_skill",
+        "scaffold_domain_ontology_skill",
+        "relation_kind",
+        "semantic_mapping",
+        "caliber_rule",
+        "object_types.kind",
+        "cardinality",
+    ]
+    for token in required_tokens:
+        assert token in snapshot
+
+    ontology = json.loads((ONTOLOGY_MODELING_SKILL_ROOT / "assets" / "ontology.json").read_text(encoding="utf-8"))
+    object_types = {item["id"]: item for item in ontology["object_types"]}
+    assert {
+        "domain_ontology_skill",
+        "business_domain",
+        "source_document",
+        "physical_table",
+        "domain_entity",
+        "domain_attribute",
+        "semantic_relation",
+    } <= set(object_types)
+
+    assert "semantic_edges" not in ontology
+    assert "evidence_sources" not in ontology
+    assert "quality_gates" not in ontology
+
+    relations = {item["id"]: item for item in ontology["object_relations"]}
+    assert {
+        "term_maps_to_table_column",
+        "document_mentions_domain_entity",
+        "table_column_supports_attribute",
+    } <= set(relations)
+    assert relations["term_maps_to_table_column"]["relation_kind"] == "semantic_mapping"
+    assert relations["document_mentions_domain_entity"]["relation_kind"] == "supports"
+    assert relations["table_column_supports_attribute"]["relation_kind"] == "semantic_mapping"
+    assert "document_evidence" not in snapshot
+    assert "schema_evidence" not in snapshot
+    assert "evidence_sources" not in snapshot
+    assert "confidence" not in snapshot
+    assert "置信" not in snapshot
+
+    assert (ONTOLOGY_MODELING_SKILL_ROOT / "scripts" / "lookup_ontology.py").exists()
+    assert (ONTOLOGY_MODELING_SKILL_ROOT / "scripts" / "validate_ontology.py").exists()
+    assert (ONTOLOGY_MODELING_SKILL_ROOT / "scripts" / "ontology_schema.py").exists()
+    assert (ONTOLOGY_MODELING_SKILL_ROOT / "assets" / "ontology.schema.json").exists()
+    assert not (ONTOLOGY_MODELING_SKILL_ROOT / "reference" / "ontology-field-dictionary.md").exists()
+    assert not (ONTOLOGY_MODELING_SKILL_ROOT / "reference" / "ontology-model-spec.md").exists()
+    assert not (ONTOLOGY_MODELING_SKILL_ROOT / "bin").exists()
+    assert "run_sql.py 是唯一推荐的 SQL 执行入口" not in snapshot
+    assert "validate_sql.py 是唯一推荐的 SQL 验证入口" not in snapshot

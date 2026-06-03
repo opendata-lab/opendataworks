@@ -38,6 +38,8 @@ dolphinscheduler-service/*.egg-info/
 .vscode/
 .codex/
 .claude/
+!/dataagent/.claude/
+!/dataagent/.claude/skills/
 /dataagent/.claude/skills/*/
 !/dataagent/.claude/skills/dataagent-nl2sql/
 !/dataagent/.claude/skills/dataagent-nl2sql/**
@@ -45,6 +47,8 @@ dolphinscheduler-service/*.egg-info/
 !/dataagent/.claude/skills/opendataworks-business-knowledge/**
 !/dataagent/.claude/skills/opendataworks-platform-tools/
 !/dataagent/.claude/skills/opendataworks-platform-tools/**
+!/dataagent/.claude/skills/ontology-modeling-assistant/
+!/dataagent/.claude/skills/ontology-modeling-assistant/**
 *.swp
 *.swo
 *~
@@ -104,5 +108,3 @@ website/.vitepress/cache/
 
 # Vite local cache (generated at project root during frontend dev/test)
 .vite/
-
-
