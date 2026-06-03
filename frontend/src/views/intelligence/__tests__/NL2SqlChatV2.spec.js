@@ -49,6 +49,9 @@ vi.mock('element-plus', () => ({
     error: vi.fn()
   },
   ElOption: { name: 'ElOption' },
+  ElPopover: { name: 'ElPopover' },
+  ElRadio: { name: 'ElRadio' },
+  ElRadioGroup: { name: 'ElRadioGroup' },
   ElScrollbar: { name: 'ElScrollbar' },
   ElSelect: { name: 'ElSelect' }
 }))
@@ -146,6 +149,18 @@ const mountChat = () => mount(NL2SqlChatV2, {
       ElDropdownItem: {
         props: ['command'],
         template: '<button type="button" class="el-dropdown-item-stub" :data-command="command"><slot /></button>'
+      },
+      ElPopover: {
+        template: '<div class="el-popover-stub"><slot name="reference" /><slot /></div>'
+      },
+      ElRadioGroup: {
+        props: ['modelValue'],
+        emits: ['update:modelValue'],
+        template: '<div class="el-radio-group-stub"><slot /></div>'
+      },
+      ElRadio: {
+        props: ['label'],
+        template: '<label class="el-radio-stub" :data-label="label"><slot /></label>'
       },
       ToolOutputRenderer: {
         props: ['tool'],

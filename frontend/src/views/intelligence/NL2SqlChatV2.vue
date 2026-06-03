@@ -20,7 +20,65 @@
           </template>
           <el-option v-for="a in agents" :key="a.agent_id" :label="a.name" :value="a.agent_id" />
         </el-select>
-        <button class="v2-btn-new" @click="handleNewTopic">新建</button>
+        <button v-if="!isWidgetMode" class="v2-btn-new" @click="handleNewTopic">新建</button>
+      </div>
+
+      <div class="v2-sidebar-toolbar">
+        <div class="v2-source-tabs" role="tablist">
+          <button
+            type="button"
+            class="v2-source-tab"
+            :class="{ active: sourceMode === 'portal' }"
+            @click="handleSourceChange('portal')"
+          >门户</button>
+          <button
+            type="button"
+            class="v2-source-tab"
+            :class="{ active: sourceMode === 'widget' }"
+            @click="handleSourceChange('widget')"
+          >Widget</button>
+        </div>
+        <el-popover
+          v-model:visible="filterPopoverVisible"
+          placement="bottom-end"
+          trigger="click"
+          :width="240"
+          popper-class="v2-filter-popper"
+        >
+          <template #reference>
+            <button
+              type="button"
+              class="v2-filter-btn"
+              :class="{ active: filterStatus || sortOrder !== 'updated_desc' }"
+              title="筛选与排序"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" /></svg>
+            </button>
+          </template>
+          <div class="v2-filter-panel">
+            <div class="v2-filter-group">
+              <div class="v2-filter-label">状态</div>
+              <el-radio-group v-model="filterStatus" size="small" class="v2-filter-radios">
+                <el-radio label="">全部</el-radio>
+                <el-radio label="running">进行中</el-radio>
+                <el-radio label="error">失败</el-radio>
+                <el-radio label="suspended">已取消</el-radio>
+                <el-radio label="finished">完成</el-radio>
+              </el-radio-group>
+            </div>
+            <div class="v2-filter-group">
+              <div class="v2-filter-label">排序</div>
+              <el-radio-group v-model="sortOrder" size="small" class="v2-filter-radios">
+                <el-radio label="updated_desc">最近更新</el-radio>
+                <el-radio label="created_desc">最近创建</el-radio>
+                <el-radio label="title_asc">标题 A-Z</el-radio>
+              </el-radio-group>
+            </div>
+            <div class="v2-filter-actions">
+              <button type="button" class="v2-filter-reset" @click="resetFilters">重置</button>
+            </div>
+          </div>
+        </el-popover>
       </div>
 
       <div class="v2-sidebar-search">
@@ -165,8 +223,14 @@
         </div>
       </el-scrollbar>
 
+      <!-- Read-only banner for widget sessions -->
+      <div v-if="isWidgetMode" class="v2-readonly-bar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+        <span>Widget 会话为只读审计视图，不能发送消息</span>
+      </div>
+
       <!-- Composer -->
-      <div class="v2-composer-bar" :class="{ 'is-landing': !messages.length }">
+      <div v-else class="v2-composer-bar" :class="{ 'is-landing': !messages.length }">
         <div class="v2-composer-wrap">
           <template v-if="!messages.length">
             <div v-if="!settings.providers.length" class="v2-config-empty">
@@ -252,6 +316,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { marked } from 'marked'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
+import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
 import { stripChartSpecsFromText } from './chartSpec'
@@ -279,6 +344,14 @@ const inputText = ref('')
 const isStreaming = ref(false)
 const autoScroll = ref(true)
 
+// Session-list source / filter / sort. Portal sessions stay editable; widget
+// sessions are a read-only audit view served by the admin endpoint.
+const sourceMode = ref('portal')        // 'portal' | 'widget'
+const filterStatus = ref('')            // '' | 'running' | 'error' | 'suspended' | 'finished'
+const sortOrder = ref('updated_desc')   // 'updated_desc' | 'created_desc' | 'title_asc'
+const filterPopoverVisible = ref(false)
+const isWidgetMode = computed(() => sourceMode.value === 'widget')
+
 const currentAgentName = computed(() => {
   const currentId = agentSelectValue.value
   const found = agents.value.find((a) => a.agent_id === currentId)
@@ -292,11 +365,30 @@ const targetMessageId = ref('')
 let abortController = null
 
 // ── Computed ─────────────────────────────────────────────────────────────────
+// Status filter values map to topicStatusKind(): '' (finished/none) is the
+// terminal-success bucket, the rest mirror the badge kinds.
+const STATUS_FILTER_KIND = { running: 'running', error: 'error', suspended: 'suspended', finished: '' }
+
 const filteredTopics = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
-  return kw
+  let list = kw
     ? topics.value.filter((t) => (t.title || '').toLowerCase().includes(kw))
-    : topics.value
+    : topics.value.slice()
+
+  if (filterStatus.value) {
+    const wanted = STATUS_FILTER_KIND[filterStatus.value]
+    list = list.filter((t) => topicStatusKind(t.current_task_status) === wanted)
+  }
+
+  const order = sortOrder.value
+  return list.slice().sort((a, b) => {
+    if (order === 'title_asc') {
+      return String(a.title || '').localeCompare(String(b.title || ''), 'zh-CN')
+    }
+    const av = order === 'created_desc' ? a.created_at : (a.updated_at || a.created_at)
+    const bv = order === 'created_desc' ? b.created_at : (b.updated_at || b.created_at)
+    return new Date(bv || 0).getTime() - new Date(av || 0).getTime()
+  })
 })
 
 const activeTopic = computed(() => topics.value.find((t) => t.topic_id === activeTopicId.value) || null)
@@ -481,6 +573,10 @@ async function loadAgents() {
 }
 
 async function loadTopics() {
+  if (sourceMode.value === 'widget') {
+    await loadWidgetTopics()
+    return
+  }
   try {
     const params = { page: 1, page_size: 50 }
     if (route.query.agent_id) params.agent_id = route.query.agent_id
@@ -494,6 +590,20 @@ async function loadTopics() {
     }
   } catch {
     // non-fatal
+  }
+}
+
+// Read-only widget session list (admin endpoint). Unlike portal topics we never
+// mirror the selection into the route, so a reload defaults back to portal.
+async function loadWidgetTopics() {
+  try {
+    const data = await dataagentApi.listWidgetTopics({ page: 1, page_size: 50 })
+    topics.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
+    if (topics.value.length && !activeTopicId.value) {
+      await selectTopic(topics.value[0].topic_id)
+    }
+  } catch {
+    topics.value = []
   }
 }
 
@@ -514,9 +624,13 @@ async function selectTopic(topicId, options = {}) {
   const normalizedTopicId = normalizeQueryValue(topicId)
   if (!normalizedTopicId) return
   activeTopicId.value = normalizedTopicId
-  await ensureTopicListed(normalizedTopicId)
+  if (!isWidgetMode.value) {
+    await ensureTopicListed(normalizedTopicId)
+  }
   try {
-    const data = await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
+    const data = isWidgetMode.value
+      ? await dataagentApi.getWidgetTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
+      : await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
     messages.value = list.map((m) => hydrateHistoryMessage(m))
     const messageId = normalizeQueryValue(options.messageId)
@@ -630,14 +744,33 @@ const suggestions = computed(() => {
 })
 
 function handleSuggestion(text) {
-  if (isStreaming.value) return
+  if (isStreaming.value || isWidgetMode.value) return
   inputText.value = text
   nextTick(() => handleSend())
 }
 
+// ── Source / filter ──────────────────────────────────────────────────────
+async function handleSourceChange(mode) {
+  if (mode === sourceMode.value) return
+  if (isStreaming.value) handleCancel()
+  sourceMode.value = mode
+  activeTopicId.value = ''
+  messages.value = []
+  targetMessageId.value = ''
+  searchKeyword.value = ''
+  filterStatus.value = ''
+  topics.value = []
+  await loadTopics()
+}
+
+function resetFilters() {
+  filterStatus.value = ''
+  sortOrder.value = 'updated_desc'
+}
+
 // ── Topic management ───────────────────────────────────────────────────────
 async function handleNewTopic() {
-  if (isStreaming.value) return
+  if (isStreaming.value || isWidgetMode.value) return
   activeTopicId.value = ''
   messages.value = []
   targetMessageId.value = ''
@@ -647,13 +780,15 @@ async function handleNewTopic() {
 
 async function handleSelectTopic(topicId) {
   if (topicId === activeTopicId.value) {
-    targetMessageId.value = ''
-    replaceRouteTopic(topicId)
+    if (!isWidgetMode.value) {
+      targetMessageId.value = ''
+      replaceRouteTopic(topicId)
+    }
     return
   }
   if (isStreaming.value) handleCancel()
   await selectTopic(topicId)
-  replaceRouteTopic(topicId)
+  if (!isWidgetMode.value) replaceRouteTopic(topicId)
 }
 
 function handleAgentChange(agentId) {
@@ -743,6 +878,7 @@ async function toggleMessageFeedback(msg, value) {
 
 // ── Send message ───────────────────────────────────────────────────────────
 async function handleSend() {
+  if (isWidgetMode.value) return
   const text = inputText.value.trim()
   if (!text || isStreaming.value) return
 
@@ -853,6 +989,7 @@ onMounted(async () => {
 })
 
 watch(() => route.query.agent_id, async () => {
+  if (isWidgetMode.value) return
   activeTopicId.value = ''
   messages.value = []
   await loadTopics()
@@ -861,6 +998,9 @@ watch(() => route.query.agent_id, async () => {
 watch(
   () => [route.query.topic_id, route.query.message_id],
   async ([topicId, messageId]) => {
+    // Widget sessions are not mirrored into the route; ignore route-driven
+    // topic selection while viewing them to avoid loading a widget id as portal.
+    if (isWidgetMode.value) return
     const normalizedTopicId = normalizeQueryValue(topicId)
     const normalizedMessageId = normalizeQueryValue(messageId)
     if (!normalizedTopicId) {
@@ -959,6 +1099,78 @@ onBeforeUnmount(() => {
 }
 
 .v2-search-input:focus { border-color: var(--odw-primary); }
+
+/* ── Source tabs + filter ────────────────────────────────────────────────── */
+.v2-sidebar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 8px 12px;
+}
+
+.v2-source-tabs {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: 8px;
+  background: #f0f3f8;
+}
+
+.v2-source-tab {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #606878;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background var(--odw-transition), color var(--odw-transition);
+}
+
+.v2-source-tab.active {
+  background: #ffffff;
+  color: var(--odw-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.v2-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #8a96a6;
+  cursor: pointer;
+  transition: border-color var(--odw-transition), color var(--odw-transition);
+}
+
+.v2-filter-btn:hover { border-color: var(--odw-primary); color: var(--odw-primary); }
+.v2-filter-btn.active { border-color: var(--odw-primary); color: var(--odw-primary); }
+
+.v2-filter-panel { display: flex; flex-direction: column; gap: 14px; }
+.v2-filter-group { display: flex; flex-direction: column; gap: 8px; }
+.v2-filter-label { font-size: 12px; font-weight: 600; color: #8C8C8C; }
+.v2-filter-radios { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.v2-filter-radios :deep(.el-radio) { margin-right: 0; height: 26px; }
+
+.v2-filter-actions { display: flex; justify-content: flex-end; border-top: 1px solid #eef1f5; padding-top: 10px; }
+
+.v2-filter-reset {
+  padding: 4px 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #606878;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color var(--odw-transition), color var(--odw-transition);
+}
+
+.v2-filter-reset:hover { border-color: var(--odw-primary); color: var(--odw-primary); }
 
 .v2-session-scroll { flex: 1; min-height: 0; }
 
@@ -1334,6 +1546,23 @@ onBeforeUnmount(() => {
 @keyframes v2-blink {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* ── Read-only banner (widget sessions) ──────────────────────────────────── */
+.v2-readonly-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 24px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, #ffffff 45%);
+  color: #8a96a6;
+  font-size: 13px;
 }
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
