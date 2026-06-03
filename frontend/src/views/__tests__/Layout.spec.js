@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routeState = vi.hoisted(() => ({
   path: '/intelligent-query'
@@ -41,6 +41,15 @@ const stubs = {
 }
 
 describe('Layout', () => {
+  beforeEach(() => {
+    document.head.innerHTML = ''
+    document.body.innerHTML = ''
+    delete window.OpenDataWorksWidget
+    delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
+    scheduleRouteWarmup.mockClear()
+    preloadRouteComponents.mockClear()
+  })
+
   it('renames the intelligent query menu entry to Agent问答', () => {
     const wrapper = mount(Layout, {
       global: { stubs }
@@ -50,5 +59,30 @@ describe('Layout', () => {
     expect(intelligentQueryItem.exists()).toBe(true)
     expect(intelligentQueryItem.text()).toContain('Agent问答')
     expect(intelligentQueryItem.text()).not.toContain('智能问数')
+  })
+
+  it('loads the remote DataAgent widget script and installs the floating widget', async () => {
+    const installWidget = vi.fn(() => ({ destroy: vi.fn() }))
+    const wrapper = mount(Layout, {
+      global: { stubs }
+    })
+
+    const script = document.querySelector('script[data-odw-dataagent-widget-script]')
+    expect(script).toBeTruthy()
+    expect(script.src).toBe('http://localhost:3000/dataagent/widget/opendataworks-widget.bundle.js')
+
+    window.OpenDataWorksWidget = { installWidget }
+    script.dispatchEvent(new Event('load'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({
+      displayMode: 'floating',
+      position: 'bottom-right',
+      agentId: 'agent_opendataworks',
+      apiBaseUrl: ''
+    }))
+
+    wrapper.unmount()
+    expect(installWidget.mock.results[0].value.destroy).toHaveBeenCalled()
   })
 })

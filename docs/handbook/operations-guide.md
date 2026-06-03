@@ -22,7 +22,7 @@ bash scripts/start.sh
 
 - MySQL 卷：`mysql-data`
 - 后端日志卷：`backend-logs`
-- Compose 服务：`mysql`、`redis`、`backend`、`frontend`、`dataagent-backend`、`portal-mcp`
+- Compose 服务：`mysql`、`redis`、`backend`、`frontend`、`dataagent-frontend`、`dataagent-backend`、`portal-mcp`
 - 根 `deploy/` 仍然承载主门户与现有智能问数主链，不包含 `opendataagent`
 - **数据库自动初始化**：MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建数据库和用户。`opendataworks` 用户供后端使用，`dataagent` 用户默认供 DataAgent 使用。无需手动创建数据库。表结构由后端服务的 Flyway 自动创建。
 - 环境变量重点：
@@ -110,7 +110,8 @@ server {
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
 | Backend | `application.yml` | DB、Dolphin/Dinky、日志、CORS |
-| Frontend | `frontend/nginx.conf` | 反向代理 `/api/` 至 `backend:8080/api/`，并代理 `/api/v1/dataagent/`、`/api/v1/nl2sql-admin/`、`/api/v1/nl2sql/` 至 `dataagent-backend:8900` |
+| Frontend | `frontend/nginx.conf` | 反向代理 `/api/` 至 `backend:8080/api/`，代理 `/dataagent/` 至 `dataagent-frontend:80`，并代理 `/api/v1/dataagent/`、`/api/v1/nl2sql-admin/`、`/api/v1/nl2sql/` 至 `dataagent-backend:8900` |
+| DataAgent Frontend | `dataagent/dataagent-frontend` | 智能问数独立前端、管理页与 Widget bundle |
 | DataAgent Backend | `dataagent/dataagent-backend` | 智能问数 API、Skills 管理、NL2SQL 会话服务 |
 | Opendataagent | `opendataagent/deploy/.env.example` | 独立 agent 平台的端口、数据库和管理员令牌 |
 | Compose | `deploy/docker-compose.prod.yml` | 镜像/tag/端口/卷，主前端统一承载智能问数入口 |
@@ -124,7 +125,7 @@ server {
 ## 镜像构建与大小控制
 
 - 构建脚本：`scripts/build/build-multiarch.sh`，支持多架构 `linux/amd64,linux/arm64`。
-- 根部署产物：`opendataworks-backend`, `opendataworks-frontend`, `opendataworks-dataagent-backend`, `opendataworks-portal-mcp`。
+- 根部署产物：`opendataworks-backend`, `opendataworks-frontend`, `opendataworks-dataagent-frontend`, `opendataworks-dataagent-backend`, `opendataworks-portal-mcp`。
 - `opendataagent` 镜像与 release 由 `opendataagent/scripts/*` 单独构建。
 - 构建前确保 `frontend/dist`、`backend/target` 已存在，否则脚本会自动触发构建。
 

@@ -30,6 +30,11 @@ jobs:
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
             build_args: ""
+          - name: dataagent-frontend
+            image: opendataworks-dataagent-frontend
+            context: .
+            dockerfile: ./dataagent/dataagent-frontend/Dockerfile
+            build_args: ""
           - name: backend
             image: opendataworks-backend
             context: .
@@ -186,6 +191,7 @@ jobs:
             echo "### Docker 镜像 (Docker Images)"
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${VERSION})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${VERSION})"
+            echo "- [DataAgent Frontend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-frontend/tags?name=${VERSION})"
             echo "- [DataAgent Backend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-backend/tags?name=${VERSION})"
             echo "- [Portal MCP](https://hub.docker.com/r/${NS}/opendataworks-portal-mcp/tags?name=${VERSION})"
             echo "- [DataAgent Evals Builtin](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-builtin/tags?name=${VERSION})"
@@ -196,6 +202,7 @@ jobs:
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-backend:${VERSION}"
+            echo "docker pull ${NS}/opendataworks-dataagent-frontend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-dataagent-backend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-portal-mcp:${VERSION}"
             echo "docker pull ${NS}/opendataworks-dataagent-evals-builtin:${VERSION}"
@@ -275,6 +282,7 @@ jobs:
             echo "### Docker 镜像 (Docker Images)"
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${IMAGE_TAG})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${IMAGE_TAG})"
+            echo "- [DataAgent Frontend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-frontend/tags?name=${IMAGE_TAG})"
             echo "- [DataAgent Backend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-backend/tags?name=${IMAGE_TAG})"
             echo "- [Portal MCP](https://hub.docker.com/r/${NS}/opendataworks-portal-mcp/tags?name=${IMAGE_TAG})"
             echo "- [DataAgent Evals Builtin](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-builtin/tags?name=${IMAGE_TAG})"
@@ -285,6 +293,7 @@ jobs:
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-backend:${IMAGE_TAG}"
+            echo "docker pull ${NS}/opendataworks-dataagent-frontend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-dataagent-backend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-portal-mcp:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-dataagent-evals-builtin:${IMAGE_TAG}"
@@ -333,6 +342,7 @@ jobs:
           echo "### Images pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-backend\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-frontend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-backend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-portal-mcp\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-builtin\`" >> $GITHUB_STEP_SUMMARY
@@ -349,6 +359,7 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-backend:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-frontend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-backend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-portal-mcp:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-builtin:latest" >> $GITHUB_STEP_SUMMARY

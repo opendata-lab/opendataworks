@@ -31,6 +31,7 @@ PLATFORMS="linux/amd64,linux/arm64"
 PUSH=false
 BUILD_FRONTEND=true
 BUILD_BACKEND=true
+BUILD_DATAAGENT_FRONTEND=true
 BUILD_DATAAGENT_BACKEND=true
 BUILD_DATAAGENT_EVALS_BUILTIN=true
 BUILD_DATAAGENT_EVALS_DEEPEVAL=true
@@ -47,6 +48,7 @@ usage() {
     echo "  --push                  构建后推送到 Docker Hub"
     echo "  --no-frontend           跳过前端镜像构建"
     echo "  --no-backend            跳过后端镜像构建"
+    echo "  --no-dataagent-frontend 跳过 DataAgent 前端镜像构建"
     echo "  --no-dataagent-backend  跳过 DataAgent 后端镜像构建"
     echo "  --no-dataagent-evals-builtin  跳过 DataAgent builtin 评测镜像构建"
     echo "  --no-dataagent-evals-deepeval  跳过 DataAgent DeepEval 评测镜像构建"
@@ -91,6 +93,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-backend)
             BUILD_BACKEND=false
+            shift
+            ;;
+        --no-dataagent-frontend)
+            BUILD_DATAAGENT_FRONTEND=false
             shift
             ;;
         --no-dataagent-backend)
@@ -181,6 +187,7 @@ fi
 # 定义镜像名称
 FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-frontend"
 BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-backend"
+DATAAGENT_FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-frontend"
 DATAAGENT_BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-backend"
 DATAAGENT_EVALS_BUILTIN_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-evals-builtin"
 DATAAGENT_EVALS_DEEPEVAL_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-evals-deepeval"
@@ -209,6 +216,7 @@ echo "命名空间:   $DEFAULT_NAMESPACE"
 echo "推送镜像:   $PUSH"
 echo "构建前端:   $BUILD_FRONTEND"
 echo "构建后端:   $BUILD_BACKEND"
+echo "构建 DataAgent 前端: $BUILD_DATAAGENT_FRONTEND"
 echo "构建 DataAgent 后端: $BUILD_DATAAGENT_BACKEND"
 echo "构建 DataAgent builtin 评测: $BUILD_DATAAGENT_EVALS_BUILTIN"
 echo "构建 DataAgent DeepEval 评测: $BUILD_DATAAGENT_EVALS_DEEPEVAL"
@@ -257,6 +265,27 @@ if [ "$BUILD_BACKEND" = true ]; then
         ((SUCCESSFUL_BUILDS++))
     else
         echo -e "${RED}❌ 后端镜像构建失败${NC}"
+    fi
+    ((TOTAL_BUILDS++))
+    echo ""
+fi
+
+# 构建 DataAgent 前端镜像
+if [ "$BUILD_DATAAGENT_FRONTEND" = true ]; then
+    echo -e "${YELLOW}📦 构建 DataAgent 前端镜像...${NC}"
+    echo "镜像: $DATAAGENT_FRONTEND_IMAGE:$VERSION"
+    echo "平台: $PLATFORMS"
+
+    cd "$REPO_ROOT"
+    if docker buildx build $BUILD_ARGS \
+        -t $DATAAGENT_FRONTEND_IMAGE:$VERSION \
+        -t $DATAAGENT_FRONTEND_IMAGE:latest \
+        --file dataagent/dataagent-frontend/Dockerfile \
+        . ; then
+        echo -e "${GREEN}✅ DataAgent 前端镜像构建成功${NC}"
+        ((SUCCESSFUL_BUILDS++))
+    else
+        echo -e "${RED}❌ DataAgent 前端镜像构建失败${NC}"
     fi
     ((TOTAL_BUILDS++))
     echo ""
@@ -358,6 +387,7 @@ if [ $SUCCESSFUL_BUILDS -eq $TOTAL_BUILDS ]; then
         echo "✅ 镜像已推送到 Docker Hub:"
         [ "$BUILD_FRONTEND" = true ] && echo "  - $FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_BACKEND" = true ] && echo "  - $BACKEND_IMAGE:$VERSION"
+        [ "$BUILD_DATAAGENT_FRONTEND" = true ] && echo "  - $DATAAGENT_FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_BACKEND" = true ] && echo "  - $DATAAGENT_BACKEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ] && echo "  - $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ] && echo "  - $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
@@ -366,6 +396,7 @@ if [ $SUCCESSFUL_BUILDS -eq $TOTAL_BUILDS ]; then
         echo "📝 拉取镜像命令:"
         [ "$BUILD_FRONTEND" = true ] && echo "  docker pull $FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_BACKEND" = true ] && echo "  docker pull $BACKEND_IMAGE:$VERSION"
+        [ "$BUILD_DATAAGENT_FRONTEND" = true ] && echo "  docker pull $DATAAGENT_FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_BACKEND" = true ] && echo "  docker pull $DATAAGENT_BACKEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ] && echo "  docker pull $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ] && echo "  docker pull $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"

@@ -81,6 +81,22 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+      dataagent-frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dataagent-frontend:
+    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/opendataworks-dataagent-frontend:latest}
+    pull_policy: always
+    container_name: opendataworks-dataagent-frontend
+    restart: always
+    ports:
+      - "8901:80"
+    depends_on:
       dataagent-backend:
         condition: service_healthy
     healthcheck:

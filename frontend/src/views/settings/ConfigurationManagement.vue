@@ -27,22 +27,18 @@ const route = useRoute()
 const router = useRouter()
 const availableTabs = new Set(['dolphin', 'minio'])
 const legacyTabMap = {
-  dataagent: 'models',
-  skills: 'skills'
+  dataagent: true,
+  skills: true
 }
 const activeTab = ref(availableTabs.has(route.query.tab) ? route.query.tab : 'dolphin')
 
 const redirectLegacyTab = (tab) => {
-  const targetTab = legacyTabMap[tab]
-  if (!targetTab) {
+  if (!legacyTabMap[tab]) {
     return false
   }
   router.replace({
     path: '/intelligent-query',
-    query: {
-      ...route.query,
-      tab: targetTab
-    }
+    query: {}
   })
   return true
 }

@@ -8,7 +8,8 @@ This guide covers both Online (source code) and Offline (deployment package) dep
 
 - 主前端内嵌的“智能问数”
   - 跟随根 `deploy/` 一起部署
-  - 运行时依赖 `dataagent-backend`
+  - 主门户只通过远程 widget JS 嵌入问答入口
+  - UI 运行时由 `dataagent-frontend` 提供，API 运行时依赖 `dataagent-backend`
   - 当前仍是生产可用主链
 - 独立的 `opendataagent`
   - 使用 [opendataagent/deploy/docker-compose.yml](/Users/guoruping/.codex/worktrees/92ff/opendataworks/opendataagent/deploy/docker-compose.yml) 单独部署
@@ -58,6 +59,7 @@ Use this method if you have internet access and are deploying directly from the 
    主链路默认地址：
    - 门户首页: `http://localhost:8081/`
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
+   - DataAgent Frontend: `http://localhost:8901/`
    - DataAgent Backend: `http://localhost:8900`
    - Portal MCP Health: `http://localhost:8801/health`
    - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`
@@ -79,7 +81,7 @@ Use this method if you have internet access and are deploying directly from the 
    - `portal-mcp` 继续随根部署提供，但它不是 `opendataagent` 共享平台 skill 的主链入口
    - `opendataagent` 不随这里的 compose 自动启动，需要单独进入 `opendataagent/deploy/` 部署
    - `skills/` 根目录中的共享 skill 主要服务 `opendataagent`；当前生产智能问数主链使用 DataAgent system prompt、`opendataworks-business-knowledge` 与 `opendataworks-platform-tools`
-   - 主前端默认通过同源 `/api` 代理访问 DataAgent 后端，无需额外配置前端地址
+   - 主前端默认通过同源 `/dataagent/widget/opendataworks-widget.bundle.js` 加载 DataAgent widget，并通过 `/api/v1/nl2sql/*` 代理访问 DataAgent 后端；若需要改成独立域名，源码构建主前端时设置 `VITE_DATAAGENT_WIDGET_JS_URL`
    - DataAgent 额外持久化一个名为 `dataagent-home` 的 Docker volume，用于保存 Claude Agent SDK 写入 `HOME` 下的本地 session 文件，以及启用 skill 过滤后的运行时 cwd。当前镜像内 `HOME=/tmp/dataagent-home`，`DATAAGENT_RUNTIME_PROJECT_CWD=/tmp/dataagent-home/.dataagent/runtime/enabled-skills`，SDK 会将会话落到 `~/.claude/projects/<sanitized-cwd>/`，因此该 volume 可覆盖历史智能问数话题的 `resume` 所需文件
    - 若执行 `docker compose down -v` 或手动删除 `dataagent-home` volume，Claude SDK 本地 session 文件和运行时 cwd 都会被清空；此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
 
@@ -127,6 +129,7 @@ Use this method for isolated environments without internet access. You will use 
    离线包中的主链地址：
    - 门户首页: `http://localhost:8081/`
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
+   - DataAgent Frontend: `http://localhost:8901/`
    - DataAgent Backend: `http://localhost:8900`
    - Portal MCP Health: `http://localhost:8801/health`
    - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`

@@ -74,20 +74,16 @@ const routes = [
       {
         path: '/intelligent-query',
         name: 'IntelligentQuery',
-        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
+        component: () => import('@/views/IntelligentQueryRemoteEmbed.vue'),
         meta: { title: '智能问数' }
       },
       {
         path: '/intelligent-query/skills/:folder',
-        name: 'IntelligentQuerySkillDetail',
-        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
-        meta: { title: 'Skill 详情' }
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/intelligent-query/agents/:agentId',
-        name: 'IntelligentQueryAgentDetail',
-        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
-        meta: { title: '智能体详情' }
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/nl2sql',
@@ -101,20 +97,11 @@ const routes = [
       },
       {
         path: '/settings/skills',
-        redirect: (to) => ({
-          path: '/intelligent-query',
-          query: {
-            ...to.query,
-            tab: 'skills'
-          }
-        })
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/settings/skills/:folder',
-        redirect: (to) => ({
-          path: `/intelligent-query/skills/${encodeURIComponent(String(to.params.folder || ''))}`,
-          query: to.query
-        })
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/playground',

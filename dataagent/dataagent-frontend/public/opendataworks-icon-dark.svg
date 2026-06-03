@@ -1,0 +1,34 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="odw-loop" x1="50" y1="222" x2="206" y2="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22F4FF" />
+      <stop offset="45%" stop-color="#38C9FF" />
+      <stop offset="100%" stop-color="#8A60FF" />
+    </linearGradient>
+    <linearGradient id="odw-core" x1="100" y1="176" x2="168" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FDFDFE" />
+      <stop offset="100%" stop-color="#B9E4FF" />
+    </linearGradient>
+    <linearGradient id="odw-beam" x1="84" y1="180" x2="188" y2="76" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#56FFE2" />
+      <stop offset="100%" stop-color="#3A9BFF" />
+    </linearGradient>
+    <linearGradient id="odw-spark" x1="104" y1="96" x2="188" y2="180" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF8ED6" />
+      <stop offset="100%" stop-color="#3FFFF6" />
+    </linearGradient>
+  </defs>
+  <g fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 34 206 80v96l-78 46-78-46V80z" stroke="url(#odw-loop)" stroke-width="14" />
+    <path d="m128 70 54 32v52l-54 32-54-32v-52z" stroke="rgba(255,255,255,0.28)" stroke-width="8" />
+    <path d="M80 172 152 100l44 44-64 64z" stroke="url(#odw-beam)" stroke-width="12" />
+    <path d="m100 120 36-24 48 48" stroke="url(#odw-spark)" stroke-width="10" />
+    <path d="M94 154c22-16 52-16 74 0" stroke="rgba(255,255,255,0.45)" stroke-width="6" />
+    <path d="M86 132c28-22 78-22 106 0" stroke="rgba(63,223,255,0.5)" stroke-width="6" />
+    <path d="M128 108 156 128 128 148 100 128z" fill="url(#odw-core)" stroke="rgba(255,255,255,0.35)" stroke-width="4" />
+    <circle cx="96" cy="156" r="7" fill="#33E0FF" stroke="none" />
+    <circle cx="162" cy="156" r="7" fill="#9C7DFF" stroke="none" />
+    <circle cx="122" cy="92" r="6" fill="#5CFFE8" stroke="none" />
+    <circle cx="184" cy="132" r="6" fill="#FFB3F1" stroke="none" />
+  </g>
+</svg>
