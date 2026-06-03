@@ -244,10 +244,6 @@ const inputSource = ref('typed')
 const searchKeyword = ref('')
 const topicId = ref('')
 const isSubmitting = ref(false)
-// Monotonic token identifying the current run. Detaching (e.g. starting a new
-// conversation mid-run) bumps it so an in-flight send() that is still awaiting
-// the backend knows it has been superseded and must not attach its stream.
-const runGeneration = ref(0)
 const activeTaskId = ref('')
 const activeAssistantId = ref('')
 const topics = ref([])
@@ -576,15 +572,13 @@ const selectTopic = async (targetTopicId) => {
   closeHistory()
 }
 
-// Detach from any in-flight run without cancelling the backend task. The task
-// keeps running server-side and its result stays recoverable from the topic
-// history, so a new conversation can start immediately while the previous
-// answer finishes in the background.
+// Detach from the in-flight run by aborting the local stream, mirroring chat v2's
+// handleCancel (NL2SqlChatV2.vue): the abort makes subscribe() bail via the
+// AbortError, the backend task keeps running and stays recoverable from history.
+// Unlike the explicit stop button (cancel()), this does not call the backend
+// cancel API. abortController is left for subscribe()'s finally to clear.
 const detachActiveRun = () => {
-  if (!isBusy.value) return
-  runGeneration.value += 1
   abortController.value?.abort()
-  abortController.value = null
   activeTaskId.value = ''
   activeAssistantId.value = ''
   isSubmitting.value = false
@@ -592,9 +586,9 @@ const detachActiveRun = () => {
 
 const newConversation = async () => {
   if (!ensureAgentConfigured()) return
-  // Starting a new conversation is allowed even while a run is in progress; the
-  // running task is detached (not cancelled) and remains in history.
-  detachActiveRun()
+  // Consistent with chat v2 (handleSelectTopic / handleSourceChange): leaving a
+  // running conversation detaches the in-flight run instead of blocking it.
+  if (isBusy.value) detachActiveRun()
   errorText.value = ''
   searchKeyword.value = ''
   topicId.value = ''
@@ -661,15 +655,14 @@ const loadConfig = async () => {
 }
 
 const subscribe = async (taskId, assistant) => {
-  // Capture the controller and owning topic locally so that detaching this run
-  // (e.g. starting a new conversation mid-stream) cannot make the teardown
-  // clobber a later run's state or write status onto the wrong topic.
-  const controller = new AbortController()
+  // The owning topic is captured up front because a new conversation can change
+  // topicId mid-stream; the widget writes task status onto its topic directly
+  // (it does not reload the list after a run), so status must target this run's
+  // topic, not whatever is active when the stream ends.
   const runTopicId = topicId.value
-  abortController.value = controller
   try {
     await api.taskApi.streamSdkEvents(taskId, {
-      signal: controller.signal,
+      signal: abortController.value?.signal,
       afterId: 0,
       onRecord: (record) => {
         processV2Record(assistant._v2state, record)
@@ -679,7 +672,7 @@ const subscribe = async (taskId, assistant) => {
     // A hard backend failure can end the stream without a terminal done/error
     // record, leaving _v2state on 'streaming'. Reconcile against the task status
     // so failed runs surface the error instead of being marked success.
-    if (assistant._v2state.status !== 'error' && !controller.signal.aborted) {
+    if (assistant._v2state.status !== 'error' && !abortController.value?.signal?.aborted) {
       try {
         const taskState = await api.taskApi.getTask(taskId)
         if (String(taskState?.task_status || '') === 'error') {
@@ -695,7 +688,9 @@ const subscribe = async (taskId, assistant) => {
     setTopicTaskStatus(runTopicId, assistant._v2state.status === 'error' ? 'error' : 'finished')
     emit('event', { name: 'message:done', payload: { taskId } })
   } catch (error) {
-    if (controller.signal.aborted) return
+    // Detached / cancelled locally: the aborted fetch rejects with AbortError.
+    // Same abort detection chat v2 uses (NL2SqlChatV2.vue handleSend).
+    if (error?.name === 'AbortError') return
     assistant.status = 'failed'
     assistant.error = { message: String(error?.message || '请求失败') }
     assistant._v2state.status = 'error'
@@ -703,13 +698,9 @@ const subscribe = async (taskId, assistant) => {
     setTopicTaskStatus(runTopicId, 'error')
     emit('event', { name: 'error', payload: assistant.error.message })
   } finally {
-    // Only clear shared run state if this run still owns it. A detached run may
-    // have already handed activeTaskId/abortController to a newer conversation.
-    if (abortController.value === controller) {
-      activeTaskId.value = ''
-      activeAssistantId.value = ''
-      abortController.value = null
-    }
+    activeTaskId.value = ''
+    activeAssistantId.value = ''
+    abortController.value = null
   }
 }
 
@@ -732,7 +723,6 @@ const send = async () => {
   if (!text || isBusy.value) return
   if (!ensureAgentConfigured()) return
   const currentInputSource = inputSource.value
-  const generation = runGeneration.value
   inputSource.value = 'typed'
   isSubmitting.value = true
   inputText.value = ''
@@ -829,6 +819,9 @@ const send = async () => {
     return
   }
 
+  // Create the controller before the network round-trip (chat v2 style) so that
+  // detaching mid-request aborts the run via this same controller's signal.
+  abortController.value = new AbortController()
   try {
     const currentTopicId = await ensureTopic(truncate(text, 30))
     const response = await api.taskApi.deliverMessage({
@@ -840,19 +833,19 @@ const send = async () => {
       debug: false,
       execution_mode: 'auto'
     })
+    const taskId = String(response?.task_id || '')
     // A new conversation may have been started while this request was in flight.
     // The run is detached: leave the backend task running (recoverable from
     // history) instead of attaching its stream to the new conversation.
-    if (generation !== runGeneration.value) return
-    activeTaskId.value = String(response?.task_id || '')
+    if (!taskId || abortController.value?.signal?.aborted) return
+    activeTaskId.value = taskId
     activeAssistantId.value = assistant.id
-    assistant.task_id = activeTaskId.value
-    updateActiveTopicAfterSend(text, activeTaskId.value)
-    emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
-    if (activeTaskId.value) {
-      await subscribe(activeTaskId.value, assistant)
-    }
+    assistant.task_id = taskId
+    updateActiveTopicAfterSend(text, taskId)
+    emit('event', { name: 'message:sent', payload: { taskId, text } })
+    await subscribe(taskId, assistant)
   } catch (error) {
+    if (error?.name === 'AbortError') return
     assistant.status = 'failed'
     assistant.error = { message: String(error?.message || '请求失败') }
     assistant._v2state.status = 'error'
