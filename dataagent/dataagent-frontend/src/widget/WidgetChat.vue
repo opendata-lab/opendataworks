@@ -199,19 +199,13 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, triggerRef, watch } from 'vue'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
-import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
-import { topicStatusKind } from '@/views/intelligence/topicStatus'
-import {
-  compareTopicsByRecency,
-  extractErrorText,
-  hydrateMessageFromApi,
-  normalizeTopic,
-  renderMarkdown,
-} from '@/views/intelligence/chatMessage'
+import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
+import { extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
+import { useNl2SqlChat } from '@/views/intelligence/useNl2SqlChat'
 
 const props = defineProps({
   config: {
@@ -242,73 +236,41 @@ const agentPresetQuestions = ref([])
 const agentName = ref('智能数据助手')
 const suggestions = computed(() => agentPresetQuestions.value.length ? agentPresetQuestions.value : DEFAULT_SUGGESTIONS)
 
-const inputText = ref('')
+// widget-only UI state
 const inputSource = ref('typed')
-const searchKeyword = ref('')
-const topicId = ref('')
-const isSubmitting = ref(false)
-const activeTaskId = ref('')
-const activeAssistantId = ref('')
-const topics = ref([])
-const messages = ref([])
-const errorText = ref('')
-const abortController = ref(null)
-const defaultProviderId = ref('')
-const defaultModel = ref('')
-const providers = ref([])
-const selectedProvider = ref('')
-const selectedModel = ref('')
 const pendingOutboundMessage = ref('')
-const hydratedTopicIds = new Set()
 
 const isInline = computed(() => props.config.displayMode === 'inline')
-const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
-const isBusy = computed(() => isSubmitting.value || Boolean(activeTaskId.value))
 const agentId = computed(() => String(props.config.agentId || '').trim())
-const activeTopic = computed(() => topics.value.find((topic) => topic.topic_id === topicId.value) || null)
-const activeProviderConfig = computed(() => (
-  providers.value.find((provider) => provider.provider_id === selectedProvider.value)
-  || providers.value[0]
-  || null
-))
-const availableModels = computed(() => {
-  const provider = activeProviderConfig.value
-  const models = Array.isArray(provider?.models) ? [...provider.models] : []
-  const fallbackModel = provider?.default_model || defaultModel.value
-  if (fallbackModel && !models.includes(fallbackModel)) models.unshift(fallbackModel)
-  return models
+
+// Shared NL2SQL conversation engine. The widget keeps its own demo/mock send,
+// tracking, outbound API, and shadow-DOM template; everything else is the engine.
+const chat = useNl2SqlChat({
+  api,
+  getAgentId: () => agentId.value,
+  emitEvent: (event) => emit('event', event),
 })
-const canSend = computed(() => (
-  Boolean(inputText.value.trim())
-  && !isBusy.value
-  && Boolean(selectedProvider.value)
-  && Boolean(selectedModel.value)
-))
+const {
+  topicId, messages, errorText,
+  providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
+  inputText, searchKeyword,
+  isSubmitting, activeTaskId, activeAssistantId, abortController, hydratedTopicIds,
+  isBusy, availableModels, canSend, filteredTopics,
+  isTopicWorking, topicBadgeKind, upsertTopicAtTop, updateActiveTopicAfterSend,
+  appendUserMessage, appendAssistantMessage,
+  toggleThinking, isThinkingExpanded, isActiveTask,
+  loadConfig: loadRuntimeConfig, loadTopics,
+  send: sendReal, cancel,
+  selectTopic: selectTopicEngine, newConversation: newConversationEngine, deleteConversation,
+} = chat
+
+const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
 const canDeliverPendingOutbound = computed(() => (
   Boolean(pendingOutboundMessage.value)
   && !isBusy.value
   && Boolean(selectedProvider.value)
   && Boolean(selectedModel.value)
 ))
-const filteredTopics = computed(() => {
-  const keyword = searchKeyword.value.trim().toLowerCase()
-  if (!keyword) return topics.value
-  return topics.value.filter((topic) => String(topic.title || '').toLowerCase().includes(keyword))
-})
-
-// Session-list status badge: spinner for the live active task or any topic whose
-// server status is waiting/running; red/grey dot for error/suspended.
-const isTopicWorking = (topic) =>
-  (topic?.topic_id === topicId.value && Boolean(activeTaskId.value)) ||
-  topicStatusKind(topic?.current_task_status) === 'running'
-const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
-
-// Reflect a task's terminal/active status onto its topic in the list so the
-// badge stays accurate (the widget does not reload the topic list after a run).
-const setTopicTaskStatus = (targetTopicId, status) => {
-  const target = topics.value.find((topic) => topic.topic_id === targetTopicId)
-  if (target) target.current_task_status = String(status || '')
-}
 
 watch(
   isBusy,
@@ -317,16 +279,6 @@ watch(
   },
   { immediate: true }
 )
-
-watch(availableModels, (models) => {
-  if (!models.length) {
-    selectedModel.value = ''
-    return
-  }
-  if (!models.includes(selectedModel.value)) {
-    selectedModel.value = models[0]
-  }
-})
 
 const truncate = (value, max) => {
   const text = String(value || '新话题')
@@ -366,186 +318,33 @@ const formatTime = (value) => {
   return fmtDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
-const sortTopics = () => {
-  topics.value = [...topics.value].sort(compareTopicsByRecency)
-}
-
-const moveTopicToTop = (targetTopicId) => {
-  const target = topics.value.find((topic) => topic.topic_id === targetTopicId)
-  if (!target) return
-  topics.value = [target, ...topics.value.filter((topic) => topic.topic_id !== targetTopicId)]
-}
-
-const upsertTopicAtTop = (topic) => {
-  if (!topic?.topic_id) return
-  topics.value = [topic, ...topics.value.filter((item) => item.topic_id !== topic.topic_id)]
-}
-
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-
-const appendUserMessage = (content) => {
-  messages.value.push({
-    id: `u_${uid()}`,
-    role: 'user',
-    content,
-    created_at: new Date().toISOString()
-  })
-}
-
-const thinkingExpanded = reactive({})
-
-const toggleThinking = (key) => {
-  thinkingExpanded[key] = !thinkingExpanded[key]
-}
-
-const isThinkingExpanded = (key) => Boolean(thinkingExpanded[key])
-
-const isActiveTask = (msg) => Boolean(activeTaskId.value && msg.task_id === activeTaskId.value)
 
 // Inline chart_spec written into the model's prose is stripped from display;
 // charts must come from a real tool call (rendered below that tool block).
 const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content || '')).trim()
 
-const appendAssistantMessage = (taskId) => {
-  const id = `a_${uid()}`
-  const assistant = reactive({
-    id,
-    role: 'assistant',
-    content: '',
-    status: 'queued',
-    task_id: taskId || '',
-    error: null,
-    created_at: new Date().toISOString(),
-    _v2state: reactive(createChatState()),
-  })
-  messages.value.push(assistant)
-  return assistant
-}
-
-const loadTopicMessages = async (targetTopicId) => {
-  if (!targetTopicId) {
-    messages.value = []
-    return
-  }
-  if (String(targetTopicId).startsWith('topic_mock_')) {
-    return
-  }
-  try {
-    const page = await api.topicApi.getTopicMessages(targetTopicId, { page: 1, page_size: 200, order: 'asc' })
-    messages.value = (page?.items || [])
-      .filter((item) => item?.sender_type === 'user' || item?.sender_type === 'assistant')
-      .map(hydrateMessageFromApi)
-    hydratedTopicIds.add(targetTopicId)
-  } catch (error) {
-    console.warn('[OpenDataWorksWidget] failed to load messages:', error)
-    messages.value = []
-  }
-}
-
-const loadTopics = async () => {
-  try {
-    const list = await api.topicApi.listTopics({ agent_id: agentId.value || undefined })
-    const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
-    const nextTopics = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((topic) => topic.topic_id)
-    if (currentTopic?.topic_id && !nextTopics.some((topic) => topic.topic_id === currentTopic.topic_id)) {
-      nextTopics.unshift(currentTopic)
-    }
-    topics.value = nextTopics
-    sortTopics()
-    if (currentTopic?.topic_id && currentTopic.topic_id === topicId.value) {
-      moveTopicToTop(currentTopic.topic_id)
-    }
-    // Default to a fresh conversation on open instead of auto-selecting the latest topic,
-    // so users can ask a new question immediately. Existing topics remain in history.
-    const nextTopicId = topicId.value || ''
-    topicId.value = nextTopicId
-    await loadTopicMessages(nextTopicId)
-  } catch (_error) {
-    topics.value = []
-    messages.value = []
-  }
-}
-
-const ensureAgentConfigured = () => true
-
 const closeHistory = () => {
   props.state.historyOpen = false
 }
 
+// Engine navigation, plus closing the floating history drawer.
 const selectTopic = async (targetTopicId) => {
   if (!targetTopicId || targetTopicId === topicId.value) return
-  // Consistent with chat v2 (handleSelectTopic): switching away from a running
-  // conversation detaches the in-flight run instead of blocking it.
-  if (isBusy.value) detachActiveRun()
-  topicId.value = targetTopicId
-  errorText.value = ''
-  await loadTopicMessages(targetTopicId)
+  await selectTopicEngine(targetTopicId)
   closeHistory()
-}
-
-// Detach from the in-flight run by aborting the local stream, mirroring chat v2's
-// handleCancel (NL2SqlChatV2.vue): the abort makes subscribe() bail via the
-// AbortError, the backend task keeps running and stays recoverable from history.
-// Unlike the explicit stop button (cancel()), this does not call the backend
-// cancel API. abortController is left for subscribe()'s finally to clear.
-const detachActiveRun = () => {
-  abortController.value?.abort()
-  activeTaskId.value = ''
-  activeAssistantId.value = ''
-  isSubmitting.value = false
 }
 
 const newConversation = async () => {
-  if (!ensureAgentConfigured()) return
-  // Consistent with chat v2 (handleSelectTopic / handleSourceChange): leaving a
-  // running conversation detaches the in-flight run instead of blocking it.
-  if (isBusy.value) detachActiveRun()
-  errorText.value = ''
-  searchKeyword.value = ''
-  topicId.value = ''
-  messages.value = []
+  await newConversationEngine()
   closeHistory()
 }
 
-const deleteConversation = async (targetTopicId) => {
-  if (!targetTopicId) return
-  // Deleting the conversation that owns the in-flight run detaches it first
-  // (same leave-while-running idiom as chat v2).
-  if (isBusy.value && targetTopicId === topicId.value) detachActiveRun()
-  await api.topicApi.deleteTopic(targetTopicId)
-  topics.value = topics.value.filter((topic) => topic.topic_id !== targetTopicId)
-  hydratedTopicIds.delete(targetTopicId)
-  if (topicId.value !== targetTopicId) return
-  const nextTopicId = topics.value[0]?.topic_id || ''
-  topicId.value = nextTopicId
-  await loadTopicMessages(nextTopicId)
-}
-
-const ensureTopic = async (title) => {
-  if (!ensureAgentConfigured()) return ''
-  if (topicId.value) return topicId.value
-  const topic = normalizeTopic(await api.topicApi.createTopic(title || '新会话', { agent_id: agentId.value || undefined }))
-  if (!topic.topic_id) return ''
-  upsertTopicAtTop(topic)
-  topicId.value = topic.topic_id
-  hydratedTopicIds.add(topic.topic_id)
-  return topic.topic_id
-}
-
+// Runtime config with the widget's demo/mock fallback when the backend is
+// unreachable (only for the built-in demo agent).
 const loadConfig = async () => {
   try {
-    const config = await api.runtimeApi.getConfig()
-    const enabledProviders = Array.isArray(config?.providers)
-      ? config.providers.filter((provider) => provider?.enabled !== false && Array.isArray(provider?.models) && provider.models.length)
-      : []
-    providers.value = enabledProviders
-    defaultProviderId.value = config?.default_provider_id || enabledProviders[0]?.provider_id || ''
-    defaultModel.value = config?.default_model || enabledProviders[0]?.default_model || enabledProviders[0]?.models?.[0] || ''
-    const resolvedProvider = enabledProviders.find((provider) => provider.provider_id === defaultProviderId.value) || enabledProviders[0] || null
-    selectedProvider.value = resolvedProvider?.provider_id || ''
-    selectedModel.value = resolvedProvider?.models?.includes(defaultModel.value)
-      ? defaultModel.value
-      : (resolvedProvider?.default_model || resolvedProvider?.models?.[0] || '')
+    await loadRuntimeConfig()
   } catch (error) {
     if (agentId.value === 'demo') {
       const mockProviders = [{
@@ -568,116 +367,39 @@ const loadConfig = async () => {
   }
 }
 
-const subscribe = async (taskId, assistant) => {
-  // The owning topic is captured up front because a new conversation can change
-  // topicId mid-stream; the widget writes task status onto its topic directly
-  // (it does not reload the list after a run), so status must target this run's
-  // topic, not whatever is active when the stream ends.
-  const runTopicId = topicId.value
-  try {
-    await api.taskApi.streamSdkEvents(taskId, {
-      signal: abortController.value?.signal,
-      afterId: 0,
-      onRecord: (record) => {
-        processV2Record(assistant._v2state, record)
-        triggerRef(messages)
-      }
-    })
-    // A hard backend failure can end the stream without a terminal done/error
-    // record, leaving _v2state on 'streaming'. Reconcile against the task status
-    // so failed runs surface the error instead of being marked success.
-    if (assistant._v2state.status !== 'error' && !abortController.value?.signal?.aborted) {
-      try {
-        const taskState = await api.taskApi.getTask(taskId)
-        if (String(taskState?.task_status || '') === 'error') {
-          assistant._v2state.status = 'error'
-          assistant._v2state.errorText = extractErrorText(taskState?.error) || '会话执行失败'
-          assistant.error = { message: assistant._v2state.errorText }
-        } else if (assistant._v2state.status !== 'done') {
-          assistant._v2state.status = 'done'
-        }
-      } catch { /* keep current state if status lookup fails */ }
-    }
-    assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
-    setTopicTaskStatus(runTopicId, assistant._v2state.status === 'error' ? 'error' : 'finished')
-    emit('event', { name: 'message:done', payload: { taskId } })
-  } catch (error) {
-    // Detached / cancelled locally: the aborted fetch rejects with AbortError.
-    // Same abort detection chat v2 uses (NL2SqlChatV2.vue handleSend).
-    if (error?.name === 'AbortError') return
-    assistant.status = 'failed'
-    assistant.error = { message: String(error?.message || '请求失败') }
-    assistant._v2state.status = 'error'
-    assistant._v2state.errorText = assistant.error.message
-    setTopicTaskStatus(runTopicId, 'error')
-    emit('event', { name: 'error', payload: assistant.error.message })
-  } finally {
-    activeTaskId.value = ''
-    activeAssistantId.value = ''
-    abortController.value = null
-  }
-}
-
-const updateActiveTopicAfterSend = (text, taskId) => {
-  const target = topics.value.find((topic) => topic.topic_id === topicId.value)
-  if (!target) return
-  if (!target.title || target.title === '新话题') {
-    target.title = truncate(text, 30)
-  }
-  target.current_task_id = taskId
-  target.current_task_status = 'waiting'
-  target.last_message_preview = text
-  target.message_count = Number(target.message_count || 0) + 1
-  target.updated_at = new Date().toISOString()
-  moveTopicToTop(target.topic_id)
-}
-
-const send = async () => {
-  const text = inputText.value.trim()
-  if (!text || isBusy.value) return
-  if (!ensureAgentConfigured()) return
-  const currentInputSource = inputSource.value
-  inputSource.value = 'typed'
+// Demo/mock send: drives the engine's message primitives locally with a
+// scripted reply when running the built-in demo agent without a backend.
+const runMockSend = async (text) => {
   isSubmitting.value = true
   inputText.value = ''
-  try {
-    props.state.track?.('message_send', {
-      input_source: currentInputSource,
-      length: text.length,
-      provider_id: selectedProvider.value,
-      model: selectedModel.value,
-      topic_id: topicId.value || null
-    })
-  } catch (_e) { /* best-effort */ }
   errorText.value = ''
   const mockTaskId = `task_mock_${uid()}`
   appendUserMessage(text)
-  const assistant = appendAssistantMessage(selectedProvider.value === 'mock' ? mockTaskId : '')
+  const assistant = appendAssistantMessage(mockTaskId)
 
-  if (selectedProvider.value === 'mock') {
-    if (!topicId.value) {
-      const mockTopicId = `topic_mock_${uid()}`
-      const newTopic = {
-        topic_id: mockTopicId,
-        title: truncate(text, 30),
-        message_count: 2,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-      upsertTopicAtTop(newTopic)
-      topicId.value = mockTopicId
-      hydratedTopicIds.add(mockTopicId)
-    } else {
-      updateActiveTopicAfterSend(text, '')
+  if (!topicId.value) {
+    const mockTopicId = `topic_mock_${uid()}`
+    const newTopic = {
+      topic_id: mockTopicId,
+      title: truncate(text, 30),
+      message_count: 2,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }
+    upsertTopicAtTop(newTopic)
+    topicId.value = mockTopicId
+    hydratedTopicIds.add(mockTopicId)
+  } else {
+    updateActiveTopicAfterSend(text, '')
+  }
 
-    activeTaskId.value = mockTaskId
-    activeAssistantId.value = assistant.id
-    assistant.status = 'running'
+  activeTaskId.value = mockTaskId
+  activeAssistantId.value = assistant.id
+  assistant.status = 'running'
 
-    emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
+  emit('event', { name: 'message:sent', payload: { taskId: activeTaskId.value, text } })
 
-    const replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
+  const replyText = `您好！检测到当前处于本地静态演示（Demo）模式，后端 API 服务未连接。
 
 这是模拟的 AI 回复：
 - 您提问的内容是：”${text}”
@@ -730,43 +452,27 @@ const send = async () => {
       activeTaskId.value = ''
       isSubmitting.value = false
     }
-    return
-  }
+}
 
-  // Create the controller before the network round-trip (chat v2 style) so that
-  // detaching mid-request aborts the run via this same controller's signal.
-  abortController.value = new AbortController()
+// Track the send, then dispatch to the demo/mock flow or the shared engine.
+const send = async () => {
+  const text = inputText.value.trim()
+  if (!text || isBusy.value) return
+  const currentInputSource = inputSource.value
+  inputSource.value = 'typed'
   try {
-    const currentTopicId = await ensureTopic(truncate(text, 30))
-    const response = await api.taskApi.deliverMessage({
-      topic_id: currentTopicId,
-      content: text,
+    props.state.track?.('message_send', {
+      input_source: currentInputSource,
+      length: text.length,
       provider_id: selectedProvider.value,
       model: selectedModel.value,
-      agent_id: agentId.value || undefined,
-      debug: false,
-      execution_mode: 'auto'
+      topic_id: topicId.value || null
     })
-    const taskId = String(response?.task_id || '')
-    // A new conversation may have been started while this request was in flight.
-    // The run is detached: leave the backend task running (recoverable from
-    // history) instead of attaching its stream to the new conversation.
-    if (!taskId || abortController.value?.signal?.aborted) return
-    activeTaskId.value = taskId
-    activeAssistantId.value = assistant.id
-    assistant.task_id = taskId
-    updateActiveTopicAfterSend(text, taskId)
-    emit('event', { name: 'message:sent', payload: { taskId, text } })
-    await subscribe(taskId, assistant)
-  } catch (error) {
-    if (error?.name === 'AbortError') return
-    assistant.status = 'failed'
-    assistant.error = { message: String(error?.message || '请求失败') }
-    assistant._v2state.status = 'error'
-    assistant._v2state.errorText = assistant.error.message
-    emit('event', { name: 'error', payload: assistant.error.message })
-  } finally {
-    isSubmitting.value = false
+  } catch (_e) { /* best-effort */ }
+  if (selectedProvider.value === 'mock') {
+    await runMockSend(text)
+  } else {
+    await sendReal()
   }
 }
 
@@ -777,20 +483,6 @@ const sendPendingOutbound = () => {
   inputText.value = text
   inputSource.value = 'outbound'
   void send()
-}
-
-const cancel = async () => {
-  const taskId = activeTaskId.value
-  if (!taskId) return
-  abortController.value?.abort()
-  await api.taskApi.cancelTask(taskId)
-  activeTaskId.value = ''
-  setTopicTaskStatus(topicId.value, 'suspended')
-  const assistant = messages.value.find((item) => item.id === activeAssistantId.value)
-  if (assistant) {
-    assistant.status = 'cancelled'
-    assistant.error = assistant.error || { message: '任务已取消' }
-  }
 }
 
 const handleSuggestion = (suggestion) => {
