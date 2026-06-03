@@ -270,6 +270,71 @@ def test_workspace_boundary_allows_workspace_and_enabled_skill_roots(tmp_path: P
     assert "outside workspace" in denial
 
 
+def test_workspace_boundary_denies_write_outside_workspace(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
+
+    denial = agent_runtime._validate_workspace_tool_boundary(
+        "Write",
+        {"file_path": str(tmp_path / "outside.txt")},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+
+    assert denial is not None
+    assert "outside workspace" in denial
+
+
+def test_workspace_boundary_denies_edit_parent_directory(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
+
+    denial = agent_runtime._validate_workspace_tool_boundary(
+        "Edit",
+        {"file_path": "../escape.txt"},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+
+    assert denial is not None
+    assert "parent directory" in denial
+
+
+def test_workspace_boundary_allows_write_inside_workspace(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
+
+    assert agent_runtime._validate_workspace_tool_boundary(
+        "Write",
+        {"file_path": str(workspace / "report.md")},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    ) is None
+
+
+def test_workspace_boundary_denies_notebook_edit_outside_workspace(tmp_path: Path):
+    workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
+    workspace.mkdir(parents=True)
+    allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
+
+    denial = agent_runtime._validate_workspace_tool_boundary(
+        "NotebookEdit",
+        {"notebook_path": str(tmp_path / "outside.ipynb")},
+        workspace,
+        allowed_roots,
+        {"DATAAGENT_PYTHON_BIN": sys.executable},
+    )
+
+    assert denial is not None
+    assert "outside workspace" in denial
+
+
 def test_workspace_boundary_denies_bash_parent_directory_lookup(tmp_path: Path):
     workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
     workspace.mkdir(parents=True)
