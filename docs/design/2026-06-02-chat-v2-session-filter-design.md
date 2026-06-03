@@ -43,7 +43,10 @@ Chat V2（`views/intelligence/NL2SqlChatV2.vue`）的会话侧边栏当前：
 1. **清理独立页**：删除 `WidgetConversations.vue`，并从 `IntelligentQueryView.vue` 移除 `widget-sessions`（`validTabs`、菜单项、`ChatLineSquare` import、组件 import 与分支）。
 2. **来源选择器**：Chat V2 侧边栏新增 `sourceMode`（`'portal' | 'widget'`），以两个小 Tab 呈现，一次只看一种来源；`widget` 模式下隐藏「新建」。
 3. **筛选/排序弹窗**：用 `el-popover` 承载
-   - 用户筛选 `filterUser`（仅 widget 模式）：把每条 widget 会话的 `external_user_id`（登录用户）/ `visitor_id`（匿名访客）折叠为统一 user key；选项由已加载分页累积去重得到（不随筛选收缩）。选中后**下沉到服务端**，按 `external_user_id`/`visitor_id` 重新请求 `/widget-topics`，保证跨分页精确，而非仅过滤当前页；
+   - 用户筛选 `filterUser`（仅 widget 模式）：把每条 widget 会话的 `external_user_id`（登录用户）/ `visitor_id`（匿名访客）折叠为统一 user key（`ext:<id>` / `vis:<id>`）。
+     - 选项来源：新增管理端 facet 接口 `GET /v1/nl2sql-admin/widget-users`，按 `kind+user_id` 去重并带会话数 `topic_count`，支持 `keyword` 服务端搜索与 `limit`，下拉用 Element Plus `remote` 远程搜索消费全量用户集，而非仅当前已加载页；
+     - 结果过滤：选中后**下沉到服务端**，按 `external_user_id`/`visitor_id` 重新请求 `/widget-topics`，保证跨分页精确，而非仅过滤当前页；
+     - 后端：`TopicTaskStore.admin_list_widget_users` 在 `da_agent_topic` 上按用户分组聚合，复用管理端只读、跨用户隔离绕过语义，不重用 `_topic_context_predicate`；
    - 状态筛选 `filterStatus`：全部 / 进行中(`running`) / 失败(`error`) / 已取消(`suspended`) / 完成(`finished`)，映射到 topic 的 `current_task_status`；
    - 排序 `sortOrder`：最近更新(`updated_desc`) / 最近创建(`created_desc`) / 标题(`title_asc`)。
 4. **数据加载分流**：`loadSessionList()` 按 `sourceMode` 分流——

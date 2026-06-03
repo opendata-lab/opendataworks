@@ -106,6 +106,10 @@ export const dataagentApi = {
     return dataagentRequest.get('/v1/nl2sql-admin/widget-topics', { params })
   },
 
+  listWidgetUsers(params = {}) {
+    return dataagentRequest.get('/v1/nl2sql-admin/widget-users', { params })
+  },
+
   getWidgetTopicMessages(topicId, params = {}) {
     return dataagentRequest.get(`/v1/nl2sql-admin/widget-topics/${encodeURIComponent(topicId)}/messages`, { params })
   }

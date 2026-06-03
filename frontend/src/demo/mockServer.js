@@ -1251,6 +1251,31 @@ const handleDemoWidgetTopics = (params = {}) => {
   return { items, total: filtered.length, page, page_size: pageSize }
 }
 
+const handleDemoWidgetUsers = (params = {}) => {
+  const keyword = String(params.keyword || '').trim().toLowerCase()
+  const limit = Math.max(1, Math.min(500, Number(params.limit) || 100))
+  const byUser = new Map()
+  for (const topic of demoWidgetTopics) {
+    if (params.website_id && topic.website_id !== params.website_id) continue
+    const ext = String(topic.external_user_id || '').trim()
+    const vis = String(topic.visitor_id || '').trim()
+    const kind = ext ? 'ext' : (vis ? 'vis' : '')
+    const userId = ext || vis
+    if (!kind || !userId) continue
+    if (keyword && !userId.toLowerCase().includes(keyword)) continue
+    const key = `${kind}:${userId}`
+    const entry = byUser.get(key) || { kind, user_id: userId, topic_count: 0, last_active_at: '' }
+    entry.topic_count += 1
+    if (String(topic.updated_at || '') > entry.last_active_at) entry.last_active_at = String(topic.updated_at || '')
+    byUser.set(key, entry)
+  }
+  const items = Array.from(byUser.values())
+    .sort((a, b) => (b.last_active_at > a.last_active_at ? 1 : b.last_active_at < a.last_active_at ? -1 : b.topic_count - a.topic_count))
+    .slice(0, limit)
+    .map(({ kind, user_id, topic_count }) => ({ kind, user_id, topic_count }))
+  return { items }
+}
+
 const handleDemoWidgetTopicMessages = (topicId, params = {}) => {
   const page = Math.max(1, Number(params.page) || 1)
   const pageSize = Math.max(1, Number(params.page_size) || 200)
@@ -2543,6 +2568,10 @@ export const demoAdapter = async (config) => {
 
   if (method === 'get' && pathname === '/v1/nl2sql-admin/widget-topics') {
     return createResponse(config, handleDemoWidgetTopics(params))
+  }
+
+  if (method === 'get' && pathname === '/v1/nl2sql-admin/widget-users') {
+    return createResponse(config, handleDemoWidgetUsers(params))
   }
 
   if (method === 'get' && pathname.match(/^\/v1\/nl2sql-admin\/widget-topics\/[^/]+\/messages$/)) {

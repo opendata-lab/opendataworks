@@ -62,10 +62,19 @@
                 v-model="filterUser"
                 size="small"
                 clearable
+                filterable
+                remote
+                reserve-keyword
+                :remote-method="fetchWidgetUsers"
+                :loading="widgetUsersLoading"
                 placeholder="全部用户"
                 class="v2-filter-select"
+                @visible-change="handleUserSelectVisible"
               >
-                <el-option v-for="u in widgetUserOptions" :key="u.value" :label="u.label" :value="u.value" />
+                <el-option v-for="u in widgetUserOptions" :key="u.value" :label="u.label" :value="u.value">
+                  <span class="v2-user-opt-label">{{ u.label }}</span>
+                  <span v-if="u.count" class="v2-user-opt-count">{{ u.count }}</span>
+                </el-option>
               </el-select>
             </div>
             <div class="v2-filter-group">
@@ -365,22 +374,6 @@ const sortOrder = ref('updated_desc')   // 'updated_desc' | 'created_desc' | 'ti
 const filterPopoverVisible = ref(false)
 const isWidgetMode = computed(() => sourceMode.value === 'widget')
 
-// Widget sessions carry the visitor identity (logged-in external_user_id or
-// anonymous visitor_id); collapse them into a single filterable user key.
-function topicUserKey(topic) {
-  const ext = String(topic?.external_user_id || '').trim()
-  if (ext) return 'ext:' + ext
-  const vis = String(topic?.visitor_id || '').trim()
-  return vis ? 'vis:' + vis : ''
-}
-
-function topicUserLabel(topic) {
-  const ext = String(topic?.external_user_id || '').trim()
-  if (ext) return '用户 ' + ext
-  const vis = String(topic?.visitor_id || '').trim()
-  return vis ? '访客 ' + vis : '匿名'
-}
-
 const currentAgentName = computed(() => {
   const currentId = agentSelectValue.value
   const found = agents.value.find((a) => a.agent_id === currentId)
@@ -420,18 +413,42 @@ const filteredTopics = computed(() => {
   })
 })
 
-// Distinct users seen across loaded widget pages, for the user filter. Kept as
-// an accumulating list (not derived from the current page) so the dropdown does
-// not collapse to a single entry once a user filter is applied server-side.
+// User filter options resolved server-side (admin facet) so the dropdown can
+// search the full widget user set, not just users on the loaded session page.
 const widgetUserOptions = ref([])
+const widgetUsersLoading = ref(false)
 
-function mergeWidgetUserOptions(list) {
-  const map = new Map(widgetUserOptions.value.map((o) => [o.value, o.label]))
-  for (const t of list) {
-    const key = topicUserKey(t)
-    if (key && !map.has(key)) map.set(key, topicUserLabel(t))
+function userOptionFromRow(row) {
+  const id = String(row?.user_id || '').trim()
+  const kind = row?.kind === 'ext' ? 'ext' : 'vis'
+  return {
+    value: kind + ':' + id,
+    label: (kind === 'ext' ? '用户 ' : '访客 ') + id,
+    count: Number(row?.topic_count || 0),
   }
-  widgetUserOptions.value = Array.from(map, ([value, label]) => ({ value, label }))
+}
+
+async function fetchWidgetUsers(query = '') {
+  if (!isWidgetMode.value) return
+  widgetUsersLoading.value = true
+  try {
+    const data = await dataagentApi.listWidgetUsers({ keyword: String(query || '').trim(), limit: 100 })
+    const options = (Array.isArray(data?.items) ? data.items : []).map(userOptionFromRow)
+    // Keep the active selection visible even if it falls outside this result set.
+    if (filterUser.value && !options.some((o) => o.value === filterUser.value)) {
+      const prev = widgetUserOptions.value.find((o) => o.value === filterUser.value)
+      if (prev) options.unshift(prev)
+    }
+    widgetUserOptions.value = options
+  } catch {
+    widgetUserOptions.value = []
+  } finally {
+    widgetUsersLoading.value = false
+  }
+}
+
+function handleUserSelectVisible(visible) {
+  if (visible && isWidgetMode.value) fetchWidgetUsers('')
 }
 
 const activeTopic = computed(() => topics.value.find((t) => t.topic_id === activeTopicId.value) || null)
@@ -646,7 +663,6 @@ async function loadWidgetTopics() {
     else if (filterUser.value.startsWith('vis:')) params.visitor_id = filterUser.value.slice(4)
     const data = await dataagentApi.listWidgetTopics(params)
     topics.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    mergeWidgetUserOptions(topics.value)
     const stillListed = topics.value.some((t) => t.topic_id === activeTopicId.value)
     if (topics.value.length && (!activeTopicId.value || !stillListed)) {
       await selectTopic(topics.value[0].topic_id)
@@ -812,6 +828,7 @@ async function handleSourceChange(mode) {
   widgetUserOptions.value = []
   topics.value = []
   await loadTopics()
+  if (isWidgetMode.value) fetchWidgetUsers('')
 }
 
 // Re-query the widget list server-side when the user filter changes so results
@@ -1218,6 +1235,8 @@ onBeforeUnmount(() => {
 .v2-filter-radios { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .v2-filter-radios :deep(.el-radio) { margin-right: 0; height: 26px; }
 .v2-filter-select { width: 100%; }
+.v2-user-opt-label { margin-right: 8px; }
+.v2-user-opt-count { float: right; color: var(--el-text-color-secondary, #909399); font-size: 12px; }
 
 .v2-filter-actions { display: flex; justify-content: flex-end; border-top: 1px solid #eef1f5; padding-top: 10px; }
 
