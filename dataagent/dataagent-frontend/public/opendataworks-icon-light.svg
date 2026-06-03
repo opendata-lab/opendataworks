@@ -1,0 +1,34 @@
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="odw-loop-light" x1="42" y1="216" x2="214" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0F3BFF" />
+      <stop offset="45%" stop-color="#2DAEF7" />
+      <stop offset="100%" stop-color="#36E2C4" />
+    </linearGradient>
+    <linearGradient id="odw-core-light" x1="96" y1="180" x2="176" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="100%" stop-color="#C5E4FF" />
+    </linearGradient>
+    <linearGradient id="odw-beam-light" x1="84" y1="184" x2="188" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#1D46D8" />
+      <stop offset="100%" stop-color="#27D3FF" />
+    </linearGradient>
+    <linearGradient id="odw-spark-light" x1="108" y1="92" x2="188" y2="172" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF7BC2" />
+      <stop offset="100%" stop-color="#3F6CFF" />
+    </linearGradient>
+  </defs>
+  <g fill="none" fill-rule="evenodd" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M128 34 206 80v96l-78 46-78-46V80z" stroke="url(#odw-loop-light)" stroke-width="14" />
+    <path d="m128 70 54 32v52l-54 32-54-32v-52z" stroke="rgba(6,34,79,0.25)" stroke-width="8" />
+    <path d="M80 172 152 100l44 44-64 64z" stroke="url(#odw-beam-light)" stroke-width="12" />
+    <path d="m100 120 36-24 48 48" stroke="url(#odw-spark-light)" stroke-width="10" />
+    <path d="M94 154c22-16 52-16 74 0" stroke="rgba(13,35,87,0.35)" stroke-width="6" />
+    <path d="M86 132c28-22 78-22 106 0" stroke="rgba(7,97,170,0.45)" stroke-width="6" />
+    <path d="M128 108 156 128 128 148 100 128z" fill="url(#odw-core-light)" stroke="rgba(7,36,87,0.35)" stroke-width="4" />
+    <circle cx="96" cy="156" r="7" fill="#1671FF" stroke="none" />
+    <circle cx="162" cy="156" r="7" fill="#08C3FF" stroke="none" />
+    <circle cx="122" cy="92" r="6" fill="#FF8DCB" stroke="none" />
+    <circle cx="184" cy="132" r="6" fill="#1E65FF" stroke="none" />
+  </g>
+</svg>

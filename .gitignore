@@ -20,6 +20,10 @@ backend/*.ipr
 # Node.js
 frontend/node_modules/
 frontend/dist/
+dataagent/dataagent-frontend/node_modules/
+dataagent/dataagent-frontend/npm-debug.log*
+dataagent/dataagent-frontend/yarn-debug.log*
+dataagent/dataagent-frontend/yarn-error.log*
 dist/
 frontend/.DS_Store
 frontend/npm-debug.log*
@@ -104,5 +108,4 @@ website/.vitepress/cache/
 
 # Vite local cache (generated at project root during frontend dev/test)
 .vite/
-
 

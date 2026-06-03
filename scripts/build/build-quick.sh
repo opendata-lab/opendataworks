@@ -40,6 +40,7 @@ ARGS="-u $DOCKER_USERNAME -p $DOCKER_PASSWORD"
 [ "$PUSH_TO_REGISTRY" = "true" ] && ARGS="$ARGS --push"
 [ "$BUILD_FRONTEND" = "false" ] && ARGS="$ARGS --no-frontend"
 [ "$BUILD_BACKEND" = "false" ] && ARGS="$ARGS --no-backend"
+[ "${BUILD_DATAAGENT_FRONTEND:-true}" = "false" ] && ARGS="$ARGS --no-dataagent-frontend"
 [ "$BUILD_DATAAGENT_BACKEND" = "false" ] && ARGS="$ARGS --no-dataagent-backend"
 [ "${BUILD_PORTAL_MCP:-true}" = "false" ] && ARGS="$ARGS --no-portal-mcp"
 
