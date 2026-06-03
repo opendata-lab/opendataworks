@@ -120,6 +120,41 @@ class BackendAgentQueryServiceTest {
     }
 
     @Test
+    void readQueryDoesNotTruncateWhenForExport() {
+        ReflectionTestUtils.setField(backendAgentQueryService, "maxResultBytes", 64);
+
+        AgentReadQueryRequest request = new AgentReadQueryRequest();
+        request.setDatabase("opendataworks");
+        request.setSql("SELECT * FROM big_table");
+        request.setForExport(true);
+
+        AgentDatasourceResolution datasource = new AgentDatasourceResolution();
+        datasource.setDatabase("opendataworks");
+        datasource.setEngine("mysql");
+        when(agentMetadataService.resolveDatasource(eq("opendataworks"), any())).thenReturn(datasource);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", i);
+            row.put("payload", "value-with-some-length-" + i);
+            rows.add(row);
+        }
+        AgentJdbcExecutor.QueryExecutionResult execution = new AgentJdbcExecutor.QueryExecutionResult();
+        execution.setRows(rows);
+        execution.setRowCount(rows.size());
+        execution.setHasMore(false);
+        execution.setDurationMs(5);
+        when(agentJdbcExecutor.executeReadOnlyQuery(any(), any(), anyInt(), anyInt())).thenReturn(execution);
+
+        AgentReadQueryResponse response = backendAgentQueryService.readQuery(request);
+
+        assertEquals(50, response.getRows().size());
+        assertNull(response.getTruncatedBySize());
+        assertNull(response.getNotice());
+    }
+
+    @Test
     void readQueryKeepsAtLeastOneRowWhenSingleRowExceedsBudget() {
         ReflectionTestUtils.setField(backendAgentQueryService, "maxResultBytes", 1);
 

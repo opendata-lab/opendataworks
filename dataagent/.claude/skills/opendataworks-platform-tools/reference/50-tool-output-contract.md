@@ -75,6 +75,36 @@
 - 截断时返回 `truncated_by_size=true`、`has_more=true` 与中文 `notice`/`stop_reason`。
 - 收到截断信号应缩小查询范围（增加过滤、聚合或降低 LIMIT）后再查，不要对同一口径重复执行；若样本已足够回答也可直接基于已返回行作答并说明结果不完整。
 
+## SQL 导出
+
+`export_query.py` 把全量结果写工作区 CSV，只回路径与预览（`kind=sql_export`）：
+
+```json
+{
+  "kind": "sql_export",
+  "tool_label": "SQL 导出",
+  "engine": "mysql",
+  "database": "example_schema",
+  "sql": "SELECT ...",
+  "file_path": "/path/to/workspace/exports/result.csv",
+  "file_format": "csv",
+  "columns": ["col_a", "col_b"],
+  "row_count": 621,
+  "has_more": false,
+  "preview_rows": [{ "col_a": "x", "col_b": 1 }],
+  "summary": "已导出 621 行到 /path/to/workspace/exports/result.csv",
+  "result_state": "success",
+  "error_code": null,
+  "failure_attribution": [],
+  "retryable": false,
+  "stop_reason": "",
+  "error": null
+}
+```
+
+- 全量数据在文件里，不在 `preview_rows`；后续处理（如生成 Excel）应让 Python 读 `file_path`，不要把整份 CSV 读进上下文。
+- `has_more=true` 表示命中行数上限（默认/最大 10000），应改用更精确的过滤或聚合。
+
 ## 图表契约
 
 图表输出统一通过 `chart_spec`，由 `chart_type` 区分：

@@ -97,7 +97,8 @@ public class BackendAgentQueryService implements AgentQueryService {
         response.setDurationMs(execution.getDurationMs());
 
         List<Map<String, Object>> rows = execution.getRows();
-        int keep = resultByteBudgetKeepCount(rows);
+        boolean forExport = Boolean.TRUE.equals(request.getForExport());
+        int keep = forExport ? rows.size() : resultByteBudgetKeepCount(rows);
         if (keep < rows.size()) {
             int total = rows.size();
             List<Map<String, Object>> kept = new ArrayList<>(rows.subList(0, keep));

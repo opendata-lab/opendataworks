@@ -17,7 +17,7 @@ Usage:
   odw-cli resolve-datasource --database DB [--preferred-engine mysql|doris]
   odw-cli export --kind tables|lineage|datasource [--database DB]
   odw-cli ddl [--database DB --table TABLE] [--table-id ID]
-  odw-cli query-readonly --database DB --sql SQL [--preferred-engine mysql|doris] [--limit N] [--timeout-seconds N]
+  odw-cli query-readonly --database DB --sql SQL [--preferred-engine mysql|doris] [--limit N] [--timeout-seconds N] [--for-export true]
 EOF
   exit 2
 }
@@ -310,6 +310,7 @@ parse_query_readonly() {
   preferred_engine=""
   limit=""
   timeout_seconds=""
+  for_export=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --database)
@@ -332,6 +333,10 @@ parse_query_readonly() {
         timeout_seconds="${2:-}"
         shift 2
         ;;
+      --for-export)
+        for_export="${2:-}"
+        shift 2
+        ;;
       *)
         echo "unknown query-readonly arg: $1" >&2
         usage
@@ -348,6 +353,7 @@ parse_query_readonly() {
   [ -n "$preferred_engine" ] && payload="${payload},\"preferredEngine\":\"$(json_escape "$preferred_engine")\""
   [ -n "$limit" ] && payload="${payload},\"limit\":${limit}"
   [ -n "$timeout_seconds" ] && payload="${payload},\"timeoutSeconds\":${timeout_seconds}"
+  [ "$for_export" = "true" ] && payload="${payload},\"for_export\":true"
   payload="${payload}}"
 
   run_post_json "$AI_BASE_URL" "query/read" "$payload"
