@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { existsSync, readFileSync } from 'fs'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 import ElementPlus from 'unplugin-element-plus/vite'
@@ -50,7 +51,29 @@ export default defineConfig(() => {
           })
         ]
       }),
-      !isTest && ElementPlus()
+      !isTest && ElementPlus(),
+      {
+        name: 'dev-widget-serve',
+        apply: 'serve',
+        configureServer(server) {
+          server.middlewares.use('/widget', (req, res, next) => {
+            const fileName = (req.url || '').replace(/^\//, '')
+            const builtFile = resolve(__dirname, 'dist/widget', fileName)
+            if (existsSync(builtFile)) {
+              res.setHeader('Content-Type', 'application/javascript')
+              res.end(readFileSync(builtFile))
+              return
+            }
+            if (fileName === 'opendataworks-widget.bundle.js') {
+              // Stub so the portal degrades gracefully; run `npm run build:widget` once to get the real bundle
+              res.setHeader('Content-Type', 'application/javascript')
+              res.end("(function(){var api={installWidget:function(){console.warn('[DataAgent] widget bundle not built — run `npm run build:widget` in dataagent-frontend');return{destroy:function(){}}}};if(typeof window!=='undefined'){window.OpenDataWorksWidget=api;}})();")
+              return
+            }
+            next()
+          })
+        }
+      }
     ].filter(Boolean),
     resolve: {
       alias: {
