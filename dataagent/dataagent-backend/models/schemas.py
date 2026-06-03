@@ -528,6 +528,19 @@ class AdminWidgetTopicPage(BaseModel):
     page_size: int = 20
 
 
+class AdminWidgetUser(BaseModel):
+    """A distinct widget user (logged-in external user or anonymous visitor)
+    for the admin user filter, with how many conversations they own."""
+
+    kind: str = "vis"          # 'ext' (external_user_id) | 'vis' (visitor_id)
+    user_id: str = ""
+    topic_count: int = 0
+
+
+class AdminWidgetUserList(BaseModel):
+    items: List[AdminWidgetUser] = Field(default_factory=list)
+
+
 class UpdateMessageFeedbackRequest(BaseModel):
     feedback: str = ""
 

@@ -26,7 +26,6 @@ const stubs = {
   SkillStudio: { template: '<div data-test="skill-studio">Skills 内容</div>' },
   DataAgentConfig: { template: '<div data-test="dataagent-config">模型管理内容</div>' },
   WidgetAccessConfig: { template: '<div data-test="widget-access">Widget 接入内容</div>' },
-  WidgetConversations: { template: '<div data-test="widget-sessions">Widget 会话内容</div>' },
   SkillDetailView: { template: '<div data-test="skill-detail">Skill 详情</div>' },
   'el-menu': {
     props: ['defaultActive'],
@@ -95,14 +94,6 @@ describe('IntelligentQueryView', () => {
     expect(wrapper.find('[data-test="widget-access"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('widget')
-  })
-
-  it('renders widget conversations from the tab query', () => {
-    const wrapper = mountView({ query: { tab: 'widget-sessions' } })
-
-    expect(wrapper.find('[data-test="widget-sessions"]').exists()).toBe(true)
-    expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
-    expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('widget-sessions')
   })
 
   it('renders agent studio from the tab query', () => {

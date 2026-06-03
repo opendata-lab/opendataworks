@@ -33,6 +33,8 @@ from models.schemas import (
     AdminSettingsUpdateRequest,
     AdminWidgetTopicPage,
     AdminWidgetTopicSummary,
+    AdminWidgetUser,
+    AdminWidgetUserList,
     AgentCapabilitiesResponse,
     AgentDataScopeOption,
     AgentProfile,
@@ -147,6 +149,24 @@ async def admin_list_widget_topics(
         page=int(payload.get("page") or page),
         page_size=int(payload.get("page_size") or page_size),
     )
+
+
+@settings_router.get("/widget-users", response_model=AdminWidgetUserList)
+async def admin_list_widget_users(
+    website_id: str | None = Query(default=None),
+    keyword: str | None = Query(default=None),
+    limit: int = Query(default=100, ge=1, le=500),
+):
+    """Distinct widget users (external users / anonymous visitors) for the
+    admin user filter. Supports server-side keyword search so the dropdown
+    can resolve the full user set rather than only users on the loaded page."""
+    rows = get_topic_task_store().admin_list_widget_users(
+        source="widget",
+        website_id=website_id,
+        keyword=keyword,
+        limit=limit,
+    )
+    return AdminWidgetUserList(items=[AdminWidgetUser.model_validate(row) for row in rows])
 
 
 @settings_router.get("/widget-topics/{topic_id}/messages", response_model=TopicMessagePageResponse)

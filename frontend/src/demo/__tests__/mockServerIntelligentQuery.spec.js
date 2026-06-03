@@ -140,6 +140,28 @@ describe('demoAdapter intelligent query admin endpoints', () => {
     expect(byKeyword.data.items[0].topic_id).toBe('demo-widget-topic-1')
   })
 
+  it('lists distinct demo widget users with counts and keyword search', async () => {
+    const all = await request('get', '/api/v1/nl2sql-admin/widget-users')
+    expect(all.code).toBe(200)
+    expect(all.data.items).toHaveLength(4)
+    expect(all.data.items.every((u) => u.user_id && (u.kind === 'ext' || u.kind === 'vis'))).toBe(true)
+    expect(all.data.items.every((u) => u.topic_count >= 1)).toBe(true)
+
+    const ext = all.data.items.find((u) => u.user_id === 'u_10086')
+    expect(ext).toMatchObject({ kind: 'ext', topic_count: 1 })
+
+    const bySite = await request('get', '/api/v1/nl2sql-admin/widget-users', {
+      params: { website_id: 'ops-console' }
+    })
+    expect(bySite.data.items.map((u) => u.user_id).sort()).toEqual(['ops_zhang', 'visitor-aa19c0'])
+
+    const byKeyword = await request('get', '/api/v1/nl2sql-admin/widget-users', {
+      params: { keyword: 'visitor-7f' }
+    })
+    expect(byKeyword.data.items).toHaveLength(1)
+    expect(byKeyword.data.items[0]).toMatchObject({ kind: 'vis', user_id: 'visitor-7f3a2b' })
+  })
+
   it('returns demo widget conversation messages and 404 for unknown topics', async () => {
     const messages = await request('get', '/api/v1/nl2sql-admin/widget-topics/demo-widget-topic-1/messages')
     expect(messages.code).toBe(200)
