@@ -98,9 +98,12 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
-                      <!-- Text block -->
+                      <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="query-main-text">
-                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
+                        <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
+                          <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                          <ChartSpecView v-else :spec="seg.spec" />
+                        </template>
                         <span v-if="block.status === 'streaming'" class="query-cursor">|</span>
                       </div>
                     </template>
@@ -113,7 +116,12 @@
                 </template>
 
                 <template v-else>
-                  <div v-if="msg.content" class="query-main-text" v-html="renderMarkdown(msg.content)" />
+                  <div v-if="msg.content" class="query-main-text">
+                    <template v-for="(seg, si) in answerSegments(msg.content)" :key="si">
+                      <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                      <ChartSpecView v-else :spec="seg.spec" />
+                    </template>
+                  </div>
                   <div v-if="msg.error" class="query-error-card">
                     <span class="query-error-label">错误</span>
                     <span>{{ errorMessage(msg.error) }}</span>
@@ -204,7 +212,8 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, triggerRef, watch 
 import { marked } from 'marked'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
-import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
+import ChartSpecView from '@/views/intelligence/ChartSpecView.vue'
+import { splitChartSpecText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, createChatState, processV2Record } from '@/views/intelligence/v2StreamParser'
 import { topicStatusKind } from '@/views/intelligence/topicStatus'
 
@@ -410,9 +419,13 @@ const isThinkingExpanded = (key) => Boolean(thinkingExpanded[key])
 
 const isActiveTask = (msg) => Boolean(activeTaskId.value && msg.task_id === activeTaskId.value)
 
-// Inline chart_spec written into the model's prose is stripped from display;
-// charts must come from a real tool call (rendered below that tool block).
+// Inline chart_spec written into the model's prose is stripped from plain-text
+// uses (copy/preview); rendering splits it into text/chart segments instead.
 const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content || '')).trim()
+
+// Split answer prose into ordered text/chart segments so an inline chart_spec
+// (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
+const answerSegments = (content) => splitChartSpecText(String(content || ''))
 
 const buildV2StateFromStoredBlocks = (item) => {
   const v2state = createChatState()
