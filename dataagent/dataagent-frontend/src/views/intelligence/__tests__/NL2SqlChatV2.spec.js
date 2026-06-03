@@ -30,8 +30,18 @@ const routeState = vi.hoisted(() => ({
 
 const routerReplace = vi.hoisted(() => vi.fn())
 
+const dataagentApiMock = vi.hoisted(() => ({
+  listWidgetTopics: vi.fn(),
+  listWidgetUsers: vi.fn(),
+  getWidgetTopicMessages: vi.fn()
+}))
+
 vi.mock('@/api/nl2sql', () => ({
   createNl2SqlApiClient: () => apiMocks
+}))
+
+vi.mock('@/api/dataagent', () => ({
+  dataagentApi: dataagentApiMock
 }))
 
 vi.mock('vue-router', () => ({
@@ -176,8 +186,15 @@ describe('NL2SqlChatV2 URL location', () => {
     Object.values(apiMocks.taskApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.adminApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.agentApi).forEach((fn) => fn.mockReset())
+    Object.values(dataagentApiMock).forEach((fn) => fn.mockReset())
     routerReplace.mockReset()
     scrollbarSetScrollTop.mockReset()
+
+    dataagentApiMock.listWidgetTopics.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50 })
+    dataagentApiMock.listWidgetUsers.mockResolvedValue({ items: [] })
+    dataagentApiMock.getWidgetTopicMessages.mockResolvedValue({
+      topic_id: '', page: 1, page_size: 500, order: 'asc', total: 0, items: []
+    })
 
     routeState.path = '/intelligent-query'
     routeState.name = 'IntelligentQuery'
@@ -310,5 +327,23 @@ describe('NL2SqlChatV2 URL location', () => {
         topic_id: 'topic-2'
       }
     })
+  })
+
+  it('forwards the selected assistant to the widget topic query', async () => {
+    routeState.query = { tab: 'chat-v2', agent_id: 'agent_sales' }
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    const widgetTab = wrapper.findAll('.v2-source-tab').find((b) => b.text() === 'Widget')
+    expect(widgetTab).toBeTruthy()
+    await widgetTab.trigger('click')
+    await flushPromises()
+
+    expect(dataagentApiMock.listWidgetTopics).toHaveBeenCalled()
+    expect(dataagentApiMock.listWidgetTopics).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agent_id: 'agent_sales' })
+    )
   })
 })
