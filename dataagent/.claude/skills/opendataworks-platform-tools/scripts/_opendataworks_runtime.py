@@ -281,6 +281,8 @@ def query_readonly(
         "row_count": payload.get("row_count"),
         "has_more": payload.get("has_more"),
         "duration_ms": payload.get("duration_ms"),
+        "truncated_by_size": payload.get("truncated_by_size"),
+        "notice": payload.get("notice"),
     }
 
 

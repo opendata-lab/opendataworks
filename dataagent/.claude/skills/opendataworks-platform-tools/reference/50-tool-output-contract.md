@@ -48,6 +48,8 @@
   "rows": [{"category": "A", "row_count": 3}],
   "row_count": 1,
   "has_more": false,
+  "truncated_by_size": false,
+  "notice": null,
   "duration_ms": 120,
   "summary": "返回分组统计结果",
   "result_state": "success",
@@ -62,10 +64,16 @@
 `sql_execution` 必须提供这些收口字段：
 
 - `result_state`: `success`、`empty_result` 或 `failed`
-- `error_code`: 成功时为 `null`；空结果为 `empty_result`；失败时为 `permission_denied`、`datasource_mismatch`、`unknown_table`、`unknown_column`、`tool_timeout`、`non_readonly_sql` 或 `query_failed`
+- `error_code`: 成功时为 `null`；空结果为 `empty_result`；按体积截断为 `result_truncated`；失败时为 `permission_denied`、`datasource_mismatch`、`unknown_table`、`unknown_column`、`tool_timeout`、`non_readonly_sql` 或 `query_failed`
 - `failure_attribution`: 用于报告归因，例如 `empty_result`、`permission_denied`、`schema_mismatch`、`datasource_mismatch`、`tool_timeout`、`invalid_sql`
 - `retryable`: 当前 agent 是否应该继续重试
-- `stop_reason`: 失败或空结果时给模型的中文收口理由
+- `stop_reason`: 失败、空结果或按体积截断时给模型的中文收口理由
+
+结果体积守卫：
+
+- 后端 `/v1/ai/query/read` 在源头按字节预算（默认 512KB）截断返回行，避免单条工具结果撑爆运行时 JSON 缓冲。
+- 截断时返回 `truncated_by_size=true`、`has_more=true` 与中文 `notice`/`stop_reason`。
+- 收到截断信号应缩小查询范围（增加过滤、聚合或降低 LIMIT）后再查，不要对同一口径重复执行；若样本已足够回答也可直接基于已返回行作答并说明结果不完整。
 
 ## 图表契约
 

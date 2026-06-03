@@ -1,26 +1,34 @@
 package com.onedata.portal.agentapi.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentReadQueryRequest;
 import com.onedata.portal.agentapi.dto.AgentReadQueryResponse;
 import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.Statements;
 import net.sf.jsqlparser.statement.select.Select;
 import net.sf.jsqlparser.util.TablesNamesFinder;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BackendAgentQueryService implements AgentQueryService {
@@ -29,6 +37,8 @@ public class BackendAgentQueryService implements AgentQueryService {
     private static final int MAX_LIMIT = 10000;
     private static final int DEFAULT_TIMEOUT_SECONDS = 30;
     private static final int MAX_TIMEOUT_SECONDS = 120;
+    /** 单行间分隔与外层数组括号的近似开销，避免低估实际序列化字节。 */
+    private static final int ROW_SERIALIZATION_OVERHEAD_BYTES = 2;
     private static final Pattern LEADING_KEYWORD_PATTERN = Pattern.compile("^\\s*([a-zA-Z]+)");
     private static final Pattern MUTATING_FALLBACK_KEYWORD_PATTERN = Pattern.compile(
             "(^|[^a-zA-Z0-9_])(INSERT|UPDATE|DELETE|DROP|TRUNCATE|ALTER|CREATE|REPLACE|MERGE|CALL|GRANT|REVOKE)([^a-zA-Z0-9_]|$)",
@@ -43,6 +53,15 @@ public class BackendAgentQueryService implements AgentQueryService {
 
     private final AgentMetadataService agentMetadataService;
     private final AgentJdbcExecutor agentJdbcExecutor;
+    private final ObjectMapper objectMapper;
+
+    /**
+     * 单次只读查询返回行的字节预算。源头守卫：超预算即截断，防止单条工具结果帧
+     * 撑爆 claude-agent-sdk 的 stdout JSON 缓冲（默认 1MB）。默认 512KB，显著低于
+     * SDK 默认缓冲上限，并为下游脚本路径的美化与信封预留余量。
+     */
+    @Value("${agent.query.max-result-bytes:524288}")
+    private int maxResultBytes = 524288;
 
     @Override
     public AgentReadQueryResponse readQuery(AgentReadQueryRequest request) {
@@ -75,11 +94,55 @@ public class BackendAgentQueryService implements AgentQueryService {
         response.setEngine(datasource.getEngine());
         response.setSql(sql);
         response.setLimit(limit);
-        response.setRows(execution.getRows());
-        response.setRowCount(execution.getRowCount());
-        response.setHasMore(execution.isHasMore());
         response.setDurationMs(execution.getDurationMs());
+
+        List<Map<String, Object>> rows = execution.getRows();
+        int keep = resultByteBudgetKeepCount(rows);
+        if (keep < rows.size()) {
+            int total = rows.size();
+            List<Map<String, Object>> kept = new ArrayList<>(rows.subList(0, keep));
+            response.setRows(kept);
+            response.setRowCount(kept.size());
+            response.setHasMore(true);
+            response.setTruncatedBySize(true);
+            response.setNotice(String.format(
+                    "结果体积超过单次返回上限（约 %d KB），已截断为前 %d 行（原始返回 %d 行）。"
+                            + "如需完整或精确结果，请缩小查询范围：增加过滤条件、做聚合，或降低 LIMIT；"
+                            + "不要对同一口径重复执行。",
+                    maxResultBytes / 1024, keep, total));
+            log.warn("agent readQuery result truncated by size budget. kept={} total={} maxBytes={} sql={}",
+                    keep, total, maxResultBytes, sql);
+        } else {
+            response.setRows(rows);
+            response.setRowCount(execution.getRowCount());
+            response.setHasMore(execution.isHasMore());
+        }
         return response;
+    }
+
+    /**
+     * 逐行估算紧凑 JSON 字节并累加，返回在字节预算内可保留的行数。
+     * 至少保留 1 行（即便首行已超预算），使模型仍有上下文；预算远低于 SDK 缓冲上限，单行安全。
+     */
+    private int resultByteBudgetKeepCount(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) {
+            return 0;
+        }
+        long accumulated = 0;
+        for (int i = 0; i < rows.size(); i++) {
+            long rowBytes;
+            try {
+                rowBytes = objectMapper.writeValueAsBytes(rows.get(i)).length + ROW_SERIALIZATION_OVERHEAD_BYTES;
+            } catch (JsonProcessingException e) {
+                // 无法序列化的单行视为超大，保守在此截断（但至少保留已通过的行）。
+                return Math.max(1, i);
+            }
+            accumulated += rowBytes;
+            if (accumulated > maxResultBytes) {
+                return Math.max(1, i);
+            }
+        }
+        return rows.size();
     }
 
     void validateReadOnlySql(String sql) {

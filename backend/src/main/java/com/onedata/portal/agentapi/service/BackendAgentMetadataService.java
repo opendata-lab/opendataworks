@@ -21,6 +21,7 @@ import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.DorisDbUserMapper;
 import com.onedata.portal.service.LineageService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -39,10 +40,13 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BackendAgentMetadataService implements AgentMetadataService {
 
+    /** 元数据导出行数安全阀，防止无界导出撑爆 agent 工具结果缓冲。 */
+    private static final int EXPORT_MAX_ROWS = 5000;
     private static final int INSPECT_FETCH_LIMIT = 800;
     private static final int INSPECT_FIELD_FETCH_LIMIT = 2400;
     private static final int INSPECT_LINEAGE_LIMIT = 120;
@@ -299,7 +303,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
                 rows.add(tableExportRow(table, field));
             }
         }
-        return rows;
+        return capExportRows(rows, "tables");
     }
 
     @Override
@@ -333,7 +337,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             row.put("downstream_table", downstream == null ? null : downstream.getTableName());
             rows.add(row);
         }
-        return rows;
+        return capExportRows(rows, "lineage");
     }
 
     @Override
@@ -363,7 +367,15 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             row.put("resolved_by", cluster == null ? "platform_runtime" : (dbUser == null ? "data_table" : "readonly_user"));
             rows.add(row);
         }
-        return rows;
+        return capExportRows(rows, "datasource");
+    }
+
+    private List<Map<String, Object>> capExportRows(List<Map<String, Object>> rows, String exportKind) {
+        if (rows == null || rows.size() <= EXPORT_MAX_ROWS) {
+            return rows;
+        }
+        log.warn("agent metadata export '{}' truncated from {} to {} rows", exportKind, rows.size(), EXPORT_MAX_ROWS);
+        return new ArrayList<>(rows.subList(0, EXPORT_MAX_ROWS));
     }
 
     private List<DataTable> findTables(String database, String table, String keyword, int fetchLimit) {

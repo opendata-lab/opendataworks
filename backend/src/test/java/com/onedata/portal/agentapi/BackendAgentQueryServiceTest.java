@@ -1,5 +1,6 @@
 package com.onedata.portal.agentapi;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentReadQueryRequest;
 import com.onedata.portal.agentapi.dto.AgentReadQueryResponse;
@@ -11,13 +12,23 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -30,6 +41,9 @@ class BackendAgentQueryServiceTest {
 
     @Mock
     private AgentJdbcExecutor agentJdbcExecutor;
+
+    @Spy
+    private ObjectMapper objectMapper = new ObjectMapper();
 
     @InjectMocks
     private BackendAgentQueryService backendAgentQueryService;
@@ -64,6 +78,75 @@ class BackendAgentQueryServiceTest {
         assertEquals(Integer.valueOf(12), response.getDurationMs());
         verify(agentMetadataService).resolveDatasource("opendataworks", "mysql");
         verify(agentJdbcExecutor).executeReadOnlyQuery(datasource, "SELECT 1", 50, 20);
+        assertNull(response.getTruncatedBySize());
+        assertNull(response.getNotice());
+    }
+
+    @Test
+    void readQueryTruncatesResultWhenByteBudgetExceeded() {
+        ReflectionTestUtils.setField(backendAgentQueryService, "maxResultBytes", 64);
+
+        AgentReadQueryRequest request = new AgentReadQueryRequest();
+        request.setDatabase("opendataworks");
+        request.setSql("SELECT * FROM big_table");
+
+        AgentDatasourceResolution datasource = new AgentDatasourceResolution();
+        datasource.setDatabase("opendataworks");
+        datasource.setEngine("mysql");
+        when(agentMetadataService.resolveDatasource(eq("opendataworks"), any())).thenReturn(datasource);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < 50; i++) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", i);
+            row.put("payload", "value-with-some-length-" + i);
+            rows.add(row);
+        }
+        AgentJdbcExecutor.QueryExecutionResult execution = new AgentJdbcExecutor.QueryExecutionResult();
+        execution.setRows(rows);
+        execution.setRowCount(rows.size());
+        execution.setHasMore(false);
+        execution.setDurationMs(5);
+        when(agentJdbcExecutor.executeReadOnlyQuery(any(), any(), anyInt(), anyInt())).thenReturn(execution);
+
+        AgentReadQueryResponse response = backendAgentQueryService.readQuery(request);
+
+        assertEquals(Boolean.TRUE, response.getTruncatedBySize());
+        assertEquals(Boolean.TRUE, response.getHasMore());
+        assertTrue(response.getRows().size() >= 1);
+        assertTrue(response.getRows().size() < rows.size());
+        assertEquals(Integer.valueOf(response.getRows().size()), response.getRowCount());
+        assertNotNull(response.getNotice());
+    }
+
+    @Test
+    void readQueryKeepsAtLeastOneRowWhenSingleRowExceedsBudget() {
+        ReflectionTestUtils.setField(backendAgentQueryService, "maxResultBytes", 1);
+
+        AgentReadQueryRequest request = new AgentReadQueryRequest();
+        request.setDatabase("opendataworks");
+        request.setSql("SELECT * FROM wide_table");
+
+        AgentDatasourceResolution datasource = new AgentDatasourceResolution();
+        datasource.setDatabase("opendataworks");
+        datasource.setEngine("mysql");
+        when(agentMetadataService.resolveDatasource(eq("opendataworks"), any())).thenReturn(datasource);
+
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            rows.add(Collections.singletonMap("payload", "row-" + i));
+        }
+        AgentJdbcExecutor.QueryExecutionResult execution = new AgentJdbcExecutor.QueryExecutionResult();
+        execution.setRows(rows);
+        execution.setRowCount(rows.size());
+        execution.setHasMore(false);
+        execution.setDurationMs(5);
+        when(agentJdbcExecutor.executeReadOnlyQuery(any(), any(), anyInt(), anyInt())).thenReturn(execution);
+
+        AgentReadQueryResponse response = backendAgentQueryService.readQuery(request);
+
+        assertEquals(1, response.getRows().size());
+        assertEquals(Boolean.TRUE, response.getTruncatedBySize());
     }
 
     @Test
