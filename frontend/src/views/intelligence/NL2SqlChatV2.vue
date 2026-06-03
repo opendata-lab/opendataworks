@@ -409,10 +409,6 @@ const filteredTopics = computed(() => {
     list = list.filter((t) => topicStatusKind(t.current_task_status) === wanted)
   }
 
-  if (isWidgetMode.value && filterUser.value) {
-    list = list.filter((t) => topicUserKey(t) === filterUser.value)
-  }
-
   const order = sortOrder.value
   return list.slice().sort((a, b) => {
     if (order === 'title_asc') {
@@ -424,15 +420,19 @@ const filteredTopics = computed(() => {
   })
 })
 
-// Distinct users present in the loaded widget sessions, for the user filter.
-const widgetUserOptions = computed(() => {
-  const seen = new Map()
-  for (const t of topics.value) {
+// Distinct users seen across loaded widget pages, for the user filter. Kept as
+// an accumulating list (not derived from the current page) so the dropdown does
+// not collapse to a single entry once a user filter is applied server-side.
+const widgetUserOptions = ref([])
+
+function mergeWidgetUserOptions(list) {
+  const map = new Map(widgetUserOptions.value.map((o) => [o.value, o.label]))
+  for (const t of list) {
     const key = topicUserKey(t)
-    if (key && !seen.has(key)) seen.set(key, topicUserLabel(t))
+    if (key && !map.has(key)) map.set(key, topicUserLabel(t))
   }
-  return Array.from(seen, ([value, label]) => ({ value, label }))
-})
+  widgetUserOptions.value = Array.from(map, ([value, label]) => ({ value, label }))
+}
 
 const activeTopic = computed(() => topics.value.find((t) => t.topic_id === activeTopicId.value) || null)
 
@@ -640,9 +640,15 @@ async function loadTopics() {
 // mirror the selection into the route, so a reload defaults back to portal.
 async function loadWidgetTopics() {
   try {
-    const data = await dataagentApi.listWidgetTopics({ page: 1, page_size: 50 })
+    const params = { page: 1, page_size: 50 }
+    // User filter is applied server-side so it stays accurate across pages.
+    if (filterUser.value.startsWith('ext:')) params.external_user_id = filterUser.value.slice(4)
+    else if (filterUser.value.startsWith('vis:')) params.visitor_id = filterUser.value.slice(4)
+    const data = await dataagentApi.listWidgetTopics(params)
     topics.value = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    if (topics.value.length && !activeTopicId.value) {
+    mergeWidgetUserOptions(topics.value)
+    const stillListed = topics.value.some((t) => t.topic_id === activeTopicId.value)
+    if (topics.value.length && (!activeTopicId.value || !stillListed)) {
       await selectTopic(topics.value[0].topic_id)
     }
   } catch {
@@ -803,9 +809,19 @@ async function handleSourceChange(mode) {
   searchKeyword.value = ''
   filterStatus.value = ''
   filterUser.value = ''
+  widgetUserOptions.value = []
   topics.value = []
   await loadTopics()
 }
+
+// Re-query the widget list server-side when the user filter changes so results
+// reflect all matching sessions, not just those on the currently loaded page.
+watch(filterUser, async () => {
+  if (!isWidgetMode.value) return
+  activeTopicId.value = ''
+  messages.value = []
+  await loadWidgetTopics()
+})
 
 function resetFilters() {
   filterStatus.value = ''
