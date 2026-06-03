@@ -43,9 +43,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
-
-const DATAAGENT_WIDGET_SCRIPT_URL = import.meta.env.VITE_DATAAGENT_WIDGET_JS_URL || '/dataagent/widget/opendataworks-widget.bundle.js'
-const DATAAGENT_WIDGET_SCRIPT_ATTR = 'data-odw-dataagent-widget-script'
+import { loadDataAgentWidgetScript } from '@/utils/dataagentWidgetLoader'
 
 const route = useRoute()
 const router = useRouter()
@@ -107,43 +105,6 @@ const preloadMenuRoute = (path) => {
 
 let _widgetCtrl = null
 let _layoutUnmounted = false
-
-const loadDataAgentWidgetScript = () => {
-  if (typeof window === 'undefined' || typeof document === 'undefined') {
-    return Promise.reject(new Error('DataAgent widget script can only be loaded in a browser'))
-  }
-  if (window.OpenDataWorksWidget?.installWidget) {
-    return Promise.resolve(window.OpenDataWorksWidget)
-  }
-  if (window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__) {
-    return window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
-  }
-
-  const existingScript = document.querySelector(`script[${DATAAGENT_WIDGET_SCRIPT_ATTR}]`)
-  window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__ = new Promise((resolve, reject) => {
-    const script = existingScript || document.createElement('script')
-    const handleLoad = () => {
-      if (window.OpenDataWorksWidget?.installWidget) {
-        resolve(window.OpenDataWorksWidget)
-      } else {
-        reject(new Error('DataAgent widget global API is not available after script load'))
-      }
-    }
-    const handleError = () => reject(new Error(`Failed to load DataAgent widget script: ${DATAAGENT_WIDGET_SCRIPT_URL}`))
-
-    script.addEventListener('load', handleLoad, { once: true })
-    script.addEventListener('error', handleError, { once: true })
-
-    if (!existingScript) {
-      script.setAttribute(DATAAGENT_WIDGET_SCRIPT_ATTR, '')
-      script.src = DATAAGENT_WIDGET_SCRIPT_URL
-      script.async = true
-      document.head.appendChild(script)
-    }
-  })
-
-  return window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
-}
 
 const installFloatingWidget = async () => {
   try {
