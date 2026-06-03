@@ -35,12 +35,15 @@ export function useNl2SqlChat(options) {
     getAgentId = () => '',
     messagePageSize = 200,
     topicTitleLength = 30,
-    reloadTopicsAfterRun = false,
+    // Called after each real send settles. The portal refreshes its own faceted
+    // topic list here; the widget leaves it unset (no reload after a run).
+    afterRun = noop,
     // Params for the default `loadTopics`. Components with bespoke list loading
     // (portal audit facets) can ignore `loadTopics` and write `topics` directly.
     listTopicsParams = () => ({ agent_id: getAgentId() || undefined }),
-    emitEvent = noop,   // ({ name, payload }) -> void
-    notifyError = noop, // (message) -> void
+    emitEvent = noop,     // ({ name, payload }) -> void
+    notifyError = noop,   // (message) -> void
+    onTopicEnsured = noop, // (topicId) -> void, fired once the run's topic exists
   } = options
 
   // ── State ────────────────────────────────────────────────────────────────
@@ -305,6 +308,7 @@ export function useNl2SqlChat(options) {
     abortController.value = new AbortController()
     try {
       const currentTopicId = await ensureTopic(truncate(text, topicTitleLength))
+      onTopicEnsured(currentTopicId)
       const response = await api.taskApi.deliverMessage({
         topic_id: currentTopicId,
         content: text,
@@ -333,7 +337,7 @@ export function useNl2SqlChat(options) {
       notifyError(assistant.error.message)
     } finally {
       isSubmitting.value = false
-      if (reloadTopicsAfterRun) loadTopics()
+      await afterRun()
     }
   }
 

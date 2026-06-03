@@ -311,4 +311,37 @@ describe('NL2SqlChatV2 URL location', () => {
       }
     })
   })
+
+  it('sends a new question through the shared engine: creates a topic, delivers, streams, and routes', async () => {
+    apiMocks.topicApi.createTopic.mockResolvedValue(makeTopic('topic-new', 'hi there'))
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-1' })
+    apiMocks.taskApi.getTask = vi.fn().mockResolvedValue({ task_status: 'success' })
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, opts) => {
+      opts.onRecord({ record_type: 'stream', data: { type: 'message_start', usage: {} } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'streamed answer' } } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_stop', index: 0 } })
+      opts.onRecord({ record_type: 'done', data: {} })
+    })
+
+    const wrapper = mountChat()
+    await flushPromises()
+    await nextTick()
+
+    // Start a fresh conversation (mount auto-selects the latest topic).
+    await wrapper.find('.v2-btn-new').trigger('click')
+    await wrapper.find('textarea').setValue('hi there')
+    await wrapper.find('.v2-send-btn').trigger('click')
+    await flushPromises()
+
+    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('hi there', { agent_id: 'agent_default' })
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ topic_id: 'topic-new', content: 'hi there', provider_id: 'provider-1', model: 'model-1' })
+    )
+    // onTopicEnsured routes to the freshly created topic.
+    expect(routerReplace).toHaveBeenCalledWith(expect.objectContaining({
+      query: expect.objectContaining({ topic_id: 'topic-new' })
+    }))
+    expect(wrapper.text()).toContain('streamed answer')
+  })
 })

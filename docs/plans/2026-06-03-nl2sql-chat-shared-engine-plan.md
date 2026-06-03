@@ -9,8 +9,10 @@ deployment changes.
 
 - Phase 1: done (`chatMessage.js` + tests; both components consume it).
 - Phase 2: done (`useNl2SqlChat.js` + tests; `WidgetChat.vue` migrated; 167 tests green).
-- Phase 3: pending — implementation is mechanical, but its verification needs the
-  local NL2SQL smoke flow, which is unavailable in the current environment.
+- Phase 3: done in code — `NL2SqlChatV2.vue` migrated onto the engine; 212
+  frontend tests pass and both vite builds compile. NOT yet verified with the
+  mandated local NL2SQL smoke flow (MySQL + Redis + dataagent-backend), which is
+  unavailable in this environment — run it before merge (see below).
 
 ## Phase 1 — Pure helper module (low risk)
 

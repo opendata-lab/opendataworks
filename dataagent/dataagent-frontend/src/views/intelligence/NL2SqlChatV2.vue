@@ -338,30 +338,43 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
-import { blockToToolProp, createChatState, processV2Record } from './v2StreamParser'
+import { blockToToolProp } from './v2StreamParser'
 import { stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-import { extractErrorText, hydrateMessageFromApi, renderMarkdown } from './chatMessage'
+import { hydrateMessageFromApi, renderMarkdown } from './chatMessage'
+import { useNl2SqlChat } from './useNl2SqlChat'
 
 const route = useRoute()
 const router = useRouter()
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
-const { topicApi, taskApi, adminApi, agentApi } = api
+const { topicApi, adminApi, agentApi } = api
 
 // ── State ────────────────────────────────────────────────────────────────────
-const topics = ref([])
 const agents = ref([])
-const activeTopicId = ref('')
-const messages = ref([])
 const settings = reactive({ providers: [], default_provider_id: '', default_model: '' })
-const selectedProvider = ref('')
-const selectedModel = ref('')
 const agentSelectValue = ref('')
 const searchKeyword = ref('')
-const inputText = ref('')
-const isStreaming = ref(false)
 const autoScroll = ref(true)
+
+// Shared NL2SQL conversation engine. The portal keeps its own routing, session
+// audit facets, agent selector, feedback, copy, and scroll; the engine owns the
+// send -> deliver -> stream -> reconcile -> detach/cancel lifecycle and the
+// shared conversation refs.
+const chat = useNl2SqlChat({
+  api,
+  getAgentId: () => agentSelectValue.value || '',
+  topicTitleLength: 60,
+  afterRun: () => loadTopics(),
+  onTopicEnsured: (id) => { if (!isWidgetMode.value) replaceRouteTopic(id) },
+  notifyError: (message) => ElMessage.error('请求失败: ' + message),
+})
+const {
+  topics, topicId: activeTopicId, messages, inputText,
+  providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
+  isBusy: isStreaming,
+  send: engineSend, cancel: engineCancel, detach,
+} = chat
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.
@@ -384,8 +397,6 @@ const thinkingExpanded = reactive({})
 const messagesScrollbarRef = ref(null)
 const textareaRef = ref(null)
 const targetMessageId = ref('')
-
-let abortController = null
 
 // ── Computed ─────────────────────────────────────────────────────────────────
 // Status filter values map to topicStatusKind(): '' (finished/none) is the
@@ -589,6 +600,10 @@ async function loadSettings() {
     settings.providers = Array.isArray(data?.providers) ? data.providers : []
     settings.default_provider_id = String(data?.default_provider_id || '')
     settings.default_model = String(data?.default_model || '')
+    // Mirror into the engine so its model-validity guard sees real providers.
+    providers.value = settings.providers
+    defaultProviderId.value = settings.default_provider_id
+    defaultModel.value = settings.default_model
     if (!selectedModel.value) {
       selectedProvider.value = settings.default_provider_id
       selectedModel.value = settings.default_model
@@ -733,7 +748,7 @@ function handleSuggestion(text) {
 // ── Source / filter ──────────────────────────────────────────────────────
 async function handleSourceChange(mode) {
   if (mode === sourceMode.value) return
-  if (isStreaming.value) handleCancel()
+  if (isStreaming.value) detach()
   sourceMode.value = mode
   activeTopicId.value = ''
   messages.value = []
@@ -767,7 +782,10 @@ function resetFilters() {
 
 // ── Topic management ───────────────────────────────────────────────────────
 async function handleNewTopic() {
-  if (isStreaming.value || isWidgetMode.value) return
+  if (isWidgetMode.value) return
+  // Leaving a running conversation detaches it (the backend task keeps running,
+  // recoverable from history) instead of blocking, matching the widget.
+  if (isStreaming.value) detach()
   activeTopicId.value = ''
   messages.value = []
   targetMessageId.value = ''
@@ -783,7 +801,7 @@ async function handleSelectTopic(topicId) {
     }
     return
   }
-  if (isStreaming.value) handleCancel()
+  if (isStreaming.value) detach()
   await selectTopic(topicId)
   if (!isWidgetMode.value) replaceRouteTopic(topicId)
 }
@@ -874,110 +892,29 @@ async function toggleMessageFeedback(msg, value) {
 }
 
 // ── Send message ───────────────────────────────────────────────────────────
+// The send -> deliver -> stream -> reconcile lifecycle lives in the shared
+// engine. Routing (onTopicEnsured), scroll (messages watcher), topic-list
+// refresh (reloadTopicsAfterRun), and error toasts (notifyError) are wired
+// through the engine options at setup.
 async function handleSend() {
   if (isWidgetMode.value) return
-  const text = inputText.value.trim()
-  if (!text || isStreaming.value) return
-
-  inputText.value = ''
-  autoResize()
-
-  let topicId = activeTopicId.value
-  if (!topicId) {
-    try {
-      const topic = await topicApi.createTopic(text.slice(0, 60), {
-        agent_id: agentSelectValue.value || undefined,
-      })
-      topicId = topic.topic_id
-      activeTopicId.value = topicId
-      topics.value.unshift(topic)
-    } catch (err) {
-      ElMessage.error('创建话题失败: ' + String(err?.message || err))
-      return
-    }
-  }
-  replaceRouteTopic(topicId)
-
-  // Append user message locally
-  messages.value.push({
-    id: 'user-' + Date.now(),
-    role: 'user',
-    content: text,
-    created_at: new Date().toISOString(),
-    _v2state: null,
-  })
-  scrollToBottom(true)
-
-  // Prepare assistant placeholder
-  const v2state = reactive(createChatState())
-  const assistantMsg = reactive({
-    id: 'asst-' + Date.now(),
-    role: 'assistant',
-    content: '',
-    thinkingText: '',
-    feedback: '',
-    created_at: new Date().toISOString(),
-    _v2state: v2state,
-  })
-  messages.value.push(assistantMsg)
-
-  isStreaming.value = true
-  abortController = new AbortController()
-
-  try {
-    // Deliver message (creates task)
-    const taskResp = await taskApi.deliverMessage({
-      topic_id: topicId,
-      content: text,
-      provider_id: selectedProvider.value || undefined,
-      model: selectedModel.value || undefined,
-      agent_id: agentSelectValue.value || undefined,
-    })
-    const taskId = taskResp?.task_id
-    if (!taskId) throw new Error('任务创建失败，未获取到 task_id')
-
-    // Stream SDK events
-    await taskApi.streamSdkEvents(taskId, {
-      signal: abortController.signal,
-      afterId: 0,
-      onRecord: (record) => {
-        processV2Record(v2state, record)
-        scrollToBottom()
-      },
-    })
-    // On a hard backend failure the SDK stream can end without a terminal
-    // 'done'/'error' record, leaving v2state stuck on 'streaming'. Reconcile
-    // against the persisted task status so failed runs surface the error card.
-    if (v2state.status !== 'error' && !abortController?.signal.aborted) {
-      try {
-        const taskState = await taskApi.getTask(taskId)
-        if (String(taskState?.task_status || '') === 'error') {
-          v2state.status = 'error'
-          v2state.errorText = extractErrorText(taskState?.error) || v2state.errorText || '会话执行失败'
-        } else if (v2state.status !== 'done') {
-          v2state.status = 'done'
-        }
-      } catch { /* keep current state if status lookup fails */ }
-    }
-  } catch (err) {
-    if (err?.name !== 'AbortError') {
-      v2state.status = 'error'
-      v2state.errorText = String(err?.message || '请求失败')
-      ElMessage.error('请求失败: ' + String(err?.message || err))
-    }
-  } finally {
-    isStreaming.value = false
-    abortController = null
-    // Refresh topic list to update title
-    loadTopics()
-    scrollToBottom(true)
-  }
+  if (!inputText.value.trim() || isStreaming.value) return
+  await engineSend()
 }
 
+// Explicit stop: cancel the backend task (engine marks the topic suspended).
 function handleCancel() {
-  abortController?.abort()
-  isStreaming.value = false
+  void engineCancel()
 }
+
+// Keep the view pinned to the latest content as the engine streams (the engine
+// triggers messages reactively); reloads / focus still force-scroll explicitly.
+watch(messages, () => scrollToBottom(), { deep: true, flush: 'post' })
+
+// The engine clears inputText on send; resize the composer back down.
+watch(inputText, (value) => {
+  if (!value) nextTick(() => autoResize())
+})
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -1005,7 +942,7 @@ watch(
       return
     }
     if (normalizedTopicId !== activeTopicId.value) {
-      if (isStreaming.value) handleCancel()
+      if (isStreaming.value) detach()
       await selectTopic(normalizedTopicId, { messageId: normalizedMessageId })
       return
     }
@@ -1018,7 +955,7 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  abortController?.abort()
+  detach()
 })
 </script>
 
