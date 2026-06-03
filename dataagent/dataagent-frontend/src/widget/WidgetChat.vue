@@ -11,7 +11,7 @@
 
     <aside v-if="historyVisible" class="query-sidebar" aria-label="历史会话">
       <div class="query-sidebar-head">
-        <button class="query-btn-new" type="button" data-testid="new-conversation" :disabled="isBusy" @click="newConversation">
+        <button class="query-btn-new" type="button" data-testid="new-conversation" @click="newConversation">
           新建会话
         </button>
       </div>
@@ -244,6 +244,10 @@ const inputSource = ref('typed')
 const searchKeyword = ref('')
 const topicId = ref('')
 const isSubmitting = ref(false)
+// Monotonic token identifying the current run. Detaching (e.g. starting a new
+// conversation mid-run) bumps it so an in-flight send() that is still awaiting
+// the backend knows it has been superseded and must not attach its stream.
+const runGeneration = ref(0)
 const activeTaskId = ref('')
 const activeAssistantId = ref('')
 const topics = ref([])
@@ -572,9 +576,25 @@ const selectTopic = async (targetTopicId) => {
   closeHistory()
 }
 
+// Detach from any in-flight run without cancelling the backend task. The task
+// keeps running server-side and its result stays recoverable from the topic
+// history, so a new conversation can start immediately while the previous
+// answer finishes in the background.
+const detachActiveRun = () => {
+  if (!isBusy.value) return
+  runGeneration.value += 1
+  abortController.value?.abort()
+  abortController.value = null
+  activeTaskId.value = ''
+  activeAssistantId.value = ''
+  isSubmitting.value = false
+}
+
 const newConversation = async () => {
   if (!ensureAgentConfigured()) return
-  if (!guardIdle()) return
+  // Starting a new conversation is allowed even while a run is in progress; the
+  // running task is detached (not cancelled) and remains in history.
+  detachActiveRun()
   errorText.value = ''
   searchKeyword.value = ''
   topicId.value = ''
@@ -641,10 +661,15 @@ const loadConfig = async () => {
 }
 
 const subscribe = async (taskId, assistant) => {
-  abortController.value = new AbortController()
+  // Capture the controller and owning topic locally so that detaching this run
+  // (e.g. starting a new conversation mid-stream) cannot make the teardown
+  // clobber a later run's state or write status onto the wrong topic.
+  const controller = new AbortController()
+  const runTopicId = topicId.value
+  abortController.value = controller
   try {
     await api.taskApi.streamSdkEvents(taskId, {
-      signal: abortController.value.signal,
+      signal: controller.signal,
       afterId: 0,
       onRecord: (record) => {
         processV2Record(assistant._v2state, record)
@@ -654,7 +679,7 @@ const subscribe = async (taskId, assistant) => {
     // A hard backend failure can end the stream without a terminal done/error
     // record, leaving _v2state on 'streaming'. Reconcile against the task status
     // so failed runs surface the error instead of being marked success.
-    if (assistant._v2state.status !== 'error' && !abortController.value?.signal?.aborted) {
+    if (assistant._v2state.status !== 'error' && !controller.signal.aborted) {
       try {
         const taskState = await api.taskApi.getTask(taskId)
         if (String(taskState?.task_status || '') === 'error') {
@@ -667,20 +692,24 @@ const subscribe = async (taskId, assistant) => {
       } catch { /* keep current state if status lookup fails */ }
     }
     assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
-    setTopicTaskStatus(topicId.value, assistant._v2state.status === 'error' ? 'error' : 'finished')
+    setTopicTaskStatus(runTopicId, assistant._v2state.status === 'error' ? 'error' : 'finished')
     emit('event', { name: 'message:done', payload: { taskId } })
   } catch (error) {
-    if (abortController.value?.signal?.aborted) return
+    if (controller.signal.aborted) return
     assistant.status = 'failed'
     assistant.error = { message: String(error?.message || '请求失败') }
     assistant._v2state.status = 'error'
     assistant._v2state.errorText = assistant.error.message
-    setTopicTaskStatus(topicId.value, 'error')
+    setTopicTaskStatus(runTopicId, 'error')
     emit('event', { name: 'error', payload: assistant.error.message })
   } finally {
-    activeTaskId.value = ''
-    activeAssistantId.value = ''
-    abortController.value = null
+    // Only clear shared run state if this run still owns it. A detached run may
+    // have already handed activeTaskId/abortController to a newer conversation.
+    if (abortController.value === controller) {
+      activeTaskId.value = ''
+      activeAssistantId.value = ''
+      abortController.value = null
+    }
   }
 }
 
@@ -703,6 +732,7 @@ const send = async () => {
   if (!text || isBusy.value) return
   if (!ensureAgentConfigured()) return
   const currentInputSource = inputSource.value
+  const generation = runGeneration.value
   inputSource.value = 'typed'
   isSubmitting.value = true
   inputText.value = ''
@@ -810,6 +840,10 @@ const send = async () => {
       debug: false,
       execution_mode: 'auto'
     })
+    // A new conversation may have been started while this request was in flight.
+    // The run is detached: leave the backend task running (recoverable from
+    // history) instead of attaching its stream to the new conversation.
+    if (generation !== runGeneration.value) return
     activeTaskId.value = String(response?.task_id || '')
     activeAssistantId.value = assistant.id
     assistant.task_id = activeTaskId.value

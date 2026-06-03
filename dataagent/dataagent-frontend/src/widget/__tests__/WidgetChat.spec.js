@@ -311,7 +311,7 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('[data-testid^="delete-topic-"]').exists()).toBe(false)
   })
 
-  it('prevents switching and creating while an answer is running', async () => {
+  it('prevents switching to an existing topic while an answer is running', async () => {
     let resolveStream
     apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => {
       resolveStream = resolve
@@ -323,8 +323,44 @@ describe('WidgetChat history conversations', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="new-conversation"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-testid="history-topic-topic-2"]').attributes('disabled')).toBeDefined()
+
+    resolveStream()
+  })
+
+  it('allows starting a new conversation mid-run, detaching the backend task instead of cancelling it', async () => {
+    let resolveStream
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => {
+      resolveStream = resolve
+    }))
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('你好')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    // New conversation stays available while an answer is running.
+    const newButton = wrapper.get('[data-testid="new-conversation"]')
+    expect(newButton.attributes('disabled')).toBeUndefined()
+
+    await newButton.trigger('click')
+    await flushPromises()
+
+    // The in-flight run is detached locally; the backend task is left running.
+    expect(apiMocks.taskApi.cancelTask).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('您可以问我以下问题')
+
+    // The fresh conversation immediately accepts a new question.
+    apiMocks.taskApi.deliverMessage.mockClear()
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-2' })
+    await wrapper.get('textarea').setValue('第二个问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: '第二个问题'
+    }))
 
     resolveStream()
   })
