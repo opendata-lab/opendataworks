@@ -59,7 +59,21 @@
 
           <template v-for="msg in messages" :key="msg.id">
             <div v-if="msg.role === 'user'" class="query-message-row query-message-user">
-              <div class="query-user-bubble">{{ msg.content }}</div>
+              <div class="query-user-message-shell">
+                <div class="query-user-bubble">{{ msg.content }}</div>
+                <div class="query-message-footer query-message-footer-user">
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-copy"
+                    title="复制"
+                    aria-label="复制消息"
+                    :data-testid="`copy-message-${msg.id}`"
+                    @click.stop="handleCopyMessage(msg)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div v-else class="query-message-row query-message-assistant">
@@ -101,6 +115,13 @@
                       <div v-else-if="block.type === 'text' && block.content" class="query-main-text">
                         <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
                         <span v-if="block.status === 'streaming'" class="query-cursor">|</span>
+                        <div
+                          v-for="tool in buildInlineChartTools(block.content, `${msg.id}-${ti}-${block.blockIndex}`)"
+                          :key="tool.id"
+                          class="query-inline-chart"
+                        >
+                          <ToolOutputRenderer :tool="tool" />
+                        </div>
                       </div>
                     </template>
                   </template>
@@ -112,12 +133,55 @@
                 </template>
 
                 <template v-else>
-                  <div v-if="msg.content" class="query-main-text" v-html="renderMarkdown(msg.content)" />
+                  <div v-if="msg.content" class="query-main-text">
+                    <div v-if="cleanTextForDisplay(msg.content)" v-html="renderMarkdown(cleanTextForDisplay(msg.content))" />
+                    <div
+                      v-for="tool in buildInlineChartTools(msg.content, msg.id)"
+                      :key="tool.id"
+                      class="query-inline-chart"
+                    >
+                      <ToolOutputRenderer :tool="tool" />
+                    </div>
+                  </div>
                   <div v-if="msg.error" class="query-error-card">
                     <span class="query-error-label">错误</span>
                     <span>{{ extractErrorText(msg.error) || '请求失败' }}</span>
                   </div>
                 </template>
+                <div class="query-message-footer query-message-footer-assistant">
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-copy"
+                    title="复制"
+                    aria-label="复制消息"
+                    :data-testid="`copy-message-${msg.id}`"
+                    @click.stop="handleCopyMessage(msg)"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-feedback query-message-feedback-like"
+                    :class="{ active: msg.feedback === 'like' }"
+                    title="有帮助"
+                    aria-label="有帮助"
+                    :data-testid="`feedback-like-${msg.id}`"
+                    @click.stop="toggleMessageFeedback(msg, 'like')"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M7 11v10H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3Z" /><path d="M7 11 12 2a3 3 0 0 1 3 3v4h4a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    class="query-message-tool query-message-feedback query-message-feedback-dislike"
+                    :class="{ active: msg.feedback === 'dislike' }"
+                    title="没帮助"
+                    aria-label="没帮助"
+                    :data-testid="`feedback-dislike-${msg.id}`"
+                    @click.stop="toggleMessageFeedback(msg, 'dislike')"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M17 13V3h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3Z" /><path d="M17 13 12 22a3 3 0 0 1-3-3v-4H5a2 2 0 0 1-2-2l1-8a2 2 0 0 1 2-2h11" /></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </template>
@@ -141,7 +205,7 @@
               v-model="inputText"
               class="query-textarea"
               rows="1"
-              :disabled="!providers.length || !availableModels.length"
+              :disabled="isBusy"
               placeholder="输入数据问题…"
               @keydown.enter="onEnterKey"
               @input="autoResizeTextarea"
@@ -204,8 +268,9 @@ import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
-import { extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
+import { buildInlineChartTools, extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
 import { useNl2SqlChat } from '@/views/intelligence/useNl2SqlChat'
+import { useChatMessageActions } from '@/views/intelligence/useChatMessageActions'
 
 const props = defineProps({
   config: {
@@ -248,6 +313,10 @@ const agentId = computed(() => String(props.config.agentId || '').trim())
 const chat = useNl2SqlChat({
   api,
   getAgentId: () => agentId.value,
+  messagePageSize: 500,
+  topicTitleLength: 60,
+  listTopicsParams: () => ({ page: 1, page_size: 50, agent_id: agentId.value || undefined }),
+  afterRun: () => loadTopics(),
   emitEvent: (event) => emit('event', event),
 })
 const {
@@ -323,6 +392,14 @@ const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 // Inline chart_spec written into the model's prose is stripped from display;
 // charts must come from a real tool call (rendered below that tool block).
 const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content || '')).trim()
+
+const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
+  api,
+  topicId,
+  cleanText: cleanTextForDisplay,
+  notifyError: (message) => emit('event', { name: 'error', payload: message }),
+  emitEvent: (event) => emit('event', event),
+})
 
 const closeHistory = () => {
   props.state.historyOpen = false
@@ -575,3 +652,63 @@ onBeforeUnmount(() => {
   abortController.value?.abort()
 })
 </script>
+
+<style scoped>
+.query-user-message-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  max-width: 100%;
+}
+
+.query-message-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  min-height: 24px;
+}
+
+.query-message-footer-user {
+  justify-content: flex-end;
+}
+
+.query-message-footer-assistant {
+  justify-content: flex-start;
+}
+
+.query-message-tool {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #8a96a8;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.query-message-tool svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
+}
+
+.query-message-tool:hover,
+.query-message-tool.active {
+  background: #eef4ff;
+  color: var(--odw-widget-color, #4A90A4);
+}
+
+.query-message-feedback-dislike.active {
+  background: #fff1f0;
+  color: #d93025;
+}
+
+.query-inline-chart {
+  margin-top: 10px;
+}
+</style>

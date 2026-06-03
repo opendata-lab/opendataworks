@@ -333,15 +333,96 @@ const CHART_SPEC_BLOCK_PATTERNS = [
   /<chart_spec>\s*([\s\S]*?)<\/chart_spec>/gi
 ]
 
+const CHART_SPEC_CONDITIONAL_BLOCK_PATTERNS = [
+  /```json\s*([\s\S]*?)```/gi
+]
+
+const findJsonObjectEnd = (source, start) => {
+  let depth = 0
+  let inString = false
+  let escaped = false
+
+  for (let index = start; index < source.length; index += 1) {
+    const char = source[index]
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (char === '"') {
+      inString = true
+    } else if (char === '{') {
+      depth += 1
+    } else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return index + 1
+    }
+  }
+
+  return -1
+}
+
+const findRawChartSpecJsonMatches = (source) => {
+  const matches = []
+  const text = String(source || '')
+  for (let index = 0; index < text.length; index += 1) {
+    if (text[index] !== '{') continue
+    const end = findJsonObjectEnd(text, index)
+    if (end < 0) break
+    const raw = text.slice(index, end)
+    const parsed = parseChartSpec(raw)
+    if (parsed) {
+      matches.push({ start: index, end, spec: parsed })
+      index = end - 1
+    }
+  }
+  return matches
+}
+
+const stripConditionalChartSpecBlocks = (source) => {
+  let output = String(source || '')
+  for (const pattern of CHART_SPEC_CONDITIONAL_BLOCK_PATTERNS) {
+    pattern.lastIndex = 0
+    output = output.replace(pattern, (match, content) => (
+      parseChartSpec(content) ? '' : match
+    ))
+  }
+  return output
+}
+
 export const extractChartSpecsFromText = (text) => {
   const source = String(text || '')
   const specs = []
   for (const pattern of CHART_SPEC_BLOCK_PATTERNS) {
+    pattern.lastIndex = 0
     const matches = source.matchAll(pattern)
     for (const match of matches) {
       const parsed = parseChartSpec(match[1])
       if (parsed) specs.push(parsed)
     }
+  }
+  for (const pattern of CHART_SPEC_CONDITIONAL_BLOCK_PATTERNS) {
+    pattern.lastIndex = 0
+    const matches = source.matchAll(pattern)
+    for (const match of matches) {
+      const parsed = parseChartSpec(match[1])
+      if (parsed) specs.push(parsed)
+    }
+  }
+  let rawSource = source
+  for (const pattern of CHART_SPEC_BLOCK_PATTERNS) {
+    pattern.lastIndex = 0
+    rawSource = rawSource.replace(pattern, '')
+  }
+  rawSource = stripConditionalChartSpecBlocks(rawSource)
+  for (const match of findRawChartSpecJsonMatches(rawSource)) {
+    specs.push(match.spec)
   }
   return specs
 }
@@ -349,7 +430,14 @@ export const extractChartSpecsFromText = (text) => {
 export const stripChartSpecsFromText = (text) => {
   let output = String(text || '')
   for (const pattern of CHART_SPEC_BLOCK_PATTERNS) {
+    pattern.lastIndex = 0
     output = output.replace(pattern, '')
+  }
+  output = stripConditionalChartSpecBlocks(output)
+  const rawMatches = findRawChartSpecJsonMatches(output)
+  for (let index = rawMatches.length - 1; index >= 0; index -= 1) {
+    const match = rawMatches[index]
+    output = `${output.slice(0, match.start)}${output.slice(match.end)}`
   }
   return output
     .replace(/\n{3,}/g, '\n\n')

@@ -4,6 +4,7 @@
 
 import { reactive } from 'vue'
 import { marked } from 'marked'
+import { extractChartSpecsFromText } from './chartSpec'
 import { createChatState } from './v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -136,4 +137,35 @@ export function hydrateMessageFromApi(item) {
     created_at: item?.created_at || '',
     _v2state: reactive(buildV2StateFromStoredBlocks(item)),
   })
+}
+
+export function getMessageCopyText(message, options = {}) {
+  const cleanText = typeof options.cleanText === 'function'
+    ? options.cleanText
+    : (value) => String(value || '').trim()
+  let text = String(message?.content || '')
+  if (message?._v2state?.turns) {
+    const texts = []
+    for (const turn of message._v2state.turns) {
+      if (!turn?.blocks) continue
+      for (const block of turn.blocks) {
+        if (block.type === 'text' && block.content) {
+          const cleaned = String(cleanText(block.content) || '').trim()
+          if (cleaned) texts.push(cleaned)
+        }
+      }
+    }
+    if (texts.length) text = texts.join('\n\n')
+  }
+  return text.trim()
+}
+
+export function buildInlineChartTools(content, keyPrefix = 'inline-chart') {
+  return extractChartSpecsFromText(content).map((spec, index) => ({
+    id: `${keyPrefix}-${index}`,
+    name: 'inline_chart_spec',
+    status: 'success',
+    input: null,
+    output: spec,
+  }))
 }

@@ -154,4 +154,19 @@ describe('chartSpec', () => {
     expect(stripped).not.toContain('<chart_spec>')
     expect(stripped).not.toContain('"chart_type":"line"')
   })
+
+  it('extracts and strips raw chart_spec JSON embedded in assistant text', () => {
+    const rawJson = '{"kind":"chart_spec","version":1,"chart_type":"bar","title":"各数据层表数量","x_field":"layer","series":[{"name":"表数量","field":"table_cnt","type":"bar"}],"dataset":[{"layer":"DWD","table_cnt":18}],"error":null}'
+    const message = `结论如下：\n${rawJson}\n以上是最近情况。`
+
+    const specs = extractChartSpecsFromText(message)
+    const stripped = stripChartSpecsFromText(message)
+
+    expect(specs).toHaveLength(1)
+    expect(specs[0].chart_type).toBe('bar')
+    expect(stripped).toContain('结论如下：')
+    expect(stripped).toContain('以上是最近情况。')
+    expect(stripped).not.toContain('"kind":"chart_spec"')
+    expect(stripped).not.toContain('"chart_type":"bar"')
+  })
 })

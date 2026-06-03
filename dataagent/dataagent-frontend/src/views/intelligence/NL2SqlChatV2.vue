@@ -209,6 +209,13 @@
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
                         <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
                         <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
+                        <div
+                          v-for="tool in buildInlineChartTools(block.content, `${msg.id}-${ti}-${block.blockIndex}`)"
+                          :key="tool.id"
+                          class="v2-inline-chart"
+                        >
+                          <ToolOutputRenderer :tool="tool" />
+                        </div>
                       </div>
                     </template>
                   </template>
@@ -222,7 +229,16 @@
 
                 <!-- Fallback for non-assistant or empty v2state -->
                 <template v-else>
-                  <div v-if="msg.content" class="v2-text-block" v-html="renderMarkdown(msg.content)" />
+                  <div v-if="msg.content" class="v2-text-block">
+                    <div v-if="cleanTextForDisplay(msg.content)" v-html="renderMarkdown(cleanTextForDisplay(msg.content))" />
+                    <div
+                      v-for="tool in buildInlineChartTools(msg.content, msg.id)"
+                      :key="tool.id"
+                      class="v2-inline-chart"
+                    >
+                      <ToolOutputRenderer :tool="tool" />
+                    </div>
+                  </div>
                 </template>
 
                 <!-- Message footer -->
@@ -276,11 +292,11 @@
             <button
               type="button"
               class="v2-send-btn"
-              :class="{ 'v2-cancel-btn': isStreaming }"
-              :disabled="!isStreaming && !inputText.trim()"
-              @click="isStreaming ? handleCancel() : handleSend()"
+              :class="{ 'v2-cancel-btn': activeTaskId }"
+              :disabled="activeTaskId ? false : (!inputText.trim() || isStreaming)"
+              @click="activeTaskId ? handleCancel() : handleSend()"
             >
-              <svg v-if="isStreaming" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
+              <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
               <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
             </button>
           </div>
@@ -341,8 +357,9 @@ import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp } from './v2StreamParser'
 import { stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-import { hydrateMessageFromApi, renderMarkdown } from './chatMessage'
+import { buildInlineChartTools, hydrateMessageFromApi, renderMarkdown } from './chatMessage'
 import { useNl2SqlChat } from './useNl2SqlChat'
+import { useChatMessageActions } from './useChatMessageActions'
 
 const route = useRoute()
 const router = useRouter()
@@ -373,8 +390,16 @@ const {
   topics, topicId: activeTopicId, messages, inputText,
   providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
   isBusy: isStreaming,
+  activeTaskId,
   send: engineSend, cancel: engineCancel, detach,
 } = chat
+const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
+  api,
+  topicId: activeTopicId,
+  cleanText: cleanTextForDisplay,
+  notifyCopied: (message) => ElMessage.success(message),
+  notifyError: (message) => ElMessage.error(message),
+})
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.
@@ -827,67 +852,6 @@ function handleModelCommand(command) {
   if (providerId && model) {
     selectedProvider.value = providerId
     selectedModel.value = model
-  }
-}
-
-// ── Message Tools ─────────────────────────────────────────────────────────
-async function handleCopyMessage(msg) {
-  let text = String(msg?.content || '')
-  if (msg?._v2state?.turns) {
-    const texts = []
-    for (const turn of msg._v2state.turns) {
-      if (!turn.blocks) continue
-      for (const block of turn.blocks) {
-        if (block.type === 'text' && block.content) {
-          texts.push(cleanTextForDisplay(block.content))
-        }
-      }
-    }
-    if (texts.length) text = texts.join('\n\n')
-  }
-  text = text.trim()
-  if (!text) return
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.left = '-9999px'
-      ta.style.top = '-9999px'
-      document.body.appendChild(ta)
-      ta.focus()
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    ElMessage.success('已复制')
-  } catch (_error) {
-    ElMessage.error('复制失败，请手动复制')
-  }
-}
-
-async function toggleMessageFeedback(msg, value) {
-  if (!msg || typeof msg !== 'object') return
-  const previousFeedback = String(msg.feedback || '')
-  const nextFeedback = previousFeedback === value ? '' : value
-  const topicId = String(activeTopicId.value || '')
-  const messageId = String(msg.id || '')
-
-  msg.feedback = nextFeedback
-  if (!topicId || !messageId) {
-    msg.feedback = previousFeedback
-    ElMessage.error('反馈保存失败，请稍后重试')
-    return
-  }
-
-  try {
-    const updated = await topicApi.updateMessageFeedback(topicId, messageId, nextFeedback)
-    msg.feedback = String(updated?.feedback ?? nextFeedback)
-  } catch (_error) {
-    msg.feedback = previousFeedback
-    ElMessage.error('反馈保存失败，请稍后重试')
   }
 }
 
@@ -1428,6 +1392,10 @@ onBeforeUnmount(() => {
 
 /* ── Tool output row ─────────────────────────────────────────────────────── */
 .v2-tool-row { border-radius: 10px; overflow: hidden; }
+
+.v2-inline-chart {
+  margin-top: 10px;
+}
 
 /* ── Text block ──────────────────────────────────────────────────────────── */
 .v2-text-block {
