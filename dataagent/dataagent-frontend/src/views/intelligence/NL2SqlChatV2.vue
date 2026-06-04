@@ -205,9 +205,12 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
-                      <!-- Text block -->
+                      <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
-                        <div v-if="cleanTextForDisplay(block.content)" v-html="renderMarkdown(cleanTextForDisplay(block.content))" />
+                        <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
+                          <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                          <ChartSpecView v-else :spec="seg.spec" />
+                        </template>
                         <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
                       </div>
                     </template>
@@ -222,7 +225,12 @@
 
                 <!-- Fallback for non-assistant or empty v2state -->
                 <template v-else>
-                  <div v-if="msg.content" class="v2-text-block" v-html="renderMarkdown(msg.content)" />
+                  <div v-if="msg.content" class="v2-text-block">
+                    <template v-for="(seg, si) in answerSegments(msg.content)" :key="si">
+                      <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
+                      <ChartSpecView v-else :spec="seg.spec" />
+                    </template>
+                  </div>
                 </template>
 
                 <!-- Message footer -->
@@ -276,11 +284,11 @@
             <button
               type="button"
               class="v2-send-btn"
-              :class="{ 'v2-cancel-btn': isStreaming }"
-              :disabled="isStreaming ? false : !canSend"
-              @click="isStreaming ? handleCancel() : handleSend()"
+              :class="{ 'v2-cancel-btn': activeTaskId }"
+              :disabled="activeTaskId ? false : !canSend"
+              @click="activeTaskId ? handleCancel() : handleSend()"
             >
-              <svg v-if="isStreaming" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
+              <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
               <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
             </button>
           </div>
@@ -338,11 +346,13 @@ import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
+import ChartSpecView from './ChartSpecView.vue'
 import { blockToToolProp } from './v2StreamParser'
-import { stripChartSpecsFromText } from './chartSpec'
+import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
 import { hydrateMessageFromApi, isPlainEnterSubmit, renderMarkdown } from './chatMessage'
 import { useNl2SqlChat } from './useNl2SqlChat'
+import { useChatMessageActions } from './useChatMessageActions'
 
 const route = useRoute()
 const router = useRouter()
@@ -372,10 +382,17 @@ const chat = useNl2SqlChat({
 const {
   topics, topicId: activeTopicId, messages, inputText,
   providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
-  availableModels, canSend, isBusy: isStreaming,
+  availableModels, canSend, isBusy: isStreaming, activeTaskId,
   thinkingExpanded, toggleThinking,
   send: engineSend, cancel: engineCancel, detach,
 } = chat
+const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
+  api,
+  topicId: activeTopicId,
+  cleanText: cleanTextForDisplay,
+  notifyCopied: (message) => ElMessage.success(message),
+  notifyError: (message) => ElMessage.error(message),
+})
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.
@@ -659,6 +676,9 @@ async function loadTopics() {
 async function loadWidgetTopics() {
   try {
     const params = { page: 1, page_size: 50 }
+    // Assistant filter mirrors portal mode so the same agent selector narrows
+    // both sources; the admin widget endpoint accepts agent_id server-side.
+    if (route.query.agent_id) params.agent_id = route.query.agent_id
     // User filter is applied server-side so it stays accurate across pages.
     if (filterUser.value.startsWith('ext:')) params.external_user_id = filterUser.value.slice(4)
     else if (filterUser.value.startsWith('vis:')) params.visitor_id = filterUser.value.slice(4)
@@ -718,6 +738,12 @@ async function selectTopic(topicId, options = {}) {
 // charts must come from a real tool call (rendered below that tool block).
 function cleanTextForDisplay(content) {
   return stripChartSpecsFromText(String(content || '')).trim()
+}
+
+// Split answer prose into ordered text/chart segments so an inline chart_spec
+// (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
+function answerSegments(content) {
+  return splitChartSpecText(String(content || ''))
 }
 
 // ── Suggestions ───────────────────────────────────────────────────────────
@@ -825,67 +851,6 @@ function handleModelCommand(command) {
   }
 }
 
-// ── Message Tools ─────────────────────────────────────────────────────────
-async function handleCopyMessage(msg) {
-  let text = String(msg?.content || '')
-  if (msg?._v2state?.turns) {
-    const texts = []
-    for (const turn of msg._v2state.turns) {
-      if (!turn.blocks) continue
-      for (const block of turn.blocks) {
-        if (block.type === 'text' && block.content) {
-          texts.push(cleanTextForDisplay(block.content))
-        }
-      }
-    }
-    if (texts.length) text = texts.join('\n\n')
-  }
-  text = text.trim()
-  if (!text) return
-  try {
-    if (navigator.clipboard && window.isSecureContext) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.left = '-9999px'
-      ta.style.top = '-9999px'
-      document.body.appendChild(ta)
-      ta.focus()
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-    }
-    ElMessage.success('已复制')
-  } catch (_error) {
-    ElMessage.error('复制失败，请手动复制')
-  }
-}
-
-async function toggleMessageFeedback(msg, value) {
-  if (!msg || typeof msg !== 'object') return
-  const previousFeedback = String(msg.feedback || '')
-  const nextFeedback = previousFeedback === value ? '' : value
-  const topicId = String(activeTopicId.value || '')
-  const messageId = String(msg.id || '')
-
-  msg.feedback = nextFeedback
-  if (!topicId || !messageId) {
-    msg.feedback = previousFeedback
-    ElMessage.error('反馈保存失败，请稍后重试')
-    return
-  }
-
-  try {
-    const updated = await topicApi.updateMessageFeedback(topicId, messageId, nextFeedback)
-    msg.feedback = String(updated?.feedback ?? nextFeedback)
-  } catch (_error) {
-    msg.feedback = previousFeedback
-    ElMessage.error('反馈保存失败，请稍后重试')
-  }
-}
-
 // ── Send message ───────────────────────────────────────────────────────────
 // The send -> deliver -> stream -> reconcile lifecycle lives in the shared
 // engine. Routing (onTopicEnsured), scroll (messages watcher), topic-list
@@ -925,7 +890,7 @@ onMounted(async () => {
 })
 
 watch(() => route.query.agent_id, async () => {
-  if (isWidgetMode.value) return
+  // Re-query both sources: widget mode also honors the assistant filter.
   activeTopicId.value = ''
   messages.value = []
   await loadTopics()

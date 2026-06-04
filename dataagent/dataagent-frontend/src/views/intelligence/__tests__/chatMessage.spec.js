@@ -5,6 +5,7 @@ import {
   compareTopicsByRecency,
   extractErrorText,
   hydrateMessageFromApi,
+  getMessageCopyText,
   isPlainEnterSubmit,
   normalizeTopic,
   renderMarkdown,
@@ -62,6 +63,29 @@ describe('chatMessage helpers', () => {
   it('hydrates a user message content from blocks when content is empty', () => {
     const m = hydrateMessageFromApi({ role: 'user', blocks: [{ text: 'a' }, { output: 'b' }] })
     expect(m.content).toBe('a\nb')
+  })
+
+  it('builds copy text from v2 text blocks and strips display-only chart specs', () => {
+    const msg = {
+      content: 'fallback',
+      _v2state: {
+        turns: [
+          {
+            blocks: [
+              { type: 'thinking', content: 'internal reasoning' },
+              { type: 'text', content: '结论\n```chart\n{"kind":"chart_spec"}\n```' },
+              { type: 'text', content: '补充说明' },
+            ],
+          },
+        ],
+      },
+    }
+
+    const text = getMessageCopyText(msg, {
+      cleanText: (value) => String(value).replace(/```chart[\s\S]*?```/g, '').trim(),
+    })
+
+    expect(text).toBe('结论\n\n补充说明')
   })
 
   it('hydrates an assistant message with reconstructed turns and superset fields', () => {

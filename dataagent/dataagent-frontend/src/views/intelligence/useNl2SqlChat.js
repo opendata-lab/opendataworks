@@ -66,6 +66,7 @@ export function useNl2SqlChat(options) {
   const activeTaskId = ref('')
   const activeAssistantId = ref('')
   const abortController = ref(null)
+  let runToken = 0
 
   const hydratedTopicIds = new Set()
 
@@ -87,8 +88,6 @@ export function useNl2SqlChat(options) {
   const canSend = computed(() => (
     Boolean(inputText.value.trim())
     && !isBusy.value
-    && Boolean(selectedProvider.value)
-    && Boolean(selectedModel.value)
   ))
   // Base keyword filter; components layer their own status/user/sort facets.
   const filteredTopics = computed(() => {
@@ -192,9 +191,10 @@ export function useNl2SqlChat(options) {
 
   const loadTopics = async () => {
     try {
-      const list = await api.topicApi.listTopics(listTopicsParams())
+      const data = await api.topicApi.listTopics(listTopicsParams())
       const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
-      const nextTopics = (Array.isArray(list) ? list : []).map(normalizeTopic).filter((t) => t.topic_id)
+      const list = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
+      const nextTopics = list.map(normalizeTopic).filter((t) => t.topic_id)
       if (currentTopic?.topic_id && !nextTopics.some((t) => t.topic_id === currentTopic.topic_id)) {
         nextTopics.unshift(currentTopic)
       }
@@ -235,13 +235,13 @@ export function useNl2SqlChat(options) {
   }
 
   // ── Run lifecycle ────────────────────────────────────────────────────────
-  const subscribe = async (taskId, assistant) => {
+  const subscribe = async (taskId, assistant, controller, runId) => {
     // The owning topic is captured up front because a new conversation can change
     // topicId mid-stream; the engine writes task status onto its topic directly.
     const runTopicId = topicId.value
     try {
       await api.taskApi.streamSdkEvents(taskId, {
-        signal: abortController.value?.signal,
+        signal: controller?.signal,
         afterId: 0,
         onRecord: (record) => {
           processV2Record(assistant._v2state, record)
@@ -250,7 +250,7 @@ export function useNl2SqlChat(options) {
       })
       // A hard backend failure can end the stream without a terminal done/error
       // record, leaving _v2state on 'streaming'. Reconcile against the task status.
-      if (assistant._v2state.status !== 'error' && !abortController.value?.signal?.aborted) {
+      if (assistant._v2state.status !== 'error' && !controller?.signal?.aborted && runId === runToken) {
         try {
           const taskState = await api.taskApi.getTask(taskId)
           if (String(taskState?.task_status || '') === 'error') {
@@ -275,9 +275,11 @@ export function useNl2SqlChat(options) {
       setTopicTaskStatus(runTopicId, 'error')
       emitEvent({ name: 'error', payload: assistant.error.message })
     } finally {
-      activeTaskId.value = ''
-      activeAssistantId.value = ''
-      abortController.value = null
+      if (runId === runToken && activeTaskId.value === taskId) {
+        activeTaskId.value = ''
+        activeAssistantId.value = ''
+        abortController.value = null
+      }
     }
   }
 
@@ -286,6 +288,7 @@ export function useNl2SqlChat(options) {
   // backend task keeps running and stays recoverable from history. Unlike
   // cancel(), this does not hit the backend cancel API.
   const detach = () => {
+    runToken += 1
     abortController.value?.abort()
     activeTaskId.value = ''
     activeAssistantId.value = ''
@@ -297,6 +300,7 @@ export function useNl2SqlChat(options) {
   const send = async () => {
     const text = inputText.value.trim()
     if (!text || isBusy.value) return
+    const runId = ++runToken
     isSubmitting.value = true
     inputText.value = ''
     errorText.value = ''
@@ -305,28 +309,29 @@ export function useNl2SqlChat(options) {
 
     // Create the controller before the network round-trip so a mid-request
     // detach aborts the run via this same controller's signal.
-    abortController.value = new AbortController()
+    const controller = new AbortController()
+    abortController.value = controller
     try {
       const currentTopicId = await ensureTopic(truncate(text, topicTitleLength))
       onTopicEnsured(currentTopicId)
       const response = await api.taskApi.deliverMessage({
         topic_id: currentTopicId,
         content: text,
-        provider_id: selectedProvider.value,
-        model: selectedModel.value,
+        provider_id: selectedProvider.value || undefined,
+        model: selectedModel.value || undefined,
         agent_id: getAgentId() || undefined,
         debug: false,
         execution_mode: 'auto',
       })
       const taskId = String(response?.task_id || '')
       // Detached while the request was in flight: leave the backend task running.
-      if (!taskId || abortController.value?.signal?.aborted) return
+      if (!taskId || controller.signal.aborted || runId !== runToken) return
       activeTaskId.value = taskId
       activeAssistantId.value = assistant.id
       assistant.task_id = taskId
       updateActiveTopicAfterSend(text, taskId)
       emitEvent({ name: 'message:sent', payload: { taskId, text } })
-      await subscribe(taskId, assistant)
+      await subscribe(taskId, assistant, controller, runId)
     } catch (error) {
       if (error?.name === 'AbortError') return
       assistant.status = 'failed'
@@ -336,8 +341,10 @@ export function useNl2SqlChat(options) {
       emitEvent({ name: 'error', payload: assistant.error.message })
       notifyError(assistant.error.message)
     } finally {
-      isSubmitting.value = false
-      await afterRun()
+      if (runId === runToken) {
+        isSubmitting.value = false
+        await afterRun()
+      }
     }
   }
 
@@ -345,11 +352,16 @@ export function useNl2SqlChat(options) {
   const cancel = async () => {
     const taskId = activeTaskId.value
     if (!taskId) return
+    const assistantId = activeAssistantId.value
+    runToken += 1
     abortController.value?.abort()
     await api.taskApi.cancelTask(taskId)
     activeTaskId.value = ''
+    activeAssistantId.value = ''
+    isSubmitting.value = false
+    abortController.value = null
     setTopicTaskStatus(topicId.value, 'suspended')
-    const assistant = messages.value.find((m) => m.id === activeAssistantId.value)
+    const assistant = messages.value.find((m) => m.id === assistantId)
     if (assistant) {
       assistant.status = 'cancelled'
       assistant.error = assistant.error || { message: '任务已取消' }

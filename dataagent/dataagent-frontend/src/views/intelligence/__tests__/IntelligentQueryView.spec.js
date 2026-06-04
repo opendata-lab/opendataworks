@@ -21,6 +21,7 @@ import IntelligentQueryView from '../IntelligentQueryView.vue'
 
 const stubs = {
   NL2SqlChat: { template: '<div data-test="nl2sql-chat">Agent问答聊天</div>' },
+  NL2SqlChatV2: { template: '<div data-test="nl2sql-chat-v2">Chat V2</div>' },
   AgentStudio: { template: '<div data-test="agent-studio">智能体内容</div>' },
   AgentDetailView: { template: '<div data-test="agent-detail">智能体详情</div>' },
   SkillStudio: { template: '<div data-test="skill-studio">Skills 内容</div>' },
@@ -54,15 +55,16 @@ describe('IntelligentQueryView', () => {
     routerReplace.mockReset()
   })
 
-  it('renders the original chat workbench by default', () => {
+  it('renders chat v2 by default', () => {
     const wrapper = mountView()
 
-    expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat-v2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="skill-studio"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="agent-studio"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="dataagent-config"]').exists()).toBe(false)
-    expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('chat')
-    expect(wrapper.text()).toContain('Agent问答')
+    expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('chat-v2')
+    expect(wrapper.text()).toContain('Chat')
     expect(wrapper.text()).not.toContain('智能问数')
   })
 
@@ -70,6 +72,7 @@ describe('IntelligentQueryView', () => {
     const wrapper = mountView({ query: { tab: 'skills' } })
 
     expect(wrapper.find('[data-test="skill-studio"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat-v2"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('skills')
 
@@ -84,6 +87,7 @@ describe('IntelligentQueryView', () => {
     const wrapper = mountView({ query: { tab: 'models' } })
 
     expect(wrapper.find('[data-test="dataagent-config"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat-v2"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('models')
   })
@@ -92,6 +96,7 @@ describe('IntelligentQueryView', () => {
     const wrapper = mountView({ query: { tab: 'widget' } })
 
     expect(wrapper.find('[data-test="widget-access"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat-v2"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('widget')
   })
@@ -100,6 +105,7 @@ describe('IntelligentQueryView', () => {
     const wrapper = mountView({ query: { tab: 'agents' } })
 
     expect(wrapper.find('[data-test="agent-studio"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat-v2"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('agents')
   })

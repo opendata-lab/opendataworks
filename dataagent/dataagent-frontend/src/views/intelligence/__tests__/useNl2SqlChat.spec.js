@@ -83,6 +83,50 @@ describe('useNl2SqlChat engine', () => {
     await sendPromise
   })
 
+  it('does not attach an old task after detaching during delivery and sending a new question', async () => {
+    const api = makeApi()
+    let resolveFirstDeliver
+    api.topicApi.createTopic
+      .mockResolvedValueOnce({ topic_id: 'topic-1', title: 'first' })
+      .mockResolvedValueOnce({ topic_id: 'topic-2', title: 'second' })
+    api.taskApi.deliverMessage
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveFirstDeliver = resolve }))
+      .mockResolvedValueOnce({ task_id: 'task-2' })
+    const chat = await ready(api)
+
+    chat.inputText.value = 'first'
+    const firstSend = chat.send()
+    await flushPromises()
+
+    await chat.newConversation()
+    chat.inputText.value = 'second'
+    await chat.send()
+
+    resolveFirstDeliver({ task_id: 'task-1' })
+    await firstSend
+    await flushPromises()
+
+    expect(api.taskApi.streamSdkEvents).toHaveBeenCalledTimes(1)
+    expect(api.taskApi.streamSdkEvents).toHaveBeenCalledWith('task-2', expect.anything())
+  })
+
+  it('allows sending with text even when provider/model are not selected', async () => {
+    const api = makeApi()
+    const chat = await ready(api)
+    chat.selectedProvider.value = ''
+    chat.selectedModel.value = ''
+    chat.inputText.value = 'use backend default'
+
+    expect(chat.canSend.value).toBe(true)
+    await chat.send()
+
+    expect(api.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: 'use backend default',
+      provider_id: undefined,
+      model: undefined,
+    }))
+  })
+
   it('cancel aborts locally and cancels the backend task (suspended)', async () => {
     const api = makeApi()
     // Honor the abort signal so the in-flight send unwinds like a real fetch.
@@ -104,6 +148,7 @@ describe('useNl2SqlChat engine', () => {
     await flushPromises()
     expect(api.taskApi.cancelTask).toHaveBeenCalledWith('task-1')
     expect(chat.topics.value[0].current_task_status).toBe('suspended')
+    expect(chat.messages.value.find((m) => m.role === 'assistant')?.status).toBe('cancelled')
     expect(chat.isBusy.value).toBe(false)
 
     await sendPromise

@@ -148,3 +148,24 @@ export function hydrateMessageFromApi(item) {
     _v2state: reactive(buildV2StateFromStoredBlocks(item)),
   })
 }
+
+export function getMessageCopyText(message, options = {}) {
+  const cleanText = typeof options.cleanText === 'function'
+    ? options.cleanText
+    : (value) => String(value || '').trim()
+  let text = String(message?.content || '')
+  if (message?._v2state?.turns) {
+    const texts = []
+    for (const turn of message._v2state.turns) {
+      if (!turn?.blocks) continue
+      for (const block of turn.blocks) {
+        if (block.type === 'text' && block.content) {
+          const cleaned = String(cleanText(block.content) || '').trim()
+          if (cleaned) texts.push(cleaned)
+        }
+      }
+    }
+    if (texts.length) text = texts.join('\n\n')
+  }
+  return text.trim()
+}

@@ -11,7 +11,9 @@ const apiMocks = vi.hoisted(() => ({
   },
   taskApi: {
     deliverMessage: vi.fn(),
-    streamSdkEvents: vi.fn()
+    streamSdkEvents: vi.fn(),
+    getTask: vi.fn(),
+    cancelTask: vi.fn()
   },
   adminApi: {
     getSettings: vi.fn()
@@ -30,8 +32,18 @@ const routeState = vi.hoisted(() => ({
 
 const routerReplace = vi.hoisted(() => vi.fn())
 
+const dataagentApiMock = vi.hoisted(() => ({
+  listWidgetTopics: vi.fn(),
+  listWidgetUsers: vi.fn(),
+  getWidgetTopicMessages: vi.fn()
+}))
+
 vi.mock('@/api/nl2sql', () => ({
   createNl2SqlApiClient: () => apiMocks
+}))
+
+vi.mock('@/api/dataagent', () => ({
+  dataagentApi: dataagentApiMock
 }))
 
 vi.mock('vue-router', () => ({
@@ -164,7 +176,11 @@ const mountChat = () => mount(NL2SqlChatV2, {
       },
       ToolOutputRenderer: {
         props: ['tool'],
-        template: '<div class="tool-output-renderer-stub" />'
+        template: '<div class="tool-output-renderer-stub" :data-output-kind="tool?.output?.kind || \'\'" />'
+      },
+      ChartSpecView: {
+        props: ['spec'],
+        template: '<div class="chart-spec-view-stub" :data-chart-type="spec?.chart_type || \'\'" />'
       }
     }
   }
@@ -176,8 +192,15 @@ describe('NL2SqlChatV2 URL location', () => {
     Object.values(apiMocks.taskApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.adminApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.agentApi).forEach((fn) => fn.mockReset())
+    Object.values(dataagentApiMock).forEach((fn) => fn.mockReset())
     routerReplace.mockReset()
     scrollbarSetScrollTop.mockReset()
+
+    dataagentApiMock.listWidgetTopics.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 50 })
+    dataagentApiMock.listWidgetUsers.mockResolvedValue({ items: [] })
+    dataagentApiMock.getWidgetTopicMessages.mockResolvedValue({
+      topic_id: '', page: 1, page_size: 500, order: 'asc', total: 0, items: []
+    })
 
     routeState.path = '/intelligent-query'
     routeState.name = 'IntelligentQuery'
@@ -217,6 +240,8 @@ describe('NL2SqlChatV2 URL location', () => {
       total: topicMessages[topicId]?.length || 0,
       items: topicMessages[topicId] || []
     }))
+    apiMocks.taskApi.getTask.mockResolvedValue({ task_status: 'success' })
+    apiMocks.taskApi.cancelTask.mockResolvedValue({ status: 'ok' })
   })
 
   it('opens the topic from the URL and scrolls to the target message', async () => {
@@ -283,6 +308,50 @@ describe('NL2SqlChatV2 URL location', () => {
     const errorCard = wrapper.find('.v2-error-card')
     expect(errorCard.exists()).toBe(true)
     expect(errorCard.text()).toContain('模型会话异常结束')
+  })
+
+  it('renders inline chart specs from assistant text without showing raw spec markup', async () => {
+    const chartSpec = JSON.stringify({
+      kind: 'chart_spec',
+      version: 1,
+      chart_type: 'line',
+      title: '发布趋势',
+      x_field: 'stat_day',
+      series: [{ name: '发布次数', field: 'publish_cnt', type: 'line' }],
+      dataset: [{ stat_day: '2026-03-10', publish_cnt: 3 }]
+    })
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => ({
+      topic_id: topicId,
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        {
+          message_id: 'a-chart',
+          topic_id: topicId,
+          sender_type: 'assistant',
+          status: 'finished',
+          content: `趋势如下。\n${chartSpec}\n以上是最近发布情况。`,
+          created_at: '2026-05-30T05:01:00Z'
+        }
+      ]
+    }))
+    routeState.query = {
+      tab: 'chat-v2',
+      topic_id: 'topic-1'
+    }
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    expect(wrapper.text()).toContain('趋势如下。')
+    expect(wrapper.text()).toContain('以上是最近发布情况。')
+    expect(wrapper.text()).not.toContain('"kind":"chart_spec"')
+    expect(wrapper.text()).not.toContain('"chart_type"')
+    expect(wrapper.find('.chart-spec-view-stub[data-chart-type="line"]').exists()).toBe(true)
   })
 
   it('writes the selected topic to the URL and clears the previous message target', async () => {
@@ -378,5 +447,54 @@ describe('NL2SqlChatV2 URL location', () => {
     await wrapper.find('textarea').setValue('hi')
 
     expect(wrapper.find('.v2-send-btn').attributes('disabled')).toBeDefined()
+  })
+
+  it('shows cancel only after the backend task id is available', async () => {
+    let resolveDeliver
+    let resolveStream
+    apiMocks.topicApi.createTopic.mockResolvedValue(makeTopic('topic-new', 'hi there'))
+    apiMocks.taskApi.deliverMessage.mockImplementation(() => new Promise((resolve) => { resolveDeliver = resolve }))
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => { resolveStream = resolve }))
+
+    const wrapper = mountChat()
+    await flushPromises()
+    await nextTick()
+
+    await wrapper.find('.v2-btn-new').trigger('click')
+    await wrapper.find('textarea').setValue('hi there')
+    await wrapper.find('.v2-send-btn').trigger('click')
+    await flushPromises()
+
+    const buttonDuringDelivery = wrapper.get('.v2-send-btn')
+    expect(buttonDuringDelivery.classes()).not.toContain('v2-cancel-btn')
+    expect(buttonDuringDelivery.attributes('disabled')).toBeDefined()
+
+    resolveDeliver({ task_id: 'task-1' })
+    await flushPromises()
+    await nextTick()
+
+    const buttonWithTask = wrapper.get('.v2-send-btn')
+    expect(buttonWithTask.classes()).toContain('v2-cancel-btn')
+    expect(buttonWithTask.attributes('disabled')).toBeUndefined()
+
+    resolveStream()
+  })
+
+  it('forwards the selected assistant to the widget topic query', async () => {
+    routeState.query = { tab: 'chat-v2', agent_id: 'agent_sales' }
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    const widgetTab = wrapper.findAll('.v2-source-tab').find((b) => b.text() === 'Widget')
+    expect(widgetTab).toBeTruthy()
+    await widgetTab.trigger('click')
+    await flushPromises()
+
+    expect(dataagentApiMock.listWidgetTopics).toHaveBeenCalled()
+    expect(dataagentApiMock.listWidgetTopics).toHaveBeenLastCalledWith(
+      expect.objectContaining({ agent_id: 'agent_sales' })
+    )
   })
 })
