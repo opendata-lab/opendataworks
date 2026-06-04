@@ -1,9 +1,12 @@
 # DataAgent Eval — Chat V2 Interface Design
 
 **Date:** 2026-06-04
-**Goal:** Switch the DataAgent online-evaluation runners from the V1 "magic event"
-task stream to the Chat V2 SDK-event interface, so the eval tool observes each run
-through the same protocol the shipped Chat V2 chat surface uses.
+**Goal:** Switch the DataAgent online-evaluation runners off the V1 "magic event"
+task stream so the eval tool observes each run through Chat V2. Rather than
+re-deriving blocks from the raw SDK-event stream, the runners consume the
+**server-projected history blocks** that Chat V2 already persists, so the eval sees
+exactly what the product renders/persists — and the projection logic stays in one
+backend implementation instead of being copied into the eval tool.
 **Tech Stack:** Evaluation tooling (`tools/dataagent-evals/*`, stdlib-only Python).
 DataAgent backend is the system under test through `/api/v1/nl2sql/*`; no backend
 change is owned by this design.
@@ -15,7 +18,12 @@ In scope:
 - `tools/dataagent-evals/builtin/run.py` — stdlib evaluation runner.
 - `tools/dataagent-evals/deepeval/run.py` — DeepEval-driven runner.
 - The per-case run evidence (tool names, SQL outputs, chart outputs, tool-event
-  summary, token usage) now derived from Chat V2 SDK records instead of magic events.
+  summary, token usage) now derived from the Chat V2 server-projected assistant
+  message blocks instead of magic events.
+- Shared projection contract fixtures + tests locking the two remaining projection
+  implementations (`dataagent/contracts/sdk-block-projection/cases.json`,
+  `dataagent/dataagent-backend/tests/test_sdk_block_projection_contract.py`,
+  `dataagent/dataagent-frontend/.../sdkBlockProjection.contract.spec.js`).
 - The associated regression tests (`tests/test_run_dataagent_evals.py`,
   `tests/test_dataagent_deepeval_evals.py`).
 
@@ -23,10 +31,9 @@ Out of scope:
 
 - Topic creation (`POST /topics`) and task submission
   (`POST /tasks/deliver-message`) — already shared with Chat V2, unchanged.
-- Final assistant answer sourcing from `GET /topics/{id}/messages` `content` —
-  the persisted assistant message, unchanged.
-- Backend SDK-record persistence/projection (covered by
-  `2026-05-31-chat-v2-design.md`).
+- Backend SDK-record persistence/projection itself (covered by
+  `2026-05-31-chat-v2-design.md`); this design consumes its output, it does not
+  change the projection.
 - Judge model call, scoring gates, report shape — unchanged.
 
 ## Current State
@@ -60,36 +67,33 @@ coupled to the legacy adapter the repo is consolidating away from.
 
 ## Design
 
-### Interface switch
+### Interface switch — consume projected history, don't re-project
 
-Replace the magic-event polling in `_poll_task` with SDK-event paging:
+The eval runs a case, polls to a terminal state, then reads the run's evidence from
+the **already-projected** assistant message in `GET /topics/{id}/messages`. Each
+assistant message Chat V2 persists carries:
 
-`GET /api/v1/nl2sql/tasks/{task_id}/sdk-events?after_id=<cursor>&limit=500`
+- `content` — the final assistant answer (already used).
+- `blocks` — the server-projected `thinking` / `main_text` / `tool_use` blocks,
+  produced by `topic_task_store._project_sdk_records` (the same projection the Chat
+  V2 history surface renders).
+- `usage` — per-message token usage.
 
-`_poll_task` keeps the same outer contract — poll task status, accumulate the
-run's records, follow recovered/replacement tasks (`task_recovered`), honour the
-deadline, and return `(task, records, errors)` — but `records` are now SDK records
-keyed by `seq_id` with a `next_after_id` cursor and `has_more` paging drained per
-poll. The recovered-task detection is status/error based and is unchanged.
+So the eval no longer needs the raw SDK-event stream, and no longer carries its own
+copy of the projection. `_poll_task` is reduced to a status-only poll: poll
+`GET /tasks/{id}`, follow recovered/replacement tasks (`task_recovered`), honour the
+deadline, and return `(task, errors)`. The recovered-task detection is unchanged.
+After the terminal status the runner reads `/messages` once and selects the last
+assistant message for the final task id (`_final_assistant_message`).
 
-### Block projection (shared vocabulary)
+This removes the per-poll event paging entirely (fewer round-trips) and is strictly
+more Chat-V2-aligned: the eval evidence is now byte-for-byte the projection the
+product persists, not a re-derivation of it.
 
-A new local `_project_sdk_blocks(records)` mirrors backend `_project_sdk_records`
-and frontend `v2StreamParser.js`, returning the ordered blocks plus accumulated
-usage:
+### Evidence derivation (from the projected message blocks)
 
-```
-block = {
-  type: 'thinking' | 'main_text' | 'tool_use',
-  text,                       # thinking / main_text
-  tool_id, tool_name,         # tool_use
-  input,  output, is_error,   # tool_use (input parsed from input_json_delta)
-  seq_id,                     # originating record seq for ordering
-}
-usage = { input_tokens?, output_tokens?, ... }   # from message_start / message_delta
-```
-
-### Evidence derivation (from blocks, not magic events)
+`blocks = message["blocks"]` (projected block shape:
+`{type, text?, tool_id?, tool_name?, input?, output?, is_error?}`).
 
 - `_collect_tool_names(blocks)` — `tool_name` of each `tool_use` block, de-duped.
 - `_extract_sql_outputs(blocks, final_answer)` — SQL from `tool_use` block `input`
@@ -97,47 +101,75 @@ usage = { input_tokens?, output_tokens?, ... }   # from message_start / message_
   final answer. Reuses the existing `_looks_like_sql` / `_normalise_sql` helpers.
 - `_extract_chart_outputs(blocks)` — chart specs embedded in `tool_use`
   input/output.
-- `_summarize_tool_events(blocks)` — `[{ seq_id, tool_name, input, output }]`,
-  bounded/truncated for the judge payload (builtin runner).
-- `_collect_usage(task, messages, stream_usage)` — merges projected stream usage
-  with `task.usage` and message usage (single primary source: the SDK stream).
+- `_summarize_tool_events(blocks)` — `[{ seq_id, tool_name, input, output }]` where
+  `seq_id` is the tool's ordinal among `tool_use` blocks (the projected blocks are
+  already in render order; no raw record seq is needed). Bounded/truncated for the
+  judge payload (builtin runner).
+- `_collect_usage(task, message)` — merges `task.usage` with the assistant
+  `message.usage`.
 
-The final assistant answer still comes from `GET /topics/{id}/messages` `content`
-(unchanged); only the run-evidence source moves to the Chat V2 interface. There is
-no fallback to the magic-event endpoint — one primary path per repo working rules.
+There is no fallback to the magic-event endpoint or the raw `/sdk-events` stream —
+one primary path per repo working rules.
+
+### Projection contract (collapsing three copies to two)
+
+Removing the eval's `_project_sdk_blocks` leaves exactly two projection
+implementations that must agree, and they are inherently coupled (live stream vs.
+persisted history rendering the same answer):
+
+- backend `topic_task_store._project_sdk_records` (Python)
+- frontend `v2StreamParser.processV2Record` (JS)
+
+A shared golden-fixture file, `dataagent/contracts/sdk-block-projection/cases.json`,
+encodes `records → expected canonical blocks` for representative cases (text,
+thinking, tool_use success/error, dropped-empty, multi-turn flatten, malformed input
+JSON). Canonical block shape:
+`{kind: 'thinking'|'text'|'tool_use', text?, tool_name?, input?, output?, is_error?}`.
+Two thin contract tests normalize each implementation's output to that canonical
+shape and assert equality against the same fixtures:
+
+- `dataagent/dataagent-backend/tests/test_sdk_block_projection_contract.py`
+- `dataagent/dataagent-frontend/src/views/intelligence/__tests__/sdkBlockProjection.contract.spec.js`
 
 ## Interfaces / Data Model
 
-Eval tool → DataAgent (changed call only):
+Eval tool → DataAgent (run-evidence sourcing only):
 
-| Before (V1 magic events) | After (Chat V2 SDK events) |
+| Before (V1 magic events) | After (Chat V2 projected history) |
 | --- | --- |
-| `GET /tasks/{id}/events?after_seq=&limit=` | `GET /tasks/{id}/sdk-events?after_id=&limit=` |
-| response `events[]`, `next_after_seq` | response `records[]`, `next_after_id`, `has_more` |
-| event `{ seq_id, event_type, data:{tool_name,input,output} }` | record `{ seq_id, record_type, event_type, data }` |
+| `GET /tasks/{id}/events?after_seq=&limit=` (per-poll) | `GET /tasks/{id}` status poll only |
+| evidence from `events[].data.{tool_name,input,output}` | evidence from assistant `message.blocks` in `GET /topics/{id}/messages` |
+| `_poll_task → (task, records, errors)` | `_poll_task → (task, errors)` |
 
 No schema, deployment, or report-format change. Exit codes and gate semantics are
 unchanged.
 
 ## Risks / Alternatives
 
-- **Projection duplicated in three places.** FE `v2StreamParser.js`, backend
-  `_project_sdk_records`, and now the eval `_project_sdk_blocks` must stay in
-  sync. Mitigated by keeping the eval projection minimal (only the fields the eval
-  needs) and covering it with regression tests.
-- **SQL now from tool input, not magic `output.sql`.** SDK `tool_use` input carries
-  the executed SQL; the magic event surfaced it under `output.sql`. The extractor
-  reads both block `input` and `output`, so structured SQL is still captured.
-- **No magic-event fallback.** Intentional, per "one verified primary path". Backout
-  is to revert the runners (the magic-event endpoint still exists for V1).
+- **Projection now in two places, not three.** The eval no longer projects; it
+  consumes the backend projection. The remaining FE/backend pair is locked by the
+  shared contract fixtures so live streaming and persisted history cannot silently
+  diverge.
+- **Charts embedded in answer text are not extracted.** `_extract_chart_outputs`
+  reads `tool_use` input/output only; charts emitted as fenced specs inside
+  `main_text` are not surfaced as `chart_outputs`. This matches the prior
+  magic-event behavior (it also keyed off event fields), so it is not a regression.
+- **Evidence requires the assistant message to be projected.** Blocks are read after
+  the task is terminal, when `da_agent_sdk_record` rows are complete, so the
+  projection is whole. Alternative considered and rejected: keep polling
+  `/sdk-events` and re-project in the eval — that is the third copy this change
+  removes.
+- **Backout** is to revert the runners (the magic-event and `/sdk-events` endpoints
+  both still exist).
 
 ## Verification
 
 - `pytest tests/test_run_dataagent_evals.py tests/test_dataagent_deepeval_evals.py`
-  with fakes updated to serve `/sdk-events` records.
+  with fakes updated to serve assistant `message.blocks` from `/messages`.
+- Projection contract: `pytest dataagent/dataagent-backend/tests/test_sdk_block_projection_contract.py`
+  and `vitest run .../sdkBlockProjection.contract.spec.js` against the shared
+  fixtures.
 - Dry-run path unchanged (no service calls).
 - End-to-end smoke (per AGENTS.md intelligent-query smoke method) remains the
   recommended full validation: run one real case and confirm tool/SQL evidence is
-  populated from SDK records.
-</content>
-</invoke>
+  populated from the projected message blocks.

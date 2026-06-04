@@ -270,98 +270,6 @@ def _flatten_strings(value: Any) -> list[str]:
     return []
 
 
-def _project_sdk_blocks(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Replay Chat V2 SDK records into rendered blocks.
-
-    Mirrors the backend ``topic_task_store._project_sdk_records`` and the frontend
-    ``v2StreamParser.js`` so eval evidence matches what Chat V2 renders/persists.
-    Returns ``(blocks, usage)`` where each block is
-    ``{type: 'thinking'|'main_text'|'tool_use', text, tool_id, tool_name, input,
-    output, is_error, seq_id}`` and usage is the accumulated token usage.
-    """
-    ordered: list[dict[str, Any]] = []
-    current: list[dict[str, Any]] | None = None
-    by_index: dict[int, dict[str, Any]] = {}
-    by_tool_id: dict[str, dict[str, Any]] = {}
-    usage: dict[str, Any] = {}
-
-    for record in records:
-        if not isinstance(record, dict):
-            continue
-        seq_id = int(record.get("seq_id") or 0)
-        record_type = str(record.get("record_type") or "")
-        data = record.get("data") if isinstance(record.get("data"), dict) else {}
-
-        if record_type == "stream":
-            etype = str(data.get("type") or "")
-            if etype == "message_start":
-                current = []
-                by_index = {}
-                message = data.get("message") if isinstance(data.get("message"), dict) else {}
-                if isinstance(message.get("usage"), dict):
-                    usage.update(message["usage"])
-            elif etype == "content_block_start" and current is not None:
-                cb = data.get("content_block") if isinstance(data.get("content_block"), dict) else {}
-                block_type = str(cb.get("type") or "text")
-                raw_index = data.get("index")
-                index = raw_index if isinstance(raw_index, int) else len(current)
-                if block_type == "thinking":
-                    block: dict[str, Any] = {"type": "thinking", "text": "", "seq_id": seq_id}
-                elif block_type == "tool_use":
-                    tool_id = str(cb.get("id") or "")
-                    block = {
-                        "type": "tool_use",
-                        "tool_id": tool_id,
-                        "tool_name": str(cb.get("name") or "Tool"),
-                        "_input_json": "",
-                        "input": None,
-                        "output": None,
-                        "is_error": False,
-                        "seq_id": seq_id,
-                    }
-                    if tool_id:
-                        by_tool_id[tool_id] = block
-                else:
-                    block = {"type": "main_text", "text": "", "seq_id": seq_id}
-                current.append(block)
-                by_index[index] = block
-                ordered.append(block)
-            elif etype == "content_block_delta" and current is not None:
-                raw_index = data.get("index")
-                block = by_index.get(raw_index) if isinstance(raw_index, int) else (current[-1] if current else None)
-                if block:
-                    delta = data.get("delta") if isinstance(data.get("delta"), dict) else {}
-                    dtype = str(delta.get("type") or "")
-                    if dtype == "thinking_delta":
-                        block["text"] = str(block.get("text") or "") + str(delta.get("thinking") or "")
-                    elif dtype == "text_delta":
-                        block["text"] = str(block.get("text") or "") + str(delta.get("text") or "")
-                    elif dtype == "input_json_delta":
-                        block["_input_json"] = str(block.get("_input_json") or "") + str(delta.get("partial_json") or "")
-            elif etype == "content_block_stop" and current is not None:
-                raw_index = data.get("index")
-                block = by_index.get(raw_index) if isinstance(raw_index, int) else (current[-1] if current else None)
-                if block and block.get("type") == "tool_use":
-                    input_json = str(block.get("_input_json") or "")
-                    if input_json:
-                        try:
-                            block["input"] = json.loads(input_json)
-                        except Exception:
-                            block["input"] = input_json
-            elif etype == "message_delta":
-                if isinstance(data.get("usage"), dict):
-                    usage.update(data["usage"])
-        elif record_type == "tool_result":
-            tool_use_id = str(data.get("tool_use_id") or "")
-            block = by_tool_id.get(tool_use_id)
-            if block is not None:
-                block["output"] = data.get("content")
-                block["is_error"] = bool(data.get("is_error"))
-
-    blocks = [{k: v for k, v in block.items() if not k.startswith("_")} for block in ordered]
-    return blocks, usage
-
-
 def _collect_tool_names(blocks: list[dict[str, Any]]) -> list[str]:
     names: list[str] = []
     for block in blocks:
@@ -446,11 +354,13 @@ def _extract_chart_outputs(blocks: list[dict[str, Any]]) -> list[Any]:
 
 def _summarize_tool_events(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summarized: list[dict[str, Any]] = []
+    seq = 0
     for block in blocks:
         if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
+        seq += 1
         item: dict[str, Any] = {
-            "seq_id": block.get("seq_id"),
+            "seq_id": seq,
             "tool_name": str(block.get("tool_name") or ""),
         }
         if block.get("input") not in (None, ""):
@@ -463,15 +373,12 @@ def _summarize_tool_events(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]
     return summarized
 
 
-def _collect_usage(task: dict[str, Any], messages: dict[str, Any], stream_usage: dict[str, Any]) -> dict[str, Any]:
+def _collect_usage(task: dict[str, Any], message: dict[str, Any]) -> dict[str, Any]:
     usage: dict[str, Any] = {}
-    if isinstance(stream_usage, dict):
-        usage.update(stream_usage)
     if isinstance(task.get("usage"), dict):
         usage.update(task["usage"])
-    for message in messages.get("items") or []:
-        if isinstance(message, dict) and isinstance(message.get("usage"), dict):
-            usage.update(message["usage"])
+    if isinstance(message.get("usage"), dict):
+        usage.update(message["usage"])
     return usage
 
 
@@ -552,7 +459,8 @@ def auto_rule_check(case: dict[str, Any], *, final_answer: str, blocks: list[dic
     }
 
 
-def _final_assistant_answer(messages: dict[str, Any], task_id: str) -> str:
+def _final_assistant_message(messages: dict[str, Any], task_id: str) -> dict[str, Any]:
+    """Pick the last assistant message for ``task_id`` (Chat V2 projected blocks)."""
     candidates = []
     for message in messages.get("items") or []:
         if not isinstance(message, dict):
@@ -566,7 +474,7 @@ def _final_assistant_answer(messages: dict[str, Any], task_id: str) -> str:
         for message in messages.get("items") or []:
             if isinstance(message, dict) and str(message.get("sender_type") or "") == "assistant":
                 candidates.append(message)
-    return str((candidates[-1] if candidates else {}).get("content") or "").strip()
+    return candidates[-1] if candidates else {}
 
 
 def _create_topic(base_url: str, case: dict[str, Any], agent_id: str) -> str:
@@ -627,38 +535,21 @@ def _resolve_recovered_task_id(base_url: str, topic_id: str, task: dict[str, Any
     return ""
 
 
-def _fetch_sdk_records(base_url: str, task_id: str, after_id: int) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
-    """Page through the Chat V2 SDK-event interface, draining ``has_more``."""
-    collected: list[dict[str, Any]] = []
-    cursor = max(0, after_id)
-    last_page: dict[str, Any] = {}
-    while True:
-        page = http_json(
-            "GET",
-            f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(task_id)}/sdk-events?after_id={cursor}&limit=500",
-            timeout=60,
-        )
-        last_page = page
-        records = [item for item in page.get("records") or [] if isinstance(item, dict)]
-        collected.extend(records)
-        cursor = max(cursor, int(page.get("next_after_id") or cursor))
-        if not page.get("has_more"):
-            break
-    return collected, cursor, last_page
-
-
 def _poll_task(
     base_url: str,
     task_id: str,
     timeout_seconds: int,
     *,
     topic_id: str = "",
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Poll task status until terminal, following recovered/replacement tasks.
+
+    Run evidence is read afterwards from the Chat V2 server-projected ``blocks``
+    in ``GET /topics/{id}/messages`` (the same projection the Chat V2 history uses).
+    """
     deadline = time.time() + max(1, timeout_seconds)
     current_task_id = task_id
     seen_task_ids = {task_id}
-    after_id = 0
-    all_records: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     last_task: dict[str, Any] = {}
     last_poll_error = ""
@@ -671,29 +562,21 @@ def _poll_task(
             continue
 
         status = str(last_task.get("task_status") or "").lower()
-        try:
-            records, after_id, page = _fetch_sdk_records(base_url, current_task_id, after_id)
-            all_records.extend(records)
-            status = str(last_task.get("task_status") or page.get("task_status") or "").lower()
-        except EvalRunnerError as exc:
-            last_poll_error = str(exc)
-
         if status in TERMINAL_STATUSES:
             if _is_recovered_task(last_task):
                 recovered_task_id = _resolve_recovered_task_id(base_url, topic_id, last_task)
                 if recovered_task_id and recovered_task_id not in seen_task_ids:
                     current_task_id = recovered_task_id
                     seen_task_ids.add(recovered_task_id)
-                    after_id = 0
                     continue
-            return last_task, all_records, errors
+            return last_task, errors
         time.sleep(0.2)
     errors.append({"code": "timeout", "message": f"task did not finish within {timeout_seconds}s"})
     if last_poll_error:
         errors.append({"code": "poll_error", "message": last_poll_error})
     last_task = dict(last_task or {"task_id": current_task_id})
     last_task["task_status"] = str(last_task.get("task_status") or "timeout")
-    return last_task, all_records, errors
+    return last_task, errors
 
 
 def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -702,14 +585,13 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     topic_id = ""
     task_id = ""
     task: dict[str, Any] = {}
-    records: list[dict[str, Any]] = []
-    messages: dict[str, Any] = {}
+    message: dict[str, Any] = {}
     final_answer = ""
     try:
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
         task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, records, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
+        task, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
         errors.extend(poll_errors)
         final_task_id = str(task.get("task_id") or task_id).strip() or task_id
         messages = http_json(
@@ -717,18 +599,19 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
             f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
             timeout=30,
         )
-        final_answer = _final_assistant_answer(messages, final_task_id)
+        message = _final_assistant_message(messages, final_task_id)
+        final_answer = str(message.get("content") or "").strip()
         status = str(task.get("task_status") or "").lower()
         if status and status not in SUCCESS_STATUSES:
             errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
     except EvalRunnerError as exc:
         errors.append({"code": "runner_error", "message": str(exc)})
 
-    blocks, stream_usage = _project_sdk_blocks(records)
+    blocks = message.get("blocks") if isinstance(message.get("blocks"), list) else []
     tool_names = _collect_tool_names(blocks)
     sql_outputs = _extract_sql_outputs(blocks, final_answer)
     chart_outputs = _extract_chart_outputs(blocks)
-    usage = _collect_usage(task, messages, stream_usage)
+    usage = _collect_usage(task, message)
     rule_check = auto_rule_check(case, final_answer=final_answer, blocks=blocks, sql_outputs=sql_outputs, tool_names=tool_names)
     return {
         "case_id": case.get("case_id"),

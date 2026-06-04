@@ -5,7 +5,6 @@ import json
 import threading
 import time
 import types
-import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -16,19 +15,18 @@ RUNNER_PATH = REPO_ROOT / "tools" / "dataagent-evals" / "builtin" / "run.py"
 _RUN_SQL = "select count(1) from opendataworks.workflow_publish_record"
 
 
-def _sdk_run_sql_records():
-    """Chat V2 SDK records for one run_sql tool call followed by a text answer."""
+def _assistant_blocks(answer: str):
+    """Chat V2 server-projected blocks attached to an assistant message."""
     return [
-        {"seq_id": 1, "record_type": "stream", "data": {"type": "message_start", "message": {"usage": {"input_tokens": 1}}}},
-        {"seq_id": 2, "record_type": "stream", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "run_sql"}}},
-        {"seq_id": 3, "record_type": "stream", "data": {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": json.dumps({"sql": _RUN_SQL})}}},
-        {"seq_id": 4, "record_type": "stream", "data": {"type": "content_block_stop", "index": 0}},
-        {"seq_id": 5, "record_type": "tool_result", "data": {"tool_use_id": "toolu_1", "content": [{"type": "text", "text": json.dumps({"rows": [{"cnt": 1}], "sql": _RUN_SQL})}], "is_error": False}},
-        {"seq_id": 6, "record_type": "stream", "data": {"type": "content_block_start", "index": 1, "content_block": {"type": "text"}}},
-        {"seq_id": 7, "record_type": "stream", "data": {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "answer"}}},
-        {"seq_id": 8, "record_type": "stream", "data": {"type": "content_block_stop", "index": 1}},
-        {"seq_id": 9, "record_type": "stream", "data": {"type": "message_delta", "usage": {"output_tokens": 2}}},
-        {"seq_id": 10, "record_type": "done", "data": {"is_error": False}},
+        {
+            "type": "tool_use",
+            "tool_id": "toolu_1",
+            "tool_name": "run_sql",
+            "input": {"sql": _RUN_SQL},
+            "output": [{"type": "text", "text": json.dumps({"rows": [{"cnt": 1}], "sql": _RUN_SQL})}],
+            "is_error": False,
+        },
+        {"type": "main_text", "text": answer},
     ]
 
 
@@ -271,32 +269,24 @@ def test_compact_judge_payload_bounds_large_evidence_payload():
     assert "truncated" in serialized
 
 
-def test_poll_task_retries_transient_event_error(monkeypatch):
+def test_poll_task_tolerates_transient_status_error(monkeypatch):
     runner = _load_runner()
-    calls = {"task": 0, "events": 0}
+    calls = {"task": 0}
 
     def fake_http_json(method, url, **kwargs):
-        if "/sdk-events" in url:
-            calls["events"] += 1
-            if calls["events"] == 1:
-                raise runner.EvalRunnerError("request failed sdk-events timeout")
-            return {
-                "task_id": "task-1",
-                "task_status": "success",
-                "next_after_id": 1,
-                "has_more": False,
-                "records": [{"seq_id": 1, "record_type": "done", "data": {"is_error": False}}],
-            }
         calls["task"] += 1
-        return {"task_id": "task-1", "task_status": "running" if calls["task"] == 1 else "success"}
+        if calls["task"] == 1:
+            raise runner.EvalRunnerError("request failed transient status")
+        return {"task_id": "task-1", "task_status": "success"}
 
     monkeypatch.setattr(runner, "http_json", fake_http_json)
+    monkeypatch.setattr(runner.time, "sleep", lambda *_: None)
 
-    task, records, errors = runner._poll_task("http://dataagent", "task-1", 5)
+    task, errors = runner._poll_task("http://dataagent", "task-1", 5)
 
     assert task["task_status"] == "success"
-    assert records == [{"seq_id": 1, "record_type": "done", "data": {"is_error": False}}]
     assert errors == []
+    assert calls["task"] == 2
 
 
 def test_auto_rule_check_adds_generic_failure_attribution():
@@ -429,7 +419,7 @@ def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
     assert "xxxxxxxxxx" not in serialized
     assert summary == [
         {
-            "seq_id": 10,
+            "seq_id": 1,
             "tool_name": "run_sql",
             "input": {
                 "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
@@ -512,23 +502,6 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_sdk_page(self, task_id: str, records: list):
-        query = urllib.parse.urlsplit(self.path).query
-        after_id = int((urllib.parse.parse_qs(query).get("after_id") or ["0"])[0])
-        page_records = [r for r in records if int(r.get("seq_id") or 0) > after_id]
-        next_after_id = int(page_records[-1]["seq_id"]) if page_records else after_id
-        self._send(
-            200,
-            {
-                "task_id": task_id,
-                "task_status": "success",
-                "after_id": after_id,
-                "next_after_id": next_after_id,
-                "has_more": False,
-                "records": page_records,
-            },
-        )
-
     def do_GET(self):  # noqa: N802
         if self.path == "/api/v1/nl2sql/health":
             if self.scenario == "preflight_error":
@@ -551,13 +524,6 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                     "current_task_status": "success" if self.scenario == "recovered" else "running",
                 },
             )
-            return
-        if self.path.startswith("/api/v1/nl2sql/tasks/task-2/sdk-events"):
-            self._send_sdk_page("task-2", _sdk_run_sql_records())
-            return
-        if self.path.startswith("/api/v1/nl2sql/tasks/task-1/sdk-events"):
-            records = [] if self.scenario == "recovered" else _sdk_run_sql_records()
-            self._send_sdk_page("task-1", records)
             return
         if self.path == "/api/v1/nl2sql/tasks/task-1":
             self.__class__.task_poll_count += 1
@@ -621,6 +587,7 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                                 "status": "success",
                                 "content": "answer with opendataworks.workflow_publish_record",
                                 "usage": {"input_tokens": 1, "output_tokens": 2},
+                                "blocks": _assistant_blocks("answer with opendataworks.workflow_publish_record"),
                             },
                         ],
                     },
@@ -645,6 +612,7 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                             "status": "success",
                             "content": "answer with opendataworks.workflow_publish_record",
                             "usage": {"input_tokens": 1, "output_tokens": 2},
+                            "blocks": _assistant_blocks("answer with opendataworks.workflow_publish_record"),
                         },
                     ],
                 },
