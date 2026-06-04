@@ -50,6 +50,8 @@
     </aside>
 
     <main class="query-main">
+      <div v-if="copyNotice" class="query-copy-toast" role="status">{{ copyNotice }}</div>
+
       <div ref="messagesEl" class="query-messages" @scroll="onMessagesScroll">
         <div class="query-messages-inner" :class="{ 'is-empty': !messages.length }">
           <div v-if="errorText" class="query-error-card query-error-banner">
@@ -289,6 +291,7 @@ const DEFAULT_SUGGESTIONS = [
   '最近 30 天工作流发布次数趋势',
   '各工作流发布操作类型占比'
 ]
+const TOPIC_STATUS_REFRESH_INTERVAL_MS = 3000
 
 const agentPresetQuestions = ref([])
 const agentName = ref('智能数据助手')
@@ -297,6 +300,7 @@ const suggestions = computed(() => agentPresetQuestions.value.length ? agentPres
 // widget-only UI state
 const inputSource = ref('typed')
 const pendingOutboundMessage = ref('')
+const copyNotice = ref('')
 
 const isInline = computed(() => props.config.displayMode === 'inline')
 const agentId = computed(() => String(props.config.agentId || '').trim())
@@ -313,7 +317,7 @@ const chat = useNl2SqlChat({
   emitEvent: (event) => emit('event', event),
 })
 const {
-  topicId, messages, errorText,
+  topics, topicId, messages, errorText,
   providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
   inputText, searchKeyword,
   isSubmitting, activeTaskId, activeAssistantId, abortController, hydratedTopicIds,
@@ -321,12 +325,13 @@ const {
   isTopicWorking, topicBadgeKind, upsertTopicAtTop, updateActiveTopicAfterSend,
   appendUserMessage, appendAssistantMessage,
   toggleThinking, isThinkingExpanded, isActiveTask,
-  loadConfig: loadRuntimeConfig, loadTopics,
+  loadConfig: loadRuntimeConfig, loadTopics, refreshTopics,
   send: sendReal, cancel,
   selectTopic: selectTopicEngine, newConversation: newConversationEngine, deleteConversation,
 } = chat
 
 const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
+const hasWorkingTopicRecord = computed(() => topics.value.some((topic) => isTopicWorking(topic)))
 const canDeliverPendingOutbound = computed(() => (
   Boolean(pendingOutboundMessage.value)
   && !isBusy.value
@@ -390,10 +395,21 @@ const cleanTextForDisplay = (content) => stripChartSpecsFromText(String(content 
 // (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
 const answerSegments = (content) => splitChartSpecText(String(content || ''))
 
+let copyNoticeTimer = null
+const showCopyNotice = (message) => {
+  copyNotice.value = String(message || '已复制')
+  if (copyNoticeTimer) window.clearTimeout(copyNoticeTimer)
+  copyNoticeTimer = window.setTimeout(() => {
+    copyNotice.value = ''
+    copyNoticeTimer = null
+  }, 1400)
+}
+
 const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
   api,
   topicId,
   cleanText: cleanTextForDisplay,
+  notifyCopied: showCopyNotice,
   notifyError: (message) => emit('event', { name: 'error', payload: message }),
   emitEvent: (event) => emit('event', event),
 })
@@ -614,6 +630,38 @@ watch(canDeliverPendingOutbound, (value) => {
   if (value) sendPendingOutbound()
 })
 
+let topicStatusRefreshTimer = null
+const stopTopicStatusRefresh = () => {
+  if (!topicStatusRefreshTimer) return
+  window.clearInterval(topicStatusRefreshTimer)
+  topicStatusRefreshTimer = null
+}
+const refreshTopicStatuses = async () => {
+  if (!hasWorkingTopicRecord.value) {
+    stopTopicStatusRefresh()
+    return
+  }
+  try {
+    await refreshTopics()
+  } catch {
+    // Keep the current list; the next interval will retry while a topic is marked running.
+  }
+}
+const startTopicStatusRefresh = () => {
+  if (topicStatusRefreshTimer) return
+  topicStatusRefreshTimer = window.setInterval(() => {
+    void refreshTopicStatuses()
+  }, TOPIC_STATUS_REFRESH_INTERVAL_MS)
+}
+watch(
+  hasWorkingTopicRecord,
+  (value) => {
+    if (value) startTopicStatusRefresh()
+    else stopTopicStatusRefresh()
+  },
+  { immediate: true }
+)
+
 watch(
   () => props.state.cancelSignal,
   (value) => {
@@ -662,6 +710,8 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  stopTopicStatusRefresh()
+  if (copyNoticeTimer) window.clearTimeout(copyNoticeTimer)
   abortController.value?.abort()
 })
 </script>
@@ -680,6 +730,15 @@ onBeforeUnmount(() => {
   gap: 6px;
   margin-top: 4px;
   min-height: 24px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.query-message-row:hover .query-message-footer,
+.query-message-footer:focus-within {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .query-message-footer-user {
@@ -719,5 +778,21 @@ onBeforeUnmount(() => {
 .query-message-feedback-dislike.active {
   background: #fff1f0;
   color: #d93025;
+}
+
+.query-copy-toast {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 20;
+  transform: translateX(-50%);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.88);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
 }
 </style>

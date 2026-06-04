@@ -110,6 +110,7 @@ export function useNl2SqlChat(options) {
     (topic?.topic_id === topicId.value && Boolean(activeTaskId.value)) ||
     topicStatusKind(topic?.current_task_status) === 'running'
   const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
+  const isTopicTaskActive = (topic) => topicStatusKind(topic?.current_task_status) === 'running'
 
   // Reflect a task's terminal/active status onto its topic so the badge stays
   // accurate without reloading the list.
@@ -142,6 +143,7 @@ export function useNl2SqlChat(options) {
       content: '',
       status: 'queued',
       task_id: taskId || '',
+      resume_after_seq: 0,
       error: null,
       created_at: new Date().toISOString(),
       _v2state: reactive(createChatState()),
@@ -157,9 +159,9 @@ export function useNl2SqlChat(options) {
   const loadTopicMessages = async (targetTopicId) => {
     if (!targetTopicId) {
       messages.value = []
-      return
+      return messages.value
     }
-    if (String(targetTopicId).startsWith('topic_mock_')) return
+    if (String(targetTopicId).startsWith('topic_mock_')) return messages.value
     try {
       const page = await api.topicApi.getTopicMessages(targetTopicId, { page: 1, page_size: messagePageSize, order: 'asc' })
       messages.value = (page?.items || [])
@@ -170,6 +172,7 @@ export function useNl2SqlChat(options) {
       console.warn('[useNl2SqlChat] failed to load messages:', error)
       messages.value = []
     }
+    return messages.value
   }
 
   // ── Config / topics ────────────────────────────────────────────────────────
@@ -189,23 +192,29 @@ export function useNl2SqlChat(options) {
     return config
   }
 
+  const refreshTopics = async () => {
+    const data = await api.topicApi.listTopics(listTopicsParams())
+    const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
+    const list = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
+    const nextTopics = list.map(normalizeTopic).filter((t) => t.topic_id)
+    if (currentTopic?.topic_id && !nextTopics.some((t) => t.topic_id === currentTopic.topic_id)) {
+      nextTopics.unshift(currentTopic)
+    }
+    topics.value = nextTopics
+    sortTopics()
+    if (currentTopic?.topic_id && currentTopic.topic_id === topicId.value) {
+      moveTopicToTop(currentTopic.topic_id)
+    }
+    return topics.value
+  }
+
   const loadTopics = async () => {
     try {
-      const data = await api.topicApi.listTopics(listTopicsParams())
-      const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
-      const list = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
-      const nextTopics = list.map(normalizeTopic).filter((t) => t.topic_id)
-      if (currentTopic?.topic_id && !nextTopics.some((t) => t.topic_id === currentTopic.topic_id)) {
-        nextTopics.unshift(currentTopic)
-      }
-      topics.value = nextTopics
-      sortTopics()
-      if (currentTopic?.topic_id && currentTopic.topic_id === topicId.value) {
-        moveTopicToTop(currentTopic.topic_id)
-      }
+      await refreshTopics()
       // Default to a fresh conversation on open instead of auto-selecting the
       // latest topic, so a new question can be asked immediately.
       await loadTopicMessages(topicId.value || '')
+      resumeActiveTopicTask(topicId.value)
     } catch {
       topics.value = []
       messages.value = []
@@ -235,15 +244,22 @@ export function useNl2SqlChat(options) {
   }
 
   // ── Run lifecycle ────────────────────────────────────────────────────────
-  const subscribe = async (taskId, assistant, controller, runId) => {
+  const subscribe = async (taskId, assistant, controller, runId, options = {}) => {
+    const { refreshAfterTerminal = false } = options
     // The owning topic is captured up front because a new conversation can change
     // topicId mid-stream; the engine writes task status onto its topic directly.
     const runTopicId = topicId.value
+    let afterId = Math.max(0, Number(assistant?.resume_after_seq || 0))
     try {
       await api.taskApi.streamSdkEvents(taskId, {
         signal: controller?.signal,
-        afterId: 0,
+        afterId,
         onRecord: (record) => {
+          const seqId = Number(record?.seq_id || record?.id || 0)
+          if (seqId > afterId) {
+            afterId = seqId
+            assistant.resume_after_seq = afterId
+          }
           processV2Record(assistant._v2state, record)
           triggerRef(messages)
         },
@@ -265,6 +281,7 @@ export function useNl2SqlChat(options) {
       assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
       setTopicTaskStatus(runTopicId, assistant._v2state.status === 'error' ? 'error' : 'finished')
       emitEvent({ name: 'message:done', payload: { taskId } })
+      if (refreshAfterTerminal) await afterRun()
     } catch (error) {
       // Detached / cancelled locally: the aborted fetch rejects with AbortError.
       if (error?.name === 'AbortError') return
@@ -274,6 +291,7 @@ export function useNl2SqlChat(options) {
       assistant._v2state.errorText = assistant.error.message
       setTopicTaskStatus(runTopicId, 'error')
       emitEvent({ name: 'error', payload: assistant.error.message })
+      if (refreshAfterTerminal) await afterRun()
     } finally {
       if (runId === runToken && activeTaskId.value === taskId) {
         activeTaskId.value = ''
@@ -281,6 +299,32 @@ export function useNl2SqlChat(options) {
         abortController.value = null
       }
     }
+  }
+
+  const findAssistantForTask = (taskId) => messages.value.find((message) => (
+    message?.role === 'assistant' && String(message?.task_id || '') === String(taskId || '')
+  ))
+
+  const resumeActiveTopicTask = (targetTopicId = topicId.value) => {
+    if (!targetTopicId || targetTopicId !== topicId.value) return
+    const topic = topics.value.find((item) => item.topic_id === targetTopicId)
+    const taskId = String(topic?.current_task_id || '').trim()
+    if (!taskId || !isTopicTaskActive(topic) || activeTaskId.value === taskId) return
+
+    const assistant = findAssistantForTask(taskId) || appendAssistantMessage(taskId)
+    assistant.task_id = taskId
+    assistant.status = 'running'
+    if (assistant._v2state && assistant._v2state.status !== 'error') {
+      assistant._v2state.status = 'streaming'
+    }
+
+    const runId = ++runToken
+    const controller = new AbortController()
+    abortController.value = controller
+    activeTaskId.value = taskId
+    activeAssistantId.value = assistant.id
+    isSubmitting.value = false
+    void subscribe(taskId, assistant, controller, runId, { refreshAfterTerminal: true })
   }
 
   // Detach from the in-flight run by aborting the local stream (chat v2's
@@ -375,6 +419,7 @@ export function useNl2SqlChat(options) {
     topicId.value = targetTopicId
     errorText.value = ''
     await loadTopicMessages(targetTopicId)
+    resumeActiveTopicTask(targetTopicId)
   }
 
   const newConversation = async () => {
@@ -395,6 +440,7 @@ export function useNl2SqlChat(options) {
     const nextTopicId = topics.value[0]?.topic_id || ''
     topicId.value = nextTopicId
     await loadTopicMessages(nextTopicId)
+    resumeActiveTopicTask(nextTopicId)
   }
 
   return {
@@ -412,7 +458,8 @@ export function useNl2SqlChat(options) {
     appendUserMessage, appendAssistantMessage,
     toggleThinking, isThinkingExpanded, isActiveTask,
     // actions
-    loadConfig, loadTopics, loadTopicMessages, ensureTopic, updateActiveTopicAfterSend,
+    loadConfig, loadTopics, refreshTopics, loadTopicMessages, ensureTopic, updateActiveTopicAfterSend,
+    resumeActiveTopicTask,
     subscribe, send, detach, cancel,
     selectTopic, newConversation, deleteConversation,
   }

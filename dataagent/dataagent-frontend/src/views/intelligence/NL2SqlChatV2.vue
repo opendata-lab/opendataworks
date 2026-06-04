@@ -1280,7 +1280,21 @@ onBeforeUnmount(() => {
   max-width: 88%;
 }
 
-.v2-msg-footer { display: flex; gap: 8px; align-items: center; padding: 2px 0; }
+.v2-msg-footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 2px 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s ease;
+}
+
+.v2-msg-row:hover .v2-msg-footer,
+.v2-msg-footer:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+}
 .v2-msg-time { font-size: 11px; color: #A0AABF; }
 
 /* ── Message tools ───────────────────────────────────────────────────────── */

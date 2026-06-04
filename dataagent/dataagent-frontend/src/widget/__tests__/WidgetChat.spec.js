@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, reactive } from 'vue'
 
 import WidgetChat from '../WidgetChat.vue'
+import widgetChatSource from '../WidgetChat.vue?raw'
 
 // ECharts touches the canvas API, which jsdom doesn't fully implement. The chart
 // promotion tests only care about which container the chart lands in, so stub the
@@ -199,6 +200,38 @@ describe('WidgetChat history conversations', () => {
     expect(wrapper.find('[data-testid="history-topic-topic-ok"] .query-session-dot').exists()).toBe(false)
   })
 
+  it('refreshes session record statuses while background widget topics are running', async () => {
+    vi.useFakeTimers()
+    apiMocks.topicApi.listTopics
+      .mockResolvedValueOnce([
+        topic('topic-bg', '后台运行会话', {
+          current_task_id: 'task-bg',
+          current_task_status: 'running'
+        })
+      ])
+      .mockResolvedValueOnce([
+        topic('topic-bg', '后台运行会话', {
+          current_task_id: 'task-bg',
+          current_task_status: 'finished'
+        })
+      ])
+
+    try {
+      const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+      await flushPromises()
+
+      expect(wrapper.find('[data-testid="history-topic-topic-bg"] .query-session-loading').exists()).toBe(true)
+
+      await vi.advanceTimersByTimeAsync(3000)
+      await flushPromises()
+
+      expect(apiMocks.topicApi.listTopics).toHaveBeenCalledTimes(2)
+      expect(wrapper.find('[data-testid="history-topic-topic-bg"] .query-session-loading').exists()).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('surfaces the error card when opening a failed (status=error) history conversation', async () => {
     apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => ({
       topic_id: topicId,
@@ -252,6 +285,42 @@ describe('WidgetChat history conversations', () => {
     await wrapper.get('[data-testid="feedback-dislike-msg-topic-2"]').trigger('click')
     expect(apiMocks.topicApi.updateMessageFeedback).toHaveBeenCalledWith('topic-2', 'msg-topic-2', 'dislike')
     expect(wrapper.get('[data-testid="feedback-dislike-msg-topic-2"]').classes()).toContain('active')
+  })
+
+  it('falls back when the widget clipboard API rejects and shows copy feedback', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('permission denied'))
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: execCommand
+    })
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    })
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value: true
+    })
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-testid="copy-message-msg-topic-2"]').trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith('topic-2 历史回复')
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(wrapper.find('.query-copy-toast').text()).toBe('已复制')
+  })
+
+  it('keeps widget message action footers hidden until hover or keyboard focus', () => {
+    expect(widgetChatSource).toContain('.query-message-footer {\n  display: flex;')
+    expect(widgetChatSource).toContain('opacity: 0;')
+    expect(widgetChatSource).toContain('.query-message-row:hover .query-message-footer')
+    expect(widgetChatSource).toContain('.query-message-footer:focus-within')
   })
 
   it('renders inline chart specs from assistant text without showing raw spec markup', async () => {
@@ -441,6 +510,114 @@ describe('WidgetChat history conversations', () => {
     }))
 
     resolveStream()
+  })
+
+  it('reattaches the running task when returning to a detached widget conversation', async () => {
+    const streams = []
+    let topicAFinished = false
+    apiMocks.topicApi.listTopics.mockResolvedValue([
+      topic('topic-b', '另一个运行会话', {
+        current_task_id: 'task-b',
+        current_task_status: 'running'
+      })
+    ])
+    apiMocks.topicApi.createTopic.mockResolvedValue(topic('topic-a', '当前新会话', {
+      message_count: 0,
+      last_message_preview: '',
+      updated_at: '2026-04-30T09:00:00'
+    }))
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => {
+      if (topicId === 'topic-a') {
+        return {
+          topic_id: topicId,
+          total: 2,
+          items: [
+            { message_id: 'user-a', sender_type: 'user', content: '新会话问题', seq_id: 1 },
+            {
+              message_id: 'assistant-a',
+              sender_type: 'assistant',
+              status: topicAFinished ? 'success' : 'running',
+              task_id: 'task-a',
+              content: '',
+              blocks: topicAFinished ? [{ kind: 'main_text', text: '恢复完成' }] : [],
+              resume_after_seq: 7,
+              seq_id: 2
+            }
+          ]
+        }
+      }
+      if (topicId === 'topic-b') {
+        return {
+          topic_id: topicId,
+          total: 2,
+          items: [
+            { message_id: 'user-b', sender_type: 'user', content: '另一个问题', seq_id: 1 },
+            {
+              message_id: 'assistant-b',
+              sender_type: 'assistant',
+              status: 'running',
+              task_id: 'task-b',
+              content: '',
+              blocks: [],
+              resume_after_seq: 3,
+              seq_id: 2
+            }
+          ]
+        }
+      }
+      return messagePage(topicId, `${topicId} 历史回复`)
+    })
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-a' })
+    apiMocks.taskApi.streamSdkEvents.mockImplementation((taskId, options = {}) => new Promise((resolve, reject) => {
+      const stream = { taskId, options, resolve, reject }
+      streams.push(stream)
+      options.signal?.addEventListener('abort', () => {
+        const error = new Error('aborted')
+        error.name = 'AbortError'
+        reject(error)
+      })
+    }))
+    apiMocks.taskApi.getTask.mockImplementation(async (taskId) => ({
+      task_id: taskId,
+      topic_id: taskId === 'task-a' ? 'topic-a' : 'topic-b',
+      task_status: 'finished'
+    }))
+
+    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    await flushPromises()
+
+    await wrapper.get('textarea').setValue('新会话问题')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(streams.map((stream) => stream.taskId)).toEqual(['task-a'])
+
+    await wrapper.get('[data-testid="history-topic-topic-b"]').trigger('click')
+    await flushPromises()
+
+    expect(streams.map((stream) => stream.taskId)).toEqual(['task-a', 'task-b'])
+    expect(apiMocks.taskApi.cancelTask).not.toHaveBeenCalled()
+    expect(wrapper.find('.query-cancel-btn').exists()).toBe(true)
+
+    await wrapper.get('[data-testid="history-topic-topic-a"]').trigger('click')
+    await flushPromises()
+
+    expect(streams.map((stream) => stream.taskId)).toEqual(['task-a', 'task-b', 'task-a'])
+    expect(streams.at(-1).options.afterId).toBe(7)
+    expect(wrapper.find('.query-cancel-btn').exists()).toBe(true)
+
+    const resumedStream = streams.at(-1)
+    resumedStream.options.onRecord({ seq_id: 8, record_type: 'stream', data: { type: 'message_start', usage: {} } })
+    resumedStream.options.onRecord({ seq_id: 9, record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
+    resumedStream.options.onRecord({ seq_id: 10, record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '恢复完成' } } })
+    resumedStream.options.onRecord({ seq_id: 11, record_type: 'stream', data: { type: 'content_block_stop', index: 0 } })
+    resumedStream.options.onRecord({ seq_id: 12, record_type: 'done', data: {} })
+    topicAFinished = true
+    resumedStream.resolve()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('恢复完成')
+    expect(wrapper.find('.query-cancel-btn').exists()).toBe(false)
+    expect(apiMocks.topicApi.listTopics).toHaveBeenCalledTimes(2)
   })
 
   it('sends on plain Enter but keeps Shift+Enter / IME Enter as a newline', async () => {

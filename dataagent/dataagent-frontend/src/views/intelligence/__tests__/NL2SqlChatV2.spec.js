@@ -69,6 +69,7 @@ vi.mock('element-plus', () => ({
 }))
 
 import NL2SqlChatV2 from '../NL2SqlChatV2.vue'
+import nl2SqlChatV2Source from '../NL2SqlChatV2.vue?raw'
 
 const makeTopic = (topicId, title) => ({
   topic_id: topicId,
@@ -272,6 +273,13 @@ describe('NL2SqlChatV2 URL location', () => {
       block: 'center',
       behavior: 'smooth'
     })
+  })
+
+  it('keeps message action footers hidden until hover or keyboard focus', () => {
+    expect(nl2SqlChatV2Source).toContain('.v2-msg-footer {')
+    expect(nl2SqlChatV2Source).toContain('opacity: 0;')
+    expect(nl2SqlChatV2Source).toContain('.v2-msg-row:hover .v2-msg-footer')
+    expect(nl2SqlChatV2Source).toContain('.v2-msg-footer:focus-within')
   })
 
   it('shows status dots in the session list driven by current_task_status', async () => {
