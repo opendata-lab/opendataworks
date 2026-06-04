@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
@@ -131,11 +132,13 @@ def _patch_skill_runtime(monkeypatch, tmp_path: Path) -> dict[str, list[str]]:
         },
     )
 
-    def fake_prepare_enabled_skills_project_cwd(folders):
+    def fake_prepare_topic_workspace(topic_id, folders, **kwargs):
+        captured["topic_id"] = topic_id
         captured["folders"] = list(folders)
+        captured["kwargs"] = dict(kwargs)
         return tmp_path
 
-    monkeypatch.setattr(task_executor, "prepare_enabled_skills_project_cwd", fake_prepare_enabled_skills_project_cwd)
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
     return captured
 
 
@@ -290,16 +293,16 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
         },
     )
     _patch_skill_runtime(monkeypatch, tmp_path)
-    agent_cwd = tmp_path / "workspaces" / "agent_1"
+    topic_workspace = tmp_path / "topics" / "topic-1"
     captured: dict[str, object] = {}
 
-    def fake_prepare_enabled_skills_project_cwd(folders, **kwargs):
+    def fake_prepare_topic_workspace(topic_id, folders, **kwargs):
+        captured["topic_id"] = topic_id
         captured["folders"] = list(folders)
         captured["kwargs"] = dict(kwargs)
-        return agent_cwd
+        return topic_workspace
 
-    monkeypatch.setattr(task_executor, "prepare_enabled_skills_project_cwd", fake_prepare_enabled_skills_project_cwd)
-    monkeypatch.setattr(task_executor, "resolved_agent_workdir", lambda agent_id, is_default=False: str(agent_cwd))
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
 
     async def _run():
         return await task_executor.execute_task_stream(
@@ -325,10 +328,10 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
 
     assert result.task_status == "finished"
     assert result.content == "custom-agent-ok"
+    assert captured["topic_id"] == "topic-1"
     assert captured["folders"] == []
-    assert captured["kwargs"]["runtime_project_cwd"] == str(agent_cwd)
     assert captured["kwargs"]["allow_empty"] is True
-    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(agent_cwd)
+    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(topic_workspace)
     assert ClaudeAgentOptions.last_kwargs["allowed_tools"] == ["Read"]
     assert ClaudeAgentOptions.last_kwargs["mcp_servers"] == {}
     assert ClaudeAgentOptions.last_kwargs["max_turns"] == 7
@@ -346,6 +349,170 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     )
     assert blocked["decision"] == "block"
     assert blocked["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_home(monkeypatch, tmp_path: Path):
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            AssistantMessage([TextBlock("topic-workspace-ok")]),
+            ResultMessage("success", session_id="sdk-session-topic"),
+        ],
+    )
+    monkeypatch.setattr(
+        task_executor,
+        "resolve_runtime_provider_selection",
+        lambda provider_id, model: {
+            "provider_id": provider_id,
+            "model": model,
+            "api_key": "",
+            "auth_token": "",
+            "base_url": "https://example.invalid",
+            "supports_partial_messages": False,
+        },
+    )
+    _patch_skill_runtime(monkeypatch, tmp_path)
+    topic_workspace = tmp_path / "topics" / "topic-1"
+    captured: dict[str, object] = {}
+
+    def fake_prepare_topic_workspace(topic_id, folders, **kwargs):
+        captured["topic_id"] = topic_id
+        captured["folders"] = list(folders)
+        captured["kwargs"] = dict(kwargs)
+        return topic_workspace
+
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
+
+    async def _run():
+        return await task_executor.execute_task_stream(
+            _build_input(
+                agent_snapshot={
+                    "agent_id": "agent_1",
+                    "name": "自定义智能体",
+                    "permission_mode": "default",
+                    "allowed_tools": ["Read"],
+                    "mcp_server_ids": [],
+                    "skill_folders": [],
+                    "max_turns": 0,
+                    "env_vars": {},
+                    "is_default": False,
+                }
+            ),
+            emit=lambda record: None,
+        )
+
+    result = asyncio.run(_run())
+
+    assert result.content == "topic-workspace-ok"
+    assert captured["topic_id"] == "topic-1"
+    assert captured["folders"] == []
+    assert captured["kwargs"]["allow_empty"] is True
+    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["env"]["HOME"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["env"]["PWD"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["env"]["DATAAGENT_WORKSPACE_DIR"] == str(topic_workspace)
+
+
+def test_execute_task_stream_delegates_to_sandbox_runner_when_enabled(monkeypatch):
+    from config import get_settings, update_settings
+
+    original_mode = get_settings().dataagent_sandbox_mode
+    update_settings({"dataagent_sandbox_mode": "container"})
+    captured: dict[str, object] = {}
+
+    async def fake_runner(params, *, emit, is_cancel_requested=None):
+        captured["task_id"] = params.task_id
+        captured["topic_id"] = params.topic_id
+        emit({"record_type": "event", "event_type": "DEBUG", "data": {"status": "runner"}})
+        return task_executor.TaskExecutionResult(
+            task_status="finished",
+            content="runner-ok",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            session_id="sdk-session-runner",
+        )
+
+    monkeypatch.setattr(task_executor, "_execute_task_stream_via_runner", fake_runner)
+    emitted: list[dict] = []
+    try:
+        result = asyncio.run(task_executor.execute_task_stream(_build_input(), emit=lambda record: emitted.append(record)))
+    finally:
+        update_settings({"dataagent_sandbox_mode": original_mode})
+
+    assert captured == {"task_id": "task-1", "topic_id": "topic-1"}
+    assert result.content == "runner-ok"
+    assert result.session_id == "sdk-session-runner"
+    assert emitted[-1]["data"]["status"] == "runner"
+
+
+def test_sandbox_runner_client_streams_records_and_returns_result(monkeypatch):
+    from config import get_settings, update_settings
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield json.dumps({"type": "record", "record": {"record_type": "event", "event_type": "DEBUG", "data": {"status": "runner"}}})
+            yield json.dumps(
+                {
+                    "type": "result",
+                    "result": {
+                        "task_status": "finished",
+                        "content": "runner-stream-ok",
+                        "usage": {"input_tokens": 1},
+                        "provider_id": "openrouter",
+                        "model": "anthropic/claude-sonnet-4.5",
+                        "session_id": "sdk-session-stream",
+                    },
+                }
+            )
+
+    class FakeStreamContext:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        last_payload = None
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url, *, json):
+            FakeClient.last_payload = {"method": method, "url": url, "json": json}
+            return FakeStreamContext()
+
+    original_url = get_settings().dataagent_sandbox_runner_url
+    update_settings({"dataagent_sandbox_runner_url": "http://runner.local"})
+    monkeypatch.setattr(task_executor.httpx, "AsyncClient", FakeClient)
+    emitted: list[dict] = []
+    try:
+        result = asyncio.run(
+            task_executor._execute_task_stream_via_runner(
+                _build_input(),
+                emit=lambda record: emitted.append(record),
+            )
+        )
+    finally:
+        update_settings({"dataagent_sandbox_runner_url": original_url})
+
+    assert FakeClient.last_payload["method"] == "POST"
+    assert FakeClient.last_payload["url"] == "http://runner.local/internal/sandbox/runs"
+    assert FakeClient.last_payload["json"]["topic_id"] == "topic-1"
+    assert FakeClient.last_payload["json"]["task_id"] == "task-1"
+    assert emitted[-1]["data"]["status"] == "runner"
+    assert result.content == "runner-stream-ok"
+    assert result.usage == {"input_tokens": 1}
+    assert result.session_id == "sdk-session-stream"
 
 
 def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tmp_path: Path):
@@ -816,9 +983,10 @@ def test_execute_task_stream_injects_portal_mcp_servers(monkeypatch, tmp_path: P
         lambda: SimpleNamespace(
             claude_model="",
             agent_timeout_seconds=60,
-            agent_background_max_turns=40,
-            agent_max_turns=20,
-            query_result_limit=100,
+                agent_background_max_turns=40,
+                agent_max_turns=20,
+                agent_max_buffer_size_bytes=10 * 1024 * 1024,
+                query_result_limit=100,
             dataagent_portal_mcp_enabled=True,
             dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp",
             dataagent_portal_mcp_token="portal-token",

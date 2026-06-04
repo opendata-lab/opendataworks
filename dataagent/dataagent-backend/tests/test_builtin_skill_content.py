@@ -48,11 +48,12 @@ def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
         "mcp__portal__portal_query_readonly",
         "validate_sql.py",
         "run_sql.py",
-        "DATAAGENT_PLATFORM_SKILL_ROOT",
         "tool output contract",
     ]
     for token in forbidden_tokens:
         assert token not in snapshot
+
+    assert '"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py"' in snapshot
 
 
 def test_dataagent_nl2sql_skill_bundle_is_removed():

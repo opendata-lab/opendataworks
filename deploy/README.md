@@ -82,8 +82,10 @@ Use this method if you have internet access and are deploying directly from the 
    - `opendataagent` 不随这里的 compose 自动启动，需要单独进入 `opendataagent/deploy/` 部署
    - `skills/` 根目录中的共享 skill 主要服务 `opendataagent`；当前生产智能问数主链使用 DataAgent system prompt、`opendataworks-business-knowledge` 与 `opendataworks-platform-tools`
    - 主前端默认通过同源 `/dataagent/widget/opendataworks-widget.bundle.js` 加载 DataAgent widget，并通过 `/api/v1/nl2sql/*` 代理访问 DataAgent 后端；若需要改成独立域名，源码构建主前端时设置 `VITE_DATAAGENT_WIDGET_JS_URL`
-   - DataAgent 额外持久化一个名为 `dataagent-home` 的 Docker volume，用于保存 Claude Agent SDK 写入 `HOME` 下的本地 session 文件，以及启用 skill 过滤后的运行时 cwd。当前镜像内 `HOME=/tmp/dataagent-home`，`DATAAGENT_RUNTIME_PROJECT_CWD=/tmp/dataagent-home/.dataagent/runtime/enabled-skills`，SDK 会将会话落到 `~/.claude/projects/<sanitized-cwd>/`，因此该 volume 可覆盖历史智能问数话题的 `resume` 所需文件
-   - 若执行 `docker compose down -v` 或手动删除 `dataagent-home` volume，Claude SDK 本地 session 文件和运行时 cwd 都会被清空；此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
+   - DataAgent 额外持久化宿主目录 `DATAAGENT_HOME_HOST_DIR`（默认 `/tmp/dataagent-home`）。当前 topic 级工作区默认位于 `/tmp/dataagent-home/.dataagent/runtime/topics/<topic_id>/`，Claude SDK session 文件落在该 topic 根目录的 `.claude/projects/<sanitized-cwd>/` 下；同一 topic 多轮复用该目录，不同 topic 不共享 `.claude` 状态
+   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `opendataworks-dataagent-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/workspace`
+   - 每个 task child 容器都是一次性容器，runner 使用 `--rm` 启动；正常结束自动删除，取消或异常时 runner 会 kill child，并在启动时清理带 `dataagent.sandbox.managed_by=dataagent-sandbox-runner` 标签的遗留 child 容器
+   - `DATAAGENT_DOCKER_SOCKET` 只挂到 `dataagent-sandbox-runner`，不会挂到 task child 容器；runner 默认用 `DATAAGENT_RUNNER_UID/GID=0:0` 访问 Docker socket，child task 仍用 `DATAAGENT_RUNTIME_UID/GID` 运行；若手动删除 `DATAAGENT_HOME_HOST_DIR`，Claude SDK 本地 session 文件和 topic 工作区都会被清空，此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
 
    > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
    >
@@ -149,8 +151,10 @@ Use this method for isolated environments without internet access. You will use 
    - `scripts/start.sh` 会在启动前对挂载的 `odw-cli` 执行一次宿主机侧 `chmod +x`；即使 bind mount 丢了执行位，DataAgent runtime 也会回退为 `sh /app/.claude/skills/opendataworks-platform-tools/bin/odw-cli ...`
    - `portal-mcp` 作为独立远程 MCP 服务一并部署，客户端需带 `X-Portal-MCP-Token`
    - `opendataagent` 需要用它自己的部署包或 compose 单独部署，不包含在这里的离线包主链描述中
-   - DataAgent 额外持久化一个名为 `dataagent-home` 的 Docker volume，用于保存 Claude Agent SDK 写入 `HOME` 下的本地 session 文件，以及启用 skill 过滤后的运行时 cwd。当前镜像内 `HOME=/tmp/dataagent-home`，`DATAAGENT_RUNTIME_PROJECT_CWD=/tmp/dataagent-home/.dataagent/runtime/enabled-skills`，SDK 会将会话落到 `~/.claude/projects/<sanitized-cwd>/`，因此该 volume 可覆盖历史智能问数话题的 `resume` 所需文件
-   - 若执行 `docker compose down -v` 或手动删除 `dataagent-home` volume，Claude SDK 本地 session 文件和运行时 cwd 都会被清空；此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
+   - DataAgent 额外持久化宿主目录 `DATAAGENT_HOME_HOST_DIR`（默认 `/tmp/dataagent-home`）。当前 topic 级工作区默认位于 `/tmp/dataagent-home/.dataagent/runtime/topics/<topic_id>/`，Claude SDK session 文件落在该 topic 根目录的 `.claude/projects/<sanitized-cwd>/` 下；同一 topic 多轮复用该目录，不同 topic 不共享 `.claude` 状态
+   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `opendataworks-dataagent-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/workspace`
+   - 每个 task child 容器都是一次性容器，runner 使用 `--rm` 启动；正常结束自动删除，取消或异常时 runner 会 kill child，并在启动时清理带 `dataagent.sandbox.managed_by=dataagent-sandbox-runner` 标签的遗留 child 容器
+   - `DATAAGENT_DOCKER_SOCKET` 只挂到 `dataagent-sandbox-runner`，不会挂到 task child 容器；runner 默认用 `DATAAGENT_RUNNER_UID/GID=0:0` 访问 Docker socket，child task 仍用 `DATAAGENT_RUNTIME_UID/GID` 运行；若手动删除 `DATAAGENT_HOME_HOST_DIR`，Claude SDK 本地 session 文件和 topic 工作区都会被清空，此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
 
    > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
    >
