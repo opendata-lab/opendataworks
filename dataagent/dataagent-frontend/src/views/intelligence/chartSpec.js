@@ -224,6 +224,7 @@ const buildAxisOption = (spec) => {
   const valueAxis = {
     type: 'value',
     name: spec.unit || '',
+    scale: true,
     axisLabel: { color: '#607185' },
     splitLine: { lineStyle: { color: '#eef3f8' } }
   }
