@@ -12,6 +12,23 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = REPO_ROOT / "tools" / "dataagent-evals" / "builtin" / "run.py"
 
+_RUN_SQL = "select count(1) from opendataworks.workflow_publish_record"
+
+
+def _assistant_blocks(answer: str):
+    """Chat V2 server-projected blocks attached to an assistant message."""
+    return [
+        {
+            "type": "tool_use",
+            "tool_id": "toolu_1",
+            "tool_name": "run_sql",
+            "input": {"sql": _RUN_SQL},
+            "output": [{"type": "text", "text": json.dumps({"rows": [{"cnt": 1}], "sql": _RUN_SQL})}],
+            "is_error": False,
+        },
+        {"type": "main_text", "text": answer},
+    ]
+
 
 def _sample_case(case_id: str = "ODW_SAMPLE_001"):
     return {
@@ -252,31 +269,24 @@ def test_compact_judge_payload_bounds_large_evidence_payload():
     assert "truncated" in serialized
 
 
-def test_poll_task_retries_transient_event_error(monkeypatch):
+def test_poll_task_tolerates_transient_status_error(monkeypatch):
     runner = _load_runner()
-    calls = {"task": 0, "events": 0}
+    calls = {"task": 0}
 
     def fake_http_json(method, url, **kwargs):
-        if "/events" in url:
-            calls["events"] += 1
-            if calls["events"] == 1:
-                raise runner.EvalRunnerError("request failed events timeout")
-            return {
-                "task_id": "task-1",
-                "task_status": "success",
-                "next_after_seq": 1,
-                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
-            }
         calls["task"] += 1
-        return {"task_id": "task-1", "task_status": "running" if calls["task"] == 1 else "success"}
+        if calls["task"] == 1:
+            raise runner.EvalRunnerError("request failed transient status")
+        return {"task_id": "task-1", "task_status": "success"}
 
     monkeypatch.setattr(runner, "http_json", fake_http_json)
+    monkeypatch.setattr(runner.time, "sleep", lambda *_: None)
 
-    task, events, errors = runner._poll_task("http://dataagent", "task-1", 5)
+    task, errors = runner._poll_task("http://dataagent", "task-1", 5)
 
     assert task["task_status"] == "success"
-    assert events == [{"seq_id": 1, "data": {"tool_name": "run_sql"}}]
     assert errors == []
+    assert calls["task"] == 2
 
 
 def test_auto_rule_check_adds_generic_failure_attribution():
@@ -285,7 +295,7 @@ def test_auto_rule_check_adds_generic_failure_attribution():
     result = runner.auto_rule_check(
         _sample_case(),
         final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在目标数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
-        events=[{"data": {"output": {"row_count": 0}}}],
+        blocks=[{"type": "tool_use", "tool_name": "run_sql", "output": {"row_count": 0}}],
         sql_outputs=["SELECT count(1) FROM opendataworks.workflow_publish_record WHERE ds = '{target_date}'"],
         tool_names=[],
     )
@@ -302,29 +312,71 @@ def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
         "FROM public.dim_tech_public_env_cmp_df "
         "WHERE env_name = 'PROD'"
     )
-    events = [
+    blocks = [
         {
-            "event_type": "BEFORE_AGENT_REPLY",
-            "data": {
-                "content": "技能说明：不要使用 SELECT *，模板中的 <SQL> 不是实际执行 SQL。",
-            },
+            "type": "main_text",
+            "seq_id": 1,
+            "text": "技能说明：不要使用 SELECT *，模板中的 <SQL> 不是实际执行 SQL。",
         },
         {
-            "event_type": "AFTER_TOOL_CALL",
-            "data": {
-                "tool_name": "run_sql",
-                "output": {
-                    "kind": "sql_execution",
-                    "sql": actual_sql,
-                    "rows": [{"cmp_cnt": 301}],
-                },
-            },
+            "type": "tool_use",
+            "seq_id": 2,
+            "tool_id": "toolu_1",
+            "tool_name": "run_sql",
+            "input": {"sql": actual_sql},
+            "output": [{"type": "text", "text": json.dumps({"rows": [{"cmp_cnt": 301}]})}],
+            "is_error": False,
         },
     ]
 
-    sql_outputs = runner._extract_sql_outputs(events, "当前 PROD 环境共有 301 个分级保障组件。")
+    sql_outputs = runner._extract_sql_outputs(blocks, "当前 PROD 环境共有 301 个分级保障组件。")
 
     assert sql_outputs == [actual_sql]
+
+
+def test_extract_evidence_from_bash_script_text_outputs():
+    runner = _load_runner()
+    actual_sql = "select count(1) from public.dim_tech_public_env_cmp_df"
+    chart_spec = {
+        "kind": "chart_spec",
+        "chart_type": "bar",
+        "dataset": [{"env_name": "PROD", "cmp_cnt": 301}],
+        "series": [{"name": "组件数", "field": "cmp_cnt"}],
+    }
+    blocks = [
+        {
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "input": {
+                "command": (
+                    '"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" '
+                    f'--database public --engine mysql --sql "{actual_sql}"'
+                )
+            },
+            "output": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "kind": "sql_execution",
+                            "sql": actual_sql,
+                            "rows": [{"cmp_cnt": 301}],
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
+        },
+        {
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "input": {"command": "build_chart_spec.py --chart-type bar"},
+            "output": json.dumps(chart_spec, ensure_ascii=False),
+        },
+    ]
+
+    assert runner._extract_sql_outputs(blocks, "") == [actual_sql]
+    assert runner._extract_chart_outputs(blocks) == [chart_spec]
 
 
 def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
@@ -339,18 +391,18 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
         "FROM public.dim_tech_public_env_cmp_df "
         "WHERE env_name = 'PROD'"
     )
-    events = [
+    blocks = [
         {
-            "data": {
-                "content": "参考文档提示：避免 SELECT *；OpenDataWorks 平台元数据不是本题答案。",
-            },
+            "type": "main_text",
+            "seq_id": 1,
+            "text": "参考文档提示：避免 SELECT *；OpenDataWorks 平台元数据不是本题答案。",
         }
     ]
 
     result = runner.auto_rule_check(
         case,
         final_answer="当前 PROD 环境共有 301 个分级保障组件。",
-        events=events,
+        blocks=blocks,
         sql_outputs=[actual_sql],
         tool_names=["run_sql"],
     )
@@ -380,59 +432,44 @@ def test_judge_payload_removes_sql_style_veto_rules():
 
 def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
     runner = _load_runner()
-    events = [
+    blocks = [
+        {"type": "thinking", "seq_id": 1, "text": "reasoning " + ("x" * 20000)},
+        {"type": "main_text", "seq_id": 2, "text": "答案文本"},
         {
-            "event_type": "BEFORE_AGENT_REPLY",
-            "data": {"content": "reasoning " + ("x" * 20000)},
-        },
-        {
+            "type": "tool_use",
             "seq_id": 10,
-            "event_type": "BEFORE_TOOL_CALL",
-            "data": {
-                "tool_name": "run_sql",
-                "input": {
-                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
-                    "description": "count components",
-                },
+            "tool_id": "toolu_1",
+            "tool_name": "run_sql",
+            "is_error": False,
+            "input": {
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "description": "count components",
             },
-        },
-        {
-            "seq_id": 11,
-            "event_type": "AFTER_TOOL_CALL",
-            "data": {
-                "tool_name": "run_sql",
-                "output": {
-                    "kind": "sql_execution",
-                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
-                    "columns": ["cnt"],
-                    "rows": [{"cnt": 301}],
-                    "row_count": 1,
-                    "result_state": "success",
-                    "summary": "返回 1 行结果",
-                },
+            "output": {
+                "kind": "sql_execution",
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "columns": ["cnt"],
+                "rows": [{"cnt": 301}],
+                "row_count": 1,
+                "result_state": "success",
+                "summary": "返回 1 行结果",
             },
         },
     ]
 
-    summary = runner._summarize_tool_events(events)
+    summary = runner._summarize_tool_events(blocks)
     serialized = json.dumps(summary, ensure_ascii=False)
 
     assert len(serialized) < 4000
     assert "xxxxxxxxxx" not in serialized
     assert summary == [
         {
-            "seq_id": 10,
-            "event_type": "BEFORE_TOOL_CALL",
+            "seq_id": 1,
             "tool_name": "run_sql",
             "input": {
                 "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
                 "description": "count components",
             },
-        },
-        {
-            "seq_id": 11,
-            "event_type": "AFTER_TOOL_CALL",
-            "tool_name": "run_sql",
             "output": {
                 "kind": "sql_execution",
                 "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
@@ -533,60 +570,6 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if self.path.startswith("/api/v1/nl2sql/tasks/task-2/events"):
-            self._send(
-                200,
-                {
-                    "task_id": "task-2",
-                    "task_status": "success",
-                    "after_seq": 0,
-                    "next_after_seq": 1,
-                    "has_more": False,
-                    "events": [
-                        {
-                            "record_type": "event",
-                            "seq_id": 1,
-                            "event_type": "AFTER_TOOL_CALL",
-                            "data": {
-                                "tool_name": "run_sql",
-                                "output": {
-                                    "rows": [{"cnt": 1}],
-                                    "sql": "select count(1) from opendataworks.workflow_publish_record",
-                                },
-                            },
-                        },
-                    ],
-                },
-            )
-            return
-        if self.path.startswith("/api/v1/nl2sql/tasks/task-1/events"):
-            self._send(
-                200,
-                {
-                    "task_id": "task-1",
-                    "task_status": "suspended" if self.scenario == "recovered" else "success",
-                    "after_seq": 0,
-                    "next_after_seq": 0 if self.scenario == "recovered" else 2,
-                    "has_more": False,
-                    "events": []
-                    if self.scenario == "recovered"
-                    else [
-                        {
-                            "record_type": "event",
-                            "seq_id": 1,
-                            "event_type": "BEFORE_TOOL_CALL",
-                            "data": {"tool_name": "run_sql", "input": {"sql": "select count(1) from opendataworks.workflow_publish_record"}},
-                        },
-                        {
-                            "record_type": "event",
-                            "seq_id": 2,
-                            "event_type": "AFTER_TOOL_CALL",
-                            "data": {"output": {"rows": [{"cnt": 1}], "sql": "select count(1) from opendataworks.workflow_publish_record"}},
-                        },
-                    ],
-                },
-            )
-            return
         if self.path == "/api/v1/nl2sql/tasks/task-1":
             self.__class__.task_poll_count += 1
             if self.scenario == "timeout":
@@ -649,6 +632,7 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                                 "status": "success",
                                 "content": "answer with opendataworks.workflow_publish_record",
                                 "usage": {"input_tokens": 1, "output_tokens": 2},
+                                "blocks": _assistant_blocks("answer with opendataworks.workflow_publish_record"),
                             },
                         ],
                     },
@@ -673,6 +657,7 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                             "status": "success",
                             "content": "answer with opendataworks.workflow_publish_record",
                             "usage": {"input_tokens": 1, "output_tokens": 2},
+                            "blocks": _assistant_blocks("answer with opendataworks.workflow_publish_record"),
                         },
                     ],
                 },
