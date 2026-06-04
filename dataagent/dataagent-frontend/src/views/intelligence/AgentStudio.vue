@@ -34,8 +34,6 @@
           <span>{{ agent.data_scope?.allowed_scopes?.length || 0 }} Schema</span>
         </div>
 
-        <div class="agent-workdir">{{ agent.resolved_workdir || '-' }}</div>
-
         <div class="agent-card-actions">
           <el-tooltip content="开启对话" placement="top">
             <el-button :icon="ChatLineRound" circle @click="handleChat(agent)" />
@@ -237,15 +235,6 @@ onMounted(loadAgents)
   background: #f1f5f9;
   color: #475467;
   font-size: 12px;
-}
-
-.agent-workdir {
-  overflow: hidden;
-  color: #98a2b3;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .agent-card-actions {

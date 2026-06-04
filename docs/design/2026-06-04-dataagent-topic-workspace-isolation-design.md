@@ -39,14 +39,22 @@ The runner has its own Dockerfile and image (`opendataworks-dataagent-runner`) s
 The runner service may mount the host Docker socket or use a Podman-compatible command, but the task child container does not receive that socket. The child container receives only:
 
 - the current topic host directory mounted read/write as `/workspace`
-- optionally a host skills directory mounted read-only as `/skills`
-- the runner image's bundled skills under `/app/.claude/skills` when no host skills bind is configured
+- a host skills directory mounted read-only as `/skills`
+- the runner image's bundled skills under `/app/.claude/skills` only as a last-resort fallback
+
+By default the host skills bind is on: the runner inspects its own
+`/app/.claude/skills` mount via the shared Docker socket and reuses that host
+source for the child, so child containers see live and offline-package-updated
+skills instead of the image-baked copy. `DATAAGENT_SANDBOX_HOST_SKILLS_DIR`
+overrides the source; only when neither an explicit value nor a discoverable
+runner mount exists does the child fall back to the image skills. See
+`2026-06-04-dataagent-sandbox-live-skills-design.md`.
 
 Because Docker bind mounts use host-visible paths, Compose deploys DataAgent home as a host bind directory by default:
 
 ```text
-DATAAGENT_HOME_HOST_DIR=/tmp/dataagent-home
-DATAAGENT_SANDBOX_HOST_ROOT=/tmp/dataagent-home/.dataagent/runtime/topics
+DATAAGENT_HOME_HOST_DIR=/workspaces
+DATAAGENT_SANDBOX_HOST_ROOT=/workspaces
 ```
 
 The default child network mode is `container:opendataworks-dataagent-sandbox-runner`, so task containers share the runner's service network namespace and can resolve the same internal service names without receiving Docker control privileges.

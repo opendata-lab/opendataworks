@@ -45,7 +45,6 @@ describe('AgentStudio', () => {
         agent_id: 'agent_default',
         name: '默认智能问数助手',
         description: '默认',
-        resolved_workdir: '/tmp/default',
         allowed_tools: ['Skill', 'Read'],
         mcp_server_ids: ['portal'],
         skill_folders: ['dataagent-nl2sql'],
@@ -63,7 +62,6 @@ describe('AgentStudio', () => {
 
     expect(dataagentApi.listAgents).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('默认智能问数助手')
-    expect(wrapper.text()).toContain('/tmp/default')
     expect(wrapper.text()).toContain('1 Skills')
     expect(wrapper.text()).toContain('1 Schema')
     expect(wrapper.text()).toContain('内置')

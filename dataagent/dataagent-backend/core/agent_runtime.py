@@ -19,7 +19,6 @@ from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_lo
 from core.data_scope import encode_scope_header, normalize_data_scope
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
-    prepare_enabled_skills_project_cwd,
     resolve_builtin_skill_root_dir,
     resolve_skill_discovery_root_dir,
 )

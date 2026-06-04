@@ -432,7 +432,6 @@ class AgentProfile(BaseModel):
     agent_id: str
     name: str
     description: str = ""
-    resolved_workdir: str = ""
     system_prompt: str = ""
     permission_mode: str = "inherit"
     allowed_tools: List[str] = Field(default_factory=list)

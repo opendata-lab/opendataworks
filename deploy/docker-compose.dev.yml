@@ -105,6 +105,24 @@ services:
       timeout: 10s
       retries: 3
 
+  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /workspaces 报 permission denied）
+  dataagent-home-init:
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
+    pull_policy: always
+    container_name: opendataworks-dataagent-home-init
+    user: "0:0"
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /workspaces
+        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /workspaces
+        chmod -R u+rwX /workspaces
+    volumes:
+      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
+
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
     image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
@@ -116,8 +134,7 @@ services:
     user: "${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}"
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /tmp/dataagent-home
-      DATAAGENT_RUNTIME_PROJECT_CWD: ${DATAAGENT_RUNTIME_PROJECT_CWD:-/tmp/dataagent-home/.dataagent/runtime/enabled-skills}
+      HOME: /workspaces
       HOST: 0.0.0.0
       PORT: 8900
       MYSQL_HOST: mysql
@@ -147,14 +164,16 @@ services:
       DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
       DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
       DATAAGENT_SANDBOX_RUNNER_URL: ${DATAAGENT_SANDBOX_RUNNER_URL:-http://dataagent-sandbox-runner:8910}
-      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
-      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/workspaces}
+      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/workspaces}
       DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
       DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
       DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
     ports:
       - "8900:8900"
     depends_on:
+      dataagent-home-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       redis:
@@ -168,7 +187,7 @@ services:
       retries: 5
       start_period: 60s
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
 
   # DataAgent 沙箱 Runner（内部服务）
@@ -182,10 +201,10 @@ services:
     user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /tmp/dataagent-home
+      HOME: /workspaces
       DATAAGENT_SANDBOX_MODE: ""
-      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
-      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/workspaces}
+      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/workspaces}
       DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
       DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
       DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
@@ -204,6 +223,8 @@ services:
       DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
       DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
     depends_on:
+      dataagent-home-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
     healthcheck:
@@ -213,7 +234,7 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
       - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 

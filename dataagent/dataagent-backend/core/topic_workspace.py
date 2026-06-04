@@ -33,7 +33,7 @@ def _resolve_sandbox_root(raw: str | None = None) -> Path:
         return (_backend_root() / path).resolve()
 
     home = Path(os.environ.get("HOME") or str(Path.home())).expanduser()
-    return (home / ".dataagent" / "runtime" / "topics").resolve()
+    return (home / "workspaces").resolve()
 
 
 def resolve_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> Path:

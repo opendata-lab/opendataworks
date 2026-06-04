@@ -28,7 +28,6 @@ DEFAULT_AGENT = {
     "env_vars": {},
     "is_default": True,
     "is_builtin": True,
-    "resolved_workdir": "/tmp/dataagent/workspaces/agent_default",
     "created_at": "",
     "updated_at": "",
 }

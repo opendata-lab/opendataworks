@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import socket
 import subprocess
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -27,10 +28,23 @@ SANDBOX_CONTAINER_LABEL_VALUE = "dataagent-sandbox-runner"
 SANDBOX_TASK_ID_LABEL = "dataagent.sandbox.task_id"
 SANDBOX_TOPIC_ID_LABEL = "dataagent.sandbox.topic_id"
 
+# Mount point where the runner image/compose exposes the live skills root. Child
+# task containers should mount the same host source so they see live (and offline
+# package) skills instead of the image-baked copy.
+RUNNER_SKILLS_MOUNT_TARGET = "/app/.claude/skills"
+
+# Host source of the runner's own skills mount, auto-discovered at startup so the
+# live-skills child mount is on by default without extra configuration.
+_AUTO_HOST_SKILLS_DIR: str | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _cleanup_stale_sandbox_containers()
+    global _AUTO_HOST_SKILLS_DIR
+    _AUTO_HOST_SKILLS_DIR = await _discover_host_skills_dir()
+    if _AUTO_HOST_SKILLS_DIR:
+        logger.info("auto-discovered host skills dir for child mounts: %s", _AUTO_HOST_SKILLS_DIR)
     yield
 
 
@@ -62,7 +76,6 @@ _FORWARDED_ENV_KEYS = {
     "PATH",
     "TZ",
     "PYTHONPATH",
-    "DATAAGENT_RUNTIME_PROJECT_CWD",
     "DATAAGENT_SKILLS_OUTPUT_DIR",
 }
 
@@ -148,6 +161,62 @@ def _should_use_container_backend() -> bool:
     return backend in {"docker", "podman"} and bool(image)
 
 
+async def _discover_host_skills_dir() -> str:
+    """Resolve the host source of the runner's own ``/app/.claude/skills`` mount.
+
+    The runner shares the host Docker socket, so it can inspect itself and read
+    the host path backing its live skills bind. Child task containers then mount
+    that same source, picking up live/offline-updated skills by default instead
+    of the image-baked copy. Best-effort: any failure returns "" and the child
+    falls back to the image skills.
+    """
+    if not _should_use_container_backend():
+        return ""
+    cfg = get_settings()
+    backend = str(getattr(cfg, "dataagent_sandbox_backend", "") or "docker").strip().lower()
+    self_id = socket.gethostname().strip()
+    if not self_id:
+        return ""
+    template = (
+        '{{range .Mounts}}{{if eq .Destination "'
+        + RUNNER_SKILLS_MOUNT_TARGET
+        + '"}}{{.Source}}{{end}}{{end}}'
+    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            backend,
+            "inspect",
+            "--format",
+            template,
+            self_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        logger.warning("sandbox backend command not found during skills discovery: %s", backend)
+        return ""
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logger.warning(
+            "host skills auto-discovery failed backend=%s stderr=%s",
+            backend,
+            stderr.decode("utf-8", errors="replace").strip(),
+        )
+        return ""
+    source = stdout.decode("utf-8", errors="replace").strip()
+    if not source or not Path(source).is_absolute():
+        return ""
+    return source
+
+
+def _resolve_host_skills_dir(cfg: Any) -> str:
+    """Explicit override wins; otherwise use the auto-discovered runner mount."""
+    explicit = str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
+    if explicit:
+        return explicit
+    return _AUTO_HOST_SKILLS_DIR or ""
+
+
 def _safe_container_fragment(value: str) -> str:
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(value or "").strip()).strip(".-")
     return safe or "task"
@@ -205,8 +274,8 @@ def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list
         f"{_safe_container_fragment(params.task_id)[:32]}"
     )
 
-    host_skills_dir = str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
-    skill_link_root = "/skills" if host_skills_dir else "/app/.claude/skills"
+    host_skills_dir = _resolve_host_skills_dir(cfg)
+    skill_link_root = "/skills" if host_skills_dir else RUNNER_SKILLS_MOUNT_TARGET
     child_env = _build_child_env(skill_link_root=skill_link_root)
 
     command = [
