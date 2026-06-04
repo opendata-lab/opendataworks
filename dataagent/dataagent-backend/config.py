@@ -83,6 +83,16 @@ class Settings(BaseSettings):
     dataagent_portal_mcp_token: str = ""
     dataagent_portal_mcp_token_header_name: str = "X-Portal-MCP-Token"
 
+    # ---- Topic workspace / sandbox ----
+    dataagent_sandbox_mode: str = ""
+    dataagent_sandbox_runner_url: str = ""
+    dataagent_sandbox_root: str = ""
+    dataagent_sandbox_host_root: str = ""
+    dataagent_sandbox_image: str = ""
+    dataagent_sandbox_backend: str = "docker"
+    dataagent_sandbox_network: str = ""
+    dataagent_sandbox_host_skills_dir: str = ""
+
     # ---- 运行策略 ----
     max_few_shot_examples: int = 5
     max_schema_tables: int = 10

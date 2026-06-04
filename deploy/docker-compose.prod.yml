@@ -149,12 +149,21 @@ services:
       DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
       DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
       DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
+      DATAAGENT_SANDBOX_RUNNER_URL: ${DATAAGENT_SANDBOX_RUNNER_URL:-http://dataagent-sandbox-runner:8910}
+      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
+      DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
+      DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
     ports:
       - "8900:8900"
     depends_on:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      dataagent-sandbox-runner:
         condition: service_healthy
     networks:
       - opendataworks-network
@@ -165,8 +174,55 @@ services:
       retries: 5
       start_period: 60s
     volumes:
-      - dataagent-home:/tmp/dataagent-home
+      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
+
+  # DataAgent 沙箱 Runner（内部服务）
+  dataagent-sandbox-runner:
+    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
+    container_name: opendataworks-dataagent-sandbox-runner
+    restart: always
+    user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
+    env_file:
+      - ./.env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      HOME: /tmp/dataagent-home
+      DATAAGENT_SANDBOX_MODE: ""
+      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
+      DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
+      DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
+      DATAAGENT_SANDBOX_HOST_SKILLS_DIR: ${DATAAGENT_SANDBOX_HOST_SKILLS_DIR:-}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
+      MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
+      MYSQL_DATABASE: ${DATAAGENT_MYSQL_DATABASE:-opendataworks}
+      SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
+      ODW_BACKEND_BASE_URL: ${ODW_BACKEND_BASE_URL:-http://backend:8080/api/v1/ai}
+      ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+      ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
+      DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
+      DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
+      DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - opendataworks-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8910/').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+      - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
+      - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
   portal-mcp:
     image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:1.3.0}
@@ -210,6 +266,4 @@ volumes:
   mysql-data:
     driver: local
   backend-logs:
-    driver: local
-  dataagent-home:
     driver: local

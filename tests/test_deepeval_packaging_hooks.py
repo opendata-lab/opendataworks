@@ -6,6 +6,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 IMAGE_NAME = "opendataworks-dataagent-evals-deepeval"
 BUILTIN_IMAGE_NAME = "opendataworks-dataagent-evals-builtin"
+RUNNER_IMAGE_NAME = "opendataworks-dataagent-runner"
 
 
 def test_offline_package_scripts_reference_deepeval_image_and_tools_dir():
@@ -42,6 +43,33 @@ def test_builtin_eval_module_is_packaged_as_parallel_image():
     assert "DATAAGENT_BUILTIN_RUN_LOCAL" in run_wrapper
     assert "DATAAGENT_EVAL_JUDGE_MAX_TOKENS" in run_wrapper
     assert "tools/dataagent-evals/builtin/run.py" in run_wrapper
+
+
+def test_dataagent_sandbox_runner_image_is_packaged_and_built():
+    create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
+    load_images = (REPO_ROOT / "scripts" / "load-images.sh").read_text(encoding="utf-8")
+    build_images = (REPO_ROOT / "scripts" / "build" / "build-images.sh").read_text(encoding="utf-8")
+    build_multiarch = (REPO_ROOT / "scripts" / "build" / "build-multiarch.sh").read_text(encoding="utf-8")
+    build_quick = (REPO_ROOT / "scripts" / "build" / "build-quick.sh").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github" / "workflows" / "docker-build.yml").read_text(encoding="utf-8")
+    env_example = (REPO_ROOT / "deploy" / ".env.example").read_text(encoding="utf-8")
+    compose_prod = (REPO_ROOT / "deploy" / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert RUNNER_IMAGE_NAME in create_package
+    assert "opendataworks-dataagent-runner.tar" in create_package
+    assert "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" in create_package
+    assert "DATAAGENT_SANDBOX_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" in create_package
+    assert "opendataworks-dataagent-runner.tar" in load_images
+    assert RUNNER_IMAGE_NAME in build_images
+    assert "Dockerfile.runner" in build_images
+    assert RUNNER_IMAGE_NAME in build_multiarch
+    assert "Dockerfile.runner" in build_multiarch
+    assert "BUILD_DATAAGENT_RUNNER" in build_quick
+    assert RUNNER_IMAGE_NAME in workflow
+    assert "Dockerfile.runner" in workflow
+    assert "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE" in env_example
+    assert "opendataworks-dataagent-runner:1.3.0" in compose_prod
+    assert "opendataworks-dataagent-runner:1.2.0" not in compose_prod
 
 
 def test_deepeval_eval_wrapper_keeps_volume_array_non_empty_for_bash_3():

@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import logging
 import os
+import asyncio
 import inspect
+import json
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, AsyncIterator, Awaitable, Callable
 
 import anyio
+import httpx
 
 from config import get_settings
 from core.claude_cli import resolve_claude_cli_path
@@ -33,14 +36,14 @@ from core.agent_runtime import (
     _result_subtype_to_reason,
     _safe_base_url,
     _safe_stringify,
-    prepare_enabled_skills_project_cwd,
     resolve_agent_skill_runtime,
     resolve_enabled_skill_runtime,
     resolve_runtime_provider_selection,
 )
-from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, resolved_agent_workdir
+from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot
 from core.sdk_block_writer import SdkBlockWriter
 from core.topic_task_store import get_topic_task_store
+from core.topic_workspace import prepare_topic_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -757,6 +760,114 @@ async def execute_task_stream(
     is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None = None,
 ) -> TaskExecutionResult:
     cfg = get_settings()
+    if _should_use_sandbox_runner(cfg):
+        return await _execute_task_stream_via_runner(
+            params,
+            emit=emit,
+            is_cancel_requested=is_cancel_requested,
+        )
+
+    return await _execute_task_stream_local(
+        params,
+        emit=emit,
+        is_cancel_requested=is_cancel_requested,
+    )
+
+
+def _should_use_sandbox_runner(cfg: Any) -> bool:
+    return bool(str(getattr(cfg, "dataagent_sandbox_mode", "") or "").strip())
+
+
+async def _execute_task_stream_via_runner(
+    params: TaskExecutionInput,
+    *,
+    emit: Callable[[dict[str, Any]], Awaitable[None] | None],
+    is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None = None,
+) -> TaskExecutionResult:
+    cfg = get_settings()
+    runner_url = str(getattr(cfg, "dataagent_sandbox_runner_url", "") or "").strip().rstrip("/")
+    if not runner_url:
+        raise RuntimeError("DATAAGENT_SANDBOX_RUNNER_URL is required when DATAAGENT_SANDBOX_MODE is enabled")
+
+    endpoint = f"{runner_url}/internal/sandbox/runs"
+    payload = asdict(params)
+    cancel_sent = False
+    stream_done = False
+
+    async def _cancelled() -> bool:
+        if is_cancel_requested is None:
+            return False
+        result = is_cancel_requested()
+        if inspect.isawaitable(result):
+            return bool(await result)
+        return bool(result)
+
+    async def _emit(record: dict[str, Any]) -> None:
+        result = emit(record)
+        if inspect.isawaitable(result):
+            await result
+
+    async with httpx.AsyncClient(timeout=None) as client:
+        async def _watch_cancel() -> None:
+            nonlocal cancel_sent
+            while not stream_done:
+                if not cancel_sent and await _cancelled():
+                    cancel_sent = True
+                    await client.post(f"{runner_url}/internal/sandbox/runs/{params.task_id}/cancel", json={"task_id": params.task_id})
+                    return
+                await asyncio.sleep(0.25)
+
+        cancel_task = asyncio.create_task(_watch_cancel())
+        try:
+            async with client.stream("POST", endpoint, json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not str(line or "").strip():
+                        continue
+                    message = json.loads(line)
+                    message_type = str(message.get("type") or "")
+                    if message_type == "record":
+                        record = message.get("record") or {}
+                        if isinstance(record, dict):
+                            await _emit(record)
+                        continue
+                    if message_type == "result":
+                        result_payload = message.get("result") or {}
+                        if not isinstance(result_payload, dict):
+                            break
+                        return TaskExecutionResult(
+                            task_status=str(result_payload.get("task_status") or "error"),
+                            content=str(result_payload.get("content") or ""),
+                            usage=result_payload.get("usage") if isinstance(result_payload.get("usage"), dict) else None,
+                            error=result_payload.get("error") if isinstance(result_payload.get("error"), dict) else None,
+                            provider_id=str(result_payload.get("provider_id") or ""),
+                            model=str(result_payload.get("model") or ""),
+                            session_id=str(result_payload.get("session_id") or ""),
+                        )
+        finally:
+            stream_done = True
+            cancel_task.cancel()
+            try:
+                await cancel_task
+            except asyncio.CancelledError:
+                pass
+
+    return TaskExecutionResult(
+        task_status="error",
+        content="sandbox runner stream ended without a result",
+        error={"code": "sandbox_runner_no_result", "message": "sandbox runner stream ended without a result"},
+        provider_id=params.provider_id,
+        model=params.model,
+    )
+
+
+async def _execute_task_stream_local(
+    params: TaskExecutionInput,
+    *,
+    emit: Callable[[dict[str, Any]], Awaitable[None] | None],
+    is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None = None,
+) -> TaskExecutionResult:
+    cfg = get_settings()
     runtime_target = resolve_runtime_provider_selection(params.provider_id, params.model)
     provider_id = _normalize_provider_id(runtime_target.get("provider_id"), runtime_target.get("base_url"))
     supports_partial_messages = bool(
@@ -834,17 +945,25 @@ async def execute_task_stream(
         os.environ[key] = value
 
     enabled_folders = skill_runtime.get("enabled_folders") or []
-    if agent_snapshot:
-        project_cwd = prepare_enabled_skills_project_cwd(
-            enabled_folders,
-            runtime_project_cwd=resolved_agent_workdir(
-                str(agent_snapshot.get("agent_id") or ""),
-                is_default=bool(agent_snapshot.get("is_default")),
-            ),
-            allow_empty=True,
-        )
-    else:
-        project_cwd = prepare_enabled_skills_project_cwd(enabled_folders)
+    prepared_workspace_dir = ""
+    if str(os.environ.get("DATAAGENT_WORKSPACE_PREPARED") or "").strip() == "1":
+        prepared_workspace_dir = str(os.environ.get("DATAAGENT_WORKSPACE_DIR") or "").strip()
+    skill_link_root = str(os.environ.get("DATAAGENT_SKILL_LINK_ROOT") or "").strip() or None
+    project_cwd = prepare_topic_workspace(
+        params.topic_id,
+        enabled_folders,
+        allow_empty=bool(agent_snapshot) or not enabled_folders,
+        skill_link_root=skill_link_root,
+        workspace_dir=prepared_workspace_dir or None,
+    )
+    workspace_env = {
+        "HOME": str(project_cwd),
+        "PWD": str(project_cwd),
+        "DATAAGENT_WORKSPACE_DIR": str(project_cwd),
+    }
+    runtime_env.update(workspace_env)
+    for key, value in workspace_env.items():
+        os.environ[key] = value
     permission_mode = _resolve_sdk_permission_mode(str((agent_snapshot or {}).get("permission_mode") or "inherit"))
     max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
     setting_sources = ["project"]

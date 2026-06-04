@@ -33,6 +33,7 @@ FRONTEND_IMAGE="opendataworks-frontend:latest"
 BACKEND_IMAGE="opendataworks-backend:latest"
 DATAAGENT_FRONTEND_IMAGE="opendataworks-dataagent-frontend:latest"
 DATAAGENT_BACKEND_IMAGE="opendataworks-dataagent-backend:latest"
+DATAAGENT_RUNNER_IMAGE="opendataworks-dataagent-runner:latest"
 DATAAGENT_EVALS_BUILTIN_IMAGE="opendataworks-dataagent-evals-builtin:latest"
 DATAAGENT_EVALS_DEEPEVAL_IMAGE="opendataworks-dataagent-evals-deepeval:latest"
 PORTAL_MCP_IMAGE="opendataworks-portal-mcp:latest"
@@ -42,21 +43,21 @@ REDIS_IMAGE="redis:7.2-alpine"
 OUTPUT_DIR="$REPO_ROOT/deploy/docker-images"
 mkdir -p "$OUTPUT_DIR"
 
-echo "📦 步骤 1/7: 构建前端镜像 (AMD64 架构)..."
+echo "📦 步骤 1/8: 构建前端镜像 (AMD64 架构)..."
 cd "$REPO_ROOT/frontend"
 $CONTAINER_CMD build --platform linux/amd64 -t $FRONTEND_IMAGE .
 cd "$REPO_ROOT"
 echo "✅ 前端镜像构建完成"
 echo ""
 
-echo "📦 步骤 2/7: 构建后端镜像 (AMD64 架构)..."
+echo "📦 步骤 2/8: 构建后端镜像 (AMD64 架构)..."
 $CONTAINER_CMD build --platform linux/amd64 -t $BACKEND_IMAGE \
   -f backend/Dockerfile \
   .
 echo "✅ 后端镜像构建完成"
 echo ""
 
-echo "📦 步骤 3/7: 构建 DataAgent 前端镜像 (AMD64 架构)..."
+echo "📦 步骤 3/8: 构建 DataAgent 前端镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_FRONTEND_IMAGE \
   -f dataagent/dataagent-frontend/Dockerfile \
@@ -64,7 +65,7 @@ $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_FRONTEND_IMAGE \
 echo "✅ DataAgent 前端镜像构建完成"
 echo ""
 
-echo "📦 步骤 4/7: 构建 DataAgent 后端镜像 (AMD64 架构)..."
+echo "📦 步骤 4/8: 构建 DataAgent 后端镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_BACKEND_IMAGE \
   -f dataagent/dataagent-backend/Dockerfile \
@@ -72,7 +73,15 @@ $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_BACKEND_IMAGE \
 echo "✅ DataAgent 后端镜像构建完成"
 echo ""
 
-echo "📦 步骤 5/7: 构建 DataAgent builtin 评测镜像 (AMD64 架构)..."
+echo "📦 步骤 5/8: 构建 DataAgent Runner 镜像 (AMD64 架构)..."
+cd "$REPO_ROOT"
+$CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_RUNNER_IMAGE \
+  -f dataagent/dataagent-backend/Dockerfile.runner \
+  .
+echo "✅ DataAgent Runner 镜像构建完成"
+echo ""
+
+echo "📦 步骤 6/8: 构建 DataAgent builtin 评测镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_BUILTIN_IMAGE \
   -f tools/dataagent-evals/builtin/Dockerfile \
@@ -80,7 +89,7 @@ $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_BUILTIN_IMAGE \
 echo "✅ DataAgent builtin 评测镜像构建完成"
 echo ""
 
-echo "📦 步骤 6/7: 构建 DataAgent DeepEval 评测镜像 (AMD64 架构)..."
+echo "📦 步骤 7/8: 构建 DataAgent DeepEval 评测镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE \
   -f tools/dataagent-evals/deepeval/Dockerfile \
@@ -88,7 +97,7 @@ $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE \
 echo "✅ DataAgent DeepEval 评测镜像构建完成"
 echo ""
 
-echo "📦 步骤 7/7: 构建 Portal MCP 镜像 (AMD64 架构)..."
+echo "📦 步骤 8/8: 构建 Portal MCP 镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $PORTAL_MCP_IMAGE \
   -f dataagent/portal-mcp/Dockerfile \
@@ -110,6 +119,8 @@ echo "  - 导出 DataAgent 前端镜像..."
 $CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-frontend.tar" $DATAAGENT_FRONTEND_IMAGE
 echo "  - 导出 DataAgent 后端镜像..."
 $CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-backend.tar" $DATAAGENT_BACKEND_IMAGE
+echo "  - 导出 DataAgent Runner 镜像..."
+$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-runner.tar" $DATAAGENT_RUNNER_IMAGE
 echo "  - 导出 DataAgent builtin 评测镜像..."
 $CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-evals-builtin.tar" $DATAAGENT_EVALS_BUILTIN_IMAGE
 echo "  - 导出 DataAgent DeepEval 评测镜像..."
@@ -134,6 +145,7 @@ echo "  ✓ $FRONTEND_IMAGE"
 echo "  ✓ $BACKEND_IMAGE"
 echo "  ✓ $DATAAGENT_FRONTEND_IMAGE"
 echo "  ✓ $DATAAGENT_BACKEND_IMAGE"
+echo "  ✓ $DATAAGENT_RUNNER_IMAGE"
 echo "  ✓ $DATAAGENT_EVALS_BUILTIN_IMAGE"
 echo "  ✓ $DATAAGENT_EVALS_DEEPEVAL_IMAGE"
 echo "  ✓ $PORTAL_MCP_IMAGE"

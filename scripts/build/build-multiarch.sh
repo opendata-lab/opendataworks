@@ -33,6 +33,7 @@ BUILD_FRONTEND=true
 BUILD_BACKEND=true
 BUILD_DATAAGENT_FRONTEND=true
 BUILD_DATAAGENT_BACKEND=true
+BUILD_DATAAGENT_RUNNER=true
 BUILD_DATAAGENT_EVALS_BUILTIN=true
 BUILD_DATAAGENT_EVALS_DEEPEVAL=true
 BUILD_PORTAL_MCP=true
@@ -50,6 +51,7 @@ usage() {
     echo "  --no-backend            跳过后端镜像构建"
     echo "  --no-dataagent-frontend 跳过 DataAgent 前端镜像构建"
     echo "  --no-dataagent-backend  跳过 DataAgent 后端镜像构建"
+    echo "  --no-dataagent-runner   跳过 DataAgent Runner 镜像构建"
     echo "  --no-dataagent-evals-builtin  跳过 DataAgent builtin 评测镜像构建"
     echo "  --no-dataagent-evals-deepeval  跳过 DataAgent DeepEval 评测镜像构建"
     echo "  --no-portal-mcp         跳过 Portal MCP 镜像构建"
@@ -101,6 +103,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-dataagent-backend)
             BUILD_DATAAGENT_BACKEND=false
+            shift
+            ;;
+        --no-dataagent-runner)
+            BUILD_DATAAGENT_RUNNER=false
             shift
             ;;
         --no-dataagent-evals-builtin)
@@ -189,6 +195,7 @@ FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-frontend"
 BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-backend"
 DATAAGENT_FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-frontend"
 DATAAGENT_BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-backend"
+DATAAGENT_RUNNER_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-runner"
 DATAAGENT_EVALS_BUILTIN_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-evals-builtin"
 DATAAGENT_EVALS_DEEPEVAL_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-evals-deepeval"
 PORTAL_MCP_IMAGE="$DEFAULT_NAMESPACE/opendataworks-portal-mcp"
@@ -218,6 +225,7 @@ echo "构建前端:   $BUILD_FRONTEND"
 echo "构建后端:   $BUILD_BACKEND"
 echo "构建 DataAgent 前端: $BUILD_DATAAGENT_FRONTEND"
 echo "构建 DataAgent 后端: $BUILD_DATAAGENT_BACKEND"
+echo "构建 DataAgent Runner: $BUILD_DATAAGENT_RUNNER"
 echo "构建 DataAgent builtin 评测: $BUILD_DATAAGENT_EVALS_BUILTIN"
 echo "构建 DataAgent DeepEval 评测: $BUILD_DATAAGENT_EVALS_DEEPEVAL"
 echo "构建 Portal MCP: $BUILD_PORTAL_MCP"
@@ -312,6 +320,26 @@ if [ "$BUILD_DATAAGENT_BACKEND" = true ]; then
     echo ""
 fi
 
+if [ "$BUILD_DATAAGENT_RUNNER" = true ]; then
+    echo -e "${YELLOW}📦 构建 DataAgent Runner 镜像...${NC}"
+    echo "镜像: $DATAAGENT_RUNNER_IMAGE:$VERSION"
+    echo "平台: $PLATFORMS"
+
+    cd "$REPO_ROOT"
+    if docker buildx build $BUILD_ARGS \
+        -t $DATAAGENT_RUNNER_IMAGE:$VERSION \
+        -t $DATAAGENT_RUNNER_IMAGE:latest \
+        --file dataagent/dataagent-backend/Dockerfile.runner \
+        . ; then
+        echo -e "${GREEN}✅ DataAgent Runner 镜像构建成功${NC}"
+        ((SUCCESSFUL_BUILDS++))
+    else
+        echo -e "${RED}❌ DataAgent Runner 镜像构建失败${NC}"
+    fi
+    ((TOTAL_BUILDS++))
+    echo ""
+fi
+
 if [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ]; then
     echo -e "${YELLOW}📦 构建 DataAgent DeepEval 评测镜像...${NC}"
     echo "镜像: $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
@@ -389,6 +417,7 @@ if [ $SUCCESSFUL_BUILDS -eq $TOTAL_BUILDS ]; then
         [ "$BUILD_BACKEND" = true ] && echo "  - $BACKEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_FRONTEND" = true ] && echo "  - $DATAAGENT_FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_BACKEND" = true ] && echo "  - $DATAAGENT_BACKEND_IMAGE:$VERSION"
+        [ "$BUILD_DATAAGENT_RUNNER" = true ] && echo "  - $DATAAGENT_RUNNER_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ] && echo "  - $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ] && echo "  - $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
         [ "$BUILD_PORTAL_MCP" = true ] && echo "  - $PORTAL_MCP_IMAGE:$VERSION"
@@ -398,6 +427,7 @@ if [ $SUCCESSFUL_BUILDS -eq $TOTAL_BUILDS ]; then
         [ "$BUILD_BACKEND" = true ] && echo "  docker pull $BACKEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_FRONTEND" = true ] && echo "  docker pull $DATAAGENT_FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_BACKEND" = true ] && echo "  docker pull $DATAAGENT_BACKEND_IMAGE:$VERSION"
+        [ "$BUILD_DATAAGENT_RUNNER" = true ] && echo "  docker pull $DATAAGENT_RUNNER_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ] && echo "  docker pull $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
         [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ] && echo "  docker pull $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
         [ "$BUILD_PORTAL_MCP" = true ] && echo "  docker pull $PORTAL_MCP_IMAGE:$VERSION"

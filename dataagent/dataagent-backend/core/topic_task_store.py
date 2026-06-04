@@ -11,6 +11,7 @@ import pymysql
 
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, agent_summary_from_snapshot, default_agent_payload, normalize_agent_snapshot
+from core.topic_workspace import delete_topic_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -895,6 +896,10 @@ class TopicTaskStore:
             conn.commit()
         finally:
             conn.close()
+        try:
+            delete_topic_workspace(topic_id)
+        except Exception as exc:
+            logger.warning("Failed to delete topic workspace topic_id=%s error=%s", topic_id, exc)
 
     def list_topic_messages(self, topic_id: str) -> list[dict[str, Any]]:
         self._ensure_ready()

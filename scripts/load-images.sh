@@ -44,6 +44,7 @@ REQUIRED_IMAGES=(
     "opendataworks-backend.tar"
     "opendataworks-dataagent-frontend.tar"
     "opendataworks-dataagent-backend.tar"
+    "opendataworks-dataagent-runner.tar"
     "opendataworks-dataagent-evals-builtin.tar"
     "opendataworks-dataagent-evals-deepeval.tar"
     "opendataworks-portal-mcp.tar"
@@ -65,54 +66,59 @@ echo "📦 开始加载镜像..."
 echo ""
 
 # 加载前端镜像
-echo "📦 [1/9] 加载前端镜像..."
+echo "📦 [1/10] 加载前端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-frontend.tar"
 echo "✅ 前端镜像加载完成"
 echo ""
 
 # 加载后端镜像
-echo "📦 [2/9] 加载后端镜像..."
+echo "📦 [2/10] 加载后端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-backend.tar"
 echo "✅ 后端镜像加载完成"
 echo ""
 
 # 加载 DataAgent 前端镜像
-echo "📦 [3/9] 加载 DataAgent 前端镜像..."
+echo "📦 [3/10] 加载 DataAgent 前端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-frontend.tar"
 echo "✅ DataAgent 前端镜像加载完成"
 echo ""
 
-echo "📦 [4/9] 加载 DataAgent 后端镜像..."
+echo "📦 [4/10] 加载 DataAgent 后端镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-backend.tar"
 echo "✅ DataAgent 后端镜像加载完成"
 echo ""
 
+echo "📦 [5/10] 加载 DataAgent Runner 镜像..."
+$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-runner.tar"
+echo "✅ DataAgent Runner 镜像加载完成"
+echo ""
+
 # 加载 builtin 评测镜像
-echo "📦 [5/9] 加载 builtin 评测镜像..."
+echo "📦 [6/10] 加载 builtin 评测镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-evals-builtin.tar"
 echo "✅ builtin 评测镜像加载完成"
 echo ""
 
 # 加载 DeepEval 评测镜像
-echo "📦 [6/9] 加载 DeepEval 评测镜像..."
+echo "📦 [7/10] 加载 DeepEval 评测镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-evals-deepeval.tar"
 echo "✅ DeepEval 评测镜像加载完成"
 echo ""
 
 # 加载 Portal MCP 镜像
-echo "📦 [7/9] 加载 Portal MCP 镜像..."
+echo "📦 [8/10] 加载 Portal MCP 镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-portal-mcp.tar"
 echo "✅ Portal MCP 镜像加载完成"
 echo ""
 
 # 加载 MySQL 镜像
-echo "📦 [8/9] 加载 MySQL 镜像..."
+echo "📦 [9/10] 加载 MySQL 镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/mysql-8.0.tar"
 echo "✅ MySQL 镜像加载完成"
 echo ""
 
 # 加载 Redis 镜像
-echo "📦 [9/9] 加载 Redis 镜像..."
+echo "📦 [10/10] 加载 Redis 镜像..."
 $CONTAINER_CMD load -i "$IMAGE_DIR/redis-7.2-alpine.tar"
 echo "✅ Redis 镜像加载完成"
 echo ""
@@ -138,6 +144,7 @@ IMAGES=(
     "opendataworks-backend:${IMAGE_TAG}"
     "opendataworks-dataagent-frontend:${IMAGE_TAG}"
     "opendataworks-dataagent-backend:${IMAGE_TAG}"
+    "opendataworks-dataagent-runner:${IMAGE_TAG}"
     "opendataworks-dataagent-evals-builtin:${IMAGE_TAG}"
     "opendataworks-dataagent-evals-deepeval:${IMAGE_TAG}"
     "opendataworks-portal-mcp:${IMAGE_TAG}"
@@ -145,6 +152,7 @@ IMAGES=(
     "opendataworks-backend:latest"
     "opendataworks-dataagent-frontend:latest"
     "opendataworks-dataagent-backend:latest"
+    "opendataworks-dataagent-runner:latest"
     "opendataworks-dataagent-evals-builtin:latest"
     "opendataworks-dataagent-evals-deepeval:latest"
     "opendataworks-portal-mcp:latest"
