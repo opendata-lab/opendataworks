@@ -14,17 +14,18 @@ Options:
   --registry <registry>     Remote registry host (default: docker.io)
   --namespace <namespace>   Docker Hub namespace for opendataworks images (default: mikefan2019)
   --tag <tag>               Image tag to pull (default: latest)
-  --output <path>           Output tar.gz path (default: ./opendataworks-deployment-<timestamp>.tar.gz)
+  --output <path>           Output tar.xz path (default: ./opendataworks-deployment-<timestamp>.tar.xz)
   --platform <platform>     Optional pull platform (e.g. linux/amd64)
   --keep-workdir            Do not delete temporary build directory (for debugging)
   -h, --help                Show this help
 
 Environment overrides:
   OPENDATAWORKS_REGISTRY, OPENDATAWORKS_NAMESPACE, OPENDATAWORKS_TAG,
-  OPENDATAWORKS_PLATFORM
+  OPENDATAWORKS_PLATFORM, OPENDATAWORKS_XZ_LEVEL (default: 6)
 
 The script packages current scripts/ and deploy/ content, pulls required images
-from Docker Hub, retags them, and produces a compressed archive.
+from Docker Hub, retags them, saves them into a single deduplicated image
+archive, and produces an xz-compressed archive.
 EOF
 }
 
@@ -93,8 +94,11 @@ done
 CONTAINER_CMD=$(detect_container_cmd)
 log "Using container runtime: $CONTAINER_CMD"
 
+command -v xz >/dev/null 2>&1 || die "xz is required to compress the offline package (install xz-utils)"
+XZ_LEVEL="${OPENDATAWORKS_XZ_LEVEL:-6}"
+
 if [[ -z "$OUTPUT_PATH" ]]; then
-    OUTPUT_PATH="opendataworks-deployment-$(date '+%Y%m%d-%H%M%S').tar.gz"
+    OUTPUT_PATH="opendataworks-deployment-$(date '+%Y%m%d-%H%M%S').tar.xz"
 fi
 
 if [[ -e "$OUTPUT_PATH" ]]; then
@@ -273,10 +277,16 @@ pull_image() {
     fi
 }
 
-save_image() {
-    local image="$1"
-    local archive="$2"
-    "$CONTAINER_CMD" save -o "$DEPLOY_IMAGE_DIR/$archive" "$image"
+# 将多个镜像保存到同一个归档，使共享 base layer 去重（python:3.11-slim、nginx:alpine 等）。
+# Docker 的 save 原生支持多镜像；Podman 需要 --multi-image-archive。
+save_images() {
+    local archive="$1"
+    shift
+    if [[ "$CONTAINER_CMD" == "podman" ]]; then
+        "$CONTAINER_CMD" save --multi-image-archive -o "$DEPLOY_IMAGE_DIR/$archive" "$@"
+    else
+        "$CONTAINER_CMD" save -o "$DEPLOY_IMAGE_DIR/$archive" "$@"
+    fi
 }
 
 retag_image() {
@@ -320,16 +330,18 @@ EXTRA_IMAGES=(
     "redis-7.2-alpine.tar|docker.io/library/redis:7.2-alpine|redis:7.2-alpine"
 )
 
+COMBINED_ARCHIVE="all-images.tar"
+declare -a SAVE_TARGETS=()
+
 log "Pulling application images from ${PARSER_REGISTRY}/${PARSER_NAMESPACE} tag ${OP_TAG}"
 for entry in "${MAIN_IMAGES[@]}"; do
     IFS='|' read -r archive source target <<<"$entry"
     log "Pulling $source"
     pull_image "$source"
     retag_image "$source" "$target"
-    log "Saving $target to deploy/docker-images/$archive"
-    save_image "$target" "$archive"
+    SAVE_TARGETS+=("$target")
     digest=$(get_digest "$source")
-    MANIFEST_RAW+=("$archive|$source|$target|$digest")
+    MANIFEST_RAW+=("$COMBINED_ARCHIVE|$source|$target|$digest")
 done
 
 log "Pulling dependency images"
@@ -338,11 +350,14 @@ for entry in "${EXTRA_IMAGES[@]}"; do
     log "Pulling $source"
     pull_image "$source"
     retag_image "$source" "$target"
-    log "Saving $target to deploy/docker-images/$archive"
-    save_image "$target" "$archive"
+    SAVE_TARGETS+=("$target")
     digest=$(get_digest "$source")
-    MANIFEST_RAW+=("$archive|$source|$target|$digest")
+    MANIFEST_RAW+=("$COMBINED_ARCHIVE|$source|$target|$digest")
 done
+
+# 一次性保存全部镜像，使共享层去重，显著减小镜像归档体积
+log "Saving ${#SAVE_TARGETS[@]} images into deduplicated archive deploy/docker-images/$COMBINED_ARCHIVE"
+save_images "$COMBINED_ARCHIVE" "${SAVE_TARGETS[@]}"
 
 MANIFEST_FILE="$DEPLOY_IMAGE_DIR/manifest.json"
 {
@@ -371,8 +386,8 @@ checksum_file="$DEPLOY_IMAGE_DIR/checksums.sha256"
 log "Generating checksums"
 (cd "$DEPLOY_IMAGE_DIR" && compute_checksums *.tar > checksums.tmp && mv checksums.tmp "$(basename "$checksum_file")")
 
-log "Creating archive $OUTPUT_PATH"
-tar -C "$WORKDIR" -czf "$OUTPUT_PATH" "$PACKAGE_NAME"
+log "Creating xz archive $OUTPUT_PATH (level ${XZ_LEVEL}, multi-threaded)"
+tar -C "$WORKDIR" -cf - "$PACKAGE_NAME" | xz -T0 "-${XZ_LEVEL}" -c > "$OUTPUT_PATH"
 
 if [[ "$KEEP_WORKDIR" = true ]]; then
     log "Temporary workspace kept at: $WORKDIR"

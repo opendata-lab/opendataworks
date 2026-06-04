@@ -97,21 +97,25 @@ Use this method if you have internet access and are deploying directly from the 
 
 ## 2. Offline Deployment (Using Package)
 
-Use this method for isolated environments without internet access. You will use the `opendataworks-deployment-*.tar.gz` package.
+Use this method for isolated environments without internet access. You will use the `opendataworks-deployment-*.tar.xz` package.
 
 ### Prerequisites
 - Docker or Podman installed on the target machine.
-- The offline deployment package (`opendataworks-deployment-*.tar.gz`).
+- `xz`/`xz-utils` installed on the target machine (used to decompress the package).
+- The offline deployment package (`opendataworks-deployment-*.tar.xz`).
 
 ### Steps
 1. **Extract Package**:
    ```bash
-   tar -xzf opendataworks-deployment-*.tar.gz
+   # 新版离线包为 xz 压缩
+   tar -xJf opendataworks-deployment-*.tar.xz
+   # 若某些精简系统的 tar 未链接 xz，可改用管道：
+   #   xz -dc opendataworks-deployment-*.tar.xz | tar -xf -
    cd opendataworks-deployment
    ```
 
 2. **Load Images**:
-   This loads all required Docker images from the local archive.
+   This loads all required Docker images from the local archive. 新版离线包将全部镜像去重保存为单个 `deploy/docker-images/all-images.tar`，加载脚本会自动识别（旧版逐镜像 `*.tar` 也兼容）。
    ```bash
    scripts/load-images.sh
    ```
