@@ -80,6 +80,27 @@ describe('createNl2SqlApiClient', () => {
     ])
   })
 
+  it('builds workspace file urls and routes uploads/listing to the runtime client', () => {
+    const client = createNl2SqlApiClient({ baseURL: 'https://odw.example.com' })
+
+    expect(client.topicApi.fileUrl('t1', 'uploads/a b.csv', { download: true })).toBe(
+      'https://odw.example.com/api/v1/nl2sql/topics/t1/files/uploads/a%20b.csv?download=1'
+    )
+    expect(client.topicApi.fileUrl('t1', 'report.html')).toBe(
+      'https://odw.example.com/api/v1/nl2sql/topics/t1/files/report.html'
+    )
+
+    client.topicApi.listFiles('t1')
+    expect(clients[0].get).toHaveBeenCalledWith('/topics/t1/files')
+
+    client.topicApi.uploadFile('t1', new Blob(['x']))
+    expect(clients[0].post).toHaveBeenCalledWith(
+      '/topics/t1/files',
+      expect.any(FormData),
+      expect.objectContaining({ headers: { 'Content-Type': 'multipart/form-data' } })
+    )
+  })
+
   it('exposes safe runtime config through the unified runtime API', () => {
     const client = createNl2SqlApiClient()
 

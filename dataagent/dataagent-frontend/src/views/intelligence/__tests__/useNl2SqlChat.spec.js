@@ -62,6 +62,41 @@ describe('useNl2SqlChat engine', () => {
     expect(chat.topicId.value).toBe('topic-new')
   })
 
+  it('send: appends an attachment note to the delivered content', async () => {
+    const api = makeApi()
+    api.taskApi.streamSdkEvents.mockImplementation(async (_taskId, opts) => {
+      opts.onRecord({ record_type: 'done', data: {} })
+    })
+    const chat = await ready(api)
+
+    chat.inputText.value = '分析这个文件'
+    await chat.send({ attachments: [{ name: 'sales.csv', rel_path: 'uploads/sales.csv' }] })
+    await flushPromises()
+
+    const delivered = api.taskApi.deliverMessage.mock.calls[0][0]
+    expect(delivered.content).toContain('分析这个文件')
+    expect(delivered.content).toContain('uploads/sales.csv')
+    const userMsg = chat.messages.value.find((m) => m.role === 'user')
+    expect(userMsg.content).toContain('📎')
+    expect(userMsg.content).toContain('sales.csv')
+  })
+
+  it('send: works with only attachments and no text', async () => {
+    const api = makeApi()
+    api.taskApi.streamSdkEvents.mockImplementation(async (_taskId, opts) => {
+      opts.onRecord({ record_type: 'done', data: {} })
+    })
+    const chat = await ready(api)
+
+    chat.inputText.value = ''
+    await chat.send({ attachments: [{ name: 'a.csv', rel_path: 'uploads/a.csv' }] })
+    await flushPromises()
+
+    expect(api.taskApi.deliverMessage).toHaveBeenCalledTimes(1)
+    const delivered = api.taskApi.deliverMessage.mock.calls[0][0]
+    expect(delivered.content).toContain('uploads/a.csv')
+  })
+
   it('newConversation while streaming detaches without cancelling the backend task', async () => {
     const api = makeApi()
     let resolveStream

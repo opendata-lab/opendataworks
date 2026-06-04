@@ -1,5 +1,5 @@
 <template>
-  <div class="v2-workbench">
+  <div class="v2-workbench" :class="{ 'artifacts-open': artifactsPanelOpen && !isWidgetMode }">
     <!-- Sidebar: topic list + agent selector -->
     <aside class="v2-sidebar">
       <div class="v2-sidebar-head">
@@ -137,6 +137,17 @@
     <main class="v2-main">
       <div v-if="messages.length" class="v2-main-top-bar">
         <h4 class="v2-topic-title">{{ activeTopic?.title }}</h4>
+        <button
+          v-if="!isWidgetMode"
+          type="button"
+          class="v2-artifacts-toggle"
+          :class="{ active: artifactsPanelOpen }"
+          title="会话文件 / 产物"
+          @click="toggleArtifactsPanel"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M4 5h6l2 2h8v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5z" /></svg>
+          <span>文件</span>
+        </button>
       </div>
 
       <el-scrollbar v-show="messages.length" ref="messagesScrollbarRef" class="v2-messages" @scroll="handleScroll">
@@ -269,8 +280,40 @@
             <div class="v2-landing-greeting">您好，我是{{ currentAgentName }}。</div>
           </template>
 
+          <!-- Attachment chips -->
+          <div v-if="pendingAttachments.length" class="v2-attach-chips">
+            <span
+              v-for="(att, i) in pendingAttachments"
+              :key="i"
+              class="v2-attach-chip"
+              :class="{ 'is-error': att.error, 'is-uploading': att.uploading }"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 12.5 12.5 21a4 4 0 0 1-5.66-5.66l8.49-8.49a2.5 2.5 0 0 1 3.54 3.54l-8.49 8.49a1 1 0 0 1-1.41-1.41l7.78-7.78" /></svg>
+              <span class="v2-attach-name">{{ att.name }}</span>
+              <span v-if="att.uploading" class="v2-attach-state">上传中…</span>
+              <span v-else-if="att.error" class="v2-attach-state">失败</span>
+              <button type="button" class="v2-attach-remove" title="移除" @click="removeAttachment(att)">×</button>
+            </span>
+          </div>
+
           <!-- Input bar -->
           <div class="v2-composer" :class="{ 'is-focused': inputText }">
+            <input
+              ref="fileInputRef"
+              type="file"
+              multiple
+              class="v2-file-input"
+              @change="handleFilesSelected"
+            />
+            <button
+              type="button"
+              class="v2-attach-btn"
+              :disabled="isStreaming"
+              title="上传文件"
+              @click="triggerFilePicker"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 12.5 12.5 21a4 4 0 0 1-5.66-5.66l8.49-8.49a2.5 2.5 0 0 1 3.54 3.54l-8.49 8.49a1 1 0 0 1-1.41-1.41l7.78-7.78" /></svg>
+            </button>
             <textarea
               ref="textareaRef"
               v-model="inputText"
@@ -285,7 +328,7 @@
               type="button"
               class="v2-send-btn"
               :class="{ 'v2-cancel-btn': activeTaskId }"
-              :disabled="activeTaskId ? false : !canSend"
+              :disabled="activeTaskId ? false : !canSendV2"
               @click="activeTaskId ? handleCancel() : handleSend()"
             >
               <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
@@ -336,6 +379,75 @@
         </div>
       </div>
     </main>
+
+    <!-- Right-side conversation artifact panel -->
+    <aside v-if="artifactsPanelOpen && !isWidgetMode" class="v2-artifacts-panel">
+      <div class="v2-artifacts-head">
+        <span class="v2-artifacts-title">会话文件</span>
+        <span class="v2-artifacts-actions">
+          <button type="button" title="刷新" @click="refreshArtifacts">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" /></svg>
+          </button>
+          <button type="button" title="收起" @click="toggleArtifactsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="6" y1="6" x2="18" y2="18" /><line x1="18" y1="6" x2="6" y2="18" /></svg>
+          </button>
+        </span>
+      </div>
+
+      <div v-if="previewArtifact" class="v2-artifact-preview">
+        <div class="v2-artifact-preview-head">
+          <button type="button" class="v2-artifact-back" @click="closeArtifactPreview">← 返回</button>
+          <span class="v2-artifact-preview-name" :title="previewArtifact.name">{{ previewArtifact.name }}</span>
+          <a class="v2-artifact-dl-link" :href="artifactDownloadUrl(previewArtifact)" download>下载</a>
+        </div>
+        <div class="v2-artifact-preview-body">
+          <div v-if="previewError" class="v2-artifact-empty">{{ previewError }}</div>
+          <iframe
+            v-else-if="isHtmlArtifact(previewArtifact)"
+            class="v2-artifact-frame"
+            sandbox=""
+            referrerpolicy="no-referrer"
+            :srcdoc="previewText"
+          ></iframe>
+          <img
+            v-else-if="isImageArtifact(previewArtifact)"
+            class="v2-artifact-img"
+            :src="artifactInlineUrl(previewArtifact)"
+            :alt="previewArtifact.name"
+          />
+          <pre v-else-if="isTextArtifact(previewArtifact)" class="v2-artifact-text">{{ previewText }}</pre>
+          <div v-else class="v2-artifact-empty">该文件不支持预览，请下载查看。</div>
+        </div>
+      </div>
+
+      <el-scrollbar v-else class="v2-artifacts-scroll">
+        <div v-if="artifactsLoading" class="v2-artifacts-empty">加载中…</div>
+        <div v-else-if="!artifacts.length" class="v2-artifacts-empty">暂无文件</div>
+        <button
+          v-for="file in artifacts"
+          v-else
+          :key="file.rel_path"
+          type="button"
+          class="v2-artifact-item"
+          @click="openArtifact(file)"
+        >
+          <span class="v2-artifact-name" :title="file.name">{{ file.name }}</span>
+          <span class="v2-artifact-meta">
+            <span class="v2-artifact-tag" :class="file.kind">{{ file.kind === 'input' ? '上传' : '生成' }}</span>
+            <span class="v2-artifact-size">{{ formatBytes(file.size) }}</span>
+          </span>
+          <a
+            class="v2-artifact-row-dl"
+            :href="artifactDownloadUrl(file)"
+            download
+            title="下载"
+            @click.stop
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>
+          </a>
+        </button>
+      </el-scrollbar>
+    </aside>
   </div>
 </template>
 
@@ -858,8 +970,12 @@ function handleModelCommand(command) {
 // through the engine options at setup.
 async function handleSend() {
   if (isWidgetMode.value) return
-  if (!inputText.value.trim() || isStreaming.value) return
-  await engineSend()
+  if (isStreaming.value || isUploading.value) return
+  const ready = pendingAttachments.value.filter((a) => a.rel_path && !a.uploading)
+  if (!inputText.value.trim() && !ready.length) return
+  const attachments = ready.map((a) => ({ name: a.name, rel_path: a.rel_path }))
+  pendingAttachments.value = []
+  await engineSend({ attachments })
 }
 
 // Enter 发送，Shift + Enter 换行;输入法组合输入期间的回车用于确认候选词,不发送。
@@ -873,6 +989,138 @@ function onEnterKey(event) {
 function handleCancel() {
   void engineCancel()
 }
+
+// ── Conversation files: composer upload + right-side artifact panel ──────────
+const fileInputRef = ref(null)
+const pendingAttachments = ref([])       // [{ name, rel_path, size, uploading, error }]
+const isUploading = computed(() => pendingAttachments.value.some((a) => a.uploading))
+const canSendV2 = computed(
+  () => !isUploading.value && (canSend.value || pendingAttachments.value.some((a) => a.rel_path && !a.uploading)),
+)
+
+const ARTIFACTS_PREF_KEY = 'nl2sql.artifactsPanelOpen'
+const artifactsPanelOpen = ref(readArtifactsPref())
+const artifacts = ref([])
+const artifactsLoading = ref(false)
+const previewArtifact = ref(null)
+const previewText = ref('')
+const previewError = ref('')
+
+function readArtifactsPref() {
+  try { return localStorage.getItem(ARTIFACTS_PREF_KEY) === '1' } catch (_e) { return false }
+}
+
+function triggerFilePicker() {
+  if (isStreaming.value) return
+  fileInputRef.value?.click()
+}
+
+async function handleFilesSelected(event) {
+  const files = Array.from(event?.target?.files || [])
+  if (event?.target) event.target.value = ''
+  if (!files.length) return
+  let topicId = activeTopicId.value
+  if (!topicId) {
+    try {
+      topicId = await chat.ensureTopic('新话题')
+      if (!isWidgetMode.value) replaceRouteTopic(topicId)
+    } catch (error) {
+      ElMessage.error('创建话题失败: ' + (error?.message || error))
+      return
+    }
+  }
+  for (const file of files) {
+    const entry = reactive({ name: file.name, rel_path: '', size: file.size, uploading: true, error: '' })
+    pendingAttachments.value.push(entry)
+    try {
+      const meta = await topicApi.uploadFile(topicId, file)
+      entry.name = meta.name
+      entry.rel_path = meta.rel_path
+      entry.size = meta.size
+      entry.uploading = false
+    } catch (error) {
+      entry.uploading = false
+      entry.error = String(error?.message || '上传失败')
+      ElMessage.error(`上传 ${file.name} 失败: ${entry.error}`)
+    }
+  }
+}
+
+function removeAttachment(entry) {
+  pendingAttachments.value = pendingAttachments.value.filter((a) => a !== entry)
+}
+
+function toggleArtifactsPanel() {
+  artifactsPanelOpen.value = !artifactsPanelOpen.value
+  try { localStorage.setItem(ARTIFACTS_PREF_KEY, artifactsPanelOpen.value ? '1' : '0') } catch (_e) { /* ignore */ }
+  if (artifactsPanelOpen.value) refreshArtifacts()
+}
+
+async function refreshArtifacts() {
+  const topicId = activeTopicId.value
+  if (!topicId) { artifacts.value = []; return }
+  artifactsLoading.value = true
+  try {
+    const res = await topicApi.listFiles(topicId)
+    artifacts.value = Array.isArray(res?.files) ? res.files : []
+  } catch (_error) {
+    // keep the previous list; listing is best-effort
+  } finally {
+    artifactsLoading.value = false
+  }
+}
+
+function artifactDownloadUrl(file) {
+  return topicApi.fileUrl(activeTopicId.value, file.rel_path, { download: true })
+}
+function artifactInlineUrl(file) {
+  return topicApi.fileUrl(activeTopicId.value, file.rel_path)
+}
+function isHtmlArtifact(file) {
+  return /text\/html/.test(file?.content_type || '') || /\.html?$/i.test(file?.name || '')
+}
+function isImageArtifact(file) {
+  return /^image\//.test(file?.content_type || '') || /\.(png|jpe?g|gif|svg|webp)$/i.test(file?.name || '')
+}
+function isTextArtifact(file) {
+  return /^text\/|application\/json|csv/.test(file?.content_type || '') || /\.(txt|csv|json|md|log|yaml|yml)$/i.test(file?.name || '')
+}
+
+async function openArtifact(file) {
+  previewArtifact.value = file
+  previewText.value = ''
+  previewError.value = ''
+  if (isHtmlArtifact(file) || isTextArtifact(file)) {
+    try {
+      previewText.value = await topicApi.fetchFileText(activeTopicId.value, file.rel_path)
+    } catch (error) {
+      previewError.value = String(error?.message || '加载失败')
+    }
+  }
+}
+function closeArtifactPreview() {
+  previewArtifact.value = null
+  previewText.value = ''
+  previewError.value = ''
+}
+
+function formatBytes(size) {
+  const n = Number(size) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Refresh artifacts when a run finishes (new files may have been generated) and
+// reset the panel when switching conversations.
+watch(isStreaming, (now, prev) => {
+  if (prev && !now && artifactsPanelOpen.value) refreshArtifacts()
+})
+watch(activeTopicId, () => {
+  closeArtifactPreview()
+  if (artifactsPanelOpen.value) refreshArtifacts()
+  else artifacts.value = []
+})
 
 // Keep the view pinned to the latest content as the engine streams (the engine
 // triggers messages reactively); reloads / focus still force-scroll explicitly.
@@ -943,7 +1191,108 @@ onBeforeUnmount(() => {
 
 @media (min-width: 1280px) {
   .v2-workbench { grid-template-columns: 300px 1fr; }
+  .v2-workbench.artifacts-open { grid-template-columns: 300px 1fr 360px; }
 }
+
+.v2-workbench.artifacts-open { grid-template-columns: 260px 1fr 340px; }
+
+/* ── Conversation artifacts panel ────────────────────────────────────────── */
+.v2-artifacts-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid #E5EAF1;
+  background: #FBFCFD;
+}
+.v2-artifacts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #EDF0F4;
+}
+.v2-artifacts-title { font-size: 13px; font-weight: 600; color: #1F2937; }
+.v2-artifacts-actions { display: flex; gap: 4px; }
+.v2-artifacts-actions button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border: none; border-radius: 7px;
+  background: transparent; color: #6B7280; cursor: pointer;
+}
+.v2-artifacts-actions button:hover { background: #EEF1F5; color: #111827; }
+.v2-artifacts-scroll { flex: 1; min-height: 0; }
+.v2-artifacts-empty { padding: 24px 14px; color: #9AA4B2; font-size: 13px; text-align: center; }
+.v2-artifact-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  padding: 10px 14px; border: none; border-bottom: 1px solid #F1F3F6;
+  background: transparent; cursor: pointer; text-align: left;
+}
+.v2-artifact-item:hover { background: #F2F5F9; }
+.v2-artifact-name {
+  flex: 1; min-width: 0; font-size: 13px; color: #1F2937;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.v2-artifact-meta { display: flex; align-items: center; gap: 6px; }
+.v2-artifact-tag {
+  font-size: 11px; padding: 1px 6px; border-radius: 6px;
+  background: #EEF2FF; color: #4F46E5;
+}
+.v2-artifact-tag.input { background: #ECFDF3; color: #047857; }
+.v2-artifact-size { font-size: 11px; color: #9AA4B2; }
+.v2-artifact-row-dl {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 6px; color: #6B7280;
+}
+.v2-artifact-row-dl:hover { background: #E6EAF0; color: #111827; }
+.v2-artifact-preview { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.v2-artifact-preview-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; border-bottom: 1px solid #EDF0F4;
+}
+.v2-artifact-back { border: none; background: transparent; color: #4F46E5; cursor: pointer; font-size: 13px; }
+.v2-artifact-preview-name {
+  flex: 1; min-width: 0; font-size: 13px; color: #1F2937;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.v2-artifact-dl-link { font-size: 13px; color: #4F46E5; text-decoration: none; }
+.v2-artifact-preview-body { flex: 1; min-height: 0; overflow: auto; background: #fff; }
+.v2-artifact-frame { width: 100%; height: 100%; border: none; background: #fff; }
+.v2-artifact-img { max-width: 100%; display: block; margin: 0 auto; }
+.v2-artifact-text {
+  margin: 0; padding: 12px 14px; font-size: 12px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ── Composer attachments ────────────────────────────────────────────────── */
+.v2-attach-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.v2-attach-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  max-width: 220px; padding: 4px 8px; border-radius: 8px;
+  background: #EEF2F7; color: #374151; font-size: 12px;
+}
+.v2-attach-chip.is-uploading { opacity: 0.75; }
+.v2-attach-chip.is-error { background: #FEF2F2; color: #B91C1C; }
+.v2-attach-name { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-attach-state { font-size: 11px; color: #6B7280; }
+.v2-attach-remove { border: none; background: transparent; color: #6B7280; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.v2-attach-remove:hover { color: #111827; }
+.v2-file-input { display: none; }
+.v2-attach-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex: none; border: none; border-radius: 8px;
+  background: transparent; color: #6B7280; cursor: pointer;
+}
+.v2-attach-btn:hover:not(:disabled) { background: #EEF1F5; color: #111827; }
+.v2-attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Artifacts toggle (top bar) ──────────────────────────────────────────── */
+.v2-artifacts-toggle {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 10px; border: 1px solid #E5EAF1; border-radius: 8px;
+  background: #fff; color: #4B5563; font-size: 12px; cursor: pointer;
+}
+.v2-artifacts-toggle:hover { background: #F4F6F9; }
+.v2-artifacts-toggle.active { border-color: #C7D2FE; background: #EEF2FF; color: #4338CA; }
 
 /* ── Sidebar ─────────────────────────────────────────────────────────────── */
 .v2-sidebar {
@@ -1151,11 +1500,13 @@ onBeforeUnmount(() => {
 .v2-main-top-bar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   padding: 14px 24px 12px;
   border-bottom: 1px solid #eef1f5;
   flex-shrink: 0;
 }
+.v2-main-top-bar .v2-topic-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .v2-topic-title {
   flex: 1;

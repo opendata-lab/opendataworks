@@ -341,14 +341,22 @@ export function useNl2SqlChat(options) {
 
   // Real backend send. Demo/mock flows live in the component and drive the
   // exposed message/state primitives directly.
-  const send = async () => {
+  const send = async ({ attachments = [] } = {}) => {
     const text = inputText.value.trim()
-    if (!text || isBusy.value) return
+    const ready = (attachments || []).filter((a) => a && a.rel_path)
+    if ((!text && !ready.length) || isBusy.value) return
     const runId = ++runToken
     isSubmitting.value = true
     inputText.value = ''
     errorText.value = ''
-    appendUserMessage(text)
+    const effectiveText = text || '请分析我上传的文件。'
+    const note = ready.length
+      ? `\n\n[附件] 用户上传了以下文件（位于当前工作区，可直接读取）：\n${ready.map((a) => `- ${a.rel_path}`).join('\n')}`
+      : ''
+    const displayText = ready.length
+      ? `${effectiveText}\n\n📎 ${ready.map((a) => a.name).join('、')}`
+      : effectiveText
+    appendUserMessage(displayText)
     const assistant = appendAssistantMessage('')
 
     // Create the controller before the network round-trip so a mid-request
@@ -356,11 +364,11 @@ export function useNl2SqlChat(options) {
     const controller = new AbortController()
     abortController.value = controller
     try {
-      const currentTopicId = await ensureTopic(truncate(text, topicTitleLength))
+      const currentTopicId = await ensureTopic(truncate(effectiveText, topicTitleLength))
       onTopicEnsured(currentTopicId)
       const response = await api.taskApi.deliverMessage({
         topic_id: currentTopicId,
-        content: text,
+        content: effectiveText + note,
         provider_id: selectedProvider.value || undefined,
         model: selectedModel.value || undefined,
         agent_id: getAgentId() || undefined,
