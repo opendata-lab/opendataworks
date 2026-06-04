@@ -224,6 +224,7 @@ const buildAxisOption = (spec) => {
   const valueAxis = {
     type: 'value',
     name: spec.unit || '',
+    scale: true,
     axisLabel: { color: '#607185' },
     splitLine: { lineStyle: { color: '#eef3f8' } }
   }
@@ -243,6 +244,8 @@ const buildAxisOption = (spec) => {
       : undefined,
     tooltip: {
       trigger: 'axis',
+      transitionDuration: 0,
+      axisPointer: { type: 'line', animation: false },
       valueFormatter: spec.unit ? (value) => `${value}${spec.unit}` : undefined
     },
     legend: { top: 8, right: 0, textStyle: { color: '#607185' } },

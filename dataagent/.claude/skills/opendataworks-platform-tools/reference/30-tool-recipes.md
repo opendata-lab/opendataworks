@@ -93,7 +93,13 @@
 - 用途：把 SQL 结果转换成图表契约。
 - 适用场景：结果结构适合图表，且用户问题需要可视化或对比展示。
 - 参数规则：必须显式传 `--chart-type bar|line|pie|table`。
+- 输入方式（二选一）：
+  - `--data '<JSON rows>'`：直接传 JSON 数组，适用于已有行数据。
+  - `--input '<sql_execution JSON>'`：传 `run_sql.py` 的完整输出 JSON（含 `rows` 字段）。
+- 可选参数：`--title "标题"`, `--x-field <维度字段>`, `--y-field <度量字段>`。
 - 收口规则：成功返回一次 `chart_spec` 后结束本轮，不重复生成。
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py" --chart-type <bar|line|pie|table> --data '<JSON rows>' [--title "<标题>"] [--x-field <维度字段>] [--y-field <度量字段>]`
+- 注意：`build_chart_spec.py` 不是独立注册的工具名，必须通过 Bash 工具执行上述命令。
 
 ## format_answer.py
 
