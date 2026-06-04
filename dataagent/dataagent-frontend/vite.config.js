@@ -40,6 +40,17 @@ export default defineConfig(() => {
     base: './',
     plugins: [
       vue(),
+      {
+        name: 'serve-widget-dist',
+        configureServer(server) {
+          server.middlewares.use((req, res, next) => {
+            if (req.url && req.url.startsWith('/widget/')) {
+              req.url = '/dist' + req.url
+            }
+            next()
+          })
+        }
+      },
       Components({
         dirs: [],
         dts: false,

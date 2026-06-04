@@ -1,9 +1,12 @@
 import { computed, reactive } from 'vue'
 
 const STORAGE_PREFIX = 'odw:widget:geom:'
+const LAUNCHER_STORAGE_PREFIX = 'odw:widget:launcher:'
 const MIN_WIDTH = 360
 const MIN_HEIGHT = 420
 const VIEWPORT_MARGIN = 24
+const LAUNCHER_SIZE = 56
+const DRAG_THRESHOLD = 5
 
 const toFiniteOrNull = (value) => {
   if (value == null || value === '') return null
@@ -32,6 +35,7 @@ export const clampSize = (width, height, vw, vh) => {
 }
 
 export const geometryStorageKey = (websiteId) => `${STORAGE_PREFIX}${websiteId || 'default'}`
+export const launcherStorageKey = (websiteId) => `${LAUNCHER_STORAGE_PREFIX}${websiteId || 'default'}`
 
 /** Read persisted geometry; returns null when missing or unusable. */
 export const loadGeometry = (websiteId) => {
@@ -76,6 +80,7 @@ export const clearGeometry = (websiteId) => {
 export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
   const isFloating = () => config.displayMode !== 'inline'
   const geom = reactive({ left: null, top: null, width: null, height: null, dragged: false, interacting: false })
+  const launcherGeom = reactive({ left: null, top: null, dragged: false, interacting: false })
 
   const viewport = () => ({
     vw: Number(window.innerWidth || 0),
@@ -85,8 +90,17 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
   const isVisible = () => isFloating() && Boolean(state.isOpen)
 
   const rootStyle = computed(() => {
-    if (!isVisible() || !geom.dragged || geom.left == null || geom.top == null) return {}
-    return { left: `${geom.left}px`, top: `${geom.top}px` }
+    if (!isFloating()) return {}
+    // When the panel is open, use panel drag position
+    if (state.isOpen) {
+      if (!geom.dragged || geom.left == null || geom.top == null) return {}
+      return { left: `${geom.left}px`, top: `${geom.top}px` }
+    }
+    // When closed (launcher visible), use launcher drag position
+    if (launcherGeom.dragged && launcherGeom.left != null && launcherGeom.top != null) {
+      return { left: `${launcherGeom.left}px`, top: `${launcherGeom.top}px` }
+    }
+    return {}
   })
 
   const panelStyle = computed(() => {
@@ -97,8 +111,12 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     return style
   })
 
-  const isDragged = computed(() => isVisible() && geom.dragged)
-  const isInteracting = computed(() => geom.interacting)
+  const isDragged = computed(() => {
+    if (!isFloating()) return false
+    if (state.isOpen) return geom.dragged
+    return launcherGeom.dragged
+  })
+  const isInteracting = computed(() => geom.interacting || launcherGeom.interacting)
 
   const persist = () => {
     saveGeometry(config.websiteId, {
@@ -107,6 +125,15 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
       width: geom.width,
       height: geom.height
     })
+  }
+
+  const persistLauncher = () => {
+    try {
+      window.localStorage.setItem(launcherStorageKey(config.websiteId), JSON.stringify({
+        left: launcherGeom.left,
+        top: launcherGeom.top
+      }))
+    } catch (_error) { /* non-fatal */ }
   }
 
   // ── Drag ──────────────────────────────────────────────────────────────────
@@ -148,6 +175,50 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     event.preventDefault()
   }
 
+  // ── Launcher Drag ──────────────────────────────────────────────────────────
+  let launcherDragStart = null
+  let launcherDragMoved = false
+
+  const onLauncherDragMove = (event) => {
+    if (!launcherDragStart) return
+    const dx = event.clientX - launcherDragStart.x
+    const dy = event.clientY - launcherDragStart.y
+    if (!launcherDragMoved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
+    launcherDragMoved = true
+    const { vw, vh } = viewport()
+    const nextLeft = Math.min(Math.max(0, launcherDragStart.left + dx), vw - LAUNCHER_SIZE)
+    const nextTop = Math.min(Math.max(0, launcherDragStart.top + dy), vh - LAUNCHER_SIZE)
+    launcherGeom.left = nextLeft
+    launcherGeom.top = nextTop
+  }
+
+  const endLauncherDrag = () => {
+    window.removeEventListener('pointermove', onLauncherDragMove)
+    window.removeEventListener('pointerup', endLauncherDrag)
+    launcherDragStart = null
+    launcherGeom.interacting = false
+    if (launcherDragMoved) {
+      persistLauncher()
+    }
+  }
+
+  const startLauncherDrag = (event) => {
+    if (!isFloating()) return
+    const el = rootEl.value
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    launcherDragStart = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
+    launcherDragMoved = false
+    launcherGeom.dragged = true
+    launcherGeom.interacting = true
+    window.addEventListener('pointermove', onLauncherDragMove)
+    window.addEventListener('pointerup', endLauncherDrag)
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  const isLauncherDragMoved = () => launcherDragMoved
+
   // ── Resize ────────────────────────────────────────────────────────────────
   let resizeStart = null
 
@@ -184,8 +255,26 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
   }
 
   // ── Restore / lifecycle ─────────────────────────────────────────────────────
+  const restoreLauncherGeometry = () => {
+    if (!isFloating()) return
+    try {
+      const raw = window.localStorage.getItem(launcherStorageKey(config.websiteId))
+      if (!raw) return
+      const saved = JSON.parse(raw)
+      if (!saved || typeof saved !== 'object') return
+      const left = toFiniteOrNull(saved.left)
+      const top = toFiniteOrNull(saved.top)
+      if (left == null || top == null) return
+      const { vw, vh } = viewport()
+      launcherGeom.left = Math.min(Math.max(0, left), vw - LAUNCHER_SIZE)
+      launcherGeom.top = Math.min(Math.max(0, top), vh - LAUNCHER_SIZE)
+      launcherGeom.dragged = true
+    } catch (_error) { /* non-fatal */ }
+  }
+
   const restoreGeometry = () => {
     if (!isFloating()) return
+    restoreLauncherGeometry()
     const saved = loadGeometry(config.websiteId)
     if (!saved) return
     const { vw, vh } = viewport()
@@ -221,6 +310,10 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
       geom.left = pos.left
       geom.top = pos.top
     }
+    if (launcherGeom.dragged && launcherGeom.left != null && launcherGeom.top != null) {
+      launcherGeom.left = Math.min(Math.max(0, launcherGeom.left), vw - LAUNCHER_SIZE)
+      launcherGeom.top = Math.min(Math.max(0, launcherGeom.top), vh - LAUNCHER_SIZE)
+    }
   }
 
   const resetGeometry = () => {
@@ -231,6 +324,11 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     geom.dragged = false
     geom.interacting = false
     clearGeometry(config.websiteId)
+    launcherGeom.left = null
+    launcherGeom.top = null
+    launcherGeom.dragged = false
+    launcherGeom.interacting = false
+    try { window.localStorage.removeItem(launcherStorageKey(config.websiteId)) } catch (_e) { /* */ }
   }
 
   const bind = () => {
@@ -244,7 +342,9 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     window.removeEventListener('pointerup', endDrag)
     window.removeEventListener('pointermove', onResizeMove)
     window.removeEventListener('pointerup', endResize)
+    window.removeEventListener('pointermove', onLauncherDragMove)
+    window.removeEventListener('pointerup', endLauncherDrag)
   }
 
-  return { rootStyle, panelStyle, isDragged, isInteracting, startDrag, startResize, resetGeometry, bind, unbind }
+  return { rootStyle, panelStyle, isDragged, isInteracting, startDrag, startResize, startLauncherDrag, isLauncherDragMoved, resetGeometry, bind, unbind }
 }
