@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV HOME=/tmp/dataagent-home
-ENV DATAAGENT_RUNTIME_PROJECT_CWD=/tmp/dataagent-home/.dataagent/runtime/enabled-skills
-ENV DATAAGENT_SANDBOX_ROOT=/tmp/dataagent-home/.dataagent/runtime/topics
+ENV HOME=/workspaces
+ENV DATAAGENT_RUNTIME_PROJECT_CWD=/workspaces/enabled-skills
+ENV DATAAGENT_SANDBOX_ROOT=/workspaces
 
 WORKDIR /app/dataagent-backend
 
@@ -13,7 +13,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
-RUN mkdir -p /tmp/dataagent-home && chmod 1777 /tmp/dataagent-home
+RUN mkdir -p /workspaces && chmod 1777 /workspaces
 
 COPY dataagent/dataagent-backend /app/dataagent-backend
 COPY dataagent/.claude /app/.claude

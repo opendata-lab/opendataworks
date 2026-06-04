@@ -55,8 +55,8 @@ Add a one-shot init service `dataagent-home-init` to dev and prod Compose. It ru
 as root, reuses the backend image, mounts the same DataAgent home bind, and before
 the backend/runner start it:
 
-- ensures `/tmp/dataagent-home/.dataagent/runtime/topics` (the per-topic workspace
-  root) exists
+- ensures the DataAgent home root exists (after the path simplification this is
+  `/workspaces`; see `2026-06-04-dataagent-workspace-path-simplification-design.md`)
 - `chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}` the home
 - `chmod -R u+rwX` the home
 

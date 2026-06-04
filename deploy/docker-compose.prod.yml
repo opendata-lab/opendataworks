@@ -110,7 +110,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /tmp/dataagent-home 报 permission denied）
+  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /workspaces 报 permission denied）
   dataagent-home-init:
     image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.3.0}
     container_name: opendataworks-dataagent-home-init
@@ -121,13 +121,13 @@ services:
       - -c
       - |
         set -e
-        mkdir -p /tmp/dataagent-home/.dataagent/runtime/topics
-        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /tmp/dataagent-home
-        chmod -R u+rwX /tmp/dataagent-home
+        mkdir -p /workspaces
+        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /workspaces
+        chmod -R u+rwX /workspaces
     networks:
       - opendataworks-network
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
 
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
@@ -139,8 +139,8 @@ services:
       - ./.env
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /tmp/dataagent-home
-      DATAAGENT_RUNTIME_PROJECT_CWD: ${DATAAGENT_RUNTIME_PROJECT_CWD:-/tmp/dataagent-home/.dataagent/runtime/enabled-skills}
+      HOME: /workspaces
+      DATAAGENT_RUNTIME_PROJECT_CWD: ${DATAAGENT_RUNTIME_PROJECT_CWD:-/workspaces/enabled-skills}
       HOST: 0.0.0.0
       PORT: 8900
       MYSQL_HOST: mysql
@@ -170,8 +170,8 @@ services:
       DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
       DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
       DATAAGENT_SANDBOX_RUNNER_URL: ${DATAAGENT_SANDBOX_RUNNER_URL:-http://dataagent-sandbox-runner:8910}
-      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
-      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/workspaces}
+      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/workspaces}
       DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
       DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
       DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
@@ -195,7 +195,7 @@ services:
       retries: 5
       start_period: 60s
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
 
   # DataAgent 沙箱 Runner（内部服务）
@@ -208,10 +208,10 @@ services:
       - ./.env
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /tmp/dataagent-home
+      HOME: /workspaces
       DATAAGENT_SANDBOX_MODE: ""
-      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
-      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/tmp/dataagent-home/.dataagent/runtime/topics}
+      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/workspaces}
+      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/workspaces}
       DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
       DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
       DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
@@ -243,7 +243,7 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
       - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
