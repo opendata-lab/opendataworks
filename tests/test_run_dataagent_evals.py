@@ -5,12 +5,31 @@ import json
 import threading
 import time
 import types
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RUNNER_PATH = REPO_ROOT / "tools" / "dataagent-evals" / "builtin" / "run.py"
+
+_RUN_SQL = "select count(1) from opendataworks.workflow_publish_record"
+
+
+def _sdk_run_sql_records():
+    """Chat V2 SDK records for one run_sql tool call followed by a text answer."""
+    return [
+        {"seq_id": 1, "record_type": "stream", "data": {"type": "message_start", "message": {"usage": {"input_tokens": 1}}}},
+        {"seq_id": 2, "record_type": "stream", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "run_sql"}}},
+        {"seq_id": 3, "record_type": "stream", "data": {"type": "content_block_delta", "index": 0, "delta": {"type": "input_json_delta", "partial_json": json.dumps({"sql": _RUN_SQL})}}},
+        {"seq_id": 4, "record_type": "stream", "data": {"type": "content_block_stop", "index": 0}},
+        {"seq_id": 5, "record_type": "tool_result", "data": {"tool_use_id": "toolu_1", "content": [{"type": "text", "text": json.dumps({"rows": [{"cnt": 1}], "sql": _RUN_SQL})}], "is_error": False}},
+        {"seq_id": 6, "record_type": "stream", "data": {"type": "content_block_start", "index": 1, "content_block": {"type": "text"}}},
+        {"seq_id": 7, "record_type": "stream", "data": {"type": "content_block_delta", "index": 1, "delta": {"type": "text_delta", "text": "answer"}}},
+        {"seq_id": 8, "record_type": "stream", "data": {"type": "content_block_stop", "index": 1}},
+        {"seq_id": 9, "record_type": "stream", "data": {"type": "message_delta", "usage": {"output_tokens": 2}}},
+        {"seq_id": 10, "record_type": "done", "data": {"is_error": False}},
+    ]
 
 
 def _sample_case(case_id: str = "ODW_SAMPLE_001"):
@@ -257,25 +276,26 @@ def test_poll_task_retries_transient_event_error(monkeypatch):
     calls = {"task": 0, "events": 0}
 
     def fake_http_json(method, url, **kwargs):
-        if "/events" in url:
+        if "/sdk-events" in url:
             calls["events"] += 1
             if calls["events"] == 1:
-                raise runner.EvalRunnerError("request failed events timeout")
+                raise runner.EvalRunnerError("request failed sdk-events timeout")
             return {
                 "task_id": "task-1",
                 "task_status": "success",
-                "next_after_seq": 1,
-                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
+                "next_after_id": 1,
+                "has_more": False,
+                "records": [{"seq_id": 1, "record_type": "done", "data": {"is_error": False}}],
             }
         calls["task"] += 1
         return {"task_id": "task-1", "task_status": "running" if calls["task"] == 1 else "success"}
 
     monkeypatch.setattr(runner, "http_json", fake_http_json)
 
-    task, events, errors = runner._poll_task("http://dataagent", "task-1", 5)
+    task, records, errors = runner._poll_task("http://dataagent", "task-1", 5)
 
     assert task["task_status"] == "success"
-    assert events == [{"seq_id": 1, "data": {"tool_name": "run_sql"}}]
+    assert records == [{"seq_id": 1, "record_type": "done", "data": {"is_error": False}}]
     assert errors == []
 
 
@@ -285,7 +305,7 @@ def test_auto_rule_check_adds_generic_failure_attribution():
     result = runner.auto_rule_check(
         _sample_case(),
         final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在目标数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
-        events=[{"data": {"output": {"row_count": 0}}}],
+        blocks=[{"type": "tool_use", "tool_name": "run_sql", "output": {"row_count": 0}}],
         sql_outputs=["SELECT count(1) FROM opendataworks.workflow_publish_record WHERE ds = '{target_date}'"],
         tool_names=[],
     )
@@ -302,27 +322,24 @@ def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
         "FROM public.dim_tech_public_env_cmp_df "
         "WHERE env_name = 'PROD'"
     )
-    events = [
+    blocks = [
         {
-            "event_type": "BEFORE_AGENT_REPLY",
-            "data": {
-                "content": "技能说明：不要使用 SELECT *，模板中的 <SQL> 不是实际执行 SQL。",
-            },
+            "type": "main_text",
+            "seq_id": 1,
+            "text": "技能说明：不要使用 SELECT *，模板中的 <SQL> 不是实际执行 SQL。",
         },
         {
-            "event_type": "AFTER_TOOL_CALL",
-            "data": {
-                "tool_name": "run_sql",
-                "output": {
-                    "kind": "sql_execution",
-                    "sql": actual_sql,
-                    "rows": [{"cmp_cnt": 301}],
-                },
-            },
+            "type": "tool_use",
+            "seq_id": 2,
+            "tool_id": "toolu_1",
+            "tool_name": "run_sql",
+            "input": {"sql": actual_sql},
+            "output": [{"type": "text", "text": json.dumps({"rows": [{"cmp_cnt": 301}]})}],
+            "is_error": False,
         },
     ]
 
-    sql_outputs = runner._extract_sql_outputs(events, "当前 PROD 环境共有 301 个分级保障组件。")
+    sql_outputs = runner._extract_sql_outputs(blocks, "当前 PROD 环境共有 301 个分级保障组件。")
 
     assert sql_outputs == [actual_sql]
 
@@ -339,18 +356,18 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
         "FROM public.dim_tech_public_env_cmp_df "
         "WHERE env_name = 'PROD'"
     )
-    events = [
+    blocks = [
         {
-            "data": {
-                "content": "参考文档提示：避免 SELECT *；OpenDataWorks 平台元数据不是本题答案。",
-            },
+            "type": "main_text",
+            "seq_id": 1,
+            "text": "参考文档提示：避免 SELECT *；OpenDataWorks 平台元数据不是本题答案。",
         }
     ]
 
     result = runner.auto_rule_check(
         case,
         final_answer="当前 PROD 环境共有 301 个分级保障组件。",
-        events=events,
+        blocks=blocks,
         sql_outputs=[actual_sql],
         tool_names=["run_sql"],
     )
@@ -380,41 +397,32 @@ def test_judge_payload_removes_sql_style_veto_rules():
 
 def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
     runner = _load_runner()
-    events = [
+    blocks = [
+        {"type": "thinking", "seq_id": 1, "text": "reasoning " + ("x" * 20000)},
+        {"type": "main_text", "seq_id": 2, "text": "答案文本"},
         {
-            "event_type": "BEFORE_AGENT_REPLY",
-            "data": {"content": "reasoning " + ("x" * 20000)},
-        },
-        {
+            "type": "tool_use",
             "seq_id": 10,
-            "event_type": "BEFORE_TOOL_CALL",
-            "data": {
-                "tool_name": "run_sql",
-                "input": {
-                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
-                    "description": "count components",
-                },
+            "tool_id": "toolu_1",
+            "tool_name": "run_sql",
+            "is_error": False,
+            "input": {
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "description": "count components",
             },
-        },
-        {
-            "seq_id": 11,
-            "event_type": "AFTER_TOOL_CALL",
-            "data": {
-                "tool_name": "run_sql",
-                "output": {
-                    "kind": "sql_execution",
-                    "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
-                    "columns": ["cnt"],
-                    "rows": [{"cnt": 301}],
-                    "row_count": 1,
-                    "result_state": "success",
-                    "summary": "返回 1 行结果",
-                },
+            "output": {
+                "kind": "sql_execution",
+                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "columns": ["cnt"],
+                "rows": [{"cnt": 301}],
+                "row_count": 1,
+                "result_state": "success",
+                "summary": "返回 1 行结果",
             },
         },
     ]
 
-    summary = runner._summarize_tool_events(events)
+    summary = runner._summarize_tool_events(blocks)
     serialized = json.dumps(summary, ensure_ascii=False)
 
     assert len(serialized) < 4000
@@ -422,17 +430,11 @@ def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
     assert summary == [
         {
             "seq_id": 10,
-            "event_type": "BEFORE_TOOL_CALL",
             "tool_name": "run_sql",
             "input": {
                 "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
                 "description": "count components",
             },
-        },
-        {
-            "seq_id": 11,
-            "event_type": "AFTER_TOOL_CALL",
-            "tool_name": "run_sql",
             "output": {
                 "kind": "sql_execution",
                 "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
@@ -510,6 +512,23 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_sdk_page(self, task_id: str, records: list):
+        query = urllib.parse.urlsplit(self.path).query
+        after_id = int((urllib.parse.parse_qs(query).get("after_id") or ["0"])[0])
+        page_records = [r for r in records if int(r.get("seq_id") or 0) > after_id]
+        next_after_id = int(page_records[-1]["seq_id"]) if page_records else after_id
+        self._send(
+            200,
+            {
+                "task_id": task_id,
+                "task_status": "success",
+                "after_id": after_id,
+                "next_after_id": next_after_id,
+                "has_more": False,
+                "records": page_records,
+            },
+        )
+
     def do_GET(self):  # noqa: N802
         if self.path == "/api/v1/nl2sql/health":
             if self.scenario == "preflight_error":
@@ -533,59 +552,12 @@ class _FakeDataAgentHandler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if self.path.startswith("/api/v1/nl2sql/tasks/task-2/events"):
-            self._send(
-                200,
-                {
-                    "task_id": "task-2",
-                    "task_status": "success",
-                    "after_seq": 0,
-                    "next_after_seq": 1,
-                    "has_more": False,
-                    "events": [
-                        {
-                            "record_type": "event",
-                            "seq_id": 1,
-                            "event_type": "AFTER_TOOL_CALL",
-                            "data": {
-                                "tool_name": "run_sql",
-                                "output": {
-                                    "rows": [{"cnt": 1}],
-                                    "sql": "select count(1) from opendataworks.workflow_publish_record",
-                                },
-                            },
-                        },
-                    ],
-                },
-            )
+        if self.path.startswith("/api/v1/nl2sql/tasks/task-2/sdk-events"):
+            self._send_sdk_page("task-2", _sdk_run_sql_records())
             return
-        if self.path.startswith("/api/v1/nl2sql/tasks/task-1/events"):
-            self._send(
-                200,
-                {
-                    "task_id": "task-1",
-                    "task_status": "suspended" if self.scenario == "recovered" else "success",
-                    "after_seq": 0,
-                    "next_after_seq": 0 if self.scenario == "recovered" else 2,
-                    "has_more": False,
-                    "events": []
-                    if self.scenario == "recovered"
-                    else [
-                        {
-                            "record_type": "event",
-                            "seq_id": 1,
-                            "event_type": "BEFORE_TOOL_CALL",
-                            "data": {"tool_name": "run_sql", "input": {"sql": "select count(1) from opendataworks.workflow_publish_record"}},
-                        },
-                        {
-                            "record_type": "event",
-                            "seq_id": 2,
-                            "event_type": "AFTER_TOOL_CALL",
-                            "data": {"output": {"rows": [{"cnt": 1}], "sql": "select count(1) from opendataworks.workflow_publish_record"}},
-                        },
-                    ],
-                },
-            )
+        if self.path.startswith("/api/v1/nl2sql/tasks/task-1/sdk-events"):
+            records = [] if self.scenario == "recovered" else _sdk_run_sql_records()
+            self._send_sdk_page("task-1", records)
             return
         if self.path == "/api/v1/nl2sql/tasks/task-1":
             self.__class__.task_poll_count += 1

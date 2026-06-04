@@ -332,25 +332,26 @@ def test_deepeval_poll_task_retries_transient_event_error(monkeypatch):
     calls = {"task": 0, "events": 0}
 
     def fake_http_json(method, url, **kwargs):
-        if "/events" in url:
+        if "/sdk-events" in url:
             calls["events"] += 1
             if calls["events"] == 1:
-                raise runner.EvalRunnerError("request failed events timeout")
+                raise runner.EvalRunnerError("request failed sdk-events timeout")
             return {
                 "task_id": "task_1",
                 "task_status": "finished",
-                "next_after_seq": 1,
-                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
+                "next_after_id": 1,
+                "has_more": False,
+                "records": [{"seq_id": 1, "record_type": "done", "data": {"is_error": False}}],
             }
         calls["task"] += 1
         return {"task_id": "task_1", "task_status": "running" if calls["task"] == 1 else "finished"}
 
     monkeypatch.setattr(runner, "http_json", fake_http_json)
 
-    task, events, errors = runner._poll_task("http://dataagent", "task_1", 5)
+    task, records, errors = runner._poll_task("http://dataagent", "task_1", 5)
 
     assert task["task_status"] == "finished"
-    assert events == [{"seq_id": 1, "data": {"tool_name": "run_sql"}}]
+    assert records == [{"seq_id": 1, "record_type": "done", "data": {"is_error": False}}]
     assert errors == []
 
 
@@ -370,18 +371,22 @@ def test_deepeval_run_case_uses_recovered_task_answer(monkeypatch):
                 "task_status": "suspended",
                 "error": {"code": "task_recovered", "message": "任务租约已过期，已转移到 task_2"},
             }
-        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_1/events"):
-            return {"task_id": "task_1", "task_status": "suspended", "next_after_seq": 0, "events": []}
+        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_1/sdk-events"):
+            return {"task_id": "task_1", "task_status": "suspended", "next_after_id": 0, "has_more": False, "records": []}
         if url == "http://dataagent/api/v1/nl2sql/topics/topic_1":
             return {"topic_id": "topic_1", "current_task_id": "task_2", "current_task_status": "finished"}
         if url == "http://dataagent/api/v1/nl2sql/tasks/task_2":
             return {"task_id": "task_2", "topic_id": "topic_1", "task_status": "finished"}
-        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_2/events"):
+        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_2/sdk-events"):
             return {
                 "task_id": "task_2",
                 "task_status": "finished",
-                "next_after_seq": 1,
-                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
+                "next_after_id": 2,
+                "has_more": False,
+                "records": [
+                    {"seq_id": 1, "record_type": "stream", "data": {"type": "message_start", "message": {"usage": {"input_tokens": 1}}}},
+                    {"seq_id": 2, "record_type": "stream", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "run_sql"}}},
+                ],
             }
         if url.startswith("http://dataagent/api/v1/nl2sql/topics/topic_1/messages"):
             return {
@@ -413,7 +418,7 @@ def test_deepeval_auto_rule_check_adds_generic_failure_attribution(monkeypatch):
     result = runner.auto_rule_check(
         _sample_case(),
         final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在目标数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
-        events=[{"data": {"output": {"row_count": 0}}}],
+        blocks=[{"type": "tool_use", "tool_name": "run_sql", "output": {"row_count": 0}}],
         sql_outputs=["SELECT count(1) FROM opendataworks.workflow_publish_record WHERE ds = '{target_date}'"],
         tool_names=[],
     )
@@ -553,8 +558,21 @@ def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monk
                 self._json({"status": "ok"})
             elif self.path == "/api/v1/nl2sql-admin/settings":
                 self._json({"provider_id": "fake", "model": "fake-model"})
-            elif self.path.startswith("/api/v1/nl2sql/tasks/task_1/events"):
-                self._json({"task_id": "task_1", "task_status": "finished", "next_after_seq": 1, "events": [{"data": {"tool_name": "run_sql"}}]})
+            elif self.path.startswith("/api/v1/nl2sql/tasks/task_1/sdk-events"):
+                self._json(
+                    {
+                        "task_id": "task_1",
+                        "task_status": "finished",
+                        "after_id": 0,
+                        "next_after_id": 3,
+                        "has_more": False,
+                        "records": [
+                            {"seq_id": 1, "record_type": "stream", "data": {"type": "message_start", "message": {"usage": {"input_tokens": 1}}}},
+                            {"seq_id": 2, "record_type": "stream", "data": {"type": "content_block_start", "index": 0, "content_block": {"type": "tool_use", "id": "toolu_1", "name": "run_sql"}}},
+                            {"seq_id": 3, "record_type": "tool_result", "data": {"tool_use_id": "toolu_1", "content": "ok", "is_error": False}},
+                        ],
+                    }
+                )
             elif self.path == "/api/v1/nl2sql/tasks/task_1":
                 self._json({"task_id": "task_1", "task_status": "finished"})
             elif self.path.startswith("/api/v1/nl2sql/topics/topic_1/messages"):

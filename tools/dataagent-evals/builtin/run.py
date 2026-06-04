@@ -278,21 +278,106 @@ def _flatten_strings(value: Any) -> list[str]:
     return []
 
 
-def _collect_tool_names(events: list[dict[str, Any]]) -> list[str]:
+def _project_sdk_blocks(records: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Replay Chat V2 SDK records into rendered blocks.
+
+    Mirrors the backend ``topic_task_store._project_sdk_records`` and the frontend
+    ``v2StreamParser.js`` so eval evidence matches what Chat V2 renders/persists.
+    Returns ``(blocks, usage)`` where each block is
+    ``{type: 'thinking'|'main_text'|'tool_use', text, tool_id, tool_name, input,
+    output, is_error, seq_id}`` and usage is the accumulated token usage.
+    """
+    ordered: list[dict[str, Any]] = []
+    current: list[dict[str, Any]] | None = None
+    by_index: dict[int, dict[str, Any]] = {}
+    by_tool_id: dict[str, dict[str, Any]] = {}
+    usage: dict[str, Any] = {}
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        seq_id = int(record.get("seq_id") or 0)
+        record_type = str(record.get("record_type") or "")
+        data = record.get("data") if isinstance(record.get("data"), dict) else {}
+
+        if record_type == "stream":
+            etype = str(data.get("type") or "")
+            if etype == "message_start":
+                current = []
+                by_index = {}
+                message = data.get("message") if isinstance(data.get("message"), dict) else {}
+                if isinstance(message.get("usage"), dict):
+                    usage.update(message["usage"])
+            elif etype == "content_block_start" and current is not None:
+                cb = data.get("content_block") if isinstance(data.get("content_block"), dict) else {}
+                block_type = str(cb.get("type") or "text")
+                raw_index = data.get("index")
+                index = raw_index if isinstance(raw_index, int) else len(current)
+                if block_type == "thinking":
+                    block: dict[str, Any] = {"type": "thinking", "text": "", "seq_id": seq_id}
+                elif block_type == "tool_use":
+                    tool_id = str(cb.get("id") or "")
+                    block = {
+                        "type": "tool_use",
+                        "tool_id": tool_id,
+                        "tool_name": str(cb.get("name") or "Tool"),
+                        "_input_json": "",
+                        "input": None,
+                        "output": None,
+                        "is_error": False,
+                        "seq_id": seq_id,
+                    }
+                    if tool_id:
+                        by_tool_id[tool_id] = block
+                else:
+                    block = {"type": "main_text", "text": "", "seq_id": seq_id}
+                current.append(block)
+                by_index[index] = block
+                ordered.append(block)
+            elif etype == "content_block_delta" and current is not None:
+                raw_index = data.get("index")
+                block = by_index.get(raw_index) if isinstance(raw_index, int) else (current[-1] if current else None)
+                if block:
+                    delta = data.get("delta") if isinstance(data.get("delta"), dict) else {}
+                    dtype = str(delta.get("type") or "")
+                    if dtype == "thinking_delta":
+                        block["text"] = str(block.get("text") or "") + str(delta.get("thinking") or "")
+                    elif dtype == "text_delta":
+                        block["text"] = str(block.get("text") or "") + str(delta.get("text") or "")
+                    elif dtype == "input_json_delta":
+                        block["_input_json"] = str(block.get("_input_json") or "") + str(delta.get("partial_json") or "")
+            elif etype == "content_block_stop" and current is not None:
+                raw_index = data.get("index")
+                block = by_index.get(raw_index) if isinstance(raw_index, int) else (current[-1] if current else None)
+                if block and block.get("type") == "tool_use":
+                    input_json = str(block.get("_input_json") or "")
+                    if input_json:
+                        try:
+                            block["input"] = json.loads(input_json)
+                        except Exception:
+                            block["input"] = input_json
+            elif etype == "message_delta":
+                if isinstance(data.get("usage"), dict):
+                    usage.update(data["usage"])
+        elif record_type == "tool_result":
+            tool_use_id = str(data.get("tool_use_id") or "")
+            block = by_tool_id.get(tool_use_id)
+            if block is not None:
+                block["output"] = data.get("content")
+                block["is_error"] = bool(data.get("is_error"))
+
+    blocks = [{k: v for k, v in block.items() if not k.startswith("_")} for block in ordered]
+    return blocks, usage
+
+
+def _collect_tool_names(blocks: list[dict[str, Any]]) -> list[str]:
     names: list[str] = []
-    for event in events:
-        data = event.get("data") if isinstance(event, dict) else {}
-        candidates = []
-        if isinstance(event, dict):
-            candidates.extend([event.get("tool_name"), event.get("name"), event.get("tool")])
-        if isinstance(data, dict):
-            candidates.extend([data.get("tool_name"), data.get("name"), data.get("tool")])
-        for candidate in candidates:
-            if isinstance(candidate, dict):
-                candidate = candidate.get("name")
-            text = str(candidate or "").strip()
-            if text and text not in names:
-                names.append(text)
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        text = str(block.get("tool_name") or "").strip()
+        if text and text not in names:
+            names.append(text)
     return names
 
 
@@ -323,10 +408,13 @@ def _collect_structured_sql(value: Any) -> list[str]:
     return sqls
 
 
-def _extract_sql_outputs(events: list[dict[str, Any]], final_answer: str) -> list[str]:
+def _extract_sql_outputs(blocks: list[dict[str, Any]], final_answer: str) -> list[str]:
     sqls: list[str] = []
-    for event in events:
-        sqls.extend(_collect_structured_sql(event))
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        sqls.extend(_collect_structured_sql(block.get("input")))
+        sqls.extend(_collect_structured_sql(block.get("output")))
     fenced = re.findall(r"```sql\s*(.*?)```", str(final_answer or ""), flags=re.IGNORECASE | re.DOTALL)
     sqls.extend(_normalise_sql(item) for item in fenced if _looks_like_sql(item))
     result: list[str] = []
@@ -336,15 +424,17 @@ def _extract_sql_outputs(events: list[dict[str, Any]], final_answer: str) -> lis
     return result
 
 
-def _extract_chart_outputs(events: list[dict[str, Any]]) -> list[Any]:
+def _extract_chart_outputs(blocks: list[dict[str, Any]]) -> list[Any]:
     charts: list[Any] = []
-    for event in events:
-        for key in ("chart", "chart_spec", "echarts", "spec"):
-            value = event.get(key) if isinstance(event, dict) else None
-            if value is None and isinstance(event.get("data") if isinstance(event, dict) else None, dict):
-                value = event["data"].get(key)
-            if value is not None:
-                charts.append(value)
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        for source in (block.get("input"), block.get("output")):
+            if isinstance(source, dict):
+                for key in ("chart", "chart_spec", "echarts", "spec"):
+                    value = source.get(key)
+                    if value is not None:
+                        charts.append(value)
     return charts
 
 
@@ -397,52 +487,34 @@ def _compact_judge_payload(payload: dict[str, Any]) -> dict[str, Any]:
     return compact
 
 
-def _event_tool_name(event: dict[str, Any], data: dict[str, Any]) -> str:
-    for candidate in (event.get("tool_name"), event.get("name"), event.get("tool"), data.get("tool_name"), data.get("name"), data.get("tool")):
-        if isinstance(candidate, dict):
-            candidate = candidate.get("name")
-        text = str(candidate or "").strip()
-        if text:
-            return text
-    return ""
-
-
-def _summarize_tool_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _summarize_tool_events(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     summarized: list[dict[str, Any]] = []
-    for event in events:
-        if not isinstance(event, dict):
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
-        data = event.get("data") if isinstance(event.get("data"), dict) else {}
-        event_type = str(event.get("event_type") or data.get("event_type") or "")
-        tool_name = _event_tool_name(event, data)
-        if not tool_name and "TOOL" not in event_type and not any(key in data for key in ("input", "output", "error")):
-            continue
-
         item: dict[str, Any] = {
-            "seq_id": event.get("seq_id"),
-            "event_type": event_type,
-            "tool_name": tool_name,
+            "seq_id": block.get("seq_id"),
+            "tool_name": str(block.get("tool_name") or ""),
         }
-        for key in ("input", "output", "error"):
-            if key in data:
-                item[key] = _truncate_for_judge(data.get(key))
-            elif key in event:
-                item[key] = _truncate_for_judge(event.get(key))
+        if block.get("input") not in (None, ""):
+            item["input"] = _truncate_for_judge(block.get("input"))
+        if block.get("output") not in (None, ""):
+            item["output"] = _truncate_for_judge(block.get("output"))
+        if block.get("is_error"):
+            item["is_error"] = True
         summarized.append({key: value for key, value in item.items() if value not in (None, "")})
     return summarized
 
 
-def _collect_usage(task: dict[str, Any], messages: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+def _collect_usage(task: dict[str, Any], messages: dict[str, Any], stream_usage: dict[str, Any]) -> dict[str, Any]:
     usage: dict[str, Any] = {}
+    if isinstance(stream_usage, dict):
+        usage.update(stream_usage)
     if isinstance(task.get("usage"), dict):
         usage.update(task["usage"])
     for message in messages.get("items") or []:
         if isinstance(message, dict) and isinstance(message.get("usage"), dict):
             usage.update(message["usage"])
-    for event in events:
-        data = event.get("data") if isinstance(event, dict) else None
-        if isinstance(data, dict) and isinstance(data.get("usage"), dict):
-            usage.update(data["usage"])
     return usage
 
 
@@ -481,7 +553,7 @@ def _auto_failure_attribution(
     return _dedupe(failures)
 
 
-def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
+def auto_rule_check(case: dict[str, Any], *, final_answer: str, blocks: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
     assessment_text = "\n".join(sql_outputs + [final_answer])
     missing_sql_fragments = [
         fragment
@@ -583,6 +655,26 @@ def _resolve_recovered_task_id(base_url: str, topic_id: str, task: dict[str, Any
     return ""
 
 
+def _fetch_sdk_records(base_url: str, task_id: str, after_id: int) -> tuple[list[dict[str, Any]], int, dict[str, Any]]:
+    """Page through the Chat V2 SDK-event interface, draining ``has_more``."""
+    collected: list[dict[str, Any]] = []
+    cursor = max(0, after_id)
+    last_page: dict[str, Any] = {}
+    while True:
+        page = http_json(
+            "GET",
+            f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(task_id)}/sdk-events?after_id={cursor}&limit=500",
+            timeout=60,
+        )
+        last_page = page
+        records = [item for item in page.get("records") or [] if isinstance(item, dict)]
+        collected.extend(records)
+        cursor = max(cursor, int(page.get("next_after_id") or cursor))
+        if not page.get("has_more"):
+            break
+    return collected, cursor, last_page
+
+
 def _poll_task(
     base_url: str,
     task_id: str,
@@ -593,8 +685,8 @@ def _poll_task(
     deadline = time.time() + max(1, timeout_seconds)
     current_task_id = task_id
     seen_task_ids = {task_id}
-    after_seq = 0
-    all_events: list[dict[str, Any]] = []
+    after_id = 0
+    all_records: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     last_task: dict[str, Any] = {}
     last_poll_error = ""
@@ -608,14 +700,8 @@ def _poll_task(
 
         status = str(last_task.get("task_status") or "").lower()
         try:
-            page = http_json(
-                "GET",
-                f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(current_task_id)}/events?after_seq={after_seq}&limit=1000",
-                timeout=60,
-            )
-            events = [item for item in page.get("events") or [] if isinstance(item, dict)]
-            all_events.extend(events)
-            after_seq = max(after_seq, int(page.get("next_after_seq") or after_seq))
+            records, after_id, page = _fetch_sdk_records(base_url, current_task_id, after_id)
+            all_records.extend(records)
             status = str(last_task.get("task_status") or page.get("task_status") or "").lower()
         except EvalRunnerError as exc:
             last_poll_error = str(exc)
@@ -626,9 +712,9 @@ def _poll_task(
                 if recovered_task_id and recovered_task_id not in seen_task_ids:
                     current_task_id = recovered_task_id
                     seen_task_ids.add(recovered_task_id)
-                    after_seq = 0
+                    after_id = 0
                     continue
-            return last_task, all_events, errors
+            return last_task, all_records, errors
         time.sleep(0.2)
     errors.append({"code": "timeout", "message": f"task did not finish within {timeout_seconds}s"})
     if last_poll_error:
@@ -638,7 +724,7 @@ def _poll_task(
     else:
         last_task = dict(last_task)
         last_task["task_status"] = str(last_task.get("task_status") or "timeout")
-    return last_task, all_events, errors
+    return last_task, all_records, errors
 
 
 def _json_object_text(raw: str) -> str:
@@ -863,14 +949,14 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     topic_id = ""
     task_id = ""
     task: dict[str, Any] = {}
-    events: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
     messages: dict[str, Any] = {}
     final_answer = ""
     try:
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
         task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, events, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
+        task, records, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
         errors.extend(poll_errors)
         final_task_id = str(task.get("task_id") or task_id).strip() or task_id
         messages = http_json(
@@ -885,18 +971,19 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     except EvalRunnerError as exc:
         errors.append({"code": "runner_error", "message": str(exc)})
 
-    tool_names = _collect_tool_names(events)
-    sql_outputs = _extract_sql_outputs(events, final_answer)
-    chart_outputs = _extract_chart_outputs(events)
-    usage = _collect_usage(task, messages, events)
-    rule_check = auto_rule_check(case, final_answer=final_answer, events=events, sql_outputs=sql_outputs, tool_names=tool_names)
+    blocks, stream_usage = _project_sdk_blocks(records)
+    tool_names = _collect_tool_names(blocks)
+    sql_outputs = _extract_sql_outputs(blocks, final_answer)
+    chart_outputs = _extract_chart_outputs(blocks)
+    usage = _collect_usage(task, messages, stream_usage)
+    rule_check = auto_rule_check(case, final_answer=final_answer, blocks=blocks, sql_outputs=sql_outputs, tool_names=tool_names)
     judge_payload = {
         "case": _case_for_judge(case),
         "user_question": str(case.get("question") or ""),
         "final_answer": final_answer,
         "task_status": str(task.get("task_status") or ""),
         "task_error": task.get("error") if isinstance(task.get("error"), dict) else None,
-        "tool_events": _summarize_tool_events(events),
+        "tool_events": _summarize_tool_events(blocks),
         "sql_outputs": sql_outputs,
         "chart_outputs": chart_outputs,
         "auto_rule_check": rule_check,
