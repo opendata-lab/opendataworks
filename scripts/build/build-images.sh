@@ -110,27 +110,26 @@ $CONTAINER_CMD pull --platform linux/amd64 $REDIS_IMAGE
 echo "✅ Redis 镜像拉取完成"
 echo ""
 
-echo "📦 导出镜像为 tar 包..."
-echo "  - 导出前端镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-frontend.tar" $FRONTEND_IMAGE
-echo "  - 导出后端镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-backend.tar" $BACKEND_IMAGE
-echo "  - 导出 DataAgent 前端镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-frontend.tar" $DATAAGENT_FRONTEND_IMAGE
-echo "  - 导出 DataAgent 后端镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-backend.tar" $DATAAGENT_BACKEND_IMAGE
-echo "  - 导出 DataAgent Runner 镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-runner.tar" $DATAAGENT_RUNNER_IMAGE
-echo "  - 导出 DataAgent builtin 评测镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-evals-builtin.tar" $DATAAGENT_EVALS_BUILTIN_IMAGE
-echo "  - 导出 DataAgent DeepEval 评测镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-dataagent-evals-deepeval.tar" $DATAAGENT_EVALS_DEEPEVAL_IMAGE
-echo "  - 导出 Portal MCP 镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/opendataworks-portal-mcp.tar" $PORTAL_MCP_IMAGE
-echo "  - 导出 Redis 镜像..."
-$CONTAINER_CMD save -o "$OUTPUT_DIR/redis-7.2-alpine.tar" $REDIS_IMAGE
+echo "📦 导出镜像为去重合并归档 all-images.tar ..."
+# 一次性保存全部镜像，使共享 base layer（python:3.11-slim、nginx:alpine 等）去重
+ALL_IMAGES=(
+    "$FRONTEND_IMAGE"
+    "$BACKEND_IMAGE"
+    "$DATAAGENT_FRONTEND_IMAGE"
+    "$DATAAGENT_BACKEND_IMAGE"
+    "$DATAAGENT_RUNNER_IMAGE"
+    "$DATAAGENT_EVALS_BUILTIN_IMAGE"
+    "$DATAAGENT_EVALS_DEEPEVAL_IMAGE"
+    "$PORTAL_MCP_IMAGE"
+    "$REDIS_IMAGE"
+)
+if [ "$CONTAINER_CMD" = "podman" ]; then
+    $CONTAINER_CMD save --multi-image-archive -o "$OUTPUT_DIR/all-images.tar" "${ALL_IMAGES[@]}"
+else
+    $CONTAINER_CMD save -o "$OUTPUT_DIR/all-images.tar" "${ALL_IMAGES[@]}"
+fi
 
-echo "✅ 所有镜像导出完成"
+echo "✅ 所有镜像导出完成 -> $OUTPUT_DIR/all-images.tar"
 echo ""
 
 echo "========================================="

@@ -97,21 +97,25 @@ Use this method if you have internet access and are deploying directly from the 
 
 ## 2. Offline Deployment (Using Package)
 
-Use this method for isolated environments without internet access. You will use the `opendataworks-deployment-*.tar.gz` package.
+Use this method for isolated environments without internet access. You will use the `opendataworks-deployment-*.tar.xz` package.
 
 ### Prerequisites
 - Docker or Podman installed on the target machine.
-- The offline deployment package (`opendataworks-deployment-*.tar.gz`).
+- `xz`/`xz-utils` installed on the target machine (used to decompress the package).
+- The offline deployment package (`opendataworks-deployment-*.tar.xz`).
 
 ### Steps
 1. **Extract Package**:
    ```bash
-   tar -xzf opendataworks-deployment-*.tar.gz
+   # 新版离线包为 xz 压缩
+   tar -xJf opendataworks-deployment-*.tar.xz
+   # 若某些精简系统的 tar 未链接 xz，可改用管道：
+   #   xz -dc opendataworks-deployment-*.tar.xz | tar -xf -
    cd opendataworks-deployment
    ```
 
 2. **Load Images**:
-   This loads all required Docker images from the local archive.
+   This loads all required Docker images from the local archive. 新版离线包将全部镜像去重保存为单个 `deploy/docker-images/all-images.tar`，加载脚本会自动识别（旧版逐镜像 `*.tar` 也兼容）。
    ```bash
    scripts/load-images.sh
    ```
@@ -166,7 +170,15 @@ Use this method for isolated environments without internet access. You will use 
 
 ## 3. DataAgent Online Evaluation
 
-离线包内置 DataAgent 通用问数评测工具，部署完成并配置可用模型后，可手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于离线包根目录 `tools/dataagent-evals/`，且均独立于 DataAgent runtime。私有评测集不随 GitHub 或离线包内置，运行时必须通过 `--dataset` 或 `DATAAGENT_EVAL_DATASET` 指定。
+DataAgent 通用问数评测工具用于部署完成并配置可用模型后手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于 `tools/dataagent-evals/`，且均独立于 DataAgent runtime。私有评测集不随 GitHub 或离线包内置，运行时必须通过 `--dataset` 或 `DATAAGENT_EVAL_DATASET` 指定。
+
+> **📦 评测镜像改由独立附加包提供**：评测镜像默认不随服务启动，且 `deepeval` 依赖较重，已从主离线包拆出，单独发布为 `opendataworks-evals-offline-*.tar.xz`。需要在线评测时单独下载该附加包并加载：
+> ```bash
+> tar -xJf opendataworks-evals-offline-*.tar.xz
+> cd opendataworks-evals-offline
+> scripts/load-evals-images.sh
+> ```
+> 主离线包仍保留 `scripts/run-dataagent-evals.sh` / `run-dataagent-deepeval-evals.sh` 与 `tools/dataagent-evals/`，加载附加包镜像后即可直接运行。
 
 ```bash
 DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \

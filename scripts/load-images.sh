@@ -38,8 +38,10 @@ if [ ! -d "$IMAGE_DIR" ]; then
     exit 1
 fi
 
-# 检查必需的镜像文件
-REQUIRED_IMAGES=(
+# 当前离线包将全部镜像去重保存到单个归档 all-images.tar。
+# 兼容旧包：若不存在合并归档，则回退加载历史的逐镜像 *.tar。
+COMBINED_ARCHIVE="$IMAGE_DIR/all-images.tar"
+LEGACY_IMAGES=(
     "opendataworks-frontend.tar"
     "opendataworks-backend.tar"
     "opendataworks-dataagent-frontend.tar"
@@ -52,76 +54,37 @@ REQUIRED_IMAGES=(
     "redis-7.2-alpine.tar"
 )
 
-echo "🔍 检查镜像文件..."
-for image_file in "${REQUIRED_IMAGES[@]}"; do
-    if [ ! -f "$IMAGE_DIR/$image_file" ]; then
-        echo "❌ 缺少镜像文件: $image_file"
-        exit 1
-    fi
-    echo "  ✓ 找到 $image_file"
-done
-echo ""
-
-echo "📦 开始加载镜像..."
-echo ""
-
-# 加载前端镜像
-echo "📦 [1/10] 加载前端镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-frontend.tar"
-echo "✅ 前端镜像加载完成"
-echo ""
-
-# 加载后端镜像
-echo "📦 [2/10] 加载后端镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-backend.tar"
-echo "✅ 后端镜像加载完成"
-echo ""
-
-# 加载 DataAgent 前端镜像
-echo "📦 [3/10] 加载 DataAgent 前端镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-frontend.tar"
-echo "✅ DataAgent 前端镜像加载完成"
-echo ""
-
-echo "📦 [4/10] 加载 DataAgent 后端镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-backend.tar"
-echo "✅ DataAgent 后端镜像加载完成"
-echo ""
-
-echo "📦 [5/10] 加载 DataAgent Runner 镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-runner.tar"
-echo "✅ DataAgent Runner 镜像加载完成"
-echo ""
-
-# 加载 builtin 评测镜像
-echo "📦 [6/10] 加载 builtin 评测镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-evals-builtin.tar"
-echo "✅ builtin 评测镜像加载完成"
-echo ""
-
-# 加载 DeepEval 评测镜像
-echo "📦 [7/10] 加载 DeepEval 评测镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-dataagent-evals-deepeval.tar"
-echo "✅ DeepEval 评测镜像加载完成"
-echo ""
-
-# 加载 Portal MCP 镜像
-echo "📦 [8/10] 加载 Portal MCP 镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/opendataworks-portal-mcp.tar"
-echo "✅ Portal MCP 镜像加载完成"
-echo ""
-
-# 加载 MySQL 镜像
-echo "📦 [9/10] 加载 MySQL 镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/mysql-8.0.tar"
-echo "✅ MySQL 镜像加载完成"
-echo ""
-
-# 加载 Redis 镜像
-echo "📦 [10/10] 加载 Redis 镜像..."
-$CONTAINER_CMD load -i "$IMAGE_DIR/redis-7.2-alpine.tar"
-echo "✅ Redis 镜像加载完成"
-echo ""
+if [ -f "$COMBINED_ARCHIVE" ]; then
+    echo "🔍 找到合并镜像归档: all-images.tar"
+    echo ""
+    echo "📦 开始加载镜像（去重单归档）..."
+    $CONTAINER_CMD load -i "$COMBINED_ARCHIVE"
+    echo "✅ 所有镜像加载完成"
+    echo ""
+else
+    echo "ℹ️  未找到 all-images.tar，回退到逐镜像加载（旧版离线包）"
+    echo ""
+    echo "🔍 检查镜像文件..."
+    for image_file in "${LEGACY_IMAGES[@]}"; do
+        if [ ! -f "$IMAGE_DIR/$image_file" ]; then
+            echo "❌ 缺少镜像文件: $image_file"
+            exit 1
+        fi
+        echo "  ✓ 找到 $image_file"
+    done
+    echo ""
+    echo "📦 开始加载镜像..."
+    echo ""
+    idx=1
+    total=${#LEGACY_IMAGES[@]}
+    for image_file in "${LEGACY_IMAGES[@]}"; do
+        echo "📦 [$idx/$total] 加载 $image_file ..."
+        $CONTAINER_CMD load -i "$IMAGE_DIR/$image_file"
+        idx=$((idx + 1))
+    done
+    echo "✅ 所有镜像加载完成"
+    echo ""
+fi
 
 echo "========================================="
 echo "  所有镜像加载完成！"

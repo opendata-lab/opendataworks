@@ -100,11 +100,12 @@ git push origin v1.0.0
 ### 4.1 离线包生成（CI 中执行）
 
 ```bash
-scripts/create-offline-package.sh --tag 1.0.0 --output opendataworks-deployment-1.0.0.tar.gz
+scripts/create-offline-package.sh --tag 1.0.0 --output opendataworks-deployment-1.0.0.tar.xz
 ```
 
 - 使用 `--tag` 指定版本，对应 Docker Hub 上的镜像 tag
-- 输出文件名建议为 `opendataworks-deployment-{version}.tar.gz`
+- 输出文件名建议为 `opendataworks-deployment-{version}.tar.xz`（xz 压缩，全部镜像去重合并为单个 `all-images.tar`）
+- 目标机器需安装 `xz`/`xz-utils`，解压使用 `tar -xJf`
 
 ### 4.2 Release 内容
 
@@ -114,9 +115,11 @@ GitHub Release 中应包含：
 - **下载区块**：由工作流写入 Release 正文，包含 Docker 镜像拉取命令与两份离线包链接
 - **Docker 镜像区块**：包含 `opendataworks-*` 和 `opendataagent-*` 的 Docker Hub 链接与 `docker pull` 示例
 - **附件**：
-  - `opendataworks-deployment-1.0.0.tar.gz`（离线部署包）
+  - `opendataworks-deployment-1.0.0.tar.xz`（主离线部署包）
+  - `opendataworks-evals-offline-1.0.0.tar.xz`（可选评测附加包，含两个评测镜像）
   - `opendataagent-deployment-1.0.0.tar.gz`（独立 `opendataagent` 离线部署包）
-  - 可选：`opendataworks-deployment-1.0.0.tar.gz.sha256`（校验和）
+  - 可选：`opendataworks-deployment-1.0.0.tar.xz.sha256`（校验和）
+  - 可选：`opendataworks-evals-offline-1.0.0.tar.xz.sha256`（校验和）
   - 可选：`opendataagent-deployment-1.0.0.tar.gz.sha256`（校验和）
 
 Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL。同步步骤会先创建占位正文，上传附件后根据 Gitee 返回的 `attach_files/{id}/download` 地址生成最终正文并 PATCH 回 Release。
@@ -135,7 +138,7 @@ Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL
    docker pull mikefan2019/opendataagent-web:1.0.0
    ```
 
-2. **主系统离线部署包**：在 Release 页面下载 `opendataworks-deployment-1.0.0.tar.gz`，按 [deploy/README.md](../../deploy/README.md) 进行离线部署。
+2. **主系统离线部署包**：在 Release 页面下载 `opendataworks-deployment-1.0.0.tar.xz`，按 [deploy/README.md](../../deploy/README.md) 进行离线部署。
 3. **Opendataagent 离线部署包**：在 Release 页面下载 `opendataagent-deployment-1.0.0.tar.gz`，按 [opendataagent/deploy/README.md](../../opendataagent/deploy/README.md) 进行离线部署。
 
 ---

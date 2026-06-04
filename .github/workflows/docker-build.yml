@@ -159,9 +159,16 @@ jobs:
           scripts/create-offline-package.sh \
             --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "$VERSION" \
-            --output "opendataworks-deployment-${VERSION}.tar.gz" \
+            --output "opendataworks-deployment-${VERSION}.tar.xz" \
             --platform linux/amd64
-          echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.gz" >> $GITHUB_ENV
+          echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.xz" >> $GITHUB_ENV
+          chmod +x scripts/create-evals-offline-package.sh
+          scripts/create-evals-offline-package.sh \
+            --namespace "${{ secrets.DOCKER_USERNAME }}" \
+            --tag "$VERSION" \
+            --output "opendataworks-evals-offline-${VERSION}.tar.xz" \
+            --platform linux/amd64
+          echo "EVALS_PACKAGE_PATH=opendataworks-evals-offline-${VERSION}.tar.xz" >> $GITHUB_ENV
           chmod +x opendataagent/scripts/create-offline-package.sh
           opendataagent/scripts/create-offline-package.sh \
             --tag "$VERSION" \
@@ -173,6 +180,8 @@ jobs:
         run: |
           sha256sum "$PACKAGE_PATH" > "${PACKAGE_PATH}.sha256"
           echo "PACKAGE_SHA=${PACKAGE_PATH}.sha256" >> $GITHUB_ENV
+          sha256sum "$EVALS_PACKAGE_PATH" > "${EVALS_PACKAGE_PATH}.sha256"
+          echo "EVALS_PACKAGE_SHA=${EVALS_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
           sha256sum "$ODA_PACKAGE_PATH" > "${ODA_PACKAGE_PATH}.sha256"
           echo "ODA_PACKAGE_SHA=${ODA_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
 
@@ -188,8 +197,10 @@ jobs:
             echo "## 📦 下载 / Downloads"
             echo ""
             echo "### 离线部署包 (Offline Deployment Package)"
-            echo "- **[opendataworks-deployment-${VERSION}.tar.gz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-deployment-${VERSION}.tar.gz)** - 适用于无外网环境"
-            echo "- 校验和: \`opendataworks-deployment-${VERSION}.tar.gz.sha256\`"
+            echo "- **[opendataworks-deployment-${VERSION}.tar.xz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-deployment-${VERSION}.tar.xz)** - 适用于无外网环境（需 xz 解压：tar -xJf）"
+            echo "- 校验和: \`opendataworks-deployment-${VERSION}.tar.xz.sha256\`"
+            echo "- **[opendataworks-evals-offline-${VERSION}.tar.xz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-evals-offline-${VERSION}.tar.xz)** - 可选评测附加包（仅在需要在线评测时下载）"
+            echo "- 校验和: \`opendataworks-evals-offline-${VERSION}.tar.xz.sha256\`"
             echo "- **[opendataagent-deployment-${VERSION}.tar.gz](https://github.com/${REPO}/releases/download/${TAG}/opendataagent-deployment-${VERSION}.tar.gz)** - 独立 `opendataagent` 离线部署包"
             echo "- 校验和: \`opendataagent-deployment-${VERSION}.tar.gz.sha256\`"
             echo ""
@@ -228,6 +239,8 @@ jobs:
           files: |
             ${{ env.PACKAGE_PATH }}
             ${{ env.PACKAGE_SHA }}
+            ${{ env.EVALS_PACKAGE_PATH }}
+            ${{ env.EVALS_PACKAGE_SHA }}
             ${{ env.ODA_PACKAGE_PATH }}
             ${{ env.ODA_PACKAGE_SHA }}
 
@@ -252,9 +265,16 @@ jobs:
           scripts/create-offline-package.sh \
             --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "${IMAGE_TAG}" \
-            --output "opendataworks-deployment-${RELEASE_TAG}.tar.gz" \
+            --output "opendataworks-deployment-${RELEASE_TAG}.tar.xz" \
             --platform linux/amd64
-          echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.gz" >> $GITHUB_ENV
+          echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.xz" >> $GITHUB_ENV
+          chmod +x scripts/create-evals-offline-package.sh
+          scripts/create-evals-offline-package.sh \
+            --namespace "${{ secrets.DOCKER_USERNAME }}" \
+            --tag "${IMAGE_TAG}" \
+            --output "opendataworks-evals-offline-${RELEASE_TAG}.tar.xz" \
+            --platform linux/amd64
+          echo "EVALS_PACKAGE_PATH=opendataworks-evals-offline-${RELEASE_TAG}.tar.xz" >> $GITHUB_ENV
           chmod +x opendataagent/scripts/create-offline-package.sh
           opendataagent/scripts/create-offline-package.sh \
             --tag "${IMAGE_TAG}" \
@@ -265,6 +285,8 @@ jobs:
         run: |
           sha256sum "$PACKAGE_PATH" > "${PACKAGE_PATH}.sha256"
           echo "PACKAGE_SHA=${PACKAGE_PATH}.sha256" >> $GITHUB_ENV
+          sha256sum "$EVALS_PACKAGE_PATH" > "${EVALS_PACKAGE_PATH}.sha256"
+          echo "EVALS_PACKAGE_SHA=${EVALS_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
           sha256sum "$ODA_PACKAGE_PATH" > "${ODA_PACKAGE_PATH}.sha256"
           echo "ODA_PACKAGE_SHA=${ODA_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
 
@@ -281,8 +303,10 @@ jobs:
             echo "## 📦 下载 / Downloads"
             echo ""
             echo "### 离线部署包 (Offline Deployment Package)"
-            echo "- **[${PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${PACKAGE_PATH})**"
+            echo "- **[${PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${PACKAGE_PATH})**（需 xz 解压：tar -xJf）"
             echo "- 校验和: \`${PACKAGE_PATH}.sha256\`"
+            echo "- **[${EVALS_PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${EVALS_PACKAGE_PATH})** - 可选评测附加包"
+            echo "- 校验和: \`${EVALS_PACKAGE_PATH}.sha256\`"
             echo "- **[${ODA_PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${ODA_PACKAGE_PATH})**"
             echo "- 校验和: \`${ODA_PACKAGE_PATH}.sha256\`"
             echo ""
@@ -336,6 +360,8 @@ jobs:
           files: |
             ${{ env.PACKAGE_PATH }}
             ${{ env.PACKAGE_SHA }}
+            ${{ env.EVALS_PACKAGE_PATH }}
+            ${{ env.EVALS_PACKAGE_SHA }}
             ${{ env.ODA_PACKAGE_PATH }}
             ${{ env.ODA_PACKAGE_SHA }}
 
