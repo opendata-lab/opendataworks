@@ -80,6 +80,7 @@ export const WIDGET_STYLES = `
     0 2px 8px rgba(0, 0, 0, 0.14),
     0 8px 28px rgba(0, 0, 0, 0.12);
   cursor: pointer;
+  touch-action: none;
   transition: transform 0.18s ease, box-shadow 0.2s ease;
   animation: odw-launcher-entrance 0.35s cubic-bezier(0.34, 1.2, 0.64, 1) both;
 }

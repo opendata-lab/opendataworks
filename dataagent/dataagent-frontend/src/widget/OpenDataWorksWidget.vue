@@ -5,7 +5,7 @@
     :style="[themeStyle, rootStyle]"
     :class="[positionClass, modeClass, state.historyOpen ? 'is-history-open' : '', isDragged ? 'is-dragged' : '', isInteracting ? 'is-interacting' : '']"
   >
-    <button v-if="!isInline && !state.isOpen" class="odw-launcher" type="button" :aria-label="`打开 ${config.projectName}`" @click="open">
+    <button v-if="!isInline && !state.isOpen" class="odw-launcher" type="button" :aria-label="`打开 ${config.projectName}`" @pointerdown="startLauncherDrag" @click="openIfNotDragged">
       <svg class="odw-launcher__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
       </svg>
@@ -94,6 +94,8 @@ const {
   isInteracting,
   startDrag,
   startResize,
+  startLauncherDrag,
+  isLauncherDragMoved,
   bind,
   unbind
 } = useWidgetGeometry({ rootEl, panelEl, config: props.config, state: props.state })
@@ -110,6 +112,11 @@ const open = () => {
   props.state.isOpen = true
   props.state.track?.('widget_open')
   props.emit('open')
+}
+
+const openIfNotDragged = () => {
+  if (isLauncherDragMoved()) return
+  open()
 }
 
 const close = () => {
