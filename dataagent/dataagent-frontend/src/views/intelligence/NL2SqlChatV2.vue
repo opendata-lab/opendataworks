@@ -358,7 +358,7 @@ const route = useRoute()
 const router = useRouter()
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
-const { topicApi, adminApi, agentApi } = api
+const { topicApi, agentApi } = api
 
 // ── State ────────────────────────────────────────────────────────────────────
 const agents = ref([])
@@ -385,6 +385,7 @@ const {
   availableModels, canSend, isBusy: isStreaming, activeTaskId,
   thinkingExpanded, toggleThinking,
   send: engineSend, cancel: engineCancel, detach,
+  loadConfig,
 } = chat
 const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
   api,
@@ -608,18 +609,17 @@ function focusMessage(messageId) {
 // ── Data loading ───────────────────────────────────────────────────────────
 async function loadSettings() {
   try {
-    const data = await adminApi.getSettings()
-    settings.providers = Array.isArray(data?.providers) ? data.providers : []
-    settings.default_provider_id = String(data?.default_provider_id || '')
-    settings.default_model = String(data?.default_model || '')
-    // Mirror into the engine so its model-validity guard sees real providers.
-    providers.value = settings.providers
-    defaultProviderId.value = settings.default_provider_id
-    defaultModel.value = settings.default_model
-    if (!selectedModel.value) {
-      selectedProvider.value = settings.default_provider_id
-      selectedModel.value = settings.default_model
-    }
+    // Use the runtime-config path: it returns only enabled providers and a
+    // default already repaired to an enabled provider/model. Deriving the
+    // default from admin settings instead would surface disabled providers
+    // and a stale default pointing at a provider the user has not enabled.
+    const config = await loadConfig()
+    const enabledProviders = Array.isArray(config?.providers)
+      ? config.providers.filter((p) => p?.enabled !== false && Array.isArray(p?.models) && p.models.length)
+      : []
+    settings.providers = enabledProviders
+    settings.default_provider_id = defaultProviderId.value
+    settings.default_model = defaultModel.value
   } catch {
     // non-fatal
   }
