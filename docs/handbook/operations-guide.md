@@ -125,7 +125,7 @@ server {
 ## 镜像构建与大小控制
 
 - 构建脚本：`scripts/build/build-multiarch.sh`，支持多架构 `linux/amd64,linux/arm64`。
-- 根部署产物：`opendataworks-backend`, `opendataworks-frontend`, `opendataworks-dataagent-frontend`, `opendataworks-dataagent-backend`, `opendataworks-portal-mcp`。
+- 根部署产物：`opendataworks-backend`, `opendataworks-frontend`, `opendataworks-dataagent-frontend`, `opendataworks-dataagent-backend`, `opendataworks-dataagent-runner`, `opendataworks-portal-mcp`。
 - `opendataagent` 镜像与 release 由 `opendataagent/scripts/*` 单独构建。
 - 构建前确保 `frontend/dist`、`backend/target` 已存在，否则脚本会自动触发构建。
 

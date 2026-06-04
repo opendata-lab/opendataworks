@@ -222,12 +222,15 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=opendataworks-dataagent-frontend:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
+        -e "s|^# *OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
+        -e "s|^DATAAGENT_SANDBOX_IMAGE=.*|DATAAGENT_SANDBOX_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
         -e "s|^DATAAGENT_LLM_JSON_FILE=.*|DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json|" \
         -e "s|^DATAAGENT_SKILLS_DIR=.*|DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills|" \
         "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
@@ -240,12 +243,16 @@ rewrite_offline_env_file() {
         echo "OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=opendataworks-dataagent-frontend:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}" >> "$env_file"
+    grep -q '^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=' "$env_file" 2>/dev/null || \
+        echo "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_PORTAL_MCP_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}" >> "$env_file"
+    grep -q '^DATAAGENT_SANDBOX_IMAGE=' "$env_file" 2>/dev/null || \
+        echo "DATAAGENT_SANDBOX_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" >> "$env_file"
     grep -q '^DATAAGENT_LLM_JSON_FILE=' "$env_file" 2>/dev/null || \
         echo "DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json" >> "$env_file"
     grep -q '^DATAAGENT_SKILLS_DIR=' "$env_file" 2>/dev/null || \
@@ -302,6 +309,7 @@ MAIN_IMAGES=(
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
     "opendataworks-dataagent-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-frontend:${OP_TAG}|opendataworks-dataagent-frontend:${OP_TAG}"
     "opendataworks-dataagent-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-backend:${OP_TAG}|opendataworks-dataagent-backend:${OP_TAG}"
+    "opendataworks-dataagent-runner.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-runner:${OP_TAG}|opendataworks-dataagent-runner:${OP_TAG}"
     "opendataworks-dataagent-evals-builtin.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-evals-builtin:${OP_TAG}|opendataworks-dataagent-evals-builtin:${OP_TAG}"
     "opendataworks-dataagent-evals-deepeval.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-evals-deepeval:${OP_TAG}|opendataworks-dataagent-evals-deepeval:${OP_TAG}"
     "opendataworks-portal-mcp.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-portal-mcp:${OP_TAG}|opendataworks-portal-mcp:${OP_TAG}"

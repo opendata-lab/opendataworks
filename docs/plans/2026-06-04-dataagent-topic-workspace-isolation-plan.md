@@ -37,6 +37,7 @@ Make DataAgent file and Claude SDK session state topic-scoped instead of agent-p
 5. Update deployment and docs.
    - Add runner environment knobs to dev/prod Compose.
    - Add a runner service entrypoint and separate runner image.
+   - Include the runner image in image build scripts, CI release matrix, offline package creation, and offline image loading.
    - Bind DataAgent home from a host-visible path so the runner can mount exact topic directories into child containers.
    - Mount Docker socket into the runner service only; do not mount it into task child containers.
    - Document topic workspace semantics and runner/backend ownership.
