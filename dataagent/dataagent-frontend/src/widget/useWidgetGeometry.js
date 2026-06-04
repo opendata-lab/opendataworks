@@ -214,6 +214,7 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     window.addEventListener('pointermove', onLauncherDragMove)
     window.addEventListener('pointerup', endLauncherDrag)
     event.preventDefault()
+    event.stopPropagation()
   }
 
   const isLauncherDragMoved = () => launcherDragMoved
