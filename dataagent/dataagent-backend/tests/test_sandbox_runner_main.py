@@ -175,3 +175,86 @@ def test_sandbox_runner_startup_cleanup_removes_labeled_stale_containers(monkeyp
         f"label={sandbox_runner_main.SANDBOX_CONTAINER_LABEL}={sandbox_runner_main.SANDBOX_CONTAINER_LABEL_VALUE}",
     )
     assert calls[1] == ("docker", "rm", "-f", "container-a", "container-b")
+
+
+def test_discover_host_skills_dir_reads_runner_mount_source(monkeypatch):
+    settings = get_settings()
+    originals = {
+        "dataagent_sandbox_backend": settings.dataagent_sandbox_backend,
+        "dataagent_sandbox_image": settings.dataagent_sandbox_image,
+    }
+    update_settings(
+        {
+            "dataagent_sandbox_backend": "docker",
+            "dataagent_sandbox_image": "opendataworks-dataagent-runner:test",
+        }
+    )
+    calls: list[tuple[str, ...]] = []
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self):
+            return b"/srv/offline/skills\n", b""
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(tuple(str(arg) for arg in args))
+        return FakeProcess()
+
+    monkeypatch.setattr(sandbox_runner_main.socket, "gethostname", lambda: "runner-cid")
+    monkeypatch.setattr(sandbox_runner_main.asyncio, "create_subprocess_exec", fake_exec)
+    try:
+        resolved = asyncio.run(sandbox_runner_main._discover_host_skills_dir())
+    finally:
+        update_settings(originals)
+
+    assert resolved == "/srv/offline/skills"
+    assert calls[0][:4] == ("docker", "inspect", "--format", calls[0][3])
+    assert calls[0][1] == "inspect"
+    assert sandbox_runner_main.RUNNER_SKILLS_MOUNT_TARGET in calls[0][3]
+    assert calls[0][-1] == "runner-cid"
+
+
+def test_resolve_host_skills_dir_prefers_explicit_then_auto(monkeypatch):
+    settings = get_settings()
+    original = settings.dataagent_sandbox_host_skills_dir
+    monkeypatch.setattr(sandbox_runner_main, "_AUTO_HOST_SKILLS_DIR", "/auto/skills")
+    try:
+        update_settings({"dataagent_sandbox_host_skills_dir": ""})
+        assert sandbox_runner_main._resolve_host_skills_dir(get_settings()) == "/auto/skills"
+        update_settings({"dataagent_sandbox_host_skills_dir": "/explicit/skills"})
+        assert sandbox_runner_main._resolve_host_skills_dir(get_settings()) == "/explicit/skills"
+    finally:
+        update_settings({"dataagent_sandbox_host_skills_dir": original})
+
+
+def test_sandbox_runner_mounts_auto_discovered_skills_into_child(monkeypatch, tmp_path: Path):
+    settings = get_settings()
+    originals = {
+        "dataagent_sandbox_backend": settings.dataagent_sandbox_backend,
+        "dataagent_sandbox_image": settings.dataagent_sandbox_image,
+        "dataagent_sandbox_host_root": settings.dataagent_sandbox_host_root,
+        "dataagent_sandbox_root": settings.dataagent_sandbox_root,
+        "dataagent_sandbox_host_skills_dir": settings.dataagent_sandbox_host_skills_dir,
+    }
+    host_root = tmp_path / "topics"
+    host_skills = tmp_path / "offline" / "skills"
+    host_skills.mkdir(parents=True)
+    update_settings(
+        {
+            "dataagent_sandbox_backend": "docker",
+            "dataagent_sandbox_image": "opendataworks-dataagent-runner:test",
+            "dataagent_sandbox_host_root": str(host_root),
+            "dataagent_sandbox_root": str(tmp_path / "container-topics"),
+            "dataagent_sandbox_host_skills_dir": "",
+        }
+    )
+    monkeypatch.setattr(sandbox_runner_main, "_AUTO_HOST_SKILLS_DIR", str(host_skills))
+    try:
+        _, _, command = sandbox_runner_main._build_container_command(TaskExecutionInput(**_payload()))
+    finally:
+        update_settings(originals)
+
+    assert f"type=bind,source={host_skills},target=/skills,readonly" in command
+    env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
+    assert "DATAAGENT_SKILL_LINK_ROOT=/skills" in env_values
