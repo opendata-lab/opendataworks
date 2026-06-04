@@ -59,6 +59,7 @@ bash ../scripts/start.sh
 1. 执行 `scripts/create-offline-package.sh`，生成 `opendataworks-deployment-*.tar.xz`（可指定 `--platform` 或镜像标签；压缩级别可用 `OPENDATAWORKS_XZ_LEVEL` 覆盖，默认 6）。全部镜像会去重保存为单个 `deploy/docker-images/all-images.tar`，再用 `xz -T0` 压缩整包。
 2. 目标机器需安装 `xz`/`xz-utils`，解压（`tar -xJf opendataworks-deployment-*.tar.xz`）后包含：`deploy/docker-compose*.yml`、`deploy/.env.example`、`deploy/dataagent-runtime/`、`scripts/` 控制脚本、`deploy/docker-images/all-images.tar`。
 3. 在解压目录内执行 `scripts/load-package-and-start.sh --package .`，加载镜像并启动。
+4. 评测镜像已拆为独立附加包 `opendataworks-evals-offline-*.tar.xz`（由 `scripts/create-evals-offline-package.sh` 生成）；仅在需要在线评测时下载，`tar -xJf` 解压后执行 `scripts/load-evals-images.sh` 加载。
 
 ## 裸机部署 (systemd)
 

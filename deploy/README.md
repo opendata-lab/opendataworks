@@ -170,7 +170,15 @@ Use this method for isolated environments without internet access. You will use 
 
 ## 3. DataAgent Online Evaluation
 
-离线包内置 DataAgent 通用问数评测工具，部署完成并配置可用模型后，可手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于离线包根目录 `tools/dataagent-evals/`，且均独立于 DataAgent runtime。私有评测集不随 GitHub 或离线包内置，运行时必须通过 `--dataset` 或 `DATAAGENT_EVAL_DATASET` 指定。
+DataAgent 通用问数评测工具用于部署完成并配置可用模型后手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于 `tools/dataagent-evals/`，且均独立于 DataAgent runtime。私有评测集不随 GitHub 或离线包内置，运行时必须通过 `--dataset` 或 `DATAAGENT_EVAL_DATASET` 指定。
+
+> **📦 评测镜像改由独立附加包提供**：评测镜像默认不随服务启动，且 `deepeval` 依赖较重，已从主离线包拆出，单独发布为 `opendataworks-evals-offline-*.tar.xz`。需要在线评测时单独下载该附加包并加载：
+> ```bash
+> tar -xJf opendataworks-evals-offline-*.tar.xz
+> cd opendataworks-evals-offline
+> scripts/load-evals-images.sh
+> ```
+> 主离线包仍保留 `scripts/run-dataagent-evals.sh` / `run-dataagent-deepeval-evals.sh` 与 `tools/dataagent-evals/`，加载附加包镜像后即可直接运行。
 
 ```bash
 DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \

@@ -314,14 +314,14 @@ compute_checksums() {
 
 OP_TAG="$PARSER_TAG"
 
+# 评测镜像（evals-builtin / evals-deepeval）默认不随服务启动，且 deepeval 依赖很重，
+# 已拆分到独立附加包 scripts/create-evals-offline-package.sh，不再打入主离线包。
 MAIN_IMAGES=(
     "opendataworks-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-frontend:${OP_TAG}|opendataworks-frontend:${OP_TAG}"
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
     "opendataworks-dataagent-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-frontend:${OP_TAG}|opendataworks-dataagent-frontend:${OP_TAG}"
     "opendataworks-dataagent-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-backend:${OP_TAG}|opendataworks-dataagent-backend:${OP_TAG}"
     "opendataworks-dataagent-runner.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-runner:${OP_TAG}|opendataworks-dataagent-runner:${OP_TAG}"
-    "opendataworks-dataagent-evals-builtin.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-evals-builtin:${OP_TAG}|opendataworks-dataagent-evals-builtin:${OP_TAG}"
-    "opendataworks-dataagent-evals-deepeval.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-evals-deepeval:${OP_TAG}|opendataworks-dataagent-evals-deepeval:${OP_TAG}"
     "opendataworks-portal-mcp.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-portal-mcp:${OP_TAG}|opendataworks-portal-mcp:${OP_TAG}"
 )
 
@@ -398,3 +398,4 @@ fi
 log "Offline deployment package ready: $OUTPUT_PATH"
 log "Included manifest: $PACKAGE_NAME/deploy/docker-images/manifest.json"
 log "Image checksums: $PACKAGE_NAME/deploy/docker-images/checksums.sha256"
+log "Evaluation images are shipped separately; build with scripts/create-evals-offline-package.sh"

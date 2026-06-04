@@ -115,9 +115,11 @@ GitHub Release 中应包含：
 - **下载区块**：由工作流写入 Release 正文，包含 Docker 镜像拉取命令与两份离线包链接
 - **Docker 镜像区块**：包含 `opendataworks-*` 和 `opendataagent-*` 的 Docker Hub 链接与 `docker pull` 示例
 - **附件**：
-  - `opendataworks-deployment-1.0.0.tar.xz`（离线部署包）
+  - `opendataworks-deployment-1.0.0.tar.xz`（主离线部署包）
+  - `opendataworks-evals-offline-1.0.0.tar.xz`（可选评测附加包，含两个评测镜像）
   - `opendataagent-deployment-1.0.0.tar.gz`（独立 `opendataagent` 离线部署包）
   - 可选：`opendataworks-deployment-1.0.0.tar.xz.sha256`（校验和）
+  - 可选：`opendataworks-evals-offline-1.0.0.tar.xz.sha256`（校验和）
   - 可选：`opendataagent-deployment-1.0.0.tar.gz.sha256`（校验和）
 
 Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL。同步步骤会先创建占位正文，上传附件后根据 Gitee 返回的 `attach_files/{id}/download` 地址生成最终正文并 PATCH 回 Release。
