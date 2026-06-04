@@ -77,6 +77,7 @@ class Settings(BaseSettings):
 
     # ---- Skills ----
     skills_output_dir: str = "../.claude/skills/opendataworks-business-knowledge"
+    dataagent_upload_max_bytes: int = 20 * 1024 * 1024
     dataagent_portal_mcp_enabled: bool = True
     dataagent_portal_mcp_base_url: str = ""
     dataagent_portal_mcp_token: str = ""
