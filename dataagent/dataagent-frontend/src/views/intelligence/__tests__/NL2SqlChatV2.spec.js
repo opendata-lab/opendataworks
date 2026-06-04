@@ -414,6 +414,41 @@ describe('NL2SqlChatV2 URL location', () => {
     expect(wrapper.text()).toContain('streamed answer')
   })
 
+  it('does not send on Enter during IME composition, but sends on plain Enter', async () => {
+    apiMocks.topicApi.createTopic.mockResolvedValue(makeTopic('topic-new', 'hi'))
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-1' })
+    apiMocks.taskApi.getTask = vi.fn().mockResolvedValue({ task_status: 'success' })
+    apiMocks.taskApi.streamSdkEvents.mockResolvedValue()
+
+    const wrapper = mountChat()
+    await flushPromises()
+    await nextTick()
+    await wrapper.find('.v2-btn-new').trigger('click')
+    await wrapper.find('textarea').setValue('hi')
+
+    // IME candidate-selection Enter must not send.
+    await wrapper.find('textarea').trigger('keydown.enter', { isComposing: true })
+    await flushPromises()
+    expect(apiMocks.taskApi.deliverMessage).not.toHaveBeenCalled()
+
+    // Plain Enter sends.
+    await wrapper.find('textarea').trigger('keydown.enter')
+    await flushPromises()
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalled()
+  })
+
+  it('disables the send button when no model is available', async () => {
+    apiMocks.adminApi.getSettings.mockResolvedValue({ default_provider_id: '', default_model: '', providers: [] })
+
+    const wrapper = mountChat()
+    await flushPromises()
+    await nextTick()
+    await wrapper.find('.v2-btn-new').trigger('click')
+    await wrapper.find('textarea').setValue('hi')
+
+    expect(wrapper.find('.v2-send-btn').attributes('disabled')).toBeDefined()
+  })
+
   it('shows cancel only after the backend task id is available', async () => {
     let resolveDeliver
     let resolveStream
