@@ -233,7 +233,7 @@ def normalize_agent_profile_payload(
 
 
 def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
-    return {
+    snapshot = {
         "agent_id": str(profile.get("agent_id") or DEFAULT_AGENT_ID),
         "name": str(profile.get("name") or DEFAULT_AGENT_NAME),
         "description": str(profile.get("description") or ""),
@@ -245,10 +245,13 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "max_turns": int(profile.get("max_turns") or 0),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
         "data_scope": normalize_data_scope(profile.get("data_scope") or {}),
-        "preset_questions": _validate_preset_questions(profile.get("preset_questions") or []),
         "is_default": bool(profile.get("is_default")),
         "is_builtin": bool(profile.get("is_builtin")),
     }
+    preset_questions = _validate_preset_questions(profile.get("preset_questions") or [])
+    if preset_questions:
+        snapshot["preset_questions"] = preset_questions
+    return snapshot
 
 
 def agent_summary_from_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any]:
