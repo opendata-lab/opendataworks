@@ -159,9 +159,9 @@ jobs:
           scripts/create-offline-package.sh \
             --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "$VERSION" \
-            --output "opendataworks-deployment-${VERSION}.tar.gz" \
+            --output "opendataworks-deployment-${VERSION}.tar.xz" \
             --platform linux/amd64
-          echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.gz" >> $GITHUB_ENV
+          echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.xz" >> $GITHUB_ENV
           chmod +x opendataagent/scripts/create-offline-package.sh
           opendataagent/scripts/create-offline-package.sh \
             --tag "$VERSION" \
@@ -188,8 +188,8 @@ jobs:
             echo "## 📦 下载 / Downloads"
             echo ""
             echo "### 离线部署包 (Offline Deployment Package)"
-            echo "- **[opendataworks-deployment-${VERSION}.tar.gz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-deployment-${VERSION}.tar.gz)** - 适用于无外网环境"
-            echo "- 校验和: \`opendataworks-deployment-${VERSION}.tar.gz.sha256\`"
+            echo "- **[opendataworks-deployment-${VERSION}.tar.xz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-deployment-${VERSION}.tar.xz)** - 适用于无外网环境（需 xz 解压：tar -xJf）"
+            echo "- 校验和: \`opendataworks-deployment-${VERSION}.tar.xz.sha256\`"
             echo "- **[opendataagent-deployment-${VERSION}.tar.gz](https://github.com/${REPO}/releases/download/${TAG}/opendataagent-deployment-${VERSION}.tar.gz)** - 独立 `opendataagent` 离线部署包"
             echo "- 校验和: \`opendataagent-deployment-${VERSION}.tar.gz.sha256\`"
             echo ""
@@ -252,9 +252,9 @@ jobs:
           scripts/create-offline-package.sh \
             --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "${IMAGE_TAG}" \
-            --output "opendataworks-deployment-${RELEASE_TAG}.tar.gz" \
+            --output "opendataworks-deployment-${RELEASE_TAG}.tar.xz" \
             --platform linux/amd64
-          echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.gz" >> $GITHUB_ENV
+          echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.xz" >> $GITHUB_ENV
           chmod +x opendataagent/scripts/create-offline-package.sh
           opendataagent/scripts/create-offline-package.sh \
             --tag "${IMAGE_TAG}" \
