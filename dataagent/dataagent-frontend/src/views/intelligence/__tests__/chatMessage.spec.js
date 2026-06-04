@@ -5,6 +5,7 @@ import {
   compareTopicsByRecency,
   extractErrorText,
   hydrateMessageFromApi,
+  isPlainEnterSubmit,
   normalizeTopic,
   renderMarkdown,
 } from '../chatMessage'
@@ -15,6 +16,17 @@ describe('chatMessage helpers', () => {
     expect(html).not.toContain('<img')
     expect(html).toContain('&lt;img')
     expect(html).toContain('<strong>bold</strong>')
+  })
+
+  it('isPlainEnterSubmit only submits on plain Enter (guards IME and modifiers)', () => {
+    expect(isPlainEnterSubmit({})).toBe(true)
+    expect(isPlainEnterSubmit({ isComposing: true })).toBe(false)
+    expect(isPlainEnterSubmit({ keyCode: 229 })).toBe(false)
+    expect(isPlainEnterSubmit({ shiftKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ ctrlKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ altKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ metaKey: true })).toBe(false)
+    expect(isPlainEnterSubmit(null)).toBe(false)
   })
 
   it('extractErrorText reads strings, objects, and falls back to empty', () => {

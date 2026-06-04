@@ -26,6 +26,17 @@ export function renderMarkdown(text) {
 // Human-readable text from a persisted task/message error object
 // ({ message, detail, code }) or a raw string. Returns '' when nothing usable is
 // present so callers can apply their own fallback copy.
+// True when an Enter keydown on the composer should submit: plain Enter, no
+// modifier keys, and not confirming an IME (CJK) composition. Shared by the
+// widget and portal composers so both handle IME candidate-selection Enter the
+// same way.
+export function isPlainEnterSubmit(event) {
+  if (!event) return false
+  if (event.isComposing || event.keyCode === 229) return false
+  if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false
+  return true
+}
+
 export function extractErrorText(error) {
   if (!error) return ''
   if (typeof error === 'string') return error

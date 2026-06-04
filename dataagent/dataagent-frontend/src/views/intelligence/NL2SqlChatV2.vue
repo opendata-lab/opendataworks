@@ -268,16 +268,16 @@
               v-model="inputText"
               class="v2-textarea"
               :placeholder="isStreaming ? '正在回复中…' : '输入数据问题…'"
-              :disabled="isStreaming"
+              :disabled="isStreaming || !availableModels.length"
               rows="1"
-              @keydown.enter.exact.prevent="handleSend"
+              @keydown.enter="onEnterKey"
               @input="autoResize"
             />
             <button
               type="button"
               class="v2-send-btn"
               :class="{ 'v2-cancel-btn': isStreaming }"
-              :disabled="!isStreaming && !inputText.trim()"
+              :disabled="isStreaming ? false : !canSend"
               @click="isStreaming ? handleCancel() : handleSend()"
             >
               <svg v-if="isStreaming" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
@@ -341,7 +341,7 @@ import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import { blockToToolProp } from './v2StreamParser'
 import { stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-import { hydrateMessageFromApi, renderMarkdown } from './chatMessage'
+import { hydrateMessageFromApi, isPlainEnterSubmit, renderMarkdown } from './chatMessage'
 import { useNl2SqlChat } from './useNl2SqlChat'
 
 const route = useRoute()
@@ -372,7 +372,8 @@ const chat = useNl2SqlChat({
 const {
   topics, topicId: activeTopicId, messages, inputText,
   providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
-  isBusy: isStreaming,
+  availableModels, canSend, isBusy: isStreaming,
+  thinkingExpanded, toggleThinking,
   send: engineSend, cancel: engineCancel, detach,
 } = chat
 
@@ -393,7 +394,6 @@ const currentAgentName = computed(() => {
   const found = agents.value.find((a) => a.agent_id === currentId)
   return found?.name || '智能数据助手'
 })
-const thinkingExpanded = reactive({})
 const messagesScrollbarRef = ref(null)
 const textareaRef = ref(null)
 const targetMessageId = ref('')
@@ -473,11 +473,6 @@ const isTopicWorking = (topic) =>
 const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
 
 const agentSelectOptions = computed(() => agents.value.map((a) => ({ label: a.name, value: a.agent_id })))
-
-// ── Thinking toggle ────────────────────────────────────────────────────────
-function toggleThinking(key) {
-  thinkingExpanded[key] = !thinkingExpanded[key]
-}
 
 // ── Time formatting ────────────────────────────────────────────────────────
 function formatTime(dateStr) {
@@ -900,6 +895,13 @@ async function handleSend() {
   if (isWidgetMode.value) return
   if (!inputText.value.trim() || isStreaming.value) return
   await engineSend()
+}
+
+// Enter 发送，Shift + Enter 换行;输入法组合输入期间的回车用于确认候选词,不发送。
+function onEnterKey(event) {
+  if (!isPlainEnterSubmit(event)) return
+  event.preventDefault()
+  handleSend()
 }
 
 // Explicit stop: cancel the backend task (engine marks the topic suspended).

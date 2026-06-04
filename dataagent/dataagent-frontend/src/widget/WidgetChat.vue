@@ -50,7 +50,7 @@
     </aside>
 
     <main class="query-main">
-      <div class="query-messages">
+      <div ref="messagesEl" class="query-messages" @scroll="onMessagesScroll">
         <div class="query-messages-inner" :class="{ 'is-empty': !messages.length }">
           <div v-if="errorText" class="query-error-card query-error-banner">
             <span class="query-error-label">错误</span>
@@ -199,12 +199,12 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, triggerRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, triggerRef, watch } from 'vue'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import { stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
-import { extractErrorText, renderMarkdown } from '@/views/intelligence/chatMessage'
+import { extractErrorText, isPlainEnterSubmit, renderMarkdown } from '@/views/intelligence/chatMessage'
 import { useNl2SqlChat } from '@/views/intelligence/useNl2SqlChat'
 
 const props = defineProps({
@@ -248,6 +248,7 @@ const agentId = computed(() => String(props.config.agentId || '').trim())
 const chat = useNl2SqlChat({
   api,
   getAgentId: () => agentId.value,
+  messagePageSize: 500,
   emitEvent: (event) => emit('event', event),
 })
 const {
@@ -499,14 +500,31 @@ const autoResizeTextarea = (event) => {
   el.style.height = `${Math.min(el.scrollHeight, 160)}px`
 }
 
-// Enter 发送，Shift + Enter 换行。
-// 输入法（如中文）组合输入期间的回车用于确认候选词，不应触发发送。
+// Enter 发送，Shift + Enter 换行;输入法组合输入期间的回车用于确认候选词,不发送。
 const onEnterKey = (event) => {
-  if (event.isComposing || event.keyCode === 229) return
-  if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return
+  if (!isPlainEnterSubmit(event)) return
   event.preventDefault()
   send()
 }
+
+// Pin the message list to the latest content while streaming, but only when the
+// user is already near the bottom (same rule as the portal's autoScroll).
+const messagesEl = ref(null)
+const autoScroll = ref(true)
+const onMessagesScroll = () => {
+  const el = messagesEl.value
+  if (!el) return
+  autoScroll.value = el.scrollHeight - el.scrollTop - el.clientHeight < 60
+}
+const scrollMessagesToBottom = () => {
+  nextTick(() => {
+    const el = messagesEl.value
+    if (el) el.scrollTop = el.scrollHeight
+  })
+}
+watch(messages, () => {
+  if (autoScroll.value) scrollMessagesToBottom()
+}, { deep: true, flush: 'post' })
 
 watch(
   () => props.state.outboundMessage,

@@ -172,7 +172,7 @@ describe('WidgetChat history conversations', () => {
 
     await wrapper.get('[data-testid="history-topic-topic-2"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 200, order: 'asc' })
+    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 500, order: 'asc' })
     expect(wrapper.text()).toContain('topic-2 历史回复')
 
     await wrapper.get('[data-testid="new-conversation"]').trigger('click')
@@ -333,7 +333,7 @@ describe('WidgetChat history conversations', () => {
     // Switching detaches the run locally without cancelling the backend task,
     // and loads the selected topic's history.
     expect(apiMocks.taskApi.cancelTask).not.toHaveBeenCalled()
-    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 200, order: 'asc' })
+    expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 500, order: 'asc' })
     expect(wrapper.text()).toContain('topic-2 历史回复')
 
     resolveStream()
