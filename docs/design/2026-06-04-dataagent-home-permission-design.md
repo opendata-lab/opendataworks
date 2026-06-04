@@ -55,9 +55,17 @@ Add a one-shot init service `dataagent-home-init` to dev and prod Compose. It ru
 as root, reuses the backend image, mounts the same DataAgent home bind, and before
 the backend/runner start it:
 
-- creates `/tmp/dataagent-home/.dataagent/runtime/{topics,enabled-skills}`
+- ensures `/tmp/dataagent-home/.dataagent/runtime/topics` (the per-topic workspace
+  root) exists
 - `chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}` the home
 - `chmod -R u+rwX` the home
+
+The init only fixes ownership of the home root. It does not pre-create any
+skill-partitioned directory: under the current topic-workspace model each topic/agent
+exposes its own enabled skills under `<topic>/.claude/skills`, prepared at runtime by
+`prepare_topic_workspace`. The legacy shared `runtime/enabled-skills` cwd
+(`prepare_enabled_skills_project_cwd`, `DATAAGENT_RUNTIME_PROJECT_CWD`) is no longer
+on the live SDK execution path, so the init must not assume it.
 
 `dataagent-backend` and `dataagent-sandbox-runner` gain a
 `depends_on: dataagent-home-init: condition: service_completed_successfully` edge.

@@ -10,9 +10,10 @@ when the non-root `dataagent-backend` writes into the root-owned host bind mount
 1. Add `dataagent-home-init` one-shot service to dev and prod Compose.
    - Run as `0:0`, reuse the backend image, `restart: "no"`.
    - Mount `${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home`.
-   - Create `.dataagent/runtime/{topics,enabled-skills}`, then
+   - Ensure `.dataagent/runtime/topics` (per-topic workspace root) exists, then
      `chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}` and
-     `chmod -R u+rwX` the home.
+     `chmod -R u+rwX` the home. Do not pre-create a shared `enabled-skills` dir;
+     skills are exposed per-topic at runtime, not from one shared cwd.
 
 2. Order dependent services after the init.
    - Add `depends_on: dataagent-home-init: service_completed_successfully` to

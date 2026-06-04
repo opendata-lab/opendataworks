@@ -117,7 +117,7 @@ services:
       - -c
       - |
         set -e
-        mkdir -p /tmp/dataagent-home/.dataagent/runtime/topics /tmp/dataagent-home/.dataagent/runtime/enabled-skills
+        mkdir -p /tmp/dataagent-home/.dataagent/runtime/topics
         chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /tmp/dataagent-home
         chmod -R u+rwX /tmp/dataagent-home
     volumes:
