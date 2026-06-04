@@ -970,8 +970,8 @@ onBeforeUnmount(() => {
 .tool-markdown-body :deep(code) {
   padding: 1px 5px;
   border-radius: 6px;
-  background: #f4f7fb;
-  color: #1f3b57;
+  background: color-mix(in srgb, var(--odw-primary, var(--el-color-primary, #1f3b57)) 8%, transparent);
+  color: var(--odw-primary, var(--el-color-primary, #1f3b57));
   font-size: 12px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
