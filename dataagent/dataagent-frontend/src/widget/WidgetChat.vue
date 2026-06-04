@@ -64,6 +64,7 @@
               <div class="query-user-message-shell">
                 <div class="query-user-bubble">{{ msg.content }}</div>
                 <div class="query-message-footer query-message-footer-user">
+                  <span v-if="msg.created_at" class="query-message-time">{{ formatMessageTime(msg.created_at) }}</span>
                   <button
                     type="button"
                     class="query-message-tool query-message-copy"
@@ -143,6 +144,7 @@
                   </div>
                 </template>
                 <div class="query-message-footer query-message-footer-assistant">
+                  <span v-if="msg.created_at" class="query-message-time">{{ formatMessageTime(msg.created_at) }}</span>
                   <button
                     type="button"
                     class="query-message-tool query-message-copy"
@@ -383,6 +385,12 @@ const formatTime = (value) => {
     return fmtDate(date, { month: '2-digit', day: '2-digit' })
   }
   return fmtDate(date, { year: 'numeric', month: '2-digit', day: '2-digit' })
+}
+
+const formatMessageTime = (value) => {
+  const date = value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return ''
+  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
@@ -747,6 +755,11 @@ onBeforeUnmount(() => {
 
 .query-message-footer-assistant {
   justify-content: flex-start;
+}
+
+.query-message-time {
+  font-size: 11px;
+  color: #8a96a8;
 }
 
 .query-message-tool {
