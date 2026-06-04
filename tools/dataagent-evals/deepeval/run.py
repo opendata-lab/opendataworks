@@ -289,21 +289,42 @@ def _normalise_sql(text: str) -> str:
     return re.sub(r"\s+", " ", str(text or "").strip()).rstrip(";")
 
 
-def _collect_structured_sql(value: Any) -> list[str]:
+def _parse_json_text(value: str) -> Any | None:
+    text = str(value or "").strip()
+    if not text or text[0] not in "[{":
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _iter_structured_evidence(value: Any) -> list[Any]:
+    values = [value]
+    if isinstance(value, str):
+        parsed = _parse_json_text(value)
+        if parsed is not None:
+            values.extend(_iter_structured_evidence(parsed))
+        return values
     if isinstance(value, list):
-        sqls: list[str] = []
         for item in value:
-            sqls.extend(_collect_structured_sql(item))
-        return sqls
-    if not isinstance(value, dict):
-        return []
-    sqls = []
-    for key, item in value.items():
-        key_text = str(key or "").lower()
-        if key_text in {"sql", "query"} and isinstance(item, str) and _looks_like_sql(item):
-            sqls.append(_normalise_sql(item))
+            values.extend(_iter_structured_evidence(item))
+        return values
+    if isinstance(value, dict):
+        for item in value.values():
+            values.extend(_iter_structured_evidence(item))
+    return values
+
+
+def _collect_structured_sql(value: Any) -> list[str]:
+    sqls: list[str] = []
+    for item in _iter_structured_evidence(value):
+        if not isinstance(item, dict):
             continue
-        sqls.extend(_collect_structured_sql(item))
+        for key, field in item.items():
+            key_text = str(key or "").lower()
+            if key_text in {"sql", "query"} and isinstance(field, str) and _looks_like_sql(field):
+                sqls.append(_normalise_sql(field))
     return sqls
 
 
@@ -340,15 +361,30 @@ def _extract_sql_outputs(blocks: list[dict[str, Any]], final_answer: str) -> lis
 
 def _extract_chart_outputs(blocks: list[dict[str, Any]]) -> list[Any]:
     charts: list[Any] = []
+    seen: set[str] = set()
+
+    def add_chart(value: Any) -> None:
+        try:
+            key = json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+        except TypeError:
+            key = repr(value)
+        if key not in seen:
+            seen.add(key)
+            charts.append(value)
+
     for block in blocks:
         if not isinstance(block, dict) or block.get("type") != "tool_use":
             continue
         for source in (block.get("input"), block.get("output")):
-            if isinstance(source, dict):
+            for item in _iter_structured_evidence(source):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("kind") == "chart_spec":
+                    add_chart(item)
                 for key in ("chart", "chart_spec", "echarts", "spec"):
-                    value = source.get(key)
+                    value = item.get(key)
                     if value is not None:
-                        charts.append(value)
+                        add_chart(value)
     return charts
 
 

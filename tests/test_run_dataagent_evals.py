@@ -334,6 +334,51 @@ def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
     assert sql_outputs == [actual_sql]
 
 
+def test_extract_evidence_from_bash_script_text_outputs():
+    runner = _load_runner()
+    actual_sql = "select count(1) from public.dim_tech_public_env_cmp_df"
+    chart_spec = {
+        "kind": "chart_spec",
+        "chart_type": "bar",
+        "dataset": [{"env_name": "PROD", "cmp_cnt": 301}],
+        "series": [{"name": "组件数", "field": "cmp_cnt"}],
+    }
+    blocks = [
+        {
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "input": {
+                "command": (
+                    '"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" '
+                    f'--database public --engine mysql --sql "{actual_sql}"'
+                )
+            },
+            "output": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "kind": "sql_execution",
+                            "sql": actual_sql,
+                            "rows": [{"cmp_cnt": 301}],
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
+        },
+        {
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "input": {"command": "build_chart_spec.py --chart-type bar"},
+            "output": json.dumps(chart_spec, ensure_ascii=False),
+        },
+    ]
+
+    assert runner._extract_sql_outputs(blocks, "") == [actual_sql]
+    assert runner._extract_chart_outputs(blocks) == [chart_spec]
+
+
 def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
     runner = _load_runner()
     case = {
