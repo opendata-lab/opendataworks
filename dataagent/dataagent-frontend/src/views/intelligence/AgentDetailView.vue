@@ -7,7 +7,6 @@
           返回智能体
         </el-button>
         <h2>{{ form.name || '智能体详情' }}</h2>
-        <p class="agent-detail-workdir">{{ form.resolved_workdir || '托管工作空间将在保存后生成' }}</p>
       </div>
       <div class="agent-detail-actions">
         <el-button :icon="ChatLineRound" @click="openChat">开启对话</el-button>
@@ -233,7 +232,6 @@ const form = reactive({
   agent_id: '',
   name: '',
   description: '',
-  resolved_workdir: '',
   system_prompt: '',
   permission_mode: 'inherit',
   allowed_tools: [],
@@ -287,7 +285,6 @@ const applyAgent = (agent) => {
     agent_id: String(agent?.agent_id || ''),
     name: String(agent?.name || ''),
     description: String(agent?.description || ''),
-    resolved_workdir: String(agent?.resolved_workdir || ''),
     system_prompt: String(agent?.system_prompt || ''),
     permission_mode: String(agent?.permission_mode || 'inherit'),
     allowed_tools: Array.isArray(agent?.allowed_tools) ? [...agent.allowed_tools] : [],
@@ -409,13 +406,6 @@ onMounted(loadDetail)
   color: #1f2937;
   font-size: 22px;
   font-weight: 700;
-}
-
-.agent-detail-workdir {
-  margin: 6px 0 0;
-  color: #98a2b3;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
 }
 
 .agent-detail-actions {

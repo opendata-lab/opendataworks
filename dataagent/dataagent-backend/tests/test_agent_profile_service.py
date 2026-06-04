@@ -38,21 +38,6 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     assert payload["is_builtin"] is True
 
 
-def test_resolved_agent_workdir_uses_managed_workspace_root_for_all_profiles(monkeypatch, tmp_path: Path):
-    original_runtime_cwd = get_settings().dataagent_runtime_project_cwd
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
-    update_settings({"dataagent_runtime_project_cwd": ""})
-    try:
-        default_workdir = agent_profile_service.resolved_agent_workdir("agent_default", is_default=True)
-        custom_workdir = agent_profile_service.resolved_agent_workdir("agent unsafe/id", is_default=False)
-    finally:
-        update_settings({"dataagent_runtime_project_cwd": original_runtime_cwd})
-
-    runtime_root = tmp_path / "home" / ".dataagent" / "runtime"
-    assert default_workdir == str(runtime_root / "workspaces" / "agent_default")
-    assert custom_workdir == str(runtime_root / "workspaces" / "agent-unsafe-id")
-
-
 def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
     payload = agent_profile_service.normalize_agent_profile_payload(
         {
@@ -132,7 +117,6 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
                     {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"},
                 ]
             },
-            "resolved_workdir": "/tmp/agent",
             "is_default": False,
             "is_builtin": False,
             "created_at": "2026-05-21T10:00:00",

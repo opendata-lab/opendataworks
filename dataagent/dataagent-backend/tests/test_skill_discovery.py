@@ -16,16 +16,10 @@ from core.skill_discovery import (
 @pytest.fixture(autouse=True)
 def restore_skill_settings():
     original = get_settings().skills_output_dir
-    original_runtime_cwd = get_settings().dataagent_runtime_project_cwd
     try:
         yield
     finally:
-        update_settings(
-            {
-                "skills_output_dir": original,
-                "dataagent_runtime_project_cwd": original_runtime_cwd,
-            }
-        )
+        update_settings({"skills_output_dir": original})
 
 
 def _write_skill(root: Path, folder: str):

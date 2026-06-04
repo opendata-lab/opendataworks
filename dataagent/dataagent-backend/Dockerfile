@@ -3,7 +3,6 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV HOME=/workspaces
-ENV DATAAGENT_RUNTIME_PROJECT_CWD=/workspaces/enabled-skills
 ENV DATAAGENT_SANDBOX_ROOT=/workspaces
 
 WORKDIR /app/dataagent-backend

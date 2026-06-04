@@ -65,7 +65,6 @@ describe('AgentDetailView', () => {
       agent_id: 'agent_1',
       name: '营销分析',
       description: '营销场景',
-      resolved_workdir: '/tmp/workspaces/agent_1',
       system_prompt: '只做营销分析',
       permission_mode: 'inherit',
       allowed_tools: ['Skill', 'Read'],
@@ -90,7 +89,6 @@ describe('AgentDetailView', () => {
     })
     dataagentApi.updateAgent.mockImplementation(async (_agentId, data) => ({
       agent_id: 'agent_1',
-      resolved_workdir: '/tmp/workspaces/agent_1',
       is_default: false,
       ...data
     }))
