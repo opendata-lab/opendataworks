@@ -105,6 +105,24 @@ services:
       timeout: 10s
       retries: 3
 
+  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /tmp/dataagent-home 报 permission denied）
+  dataagent-home-init:
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
+    pull_policy: always
+    container_name: opendataworks-dataagent-home-init
+    user: "0:0"
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /tmp/dataagent-home/.dataagent/runtime/topics /tmp/dataagent-home/.dataagent/runtime/enabled-skills
+        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /tmp/dataagent-home
+        chmod -R u+rwX /tmp/dataagent-home
+    volumes:
+      - ${DATAAGENT_HOME_HOST_DIR:-/tmp/dataagent-home}:/tmp/dataagent-home
+
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
     image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
@@ -155,6 +173,8 @@ services:
     ports:
       - "8900:8900"
     depends_on:
+      dataagent-home-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       redis:
@@ -204,6 +224,8 @@ services:
       DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
       DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
     depends_on:
+      dataagent-home-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
     healthcheck:
