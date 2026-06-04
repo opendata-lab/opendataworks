@@ -149,9 +149,13 @@
 当用户问题涉及趋势、分布、排行、占比、对比或其他可视化需求时，必须遵守以下规则：
 
 **强制要求：**
-- 必须通过 `build_chart_spec` 工具生成图表契约，不得用 ASCII 字符、Unicode 符号或纯文字模拟图表；
-- **严禁把 `chart_spec` JSON（或 ```chart、`<chart_spec>` 代码块）直接写进回答正文。图表只能由 `build_chart_spec` 工具产出，前端只渲染来自该工具调用的图表；写进正文的 chart_spec 既不会被渲染，也会被丢弃。**
-- 即便你已经知道图表数据，也必须实际调用 `build_chart_spec` 工具，而不是凭记忆把契约 JSON 输出到文本里；
+- 必须通过 Bash 工具调用 `build_chart_spec.py` 脚本生成图表契约，不得用 ASCII 字符、Unicode 符号或纯文字模拟图表。调用命令模板：
+  ```
+  "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py" --chart-type <bar|line|pie|table> --data '<JSON rows>' [--title "<标题>"] [--x-field <维度字段>] [--y-field <度量字段>]
+  ```
+  `build_chart_spec.py` 不是一个独立注册的工具名，它是一个通过 Bash 工具执行的脚本。不要尝试直接调用名为 `build_chart_spec` 的工具。
+- **严禁把 `chart_spec` JSON（或 ```chart、`<chart_spec>` 代码块）直接写进回答正文。图表只能由 Bash 调用 `build_chart_spec.py` 脚本产出，前端只渲染来自该工具调用的图表；写进正文的 chart_spec 既不会被渲染，也会被丢弃。**
+- 即便你已经知道图表数据，也必须实际通过 Bash 工具调用 `build_chart_spec.py` 脚本，而不是凭记忆把契约 JSON 输出到文本里；
 - 禁止以任何形式输出 ASCII 图表（包括 `|`, `-`, `*`, `#` 等字符拼成的表格图或条形图）作为图表的替代；
 - 图表契约必须基于真实查询结果构建，不得捏造数据点；
 - 图表类型选择应与数据结构匹配：趋势用折线图、占比用饼图、排行/对比用柱状图、明细用表格。
