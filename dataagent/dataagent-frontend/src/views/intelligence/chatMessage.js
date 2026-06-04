@@ -142,6 +142,7 @@ export function hydrateMessageFromApi(item) {
     content: messageContent(item),
     status: item?.status || 'success',
     task_id: String(item?.task_id || ''),
+    resume_after_seq: Number(item?.resume_after_seq || 0),
     error: item?.error || null,
     feedback: String(item?.feedback || ''),
     created_at: item?.created_at || '',
