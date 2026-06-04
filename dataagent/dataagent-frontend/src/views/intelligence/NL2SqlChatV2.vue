@@ -1426,7 +1426,14 @@ onBeforeUnmount(() => {
   overflow-x: auto;
   font-size: 13px;
 }
-.v2-text-block :deep(code) { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 13px; }
+.v2-text-block :deep(code) {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--odw-primary) 8%, transparent);
+  color: var(--odw-primary);
+}
 .v2-text-block :deep(table) { border-collapse: collapse; width: 100%; margin: 10px 0; }
 .v2-text-block :deep(th), .v2-text-block :deep(td) { border: 1px solid #dbe3ef; padding: 6px 12px; font-size: 13px; }
 .v2-text-block :deep(th) { background: #f4f7fb; font-weight: 600; }

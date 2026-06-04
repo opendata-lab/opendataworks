@@ -2571,7 +2571,8 @@ defineExpose({ handleNewTopic })
 .query-process-thought-content :deep(code) {
   padding: 2px 4px;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.04);
+  background: var(--el-color-primary-light-9, rgba(0, 0, 0, 0.04));
+  color: var(--el-color-primary, inherit);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
 }
@@ -2759,8 +2760,8 @@ defineExpose({ handleNewTopic })
 .query-main-text :deep(code) {
   padding: 2px 6px;
   border-radius: 6px;
-  background: #edf2ff;
-  color: #425cc8;
+  background: var(--el-color-primary-light-9, #edf2ff);
+  color: var(--el-color-primary, #425cc8);
   font-size: 13px;
 }
 
