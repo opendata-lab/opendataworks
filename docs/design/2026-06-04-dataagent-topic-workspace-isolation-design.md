@@ -23,7 +23,7 @@ HOME/.dataagent/runtime/topics/<topic_id>/
 
 The topic root is the full workspace. It is passed as SDK `cwd`, `HOME`, `PWD`, and `DATAAGENT_WORKSPACE_DIR` in the local execution path. Claude SDK session files therefore live under the topic root in `.claude/projects/<sanitized-cwd>/`.
 
-Enabled skills are still exposed through `.claude/skills`. The workspace helper can create links either to host skill roots for local execution or to a container-visible skill root such as `/skills/<folder>` or `/app/.claude/skills/<folder>`.
+Enabled skills are exposed through `.claude/skills`. The workspace helper copies each enabled skill folder from the discovery root into `<workspace>/.claude/skills/<folder>` as a real directory (refreshed on every prepare). Copies are used instead of symlinks because some Claude Code / Agent SDK skill discovery does not follow symlinked skill directories; copying also keeps the workspace skill in sync with same-name re-imports. When the discovery root and the workspace skills directory are the same path (e.g. the sandbox child where the skill is bind-mounted at `/app/.claude/skills/<folder>`), the copy is skipped because the skill is already in place.
 
 The existing `PreToolUse` boundary hook remains as a second guard. It allows current workspace paths and enabled skill roots, and rejects parent-directory traversal or paths outside the workspace.
 
