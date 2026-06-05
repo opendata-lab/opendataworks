@@ -44,19 +44,43 @@ def resolve_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = 
     return root / _safe_topic_id(topic_id)
 
 
-def _replace_path_with_symlink(link_path: Path, target: Path) -> None:
-    if link_path.is_symlink():
-        current = Path(os.readlink(link_path))
-        if current == target:
-            return
-        link_path.unlink()
-    elif link_path.exists():
-        if link_path.is_file():
-            link_path.unlink()
-        else:
-            shutil.rmtree(link_path)
+def _tree_max_mtime(root: Path) -> float:
+    """Newest file mtime under ``root`` (0.0 if empty/unreadable)."""
+    latest = 0.0
+    for dirpath, _dirnames, filenames in os.walk(root):
+        for name in filenames:
+            try:
+                mtime = (Path(dirpath) / name).stat().st_mtime
+            except OSError:
+                continue
+            if mtime > latest:
+                latest = mtime
+    return latest
 
-    os.symlink(target, link_path, target_is_directory=True)
+
+def _skill_copy_is_current(dest: Path, source: Path) -> bool:
+    """True when ``dest`` is an existing real-directory copy of ``source`` that is
+    not stale. ``copytree`` preserves file mtimes, so an unchanged source yields
+    equal newest-mtimes; a re-imported/edited source is newer and forces a refresh."""
+    if not dest.is_dir() or dest.is_symlink():
+        return False
+    if not (dest / "SKILL.md").is_file():
+        return False
+    return _tree_max_mtime(dest) >= _tree_max_mtime(source)
+
+
+def _replace_path_with_copy(dest: Path, source: Path) -> None:
+    """Materialize an enabled skill as a real directory copy inside the workspace.
+
+    Copies instead of symlinking because some Claude Code / Agent SDK skill
+    discovery does not follow symlinked skill directories. Refreshed on every
+    prepare so the workspace copy always matches the current on-disk skill (also
+    avoids stale copies after a redeploy or same-name re-import)."""
+    if dest.is_symlink() or dest.is_file():
+        dest.unlink()
+    elif dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(source, dest, symlinks=False)
 
 
 def prepare_topic_workspace(
@@ -99,7 +123,7 @@ def prepare_topic_workspace(
         source_is_dir = source.is_dir()
         skill_md_exists = (source / "SKILL.md").is_file()
         logger.info(
-            "skill.prepare.link topic_id=%s folder=%s source=%s source_is_dir=%s skill_md=%s",
+            "skill.prepare.copy topic_id=%s folder=%s source=%s source_is_dir=%s skill_md=%s",
             topic_id,
             folder,
             source,
@@ -111,10 +135,18 @@ def prepare_topic_workspace(
         if not skill_md_exists:
             raise SkillDiscoveryError(f"enabled skill missing SKILL.md: {folder}")
 
-        link_path = (runtime_skills_dir / folder).resolve(strict=False)
-        if link_path == source:
+        dest = runtime_skills_dir / folder
+        if dest.resolve(strict=False) == source:
+            # Already in place at the discovery root path (e.g. the sandbox child
+            # where the skill is bind-mounted at <skills>/<folder>); copying would
+            # mean copying the directory onto itself, so skip.
             continue
-        _replace_path_with_symlink(runtime_skills_dir / folder, source)
+        if _skill_copy_is_current(dest, source):
+            # Copied already for this topic and the source skill is unchanged;
+            # do not re-copy on every message, only when the source changes
+            # (e.g. a same-name re-import bumps file mtimes).
+            continue
+        _replace_path_with_copy(dest, source)
 
     linked = _describe_skills_dir(runtime_skills_dir)
     logger.info(
@@ -127,8 +159,8 @@ def prepare_topic_workspace(
     if broken:
         logger.warning(
             "skill.prepare.broken topic_id=%s skills_dir=%s entries=%s "
-            "(enabled skill links resolve to a target without SKILL.md; "
-            "likely a stale/dangling link after a redeploy or same-name re-import)",
+            "(enabled skill entries have no SKILL.md after assembly; "
+            "the source skill may be missing or incomplete on disk)",
             topic_id,
             runtime_skills_dir,
             [_format_skill_entry(entry) for entry in broken],
