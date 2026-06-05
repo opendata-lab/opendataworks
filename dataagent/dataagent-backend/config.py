@@ -93,6 +93,13 @@ class Settings(BaseSettings):
     dataagent_sandbox_backend: str = "docker"
     dataagent_sandbox_network: str = ""
     dataagent_sandbox_host_skills_dir: str = ""
+    # Runtime isolation hardening for the child task container. The workspace
+    # bind-mount is always the only writable host path; these tighten the rest.
+    # read_only_rootfs locks the container root filesystem read-only so the
+    # agent's Bash/Python cannot persist anything outside the bind-mounted
+    # workspace; a writable tmpfs is mounted at /tmp for transient scratch.
+    dataagent_sandbox_read_only_rootfs: bool = False
+    dataagent_sandbox_tmpfs_size: str = "512m"
 
     # ---- 运行策略 ----
     max_few_shot_examples: int = 5

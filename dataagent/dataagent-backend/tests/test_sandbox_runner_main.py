@@ -139,6 +139,11 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     assert not any("/var/run/docker.sock" in arg for arg in command)
     assert not any("target=/skills" in arg for arg in command)
     assert not any("target=/workspace" in arg for arg in command)
+    # Privilege-escalation guard is always applied; read-only rootfs stays opt-in.
+    assert "--security-opt" in command
+    assert "no-new-privileges" in command
+    assert "--read-only" not in command
+    assert not any(arg == "--tmpfs" for arg in command)
 
     env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
     assert "HOME=/app" in env_values
@@ -149,6 +154,45 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     assert "SKILLS_ROOT_DIR=/app/.claude/skills" in env_values
     assert not any(value.startswith("DATAAGENT_SKILL_LINK_ROOT=") for value in env_values)
     assert not any(value.startswith("DATAAGENT_TASK_PAYLOAD_B64=") for value in env_values)
+
+
+def test_sandbox_runner_read_only_rootfs_opt_in(monkeypatch, tmp_path: Path):
+    settings = get_settings()
+    originals = {
+        "dataagent_sandbox_backend": settings.dataagent_sandbox_backend,
+        "dataagent_sandbox_image": settings.dataagent_sandbox_image,
+        "dataagent_sandbox_host_root": settings.dataagent_sandbox_host_root,
+        "dataagent_sandbox_root": settings.dataagent_sandbox_root,
+        "dataagent_sandbox_host_skills_dir": settings.dataagent_sandbox_host_skills_dir,
+        "dataagent_sandbox_read_only_rootfs": settings.dataagent_sandbox_read_only_rootfs,
+        "dataagent_sandbox_tmpfs_size": settings.dataagent_sandbox_tmpfs_size,
+    }
+    update_settings(
+        {
+            "dataagent_sandbox_backend": "docker",
+            "dataagent_sandbox_image": "opendataworks-dataagent-runner:test",
+            "dataagent_sandbox_host_root": str(tmp_path / "topics"),
+            "dataagent_sandbox_root": str(tmp_path / "container-topics"),
+            "dataagent_sandbox_host_skills_dir": "",
+            "dataagent_sandbox_read_only_rootfs": True,
+            "dataagent_sandbox_tmpfs_size": "256m",
+        }
+    )
+    try:
+        _, _, command = sandbox_runner_main._build_container_command(
+            TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        )
+    finally:
+        update_settings(originals)
+
+    assert "--read-only" in command
+    assert "--tmpfs" in command
+    assert "/tmp:rw,nosuid,nodev,size=256m" in command
+    # The workspace bind-mount remains read-write so the agent can still produce files.
+    assert any(
+        arg.startswith("type=bind,") and "target=/app" in arg and "readonly" not in arg
+        for arg in command
+    )
 
 
 def test_sandbox_runner_startup_cleanup_removes_labeled_stale_containers(monkeypatch):
