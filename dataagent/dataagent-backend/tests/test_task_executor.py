@@ -225,6 +225,7 @@ def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is True
     assert ClaudeAgentOptions.last_kwargs["cwd"] == str(tmp_path)
     assert ClaudeAgentOptions.last_kwargs["cli_path"] == "/tmp/claude-cli"
+    assert ClaudeAgentOptions.last_kwargs["skills"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert runtime["folders"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
 
@@ -347,6 +348,7 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     assert captured["folders"] == []
     assert captured["kwargs"]["allow_empty"] is True
     assert ClaudeAgentOptions.last_kwargs["cwd"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["skills"] == []
     assert ClaudeAgentOptions.last_kwargs["allowed_tools"] == ["Read"]
     assert ClaudeAgentOptions.last_kwargs["mcp_servers"] == {}
     assert ClaudeAgentOptions.last_kwargs["max_turns"] == 7

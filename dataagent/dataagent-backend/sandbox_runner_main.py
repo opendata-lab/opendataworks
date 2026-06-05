@@ -436,16 +436,24 @@ async def _execute_task_stream_container(
     is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None = None,
 ) -> TaskExecutionResult:
     backend, container_name, command = _build_container_command(params)
+    stream_limit = max(1024 * 1024, int(getattr(get_settings(), "agent_max_buffer_size_bytes", 0) or 0))
     process = await asyncio.create_subprocess_exec(
         *command,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        limit=stream_limit,
     )
     stderr_task: asyncio.Task[Any] | None = None
     cancel_task: asyncio.Task[Any] | None = None
     result: TaskExecutionResult | None = None
     returncode: int | None = None
+
+    async def _emit(record: dict[str, Any]) -> None:
+        emitted = emit(record)
+        if inspect.isawaitable(emitted):
+            await emitted
+
     try:
         await _send_payload_to_child(process, params)
         async with RUNNING_CONTAINERS_LOCK:
@@ -467,7 +475,7 @@ async def _execute_task_stream_container(
             if message_type == "record":
                 record = message.get("record") or {}
                 if isinstance(record, dict):
-                    await emit(record)
+                    await _emit(record)
                 continue
             if message_type == "result":
                 result_payload = message.get("result") or {}

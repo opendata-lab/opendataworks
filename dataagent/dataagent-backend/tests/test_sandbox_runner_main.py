@@ -198,6 +198,72 @@ def test_sandbox_runner_startup_cleanup_removes_labeled_stale_containers(monkeyp
     assert calls[1] == ("docker", "rm", "-f", "container-a", "container-b")
 
 
+def test_sandbox_runner_container_process_uses_configured_stream_limit(monkeypatch):
+    settings = get_settings()
+    originals = {
+        "agent_max_buffer_size_bytes": settings.agent_max_buffer_size_bytes,
+    }
+    emitted: list[dict] = []
+    sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
+
+    update_settings({"agent_max_buffer_size_bytes": 4 * 1024 * 1024})
+    child_code = """
+import json
+import sys
+
+sys.stdin.read()
+large_payload = "x" * (96 * 1024)
+print(json.dumps({
+    "type": "record",
+    "record": {
+        "record_type": "event",
+        "event_type": "DEBUG",
+        "data": {"payload": large_payload},
+    },
+}), flush=True)
+print(json.dumps({
+    "type": "result",
+    "result": {
+        "task_status": "finished",
+        "content": "large-line-ok",
+        "provider_id": "openrouter",
+        "model": "anthropic/claude-sonnet-4.5",
+    },
+}), flush=True)
+"""
+    monkeypatch.setattr(
+        sandbox_runner_main,
+        "_build_container_command",
+        lambda params: ("docker", "container-1", [sys.executable, "-c", child_code]),
+    )
+    kill_calls: list[tuple[str, str]] = []
+
+    async def fake_kill_container(backend: str, container_name: str) -> None:
+        kill_calls.append((backend, container_name))
+
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill_container)
+
+    async def emit(record: dict) -> None:
+        emitted.append(record)
+
+    try:
+        result = asyncio.run(
+            sandbox_runner_main._execute_task_stream_container(
+                TaskExecutionInput(**_payload()),
+                emit=emit,
+                is_cancel_requested=lambda: False,
+            )
+        )
+    finally:
+        sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
+        update_settings(originals)
+
+    assert result.task_status == "finished"
+    assert result.content == "large-line-ok"
+    assert emitted[0]["data"]["payload"] == "x" * (96 * 1024)
+    assert kill_calls == []
+
+
 def test_resolve_host_skills_dir_uses_explicit_setting_only(monkeypatch):
     settings = get_settings()
     original = settings.dataagent_sandbox_host_skills_dir
