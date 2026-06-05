@@ -61,7 +61,6 @@ def prepare_topic_workspace(
     enabled_folders: list[str] | tuple[str, ...],
     *,
     allow_empty: bool = False,
-    skill_link_root: str | Path | None = None,
     sandbox_root: str | Path | None = None,
     workspace_dir: str | Path | None = None,
 ) -> Path:
@@ -83,16 +82,17 @@ def prepare_topic_workspace(
         else:
             shutil.rmtree(existing)
 
-    container_link_root = Path(skill_link_root) if skill_link_root else None
     for folder in enabled:
-        source = (discovery_root / folder).resolve()
+        source = (discovery_root / folder).resolve(strict=False)
         if not source.is_dir():
             raise SkillDiscoveryError(f"enabled skill folder not found: {folder}")
         if not (source / "SKILL.md").is_file():
             raise SkillDiscoveryError(f"enabled skill missing SKILL.md: {folder}")
 
-        target = container_link_root / folder if container_link_root else source
-        _replace_path_with_symlink(runtime_skills_dir / folder, target)
+        link_path = (runtime_skills_dir / folder).resolve(strict=False)
+        if link_path == source:
+            continue
+        _replace_path_with_symlink(runtime_skills_dir / folder, source)
 
     return workspace
 

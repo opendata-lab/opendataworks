@@ -923,8 +923,7 @@ def _skill_source(folder: str) -> str:
 
 
 def _current_skill_folder() -> str:
-    root = resolve_skills_root_dir()
-    return root.name if root else ""
+    return _folder_from_skills_output_dir(str(get_settings().skills_output_dir or "")) or DEFAULT_PRIMARY_SKILL_FOLDER
 
 
 def _skill_runtime_from_current_settings() -> dict[str, dict[str, bool]]:

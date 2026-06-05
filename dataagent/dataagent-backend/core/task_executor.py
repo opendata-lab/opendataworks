@@ -948,12 +948,10 @@ async def _execute_task_stream_local(
     prepared_workspace_dir = ""
     if str(os.environ.get("DATAAGENT_WORKSPACE_PREPARED") or "").strip() == "1":
         prepared_workspace_dir = str(os.environ.get("DATAAGENT_WORKSPACE_DIR") or "").strip()
-    skill_link_root = str(os.environ.get("DATAAGENT_SKILL_LINK_ROOT") or "").strip() or None
     project_cwd = prepare_topic_workspace(
         params.topic_id,
         enabled_folders,
         allow_empty=bool(agent_snapshot) or not enabled_folders,
-        skill_link_root=skill_link_root,
         workspace_dir=prepared_workspace_dir or None,
     )
     workspace_env = {

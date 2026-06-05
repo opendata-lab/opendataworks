@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import re
-import socket
+import shutil
 import subprocess
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -17,6 +17,8 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
 from config import get_settings
+from core.agent_profile_service import normalize_agent_snapshot
+from core.skill_admin_service import resolve_enabled_skill_runtime
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
 from core.topic_workspace import resolve_topic_workspace, sanitize_topic_id
 
@@ -28,23 +30,14 @@ SANDBOX_CONTAINER_LABEL_VALUE = "dataagent-sandbox-runner"
 SANDBOX_TASK_ID_LABEL = "dataagent.sandbox.task_id"
 SANDBOX_TOPIC_ID_LABEL = "dataagent.sandbox.topic_id"
 
-# Mount point where the runner image/compose exposes the live skills root. Child
-# task containers should mount the same host source so they see live (and offline
-# package) skills instead of the image-baked copy.
-RUNNER_SKILLS_MOUNT_TARGET = "/app/.claude/skills"
-
-# Host source of the runner's own skills mount, auto-discovered at startup so the
-# live-skills child mount is on by default without extra configuration.
-_AUTO_HOST_SKILLS_DIR: str | None = None
+CHILD_APP_ROOT = "/app"
+CHILD_SKILLS_ROOT = "/app/.claude/skills"
+BACKEND_CODE_ROOT = "/opt/dataagent-backend"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _cleanup_stale_sandbox_containers()
-    global _AUTO_HOST_SKILLS_DIR
-    _AUTO_HOST_SKILLS_DIR = await _discover_host_skills_dir()
-    if _AUTO_HOST_SKILLS_DIR:
-        logger.info("auto-discovered host skills dir for child mounts: %s", _AUTO_HOST_SKILLS_DIR)
     yield
 
 
@@ -76,7 +69,7 @@ _FORWARDED_ENV_KEYS = {
     "PATH",
     "TZ",
     "PYTHONPATH",
-    "DATAAGENT_SKILLS_OUTPUT_DIR",
+    "SKILLS_ROOT_DIR",
 }
 
 
@@ -161,60 +154,8 @@ def _should_use_container_backend() -> bool:
     return backend in {"docker", "podman"} and bool(image)
 
 
-async def _discover_host_skills_dir() -> str:
-    """Resolve the host source of the runner's own ``/app/.claude/skills`` mount.
-
-    The runner shares the host Docker socket, so it can inspect itself and read
-    the host path backing its live skills bind. Child task containers then mount
-    that same source, picking up live/offline-updated skills by default instead
-    of the image-baked copy. Best-effort: any failure returns "" and the child
-    falls back to the image skills.
-    """
-    if not _should_use_container_backend():
-        return ""
-    cfg = get_settings()
-    backend = str(getattr(cfg, "dataagent_sandbox_backend", "") or "docker").strip().lower()
-    self_id = socket.gethostname().strip()
-    if not self_id:
-        return ""
-    template = (
-        '{{range .Mounts}}{{if eq .Destination "'
-        + RUNNER_SKILLS_MOUNT_TARGET
-        + '"}}{{.Source}}{{end}}{{end}}'
-    )
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            backend,
-            "inspect",
-            "--format",
-            template,
-            self_id,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except FileNotFoundError:
-        logger.warning("sandbox backend command not found during skills discovery: %s", backend)
-        return ""
-    stdout, stderr = await proc.communicate()
-    if proc.returncode != 0:
-        logger.warning(
-            "host skills auto-discovery failed backend=%s stderr=%s",
-            backend,
-            stderr.decode("utf-8", errors="replace").strip(),
-        )
-        return ""
-    source = stdout.decode("utf-8", errors="replace").strip()
-    if not source or not Path(source).is_absolute():
-        return ""
-    return source
-
-
 def _resolve_host_skills_dir(cfg: Any) -> str:
-    """Explicit override wins; otherwise use the auto-discovered runner mount."""
-    explicit = str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
-    if explicit:
-        return explicit
-    return _AUTO_HOST_SKILLS_DIR or ""
+    return str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
 
 
 def _safe_container_fragment(value: str) -> str:
@@ -236,7 +177,7 @@ def _topic_host_workspace(topic_id: str) -> Path:
     return _host_sandbox_root() / sanitize_topic_id(topic_id)
 
 
-def _build_child_env(*, skill_link_root: str) -> dict[str, str]:
+def _build_child_env() -> dict[str, str]:
     child_env = {
         key: str(value)
         for key, value in os.environ.items()
@@ -245,16 +186,92 @@ def _build_child_env(*, skill_link_root: str) -> dict[str, str]:
     child_env.update(
         {
             "PYTHONUNBUFFERED": "1",
-            "HOME": "/workspace",
-            "PWD": "/workspace",
-            "DATAAGENT_WORKSPACE_DIR": "/workspace",
+            "HOME": CHILD_APP_ROOT,
+            "PWD": CHILD_APP_ROOT,
+            "DATAAGENT_WORKSPACE_DIR": CHILD_APP_ROOT,
             "DATAAGENT_WORKSPACE_PREPARED": "1",
-            "DATAAGENT_SKILL_LINK_ROOT": skill_link_root,
             "DATAAGENT_SANDBOX_MODE": "",
-            "DATAAGENT_SANDBOX_ROOT": "/workspace",
+            "DATAAGENT_SANDBOX_ROOT": CHILD_APP_ROOT,
+            "SKILLS_ROOT_DIR": CHILD_SKILLS_ROOT,
         }
     )
     return child_env
+
+
+def _dedupe_skill_folders(values: Any) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        values = [values]
+    result: list[str] = []
+    seen: set[str] = set()
+    iterable = values if isinstance(values, (list, tuple, set)) else []
+    for value in iterable:
+        folder = str(value or "").strip()
+        if not folder or folder in seen:
+            continue
+        result.append(folder)
+        seen.add(folder)
+    return result
+
+
+def _enabled_skill_folders_for_task(params: TaskExecutionInput) -> list[str]:
+    if params.agent_snapshot is not None:
+        snapshot = normalize_agent_snapshot(params.agent_snapshot)
+        return _dedupe_skill_folders(snapshot.get("skill_folders"))
+    runtime = resolve_enabled_skill_runtime()
+    return _dedupe_skill_folders(runtime.get("enabled_folders"))
+
+
+def _validate_skill_folder_name(folder: str) -> str:
+    value = str(folder or "").strip()
+    if not value or Path(value).name != value or "/" in value or "\\" in value:
+        raise RuntimeError(f"invalid enabled skill folder: {folder}")
+    return value
+
+
+def _build_skill_mounts(cfg: Any, enabled_folders: list[str]) -> list[tuple[str, str]]:
+    if not enabled_folders:
+        return []
+    host_skills_dir = _resolve_host_skills_dir(cfg)
+    if not host_skills_dir:
+        raise RuntimeError("DATAAGENT_SANDBOX_HOST_SKILLS_DIR is required when sandbox task enables skills")
+    host_root = Path(host_skills_dir).expanduser().resolve()
+    if not host_root.is_dir():
+        raise RuntimeError(f"DATAAGENT_SANDBOX_HOST_SKILLS_DIR directory not found: {host_root}")
+
+    mounts: list[tuple[str, str]] = []
+    for raw_folder in enabled_folders:
+        folder = _validate_skill_folder_name(raw_folder)
+        source = (host_root / folder).resolve()
+        if not (source == host_root or source.is_relative_to(host_root)):
+            raise RuntimeError(f"enabled skill folder escapes skills root: {folder}")
+        if not source.is_dir():
+            raise RuntimeError(f"enabled skill folder not found: {folder}")
+        if not (source / "SKILL.md").is_file():
+            raise RuntimeError(f"enabled skill missing SKILL.md: {folder}")
+        mounts.append((folder, str(source)))
+    return mounts
+
+
+def _prepare_child_skill_mount_targets(topic_workspace: Path, enabled_folders: list[str]) -> None:
+    skills_dir = topic_workspace / ".claude" / "skills"
+    skills_dir.mkdir(parents=True, exist_ok=True)
+    enabled_set = set(enabled_folders)
+    for existing in skills_dir.iterdir():
+        if existing.name in enabled_set:
+            continue
+        if existing.is_symlink() or existing.is_file():
+            existing.unlink()
+        elif existing.is_dir():
+            shutil.rmtree(existing)
+    for folder in enabled_folders:
+        target = skills_dir / folder
+        if target.is_symlink() or target.is_file():
+            target.unlink()
+        elif target.exists() and target.is_dir():
+            shutil.rmtree(target)
+        target.mkdir(parents=True, exist_ok=True)
 
 
 def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list[str]]:
@@ -268,15 +285,16 @@ def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list
 
     topic_workspace = _topic_host_workspace(params.topic_id)
     topic_workspace.mkdir(parents=True, exist_ok=True)
+    enabled_folders = _enabled_skill_folders_for_task(params)
+    skill_mounts = _build_skill_mounts(cfg, enabled_folders)
+    _prepare_child_skill_mount_targets(topic_workspace, enabled_folders)
     _ensure_topic_workspace_owner(topic_workspace)
     container_name = (
         f"dataagent-task-{_safe_container_fragment(params.topic_id)[:32]}-"
         f"{_safe_container_fragment(params.task_id)[:32]}"
     )
 
-    host_skills_dir = _resolve_host_skills_dir(cfg)
-    skill_link_root = "/skills" if host_skills_dir else RUNNER_SKILLS_MOUNT_TARGET
-    child_env = _build_child_env(skill_link_root=skill_link_root)
+    child_env = _build_child_env()
 
     command = [
         backend,
@@ -292,9 +310,9 @@ def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list
         "--label",
         f"{SANDBOX_TOPIC_ID_LABEL}={sanitize_topic_id(params.topic_id)}",
         "--workdir",
-        "/workspace",
+        CHILD_APP_ROOT,
         "--mount",
-        f"type=bind,source={topic_workspace},target=/workspace",
+        f"type=bind,source={topic_workspace},target={CHILD_APP_ROOT}",
     ]
     network = str(getattr(cfg, "dataagent_sandbox_network", "") or "").strip()
     if network:
@@ -303,16 +321,11 @@ def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list
     gid = str(os.environ.get("DATAAGENT_RUNTIME_GID") or "").strip()
     if uid and gid:
         command.extend(["--user", f"{uid}:{gid}"])
-    if host_skills_dir:
-        command.extend(
-            [
-                "--mount",
-                f"type=bind,source={Path(host_skills_dir).expanduser().resolve()},target=/skills,readonly",
-            ]
-        )
+    for folder, source in skill_mounts:
+        command.extend(["--mount", f"type=bind,source={source},target={CHILD_SKILLS_ROOT}/{folder},readonly"])
     for key, value in sorted(child_env.items()):
         command.extend(["--env", f"{key}={value}"])
-    command.extend([image, "python", "/app/dataagent-backend/sandbox_task_main.py"])
+    command.extend([image, "python", f"{BACKEND_CODE_ROOT}/sandbox_task_main.py"])
     return backend, container_name, command
 
 
@@ -322,8 +335,13 @@ def _ensure_topic_workspace_owner(topic_workspace: Path) -> None:
     if not uid or not gid:
         return
     try:
-        os.chown(topic_workspace, int(uid), int(gid))
-        os.chmod(topic_workspace, 0o775)
+        numeric_uid = int(uid)
+        numeric_gid = int(gid)
+        for path in (topic_workspace, topic_workspace / ".claude", topic_workspace / ".claude" / "skills"):
+            if not path.exists():
+                continue
+            os.chown(path, numeric_uid, numeric_gid)
+            os.chmod(path, 0o775)
     except PermissionError:
         logger.warning("cannot chown topic workspace path=%s uid=%s gid=%s", topic_workspace, uid, gid)
     except ValueError:
