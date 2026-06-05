@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import shutil
@@ -7,6 +8,8 @@ from pathlib import Path
 
 from config import get_settings
 from core.skill_discovery import SkillDiscoveryError, resolve_skill_discovery_root_dir
+
+logger = logging.getLogger(__name__)
 
 
 def _backend_root() -> Path:
@@ -70,6 +73,15 @@ def prepare_topic_workspace(
 
     discovery_root = resolve_skill_discovery_root_dir()
     enabled = [str(folder or "").strip() for folder in enabled_folders if str(folder or "").strip()]
+    logger.info(
+        "skill.prepare.start topic_id=%s workspace=%s skills_dir=%s discovery_root=%s allow_empty=%s enabled=%s",
+        topic_id,
+        workspace,
+        runtime_skills_dir,
+        discovery_root,
+        allow_empty,
+        enabled,
+    )
     if not enabled and not allow_empty:
         raise SkillDiscoveryError("no enabled skills configured")
 
@@ -84,9 +96,19 @@ def prepare_topic_workspace(
 
     for folder in enabled:
         source = (discovery_root / folder).resolve(strict=False)
-        if not source.is_dir():
+        source_is_dir = source.is_dir()
+        skill_md_exists = (source / "SKILL.md").is_file()
+        logger.info(
+            "skill.prepare.link topic_id=%s folder=%s source=%s source_is_dir=%s skill_md=%s",
+            topic_id,
+            folder,
+            source,
+            source_is_dir,
+            skill_md_exists,
+        )
+        if not source_is_dir:
             raise SkillDiscoveryError(f"enabled skill folder not found: {folder}")
-        if not (source / "SKILL.md").is_file():
+        if not skill_md_exists:
             raise SkillDiscoveryError(f"enabled skill missing SKILL.md: {folder}")
 
         link_path = (runtime_skills_dir / folder).resolve(strict=False)
@@ -94,7 +116,36 @@ def prepare_topic_workspace(
             continue
         _replace_path_with_symlink(runtime_skills_dir / folder, source)
 
+    linked = _describe_skills_dir(runtime_skills_dir)
+    logger.info(
+        "skill.prepare.done topic_id=%s skills_dir=%s linked=%s",
+        topic_id,
+        runtime_skills_dir,
+        linked,
+    )
     return workspace
+
+
+def _describe_skills_dir(skills_dir: Path) -> list[str]:
+    """Describe the prepared skills directory for diagnostics: each entry's link
+    target and whether the resolved target still has a SKILL.md."""
+    described: list[str] = []
+    try:
+        entries = sorted(skills_dir.iterdir(), key=lambda p: p.name)
+    except OSError:
+        return described
+    for entry in entries:
+        is_link = entry.is_symlink()
+        target = ""
+        if is_link:
+            try:
+                target = os.readlink(entry)
+            except OSError:
+                target = "<unreadable>"
+        resolved = entry.resolve(strict=False)
+        skill_md = (resolved / "SKILL.md").is_file()
+        described.append(f"{entry.name}(symlink={is_link},target={target},skill_md={skill_md})")
+    return described
 
 
 def delete_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> bool:

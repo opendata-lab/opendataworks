@@ -883,6 +883,15 @@ async def _execute_task_stream_local(
     prompt = str(params.question or "").strip() if params.resume_session_id else _build_prompt(params.history, params.question)
     agent_snapshot = normalize_agent_snapshot(params.agent_snapshot) if params.agent_snapshot else None
     skill_runtime = resolve_agent_skill_runtime(agent_snapshot, resolve_enabled_skill_runtime())
+    logger.info(
+        "skill.resolve task_id=%s topic_id=%s source=%s agent_skill_folders=%s enabled_folders=%s enabled_roots=%s",
+        params.task_id,
+        params.topic_id,
+        "agent" if agent_snapshot else "global_fallback",
+        (agent_snapshot or {}).get("skill_folders") if agent_snapshot else None,
+        skill_runtime.get("enabled_folders"),
+        skill_runtime.get("enabled_roots"),
+    )
     system_prompt = _build_system_prompt(params.database_hint, skill_runtime, agent_snapshot)
 
     if params.debug:
