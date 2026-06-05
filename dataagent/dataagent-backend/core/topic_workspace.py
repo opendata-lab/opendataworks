@@ -121,15 +121,25 @@ def prepare_topic_workspace(
         "skill.prepare.done topic_id=%s skills_dir=%s linked=%s",
         topic_id,
         runtime_skills_dir,
-        linked,
+        [_format_skill_entry(entry) for entry in linked],
     )
+    broken = [entry for entry in linked if entry["name"] in enabled_set and not entry["skill_md"]]
+    if broken:
+        logger.warning(
+            "skill.prepare.broken topic_id=%s skills_dir=%s entries=%s "
+            "(enabled skill links resolve to a target without SKILL.md; "
+            "likely a stale/dangling link after a redeploy or same-name re-import)",
+            topic_id,
+            runtime_skills_dir,
+            [_format_skill_entry(entry) for entry in broken],
+        )
     return workspace
 
 
-def _describe_skills_dir(skills_dir: Path) -> list[str]:
+def _describe_skills_dir(skills_dir: Path) -> list[dict]:
     """Describe the prepared skills directory for diagnostics: each entry's link
     target and whether the resolved target still has a SKILL.md."""
-    described: list[str] = []
+    described: list[dict] = []
     try:
         entries = sorted(skills_dir.iterdir(), key=lambda p: p.name)
     except OSError:
@@ -143,9 +153,22 @@ def _describe_skills_dir(skills_dir: Path) -> list[str]:
             except OSError:
                 target = "<unreadable>"
         resolved = entry.resolve(strict=False)
-        skill_md = (resolved / "SKILL.md").is_file()
-        described.append(f"{entry.name}(symlink={is_link},target={target},skill_md={skill_md})")
+        described.append(
+            {
+                "name": entry.name,
+                "symlink": is_link,
+                "target": target,
+                "skill_md": (resolved / "SKILL.md").is_file(),
+            }
+        )
     return described
+
+
+def _format_skill_entry(entry: dict) -> str:
+    return (
+        f"{entry['name']}(symlink={entry['symlink']},"
+        f"target={entry['target']},skill_md={entry['skill_md']})"
+    )
 
 
 def delete_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> bool:
