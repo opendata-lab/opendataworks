@@ -86,7 +86,8 @@
 - 固定链路：`export_query.py -> backend 只读查询 API（导出模式，绕过字节守卫，仍受行数上限保护）`。
 - 行数上限：默认且最大 10000 行；命中上限时 `has_more=true`，应改用更精确的过滤或聚合。
 - 后续处理：模型用 Bash/Python 读取返回的 `file_path`（CSV）再生成最终文件，不要把 CSV 内容整体读进上下文。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output <relative/or/abs/path.csv>`
+- 落盘位置：所有要交付给用户、可下载的产物（CSV/Excel/HTML/图片等）必须写到工作区的 `output/` 目录下（如 `output/result.csv`）。只有 `output/` 与 `uploads/` 目录下的文件会出现在会话文件面板并可下载；写到工作区根目录或其他子目录的文件视为临时草稿，不会展示也不可下载。
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<name>.csv`
 
 ## build_chart_spec.py
 

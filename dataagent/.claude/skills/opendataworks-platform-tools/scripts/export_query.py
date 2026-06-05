@@ -42,7 +42,7 @@ def main():
     )
     parser.add_argument("--database", required=True)
     parser.add_argument("--sql", required=True)
-    parser.add_argument("--output", required=True, help="CSV output path (relative paths resolve under the workspace cwd)")
+    parser.add_argument("--output", required=True, help="CSV output path; write downloadable deliverables under the workspace output/ directory, e.g. output/result.csv (relative paths resolve under the workspace cwd)")
     parser.add_argument("--engine", default="")
     parser.add_argument("--limit", type=int, default=EXPORT_MAX_LIMIT)
     parser.add_argument(
