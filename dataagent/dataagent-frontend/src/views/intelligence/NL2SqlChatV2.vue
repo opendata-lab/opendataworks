@@ -1628,7 +1628,12 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  /* Hold a stable max width so the message does not resize when the thinking
+     panel or a tool call is expanded/collapsed. width:100% is capped by
+     max-width:88%, and the column's children stretch to fill it. */
+  width: 100%;
   max-width: 88%;
+  min-width: 0;
 }
 
 .v2-msg-footer {
@@ -1871,8 +1876,10 @@ onBeforeUnmount(() => {
   transition: max-width 0.3s ease;
 }
 
+/* Keep the landing composer at the same width as the in-conversation composer
+   so the input box does not jump wider after the first message is sent. */
 .v2-composer-bar.is-landing .v2-composer-wrap {
-  max-width: 860px;
+  max-width: 1280px;
 }
 
 .v2-composer {
