@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -34,10 +35,23 @@ CHILD_APP_ROOT = "/app"
 CHILD_SKILLS_ROOT = "/app/.claude/skills"
 BACKEND_CODE_ROOT = "/opt/dataagent-backend"
 
+# Mount point where the runner image/compose exposes the live skills root. The
+# runner can read this directly, and its host source is what each child task
+# container must bind-mount so children see live (and offline-package) skills.
+RUNNER_SKILLS_MOUNT_TARGET = "/app/.claude/skills"
+
+# Host source of the runner's own skills mount, auto-discovered at startup so the
+# child skill mounts work by default without setting DATAAGENT_SANDBOX_HOST_SKILLS_DIR.
+_AUTO_HOST_SKILLS_DIR: str | None = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await _cleanup_stale_sandbox_containers()
+    global _AUTO_HOST_SKILLS_DIR
+    _AUTO_HOST_SKILLS_DIR = await _discover_host_skills_dir()
+    if _AUTO_HOST_SKILLS_DIR:
+        logger.info("auto-discovered host skills dir for child mounts: %s", _AUTO_HOST_SKILLS_DIR)
     yield
 
 
@@ -154,8 +168,61 @@ def _should_use_container_backend() -> bool:
     return backend in {"docker", "podman"} and bool(image)
 
 
+async def _discover_host_skills_dir() -> str:
+    """Resolve the host source of the runner's own ``/app/.claude/skills`` mount.
+
+    The runner shares the host Docker socket, so it can inspect itself and read
+    the host path backing its live skills bind. Child task containers then use
+    that same host path as their skill bind-mount source, so they pick up
+    live/offline-updated skills without operators having to set
+    ``DATAAGENT_SANDBOX_HOST_SKILLS_DIR`` to a path that also happens to be
+    visible inside the runner. Best-effort: any failure returns "".
+    """
+    if not _should_use_container_backend():
+        return ""
+    cfg = get_settings()
+    backend = str(getattr(cfg, "dataagent_sandbox_backend", "") or "docker").strip().lower()
+    self_id = socket.gethostname().strip()
+    if not self_id:
+        return ""
+    template = (
+        '{{range .Mounts}}{{if eq .Destination "'
+        + RUNNER_SKILLS_MOUNT_TARGET
+        + '"}}{{.Source}}{{end}}{{end}}'
+    )
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            backend,
+            "inspect",
+            "--format",
+            template,
+            self_id,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        logger.warning("sandbox backend command not found during skills discovery: %s", backend)
+        return ""
+    stdout, stderr = await proc.communicate()
+    if proc.returncode != 0:
+        logger.warning(
+            "host skills auto-discovery failed backend=%s stderr=%s",
+            backend,
+            stderr.decode("utf-8", errors="replace").strip(),
+        )
+        return ""
+    source = stdout.decode("utf-8", errors="replace").strip()
+    if not source or not Path(source).is_absolute():
+        return ""
+    return source
+
+
 def _resolve_host_skills_dir(cfg: Any) -> str:
-    return str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
+    """Explicit override wins; otherwise use the auto-discovered runner mount."""
+    explicit = str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
+    if explicit:
+        return explicit
+    return _AUTO_HOST_SKILLS_DIR or ""
 
 
 def _safe_container_fragment(value: str) -> str:
@@ -233,24 +300,38 @@ def _validate_skill_folder_name(folder: str) -> str:
 def _build_skill_mounts(cfg: Any, enabled_folders: list[str]) -> list[tuple[str, str]]:
     if not enabled_folders:
         return []
-    host_skills_dir = _resolve_host_skills_dir(cfg)
-    if not host_skills_dir:
-        raise RuntimeError("DATAAGENT_SANDBOX_HOST_SKILLS_DIR is required when sandbox task enables skills")
-    host_root = Path(host_skills_dir).expanduser().resolve()
-    if not host_root.is_dir():
-        raise RuntimeError(f"DATAAGENT_SANDBOX_HOST_SKILLS_DIR directory not found: {host_root}")
+    host_source_root = _resolve_host_skills_dir(cfg)
+    if not host_source_root:
+        raise RuntimeError(
+            "DATAAGENT_SANDBOX_HOST_SKILLS_DIR is required when sandbox task enables skills "
+            "and host skills auto-discovery is unavailable"
+        )
+    # host_root is the child bind-mount source, resolved by the host docker daemon.
+    # It is generally NOT visible inside this runner container (the runner sees the
+    # same skills at RUNNER_SKILLS_MOUNT_TARGET), so it must not be resolved against
+    # the runner filesystem. Validate folder/SKILL.md existence against a
+    # runner-visible root: the explicit host path if it happens to be visible
+    # (same-path mount), otherwise the runner's own live skills mount.
+    host_root = Path(host_source_root).expanduser()
+    validation_root = host_root if host_root.is_dir() else Path(RUNNER_SKILLS_MOUNT_TARGET)
+    if not validation_root.is_dir():
+        raise RuntimeError(
+            f"skills root not visible to runner for validation: host={host_root} "
+            f"runner_mount={RUNNER_SKILLS_MOUNT_TARGET}"
+        )
+    validation_root = validation_root.resolve()
 
     mounts: list[tuple[str, str]] = []
     for raw_folder in enabled_folders:
         folder = _validate_skill_folder_name(raw_folder)
-        source = (host_root / folder).resolve()
-        if not (source == host_root or source.is_relative_to(host_root)):
+        check = (validation_root / folder).resolve()
+        if not (check == validation_root or check.is_relative_to(validation_root)):
             raise RuntimeError(f"enabled skill folder escapes skills root: {folder}")
-        if not source.is_dir():
+        if not check.is_dir():
             raise RuntimeError(f"enabled skill folder not found: {folder}")
-        if not (source / "SKILL.md").is_file():
+        if not (check / "SKILL.md").is_file():
             raise RuntimeError(f"enabled skill missing SKILL.md: {folder}")
-        mounts.append((folder, str(source)))
+        mounts.append((folder, str(host_root / folder)))
     return mounts
 
 
