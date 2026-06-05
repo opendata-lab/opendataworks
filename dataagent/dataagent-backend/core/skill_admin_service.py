@@ -1171,6 +1171,22 @@ def _skill_name_from_front_matter(skill_md: Path) -> str:
     raise ValueError("根目录 SKILL.md 必须包含 front matter name")
 
 
+def _optional_skill_name_from_front_matter(skill_md: Path) -> str:
+    try:
+        lines = skill_md.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise ValueError("SKILL.md must be UTF-8 encoded") from exc
+    if not lines or lines[0].strip() != "---":
+        return ""
+    for line in lines[1:]:
+        if line.strip() == "---":
+            break
+        key, separator, value = line.partition(":")
+        if separator and key.strip() == "name":
+            return value.strip().strip("'\"")
+    return ""
+
+
 def _resolve_imported_skill_root(extract_root: Path) -> tuple[Path, str]:
     root_skill_md = extract_root / "SKILL.md"
     if root_skill_md.is_file():
@@ -1183,6 +1199,9 @@ def _resolve_imported_skill_root(extract_root: Path) -> tuple[Path, str]:
     ]
     if len(candidates) == 1:
         candidate = candidates[0]
+        declared_name = _optional_skill_name_from_front_matter(candidate / "SKILL.md")
+        if declared_name and declared_name != candidate.name:
+            raise ValueError("SKILL.md name must match skill folder")
         return candidate, _validate_skill_folder_name(candidate.name)
     if len(candidates) > 1:
         raise ValueError("ZIP 包只能包含一个 Skill")

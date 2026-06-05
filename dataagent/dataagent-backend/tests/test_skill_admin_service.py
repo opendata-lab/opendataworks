@@ -730,6 +730,21 @@ def test_import_skill_from_folder_zip(monkeypatch, tmp_path):
     assert "marketing-insights/scripts/run.py" in store.documents
 
 
+def test_import_skill_rejects_folder_zip_when_front_matter_name_differs(monkeypatch, tmp_path):
+    configure_skill_filesystem(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="SKILL.md name must match skill folder"):
+        skill_admin_service.import_skill_from_zip(
+            "marketing-insights.zip",
+            make_zip(
+                {
+                    "marketing-insights/SKILL.md": "---\nname: crm-insights\n---\n# CRM\n",
+                    "marketing-insights/reference/guide.md": "# Guide\n",
+                }
+            ),
+        )
+
+
 def test_import_skill_rejects_unsafe_zip_path(monkeypatch, tmp_path):
     configure_skill_filesystem(monkeypatch, tmp_path)
 

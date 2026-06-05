@@ -987,6 +987,7 @@ async def _execute_task_stream_local(
         setting_sources=setting_sources,
         max_turns=max_turns,
         allowed_tools=allowed_tools,
+        skills=list(enabled_folders),
         mcp_servers=mcp_servers,
         include_partial_messages=supports_partial_messages,
         max_buffer_size=max(1024 * 1024, int(cfg.agent_max_buffer_size_bytes)),
