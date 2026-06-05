@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import sys
+import time
 from pathlib import Path
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -140,7 +142,7 @@ def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_
     assert (skill_copy / "SKILL.md").read_text(encoding="utf-8") == "# opendataworks-business-knowledge\n"
 
 
-def test_prepare_topic_workspace_refreshes_skill_copy_on_reprepare(monkeypatch, tmp_path: Path):
+def test_prepare_topic_workspace_copies_once_and_refreshes_on_source_change(monkeypatch, tmp_path: Path):
     original_root = get_settings().dataagent_sandbox_root
     original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     project = tmp_path / "project"
@@ -154,13 +156,28 @@ def test_prepare_topic_workspace_refreshes_skill_copy_on_reprepare(monkeypatch, 
     )
     try:
         workspace = prepare_topic_workspace("topic_1", ["imported-skill"])
-        copied = workspace / ".claude" / "skills" / "imported-skill" / "SKILL.md"
+        skill_dir = workspace / ".claude" / "skills" / "imported-skill"
+        copied = skill_dir / "SKILL.md"
         assert copied.read_text(encoding="utf-8") == "# imported-skill\n"
 
-        # Simulate a same-name re-import that rewrites the source skill on disk.
-        (skills_root / "imported-skill" / "SKILL.md").write_text("# reimported\n", encoding="utf-8")
+        # Unchanged source: a second prepare (e.g. second message in the same
+        # topic) must NOT re-copy. Prove it by dropping a sentinel that a re-copy
+        # would wipe.
+        sentinel = skill_dir / "sentinel.txt"
+        sentinel.write_text("keep", encoding="utf-8")
+        prepare_topic_workspace("topic_1", ["imported-skill"])
+        assert sentinel.exists()
+        assert copied.read_text(encoding="utf-8") == "# imported-skill\n"
+
+        # Same-name re-import rewrites the source and bumps mtimes; the next
+        # prepare must refresh the copy (sentinel wiped, new content).
+        src_md = skills_root / "imported-skill" / "SKILL.md"
+        src_md.write_text("# reimported\n", encoding="utf-8")
+        future = time.time() + 1000
+        os.utime(src_md, (future, future))
         prepare_topic_workspace("topic_1", ["imported-skill"])
         assert copied.read_text(encoding="utf-8") == "# reimported\n"
+        assert not sentinel.exists()
     finally:
         update_settings(
             {
