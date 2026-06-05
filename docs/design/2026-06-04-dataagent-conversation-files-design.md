@@ -120,6 +120,52 @@ No change to the boundary hook or skill contract.
 - Endpoints sit under `/api/v1/nl2sql/*`, inheriting the existing portal proxy
   auth; topic ownership is enforced the same way as existing topic routes.
 
+### File-access boundary layering (do not collapse into one)
+
+File access is protected by three independent layers with distinct jobs. They are
+complementary, not redundant — removing any one widens the attack surface that the
+others were never designed to cover.
+
+1. **PreToolUse boundary hook** (`core/agent_runtime.py`,
+   `_build_workspace_boundary_hooks`, attached in `_execute_task_stream_local`).
+   - Job: block tools from touching paths *outside* the workspace + enabled skill
+     roots (cross-topic workspaces, backend source, `.env`, DB credentials).
+   - Scope: runs in **every** execution mode — in-process, the runner's local
+     fallback, and inside the container child (the child also runs
+     `_execute_task_stream_local`).
+   - Limit: it is a **static** check of tool inputs. It validates `Write`/`Edit`
+     path args and scans `Bash` tokens, but cannot police where a *program*
+     (Python, etc.) writes at runtime. It is an escape guard, not a
+     runtime write-location enforcer.
+   - **Why it cannot be deleted:** by default `DATAAGENT_SANDBOX_MODE` is empty, so
+     `execute_task_stream` runs `_execute_task_stream_local` directly in the
+     backend process with **no container**. In that default deployment the hook is
+     the *only* filesystem boundary. Deleting it would let the agent read/write
+     anything the backend process can.
+
+2. **Sandbox container isolation** (`sandbox_runner_main.py`, opt-in via
+   `DATAAGENT_SANDBOX_MODE` + image).
+   - Job: OS-level confinement of *runtime* writes. The topic workspace bind-mount
+     is the only writable host path; skills are mounted read-only;
+     `--security-opt no-new-privileges` always applied; optional
+     `DATAAGENT_SANDBOX_READ_ONLY_ROOTFS` locks the container rootfs read-only with
+     a writable `/tmp` tmpfs so Bash/Python cannot persist anything outside the
+     workspace mount.
+   - Limit: only active on the container execution path; opt-in. Does not cover the
+     default in-process mode — hence layer 1 stays.
+
+3. **Backend download curation** (`core/topic_files.py`).
+   - Job: regardless of where the agent writes inside the workspace, only
+     `uploads/` (inputs) and `output/` (deliverables) are listed and downloadable;
+     scratch files and `.claude/` are never served.
+   - This is independent of layers 1–2: it holds even if the agent scatters scratch
+     files all over the workspace.
+
+Rule of thumb: layer 1 owns "can it touch outside the workspace", layer 2 owns
+"can a running program persist outside the workspace", layer 3 owns "what is
+exposed for download". Do not try to make the hook enforce write *locations*
+(layer 2's job) or download scoping (layer 3's job).
+
 ## Tradeoffs
 
 Pros: reuses the per-topic workspace and existing boundary model; no agent/skill

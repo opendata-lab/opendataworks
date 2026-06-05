@@ -395,6 +395,18 @@ def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list
         "--mount",
         f"type=bind,source={topic_workspace},target={CHILD_APP_ROOT}",
     ]
+    # Runtime isolation hardening. The workspace bind-mount (and read-only skill
+    # mounts) are the only host paths the child can touch; block privilege
+    # escalation, and optionally lock the rest of the container filesystem
+    # read-only so the agent's Bash/Python cannot persist anything outside the
+    # bind-mounted workspace (true runtime write isolation, independent of the
+    # static PreToolUse boundary hook). A writable tmpfs at /tmp covers transient
+    # scratch; HOME/PWD already point at the writable workspace mount.
+    command.extend(["--security-opt", "no-new-privileges"])
+    if bool(getattr(cfg, "dataagent_sandbox_read_only_rootfs", False)):
+        tmpfs_size = str(getattr(cfg, "dataagent_sandbox_tmpfs_size", "") or "512m").strip()
+        command.append("--read-only")
+        command.extend(["--tmpfs", f"/tmp:rw,nosuid,nodev,size={tmpfs_size}"])
     network = str(getattr(cfg, "dataagent_sandbox_network", "") or "").strip()
     if network:
         command.extend(["--network", network])
