@@ -30,6 +30,38 @@ read_env_value() {
     printf '%s' "${line#*=}"
 }
 
+set_env_value() {
+    local key="$1"
+    local value="$2"
+    local env_file="$3"
+    local tmp_file="${env_file}.tmp.$$"
+
+    if grep -q -E "^${key}=" "$env_file" 2>/dev/null; then
+        awk -v target_key="$key" -v target_value="$value" '
+            BEGIN { written = 0 }
+            $0 ~ "^" target_key "=" {
+                print target_key "=" target_value
+                written = 1
+                next
+            }
+            { print }
+            END {
+                if (!written) {
+                    print target_key "=" target_value
+                }
+            }
+        ' "$env_file" > "$tmp_file"
+    else
+        cp "$env_file" "$tmp_file"
+        {
+            echo ""
+            echo "${key}=${value}"
+        } >> "$tmp_file"
+    fi
+
+    mv "$tmp_file" "$env_file"
+}
+
 normalize_path() {
     local path="$1"
     local is_absolute=false
@@ -139,6 +171,23 @@ ensure_dataagent_cli_executable() {
     fi
 }
 
+ensure_dataagent_sandbox_host_skills_dir() {
+    local configured
+    configured="$(read_env_value "DATAAGENT_SANDBOX_HOST_SKILLS_DIR" "$ENV_FILE")"
+    if [ -n "$configured" ]; then
+        return 0
+    fi
+
+    local skills_dir
+    skills_dir="$(resolve_dataagent_skills_dir)"
+    if [ ! -d "$skills_dir" ]; then
+        return 0
+    fi
+
+    set_env_value "DATAAGENT_SANDBOX_HOST_SKILLS_DIR" "$skills_dir" "$ENV_FILE"
+    echo "🔧 已设置 DataAgent sandbox live skills 宿主路径: $skills_dir"
+}
+
 if [ ! -f "$COMPOSE_FILE" ]; then
     echo "❌ 错误: 未找到 $COMPOSE_FILE"
     exit 1
@@ -192,6 +241,7 @@ echo "🚀 启动 OpenDataWorks 服务..."
 echo ""
 
 ensure_dataagent_cli_executable
+ensure_dataagent_sandbox_host_skills_dir
 
 # 启动服务
 pushd "$DEPLOY_DIR" >/dev/null

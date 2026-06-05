@@ -414,6 +414,8 @@ const traceCommand = computed(() => toolAction.value.detail)
 
 const traceCommandPrefix = computed(() => (traceKind.value === 'shell' ? '$ ' : ''))
 
+const traceSummaryDetail = computed(() => String(toolAction.value.description || traceCommand.value || '').trim())
+
 const traceDescription = computed(() => {
   if (bootstrapSkillLabel.value) return bootstrapSkillLabel.value
   if (traceKind.value === 'read') return toolAction.value.description || '正在读取文件'
@@ -427,7 +429,7 @@ const traceDescription = computed(() => {
 
 const traceSummaryText = computed(() => {
   if (bootstrapSkillLabel.value) return bootstrapSkillLabel.value
-  const detail = traceCommand.value || traceDescription.value
+  const detail = traceSummaryDetail.value || traceDescription.value
 
   // A shell step that produces a chart_spec is the chart-generation tool call;
   // label it as such so it stays recognizable alongside the conclusion chart.
@@ -452,7 +454,9 @@ const traceSummaryText = computed(() => {
     return detail ? `执行技能：${detail}` : '正在准备技能上下文'
   }
   if (traceKind.value === 'tool') {
-    return displayLabel.value || (detail ? `执行工具：${detail}` : '执行工具')
+    return toolAction.value.description
+      ? `执行工具：${toolAction.value.description}`
+      : (displayLabel.value || (detail ? `执行工具：${detail}` : '执行工具'))
   }
 
   const leading = detail || displayLabel.value || toolName.value

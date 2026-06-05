@@ -7,10 +7,13 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from config import get_settings, update_settings
 from core import task_executor
 
 
@@ -82,6 +85,18 @@ class ToolResultBlock:
         self.tool_use_id = tool_use_id
         self.name = name
         self.content = content
+
+
+@pytest.fixture(autouse=True)
+def _configured_skills_root(tmp_path: Path):
+    original = getattr(get_settings(), "skills_root_dir", "")
+    skills_root = tmp_path / ".claude" / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+    update_settings({"skills_root_dir": str(skills_root)})
+    try:
+        yield
+    finally:
+        update_settings({"skills_root_dir": original})
 
 
 def _install_fake_sdk(monkeypatch, messages, *, final_exception=None):

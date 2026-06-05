@@ -1,70 +1,84 @@
-# DataAgent Sandbox Live Skills Design
+# DataAgent Sandbox Scoped Skills Design
 
 ## Current State
 
-With `DATAAGENT_SANDBOX_MODE` enabled, `dataagent-sandbox-runner` starts one
-child container per task. Skills are exposed to the child through the topic
-workspace's `.claude/skills/<folder>` symlinks, whose target is the
-`DATAAGENT_SKILL_LINK_ROOT` chosen by the runner:
+`dataagent-backend` and `dataagent-sandbox-runner` run from container images, while
+platform-managed skills are mounted at runtime from `DATAAGENT_SKILLS_DIR`.
+Sandbox mode delegates task execution to the runner, which starts one child
+container per task.
 
-- `/skills/<folder>` when `DATAAGENT_SANDBOX_HOST_SKILLS_DIR` is set (runner binds
-  that host dir read-only into the child as `/skills`)
-- `/app/.claude/skills/<folder>` otherwise — the **image-baked** skills
+The execution contract is now:
 
-Both the backend and runner already bind-mount the live skills
-(`${DATAAGENT_SKILLS_DIR}:/app/.claude/skills`); offline packages repoint
-`DATAAGENT_SKILLS_DIR` to `deploy/dataagent-runtime/skills`.
+- service code lives in `/opt/dataagent-backend`
+- runtime skills root is `SKILLS_ROOT_DIR=/app/.claude/skills`
+- child task workspace is mounted at `/app`
+- child task skills are mounted directly under `/app/.claude/skills/<folder>`
 
 ## Problem
 
-When `DATAAGENT_SANDBOX_HOST_SKILLS_DIR` is unset (the default), the child falls
-back to `/app/.claude/skills` from the **runner image**, i.e. the skills baked at
-image build time. Live edits and offline-package skill updates are invisible to
-child task containers until the runner image itself is rebuilt. The operator has
-to manually discover and set an absolute host path to fix it, which is easy to
-miss.
+The old child contract had multiple skill locations (`/skills`,
+`/app/.claude/skills`, and `/workspace/.claude/skills`) plus an image-baked
+fallback. In offline-package deployment, platform-imported skills could be shown
+as enabled on a custom agent but still be invisible to the child task container,
+causing Claude Code skill lookup failures.
+
+The fallback also made child containers less clean: a task could see a full
+skills tree or stale image-baked skills instead of only the skills enabled for
+the current assistant.
 
 ## Solution
 
-Make the live-skills child mount on by default.
+Use one skills root concept and scope child mounts by assistant.
 
-The runner shares the host Docker socket, so at startup it inspects its own
-container and reads the host source backing its `/app/.claude/skills` mount:
+Backend and runner compose services set:
 
 ```text
-docker inspect --format
-  '{{range .Mounts}}{{if eq .Destination "/app/.claude/skills"}}{{.Source}}{{end}}{{end}}'
-  <self-hostname>
+SKILLS_ROOT_DIR=/app/.claude/skills
 ```
 
-The discovered absolute host path is cached and used as the child `/skills` bind
-source. Resolution order in `_build_container_command`:
+Both services mount the live platform skills tree there for administration,
+import, indexing, and runner validation:
 
-1. explicit `DATAAGENT_SANDBOX_HOST_SKILLS_DIR` (unchanged override)
-2. auto-discovered runner skills mount source
-3. image-baked `/app/.claude/skills` (last-resort fallback)
+```text
+${DATAAGENT_SKILLS_DIR}:/app/.claude/skills
+```
 
-Discovery is best-effort: any failure (no socket, no such mount, non-container
-backend) returns empty and the child keeps the previous image-skills fallback,
-so nothing regresses when the runner is not container-backed.
+The runner requires `DATAAGENT_SANDBOX_HOST_SKILLS_DIR`, which `scripts/start.sh`
+fills from `DATAAGENT_SKILLS_DIR` before compose startup. For each task, the
+runner resolves the current assistant's `agent_snapshot.skill_folders` and
+mounts only those folders into the child:
+
+```text
+<host-skills>/<folder>:/app/.claude/skills/<folder>:ro
+```
+
+The child workspace is mounted to `/app`, with `HOME`, `PWD`,
+`DATAAGENT_WORKSPACE_DIR`, and `DATAAGENT_SANDBOX_ROOT` all set to `/app`.
+The child runs `/opt/dataagent-backend/sandbox_task_main.py`, so mounting the
+workspace at `/app` cannot hide the service code.
+
+`resolve_skill_discovery_root_dir()` reads only `SKILLS_ROOT_DIR`; it no longer
+derives the root from `skills_output_dir`.
 
 ## Tradeoffs
 
 Pros:
 
-- live and offline-package skills reach child task containers with no extra config
-- explicit override preserved; fallback behavior unchanged on failure
-- no new image build or named-volume plumbing
+- child containers see only the skills enabled for the current assistant
+- no image-baked skills fallback
+- one runtime skills root: `/app/.claude/skills`
+- offline-package and platform-imported skills are used without rebuilding images
 
 Cons:
 
-- relies on the runner being able to inspect itself via the Docker socket (which
-  it already holds); environments that hide the socket fall back to image skills
-- assumes the runner's own skills are bind-mounted at `/app/.claude/skills`
-  (true for the shipped Compose)
+- sandbox tasks with enabled skills fail fast if `DATAAGENT_SANDBOX_HOST_SKILLS_DIR`
+  is missing or points to an invalid host path
+- direct compose startup without `scripts/start.sh` must provide the host skills
+  path explicitly
 
 ## Affected Stacks
 
-- DataAgent backend: `dataagent/dataagent-backend/sandbox_runner_main.py`
-- Deployment: `deploy/.env.example` (documented default-on behavior)
-- Tests: `dataagent/dataagent-backend/tests/test_sandbox_runner_main.py`
+- DataAgent backend runtime configuration and skill discovery
+- Sandbox runner child container command construction
+- DataAgent backend and runner Dockerfiles
+- Dev/prod compose deployment files

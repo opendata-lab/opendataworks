@@ -31,6 +31,7 @@ def test_resolve_topic_workspace_uses_topic_id_only(monkeypatch, tmp_path: Path)
 def test_prepare_topic_workspace_uses_container_skill_links(monkeypatch, tmp_path: Path):
     original_root = get_settings().dataagent_sandbox_root
     original_skills = get_settings().skills_output_dir
+    original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
     _write_skill(skills_root, "opendataworks-business-knowledge")
@@ -38,30 +39,74 @@ def test_prepare_topic_workspace_uses_container_skill_links(monkeypatch, tmp_pat
     update_settings(
         {
             "dataagent_sandbox_root": str(tmp_path / "topics"),
-            "skills_output_dir": str(skills_root / "opendataworks-business-knowledge"),
+            "skills_root_dir": str(skills_root),
         }
     )
     try:
         workspace = prepare_topic_workspace(
             "topic_1",
             ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
-            skill_link_root="/skills",
         )
     finally:
-        update_settings({"dataagent_sandbox_root": original_root, "skills_output_dir": original_skills})
+        update_settings(
+            {
+                "dataagent_sandbox_root": original_root,
+                "skills_output_dir": original_skills,
+                "skills_root_dir": original_skills_root,
+            }
+        )
 
     skill_link = workspace / ".claude" / "skills" / "opendataworks-business-knowledge"
     platform_link = workspace / ".claude" / "skills" / "opendataworks-platform-tools"
     assert workspace == tmp_path / "topics" / "topic_1"
     assert skill_link.is_symlink()
     assert platform_link.is_symlink()
-    assert skill_link.readlink() == Path("/skills/opendataworks-business-knowledge")
-    assert platform_link.readlink() == Path("/skills/opendataworks-platform-tools")
+    assert skill_link.readlink() == skills_root / "opendataworks-business-knowledge"
+    assert platform_link.readlink() == skills_root / "opendataworks-platform-tools"
+
+
+def test_prepare_topic_workspace_keeps_skills_mounted_inside_workspace(monkeypatch, tmp_path: Path):
+    original_root = get_settings().dataagent_sandbox_root
+    original_skills = get_settings().skills_output_dir
+    original_skills_root = getattr(get_settings(), "skills_root_dir", "")
+    workspace = tmp_path / "topic-workspace"
+    skills_root = workspace / ".claude" / "skills"
+    _write_skill(skills_root, "platform-imported-skill")
+    stale = skills_root / "stale-skill"
+    stale.mkdir(parents=True)
+    (stale / "SKILL.md").write_text("# stale\n", encoding="utf-8")
+    update_settings(
+        {
+            "dataagent_sandbox_root": str(tmp_path / "topics"),
+            "skills_root_dir": str(skills_root),
+        }
+    )
+    try:
+        prepared = prepare_topic_workspace(
+            "topic_2",
+            ["platform-imported-skill"],
+            workspace_dir=workspace,
+        )
+    finally:
+        update_settings(
+            {
+                "dataagent_sandbox_root": original_root,
+                "skills_output_dir": original_skills,
+                "skills_root_dir": original_skills_root,
+            }
+        )
+
+    skill_dir = prepared / ".claude" / "skills" / "platform-imported-skill"
+    assert prepared == workspace.resolve()
+    assert skill_dir.is_dir()
+    assert not skill_dir.is_symlink()
+    assert not (prepared / ".claude" / "skills" / "stale-skill").exists()
 
 
 def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_path: Path):
     original_root = get_settings().dataagent_sandbox_root
     original_skills = get_settings().skills_output_dir
+    original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
     mounted_workspace = tmp_path / "mounted-workspace"
@@ -69,23 +114,28 @@ def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_
     update_settings(
         {
             "dataagent_sandbox_root": str(tmp_path / "topics"),
-            "skills_output_dir": str(skills_root / "opendataworks-business-knowledge"),
+            "skills_root_dir": str(skills_root),
         }
     )
     try:
         workspace = prepare_topic_workspace(
             "topic_1",
             ["opendataworks-business-knowledge"],
-            skill_link_root="/skills",
             workspace_dir=mounted_workspace,
         )
     finally:
-        update_settings({"dataagent_sandbox_root": original_root, "skills_output_dir": original_skills})
+        update_settings(
+            {
+                "dataagent_sandbox_root": original_root,
+                "skills_output_dir": original_skills,
+                "skills_root_dir": original_skills_root,
+            }
+        )
 
     assert workspace == mounted_workspace.resolve()
     assert workspace != tmp_path / "topics" / "topic_1"
     assert (workspace / ".claude" / "skills" / "opendataworks-business-knowledge").readlink() == Path(
-        "/skills/opendataworks-business-knowledge"
+        skills_root / "opendataworks-business-knowledge"
     )
 
 

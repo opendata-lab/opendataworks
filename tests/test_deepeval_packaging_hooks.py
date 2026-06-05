@@ -98,3 +98,21 @@ def test_private_business_skill_assets_are_ignored_and_not_packaged():
     assert "/evals/" in gitignore
     assert "*-core.jsonl" in gitignore
     assert "--exclude='*-assistant'" in create_package
+
+
+def test_start_script_pins_sandbox_child_skills_to_runtime_skills_dir():
+    start_script = (REPO_ROOT / "scripts" / "start.sh").read_text(encoding="utf-8")
+
+    assert "ensure_dataagent_sandbox_host_skills_dir" in start_script
+    assert 'read_env_value "DATAAGENT_SANDBOX_HOST_SKILLS_DIR"' in start_script
+    assert 'skills_dir="$(resolve_dataagent_skills_dir)"' in start_script
+    assert 'set_env_value "DATAAGENT_SANDBOX_HOST_SKILLS_DIR" "$skills_dir" "$ENV_FILE"' in start_script
+    assert start_script.index("ensure_dataagent_sandbox_host_skills_dir") < start_script.index('"${COMPOSE_CMD[@]}"')
+
+
+def test_compose_sets_container_skills_root_dir():
+    prod_compose = (REPO_ROOT / "deploy" / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    dev_compose = (REPO_ROOT / "deploy" / "docker-compose.dev.yml").read_text(encoding="utf-8")
+
+    for compose in (prod_compose, dev_compose):
+        assert "SKILLS_ROOT_DIR: /app/.claude/skills" in compose

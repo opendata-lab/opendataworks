@@ -151,6 +151,27 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.find('.shell-trace-panel').exists()).toBe(false)
   })
 
+  it('uses the Claude tool description as the collapsed shell trace summary', async () => {
+    const wrapper = mountRenderer({
+      name: 'Bash',
+      status: 'success',
+      _callComplete: true,
+      _runtimeStarted: true,
+      input: {
+        command: 'python3 .claude/skills/arch-governance-assistant/scripts/lookup_ontology.py --query 慢接口',
+        description: 'Lookup ontology for "慢接口" slow interface'
+      },
+      output: 'done'
+    })
+
+    expect(wrapper.find('.shell-trace-summary-text').text()).toBe('执行命令：Lookup ontology for "慢接口" slow interface')
+    expect(wrapper.find('.shell-trace-summary-text').text()).not.toContain('lookup_ontology.py')
+
+    await wrapper.find('.shell-trace-summary').trigger('click')
+
+    expect(wrapper.text()).toContain('$ python3 .claude/skills/arch-governance-assistant/scripts/lookup_ontology.py --query 慢接口')
+  })
+
   it('renders read tools with an expandable output panel once content is available', async () => {
     const wrapper = mountRenderer({
       name: 'Read',

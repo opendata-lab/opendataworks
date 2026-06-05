@@ -21,29 +21,31 @@ def _backend_root() -> Path:
 
 
 def _resolve_root_dir(raw: str) -> Path:
-    path = Path(raw or "../.claude/skills/opendataworks-business-knowledge")
+    value = str(raw or "").strip()
+    if not value:
+        raise SkillDiscoveryError("SKILLS_ROOT_DIR is required")
+    path = Path(value)
     if path.is_absolute():
-        return path
+        return path.expanduser().resolve(strict=False)
     return (_backend_root() / path).resolve()
 
 
 def resolve_builtin_skill_root_dir() -> Path:
-    cfg = get_settings()
-    return _resolve_root_dir(cfg.skills_output_dir)
+    return resolve_skills_root_dir()
 
 
 def resolve_skills_root_dir() -> Path:
-    return resolve_builtin_skill_root_dir()
+    cfg = get_settings()
+    root = _resolve_root_dir(getattr(cfg, "skills_root_dir", ""))
+    if root.name != "skills" or root.parent.name != ".claude":
+        raise SkillDiscoveryError(f"SKILLS_ROOT_DIR must resolve to a '.claude/skills' directory, current={root}")
+    if not root.is_dir():
+        raise SkillDiscoveryError(f"SKILLS_ROOT_DIR directory not found: {root}")
+    return root
 
 
 def resolve_skill_discovery_root_dir() -> Path:
-    builtin_root = resolve_builtin_skill_root_dir()
-    discovery_root = builtin_root.parent
-    if discovery_root.name == "skills" and discovery_root.parent.name == ".claude":
-        return discovery_root
-    raise SkillDiscoveryError(
-        f"builtin skills_output_dir must resolve under '.claude/skills', current={builtin_root}"
-    )
+    return resolve_skills_root_dir()
 
 
 def resolve_agent_project_cwd() -> Path:
