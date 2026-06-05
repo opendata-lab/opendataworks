@@ -77,7 +77,7 @@
 
 ## SQL 导出
 
-`export_query.py` 把全量结果写工作区 CSV，只回路径与预览（`kind=sql_export`）：
+`export_query.py` 把全量结果写工作区 `output/` 目录下的 CSV，只回路径与预览（`kind=sql_export`）。可下载产物一律写 `output/`，其它位置的文件不会进会话文件面板：
 
 ```json
 {
@@ -86,13 +86,13 @@
   "engine": "mysql",
   "database": "example_schema",
   "sql": "SELECT ...",
-  "file_path": "/path/to/workspace/exports/result.csv",
+  "file_path": "/path/to/workspace/output/result.csv",
   "file_format": "csv",
   "columns": ["col_a", "col_b"],
   "row_count": 621,
   "has_more": false,
   "preview_rows": [{ "col_a": "x", "col_b": 1 }],
-  "summary": "已导出 621 行到 /path/to/workspace/exports/result.csv",
+  "summary": "已导出 621 行到 /path/to/workspace/output/result.csv",
   "result_state": "success",
   "error_code": null,
   "failure_attribution": [],

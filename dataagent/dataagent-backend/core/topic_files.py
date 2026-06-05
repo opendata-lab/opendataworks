@@ -4,9 +4,12 @@ from __future__ import annotations
 Per-topic conversation file helpers.
 
 Uploaded inputs and agent-generated outputs live in the topic workspace
-(`/workspaces/<topic_id>/`). The reserved `.claude/` subtree (skills + SDK
-sessions) is never listed or served. All path resolution is confined to the
-workspace root to prevent traversal/symlink escape.
+(`/workspaces/<topic_id>/`). Only two curated subdirectories are listed and
+served: `uploads/` (user-attached inputs) and `output/` (deliverables the agent
+is told to write). Everything else — scratch files the agent writes elsewhere in
+the workspace, plus the reserved `.claude/` subtree (skills + SDK sessions) — is
+never listed or served, so the downloadable surface stays clean. All path
+resolution is confined to those directories to prevent traversal/symlink escape.
 """
 
 import mimetypes
@@ -19,6 +22,11 @@ from core.topic_workspace import resolve_topic_workspace
 
 RESERVED_DIRNAME = ".claude"
 UPLOADS_DIRNAME = "uploads"
+OUTPUT_DIRNAME = "output"
+# The only workspace subtrees exposed to listing/download. `uploads/` holds
+# user-attached inputs; `output/` holds agent deliverables. Anything outside
+# these (scratch files, `.claude/`) is intentionally hidden.
+_VISIBLE_DIRNAMES = (UPLOADS_DIRNAME, OUTPUT_DIRNAME)
 _BLOCKED_UPLOAD_SUFFIXES = {
     ".exe", ".com", ".msi", ".bat", ".cmd", ".scr", ".dll", ".so", ".dylib", ".sh",
 }
@@ -56,8 +64,9 @@ def _file_meta(root: Path, path: Path) -> dict:
 
 
 def safe_workspace_file(topic_id: str, rel_path: str) -> Path:
-    """Resolve a workspace-relative path, confined to the workspace and outside
-    `.claude/`. Raises TopicFileError on traversal/symlink escape."""
+    """Resolve a workspace-relative path, confined to the visible `uploads/` and
+    `output/` directories. Raises TopicFileError on traversal/symlink escape or
+    any path outside those directories (including `.claude/`)."""
     root = _workspace_root(topic_id)
     raw = str(rel_path or "").strip().lstrip("/")
     if not raw:
@@ -69,8 +78,8 @@ def safe_workspace_file(topic_id: str, rel_path: str) -> Path:
     if candidate != root and root not in candidate.parents:
         raise TopicFileError("path escapes the conversation workspace")
     rel = candidate.relative_to(root)
-    if rel.parts and rel.parts[0] == RESERVED_DIRNAME:
-        raise TopicFileError("the .claude directory is not accessible")
+    if not rel.parts or rel.parts[0] not in _VISIBLE_DIRNAMES:
+        raise TopicFileError("only files under uploads/ or output/ are accessible")
     return candidate
 
 
@@ -95,18 +104,21 @@ def save_upload(topic_id: str, filename: str, data: bytes) -> dict:
 
 
 def list_files(topic_id: str) -> list[dict]:
-    """List workspace files (excluding `.claude/` and symlinks), newest first."""
+    """List downloadable files under `uploads/` and `output/` only (excluding
+    symlinks and anything else in the workspace), newest first."""
     root = _workspace_root(topic_id)
     if not root.is_dir():
         return []
     items: list[dict] = []
-    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-        if Path(dirpath) == root and RESERVED_DIRNAME in dirnames:
-            dirnames.remove(RESERVED_DIRNAME)
-        for name in filenames:
-            path = Path(dirpath) / name
-            if path.is_symlink() or not path.is_file():
-                continue
-            items.append(_file_meta(root, path))
+    for dirname in _VISIBLE_DIRNAMES:
+        base = root / dirname
+        if not base.is_dir() or base.is_symlink():
+            continue
+        for dirpath, _dirnames, filenames in os.walk(base, followlinks=False):
+            for name in filenames:
+                path = Path(dirpath) / name
+                if path.is_symlink() or not path.is_file():
+                    continue
+                items.append(_file_meta(root, path))
     items.sort(key=lambda item: item["modified_at"], reverse=True)
     return items

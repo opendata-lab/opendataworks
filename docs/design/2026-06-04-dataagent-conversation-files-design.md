@@ -49,9 +49,12 @@ Out of scope (later phases):
   <agent-generated files...>   # HTML/CSV/PNG/... wherever the agent writes
 ```
 
-Artifacts = every file under the workspace **except `.claude/`**. Uploaded files
-(under `uploads/`) are included too, tagged `input` vs `output` by whether they
-sit under `uploads/`.
+Artifacts = files under the two curated directories only: `uploads/` (user
+inputs, tagged `input`) and `output/` (agent deliverables, tagged `output`).
+Everything else the agent writes in the workspace (scratch/intermediate files at
+the root or in other subdirectories) and the reserved `.claude/` subtree are
+**not** listed or served, so the downloadable surface stays clean. The skill
+instructs the agent to write any downloadable deliverable under `output/`.
 
 ### Backend API (`/api/v1/nl2sql/topics/{topic_id}/files`)
 
@@ -123,8 +126,12 @@ Pros: reuses the per-topic workspace and existing boundary model; no agent/skill
 contract change; works in both in-process and sandbox execution via the shared
 mount.
 
-Cons: listing "all non-`.claude` files" can surface incidental scratch files the
-agent wrote; acceptable for phase 1 and avoids an output-dir contract. Sandboxed
+Cons: scoping the listing to `output/` + `uploads/` relies on the skill telling
+the agent to write deliverables under `output/`; a deliverable written elsewhere
+will not appear until moved into `output/`. This is enforced only at the backend
+serving layer (list/download), which is the robust choice — it holds regardless
+of where the agent's Bash/Python actually writes, since the PreToolUse boundary
+hook is a workspace-escape guard, not a runtime write-location enforcer. Sandboxed
 iframe without `allow-scripts` means HTML reports with JS (e.g. ECharts) render
 statically unless we later opt into a stricter scripted-sandbox review.
 
