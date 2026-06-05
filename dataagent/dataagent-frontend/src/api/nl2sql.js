@@ -149,6 +149,35 @@ export function createNl2SqlApiClient(options = {}) {
     },
     generateFollowupSuggestions(topicId, messageId) {
       return runtimeRequest.post(`/topics/${topicId}/messages/${messageId}/followup-suggestions`, {})
+    },
+    uploadFile(topicId, file, { onUploadProgress } = {}) {
+      const form = new FormData()
+      form.append('file', file)
+      return runtimeRequest.post(`/topics/${topicId}/files`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress
+      })
+    },
+    listFiles(topicId) {
+      return runtimeRequest.get(`/topics/${topicId}/files`)
+    },
+    fileUrl(topicId, relPath, { download = false } = {}) {
+      const encoded = String(relPath || '')
+        .split('/')
+        .map((seg) => encodeURIComponent(seg))
+        .join('/')
+      const query = download ? '?download=1' : ''
+      return buildUrl(baseURL, `${RUNTIME_PREFIX}/topics/${topicId}/files/${encoded}${query}`)
+    },
+    async fetchFileText(topicId, relPath) {
+      const response = await fetch(this.fileUrl(topicId, relPath), {
+        credentials: 'include',
+        headers: { ...defaultHeaders }
+      })
+      if (!response.ok) {
+        throw new Error(await extractHttpError(response))
+      }
+      return response.text()
     }
   }
 

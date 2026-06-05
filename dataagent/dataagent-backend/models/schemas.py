@@ -472,6 +472,19 @@ class TopicMessage(BaseModel):
     updated_at: str = ""
 
 
+class WorkspaceFile(BaseModel):
+    name: str
+    rel_path: str
+    size: int = 0
+    modified_at: str = ""
+    content_type: str = "application/octet-stream"
+    kind: str = "output"
+
+
+class WorkspaceFileListResponse(BaseModel):
+    files: List[WorkspaceFile] = Field(default_factory=list)
+
+
 class TopicSummary(BaseModel):
     topic_id: str
     title: str
