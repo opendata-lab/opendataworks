@@ -311,3 +311,97 @@ def test_sandbox_runner_requires_enabled_skill_folder_to_exist(monkeypatch, tmp_
             raise AssertionError("expected missing enabled skill to fail")
     finally:
         update_settings(originals)
+
+
+def test_discover_host_skills_dir_reads_runner_mount_source(monkeypatch):
+    settings = get_settings()
+    originals = {
+        "dataagent_sandbox_backend": settings.dataagent_sandbox_backend,
+        "dataagent_sandbox_image": settings.dataagent_sandbox_image,
+    }
+    update_settings(
+        {
+            "dataagent_sandbox_backend": "docker",
+            "dataagent_sandbox_image": "opendataworks-dataagent-runner:test",
+        }
+    )
+    calls: list[tuple[str, ...]] = []
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self):
+            return b"/srv/offline/skills\n", b""
+
+    async def fake_exec(*args, **kwargs):
+        calls.append(tuple(str(arg) for arg in args))
+        return FakeProcess()
+
+    monkeypatch.setattr(sandbox_runner_main.socket, "gethostname", lambda: "runner-cid")
+    monkeypatch.setattr(sandbox_runner_main.asyncio, "create_subprocess_exec", fake_exec)
+    try:
+        resolved = asyncio.run(sandbox_runner_main._discover_host_skills_dir())
+    finally:
+        update_settings(originals)
+
+    assert resolved == "/srv/offline/skills"
+    assert calls[0][1] == "inspect"
+    assert sandbox_runner_main.RUNNER_SKILLS_MOUNT_TARGET in calls[0][3]
+    assert calls[0][-1] == "runner-cid"
+
+
+def test_resolve_host_skills_dir_prefers_explicit_then_auto(monkeypatch):
+    settings = get_settings()
+    original = settings.dataagent_sandbox_host_skills_dir
+    monkeypatch.setattr(sandbox_runner_main, "_AUTO_HOST_SKILLS_DIR", "/auto/skills")
+    try:
+        update_settings({"dataagent_sandbox_host_skills_dir": ""})
+        assert sandbox_runner_main._resolve_host_skills_dir(get_settings()) == "/auto/skills"
+        update_settings({"dataagent_sandbox_host_skills_dir": "/explicit/skills"})
+        assert sandbox_runner_main._resolve_host_skills_dir(get_settings()) == "/explicit/skills"
+    finally:
+        update_settings({"dataagent_sandbox_host_skills_dir": original})
+
+
+def test_sandbox_runner_validates_against_runner_mount_when_host_not_visible(monkeypatch, tmp_path: Path):
+    """The host skills path is the child bind source resolved by the host docker
+    daemon and is not visible inside the runner; validation must fall back to the
+    runner's own live skills mount while the child still binds the host path."""
+    settings = get_settings()
+    originals = {
+        "dataagent_sandbox_backend": settings.dataagent_sandbox_backend,
+        "dataagent_sandbox_image": settings.dataagent_sandbox_image,
+        "dataagent_sandbox_host_root": settings.dataagent_sandbox_host_root,
+        "dataagent_sandbox_root": settings.dataagent_sandbox_root,
+        "dataagent_sandbox_host_skills_dir": settings.dataagent_sandbox_host_skills_dir,
+    }
+    # The host path the child must bind-mount from (not present inside this process,
+    # mirroring a host path that the runner container cannot see).
+    host_skills = "/host/only/offline/skills"
+    # The runner's own live skills mount, which the validation should use instead.
+    runner_mount = tmp_path / "runner-skills"
+    skill_dir = runner_mount / "platform-imported-skill"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("# imported\n", encoding="utf-8")
+    monkeypatch.setattr(sandbox_runner_main, "RUNNER_SKILLS_MOUNT_TARGET", str(runner_mount))
+    update_settings(
+        {
+            "dataagent_sandbox_backend": "docker",
+            "dataagent_sandbox_image": "opendataworks-dataagent-runner:test",
+            "dataagent_sandbox_host_root": str(tmp_path / "topics"),
+            "dataagent_sandbox_root": str(tmp_path / "container-topics"),
+            "dataagent_sandbox_host_skills_dir": host_skills,
+        }
+    )
+    try:
+        _, _, command = sandbox_runner_main._build_container_command(
+            TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot(["platform-imported-skill"])))
+        )
+    finally:
+        update_settings(originals)
+
+    assert (
+        f"type=bind,source={host_skills}/platform-imported-skill,"
+        "target=/app/.claude/skills/platform-imported-skill,readonly"
+        in command
+    )
