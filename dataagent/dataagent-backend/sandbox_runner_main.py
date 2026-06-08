@@ -32,8 +32,9 @@ SANDBOX_CONTAINER_LABEL_VALUE = "dataagent-sandbox-runner"
 SANDBOX_TASK_ID_LABEL = "dataagent.sandbox.task_id"
 SANDBOX_TOPIC_ID_LABEL = "dataagent.sandbox.topic_id"
 
-CHILD_APP_ROOT = "/app"
-CHILD_SKILLS_ROOT = "/app/.claude/skills"
+CHILD_WORKSPACE_ROOT = "/mnt/workspace"
+CHILD_CLAUDE_HOME = "/mnt/home"
+CHILD_SKILLS_ROOT = f"{CHILD_WORKSPACE_ROOT}/.claude/skills"
 BACKEND_CODE_ROOT = "/opt/dataagent-backend"
 
 # Mount point where the runner image/compose exposes the live skills root. The
@@ -282,12 +283,8 @@ def _build_child_env() -> dict[str, str]:
     child_env.update(
         {
             "PYTHONUNBUFFERED": "1",
-            "HOME": CHILD_APP_ROOT,
-            "PWD": CHILD_APP_ROOT,
-            "DATAAGENT_WORKSPACE_DIR": CHILD_APP_ROOT,
-            "DATAAGENT_WORKSPACE_PREPARED": "1",
+            "HOME": CHILD_CLAUDE_HOME,
             "DATAAGENT_SANDBOX_MODE": "",
-            "DATAAGENT_SANDBOX_ROOT": CHILD_APP_ROOT,
             "SKILLS_ROOT_DIR": CHILD_SKILLS_ROOT,
         }
     )
@@ -420,18 +417,20 @@ def _build_container_command(params: TaskExecutionInput) -> tuple[str, str, list
         "--label",
         f"{SANDBOX_TOPIC_ID_LABEL}={sanitize_topic_id(params.topic_id)}",
         "--workdir",
-        CHILD_APP_ROOT,
+        CHILD_WORKSPACE_ROOT,
         "--mount",
-        f"type=bind,source={topic_workspace},target={CHILD_APP_ROOT}",
+        f"type=bind,source={topic_workspace},target={CHILD_WORKSPACE_ROOT}",
     ]
     # Runtime isolation hardening. The workspace bind-mount (and read-only skill
     # mounts) are the only host paths the child can touch; block privilege
     # escalation, and optionally lock the rest of the container filesystem
     # read-only so the agent's Bash/Python cannot persist anything outside the
     # bind-mounted workspace (true runtime write isolation, independent of the
-    # static PreToolUse boundary hook). A writable tmpfs at /tmp covers transient
-    # scratch; HOME/PWD already point at the writable workspace mount.
+    # static PreToolUse boundary hook). Claude HOME is a child-local tmpfs so
+    # user-level Claude state never aliases the project workspace that owns
+    # .claude/skills.
     command.extend(["--security-opt", "no-new-privileges"])
+    command.extend(["--tmpfs", f"{CHILD_CLAUDE_HOME}:rw,nosuid,nodev,size=64m,mode=1777"])
     if bool(getattr(cfg, "dataagent_sandbox_read_only_rootfs", False)):
         tmpfs_size = str(getattr(cfg, "dataagent_sandbox_tmpfs_size", "") or "512m").strip()
         command.append("--read-only")

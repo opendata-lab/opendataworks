@@ -348,7 +348,7 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     assert blocked["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_home(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_keeps_home_distinct(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -369,6 +369,9 @@ def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_home(monkeypat
         },
     )
     _patch_skill_runtime(monkeypatch, tmp_path)
+    monkeypatch.setenv("HOME", "/stable/claude-home")
+    monkeypatch.setenv("DATAAGENT_WORKSPACE_DIR", "/stale/env-workspace")
+    monkeypatch.setenv("DATAAGENT_WORKSPACE_PREPARED", "1")
     topic_workspace = tmp_path / "topics" / "topic-1"
     captured: dict[str, object] = {}
 
@@ -404,10 +407,12 @@ def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_home(monkeypat
     assert captured["topic_id"] == "topic-1"
     assert captured["folders"] == []
     assert captured["kwargs"]["allow_empty"] is True
+    assert captured["kwargs"]["workspace_dir"] is None
     assert ClaudeAgentOptions.last_kwargs["cwd"] == str(topic_workspace)
-    assert ClaudeAgentOptions.last_kwargs["env"]["HOME"] == str(topic_workspace)
-    assert ClaudeAgentOptions.last_kwargs["env"]["PWD"] == str(topic_workspace)
-    assert ClaudeAgentOptions.last_kwargs["env"]["DATAAGENT_WORKSPACE_DIR"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["env"]["HOME"] == "/stable/claude-home"
+    assert ClaudeAgentOptions.last_kwargs["env"]["HOME"] != str(topic_workspace)
+    assert "DATAAGENT_WORKSPACE_DIR" not in ClaudeAgentOptions.last_kwargs["env"]
+    assert "DATAAGENT_WORKSPACE_PREPARED" not in ClaudeAgentOptions.last_kwargs["env"]
 
 
 def test_execute_task_stream_delegates_to_sandbox_runner_when_enabled(monkeypatch):

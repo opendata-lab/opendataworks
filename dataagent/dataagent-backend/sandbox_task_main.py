@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
@@ -37,6 +38,7 @@ async def _main() -> int:
             params,
             emit=emit,
             is_cancel_requested=lambda: False,
+            prepared_workspace_dir=Path.cwd(),
         )
     except Exception as exc:
         logger.exception("sandbox task crashed task_id=%s", params.task_id)

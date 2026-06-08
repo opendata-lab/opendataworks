@@ -123,8 +123,10 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     assert host_root / "topic-1" == tmp_path / "topics" / "topic-1"
     assert (host_root / "topic-1").is_dir()
     assert (host_root / "topic-1" / ".claude" / "skills").is_dir()
-    assert f"type=bind,source={host_root / 'topic-1'},target=/app" in command
-    assert f"type=bind,source={host_root},target=/app" not in command
+    assert f"type=bind,source={host_root / 'topic-1'},target=/mnt/workspace" in command
+    assert f"type=bind,source={host_root},target=/mnt/workspace" not in command
+    workdir_index = command.index("--workdir")
+    assert command[workdir_index + 1] == "/mnt/workspace"
     assert "--network" in command
     assert "container:opendataworks-dataagent-sandbox-runner" in command
     assert "--interactive" in command
@@ -138,20 +140,22 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     assert "/opt/dataagent-backend/sandbox_task_main.py" in command
     assert not any("/var/run/docker.sock" in arg for arg in command)
     assert not any("target=/skills" in arg for arg in command)
+    assert not any("target=/app" in arg for arg in command)
     assert not any("target=/workspace" in arg for arg in command)
     # Privilege-escalation guard is always applied; read-only rootfs stays opt-in.
     assert "--security-opt" in command
     assert "no-new-privileges" in command
     assert "--read-only" not in command
-    assert not any(arg == "--tmpfs" for arg in command)
+    assert "--tmpfs" in command
+    assert "/mnt/home:rw,nosuid,nodev,size=64m,mode=1777" in command
 
     env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
-    assert "HOME=/app" in env_values
-    assert "PWD=/app" in env_values
-    assert "DATAAGENT_WORKSPACE_DIR=/app" in env_values
-    assert "DATAAGENT_WORKSPACE_PREPARED=1" in env_values
-    assert "DATAAGENT_SANDBOX_ROOT=/app" in env_values
-    assert "SKILLS_ROOT_DIR=/app/.claude/skills" in env_values
+    assert "HOME=/mnt/home" in env_values
+    assert "SKILLS_ROOT_DIR=/mnt/workspace/.claude/skills" in env_values
+    assert not any(value.startswith("PWD=") for value in env_values)
+    assert not any(value.startswith("DATAAGENT_WORKSPACE_DIR=") for value in env_values)
+    assert not any(value.startswith("DATAAGENT_WORKSPACE_PREPARED=") for value in env_values)
+    assert not any(value.startswith("DATAAGENT_SANDBOX_ROOT=") for value in env_values)
     assert not any(value.startswith("DATAAGENT_SKILL_LINK_ROOT=") for value in env_values)
     assert not any(value.startswith("DATAAGENT_TASK_PAYLOAD_B64=") for value in env_values)
 
@@ -187,10 +191,11 @@ def test_sandbox_runner_read_only_rootfs_opt_in(monkeypatch, tmp_path: Path):
 
     assert "--read-only" in command
     assert "--tmpfs" in command
+    assert "/mnt/home:rw,nosuid,nodev,size=64m,mode=1777" in command
     assert "/tmp:rw,nosuid,nodev,size=256m" in command
     # The workspace bind-mount remains read-write so the agent can still produce files.
     assert any(
-        arg.startswith("type=bind,") and "target=/app" in arg and "readonly" not in arg
+        arg.startswith("type=bind,") and "target=/mnt/workspace" in arg and "readonly" not in arg
         for arg in command
     )
 
@@ -407,13 +412,13 @@ def test_sandbox_runner_mounts_only_enabled_agent_skills_into_child(monkeypatch,
         update_settings(originals)
 
     assert (
-        f"type=bind,source={skill_dir.resolve()},target=/app/.claude/skills/platform-imported-skill,readonly"
+        f"type=bind,source={skill_dir.resolve()},target=/mnt/workspace/.claude/skills/platform-imported-skill,readonly"
         in command
     )
     assert not any("unused-skill" in item for item in command)
-    assert not any(f"source={host_skills.resolve()},target=/app/.claude/skills" in item for item in command)
+    assert not any(f"source={host_skills.resolve()},target=/mnt/workspace/.claude/skills" in item for item in command)
     env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
-    assert "SKILLS_ROOT_DIR=/app/.claude/skills" in env_values
+    assert "SKILLS_ROOT_DIR=/mnt/workspace/.claude/skills" in env_values
 
 
 def test_sandbox_runner_requires_host_skills_dir_when_agent_enables_skills(monkeypatch, tmp_path: Path):
@@ -565,6 +570,6 @@ def test_sandbox_runner_validates_against_runner_mount_when_host_not_visible(mon
 
     assert (
         f"type=bind,source={host_skills}/platform-imported-skill,"
-        "target=/app/.claude/skills/platform-imported-skill,readonly"
+        "target=/mnt/workspace/.claude/skills/platform-imported-skill,readonly"
         in command
     )

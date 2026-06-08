@@ -1,5 +1,12 @@
 # DataAgent Sandbox Scoped Skills Design
 
+> 2026-06-08 update: child path semantics were revised by
+> `2026-06-08-dataagent-sandbox-path-separation-design.md`. The runner service
+> still validates live skills from its own `/app/.claude/skills` mount, but task
+> children now run from `/mnt/workspace`, use
+> `SKILLS_ROOT_DIR=/mnt/workspace/.claude/skills`, and keep Claude HOME at
+> `/mnt/home`.
+
 ## Current State
 
 `dataagent-backend` and `dataagent-sandbox-runner` run from container images, while
