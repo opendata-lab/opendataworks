@@ -107,6 +107,18 @@ describe('chatMessage helpers', () => {
     expect(blocks[1]).toMatchObject({ name: 'run-sql', output: 'ok' })
   })
 
+  it('ignores legacy magic-event nested tool blocks when hydrating stored blocks', () => {
+    const v2 = buildV2StateFromStoredBlocks({
+      blocks: [
+        { kind: 'tool', tool: { id: 'legacy-tool', name: 'Bash', output: 'old' } },
+      ],
+      content: '最终回答',
+    })
+
+    expect(v2.turns[0].blocks.map((block) => block.type)).toEqual(['text'])
+    expect(v2.turns[0].blocks[0].content).toBe('最终回答')
+  })
+
   it('surfaces a persisted error through _v2state', () => {
     const v2 = buildV2StateFromStoredBlocks({ status: 'error', error: { message: '模型异常' } })
     expect(v2.status).toBe('error')

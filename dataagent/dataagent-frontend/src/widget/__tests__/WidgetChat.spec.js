@@ -687,7 +687,7 @@ describe('WidgetChat history conversations', () => {
     }))
   })
 
-  it('renders messageStream-style text deltas in the portal-style assistant body', async () => {
+  it('renders sdk text deltas in the portal-style assistant body', async () => {
     apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => {
       if (topicId === 'topic-new') {
         return {

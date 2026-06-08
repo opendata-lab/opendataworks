@@ -11,6 +11,7 @@ import socket
 import subprocess
 from contextlib import asynccontextmanager
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncIterator, Awaitable, Callable
 
@@ -244,6 +245,34 @@ def _topic_host_workspace(topic_id: str) -> Path:
     return _host_sandbox_root() / sanitize_topic_id(topic_id)
 
 
+def _sandbox_task_log_path(params: TaskExecutionInput) -> Path:
+    cfg = get_settings()
+    raw_root = str(getattr(cfg, "dataagent_sandbox_log_dir", "") or "/workspaces/.sandbox-logs").strip()
+    root = Path(raw_root).expanduser()
+    if not root.is_absolute():
+        root = _host_sandbox_root() / root
+    return root / sanitize_topic_id(params.topic_id) / f"{_safe_container_fragment(params.task_id)}.log"
+
+
+def _append_task_log(log_path: Path | None, line: str) -> None:
+    if log_path is None:
+        return
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        with log_path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{timestamp} {str(line or '').rstrip()}\n")
+    except Exception:
+        logger.warning("failed to append sandbox task log path=%s", log_path, exc_info=True)
+
+
+def _clip_log_text(value: Any, limit: int = 4000) -> str:
+    text = str(value or "").replace("\r", "\\r").replace("\n", "\\n")
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit]}... [truncated {len(text) - limit} chars]"
+
+
 def _build_child_env() -> dict[str, str]:
     child_env = {
         key: str(value)
@@ -448,6 +477,14 @@ async def _execute_task_stream_container(
     is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None = None,
 ) -> TaskExecutionResult:
     backend, container_name, command = _build_container_command(params)
+    log_path = _sandbox_task_log_path(params)
+    _append_task_log(
+        log_path,
+        (
+            f"task_start task_id={params.task_id} topic_id={params.topic_id} "
+            f"backend={backend} container={container_name}"
+        ),
+    )
     stream_limit = max(1024 * 1024, int(getattr(get_settings(), "agent_max_buffer_size_bytes", 0) or 0))
     process = await asyncio.create_subprocess_exec(
         *command,
@@ -471,7 +508,7 @@ async def _execute_task_stream_container(
         async with RUNNING_CONTAINERS_LOCK:
             RUNNING_CONTAINERS[params.task_id] = (backend, container_name)
 
-        stderr_task = asyncio.create_task(_log_stderr(process.stderr, params.task_id))
+        stderr_task = asyncio.create_task(_log_stderr(process.stderr, params.task_id, log_path=log_path))
         cancel_task = asyncio.create_task(_watch_cancel(params.task_id, backend, container_name, process, is_cancel_requested))
         assert process.stdout is not None
         async for raw in process.stdout:
@@ -482,6 +519,7 @@ async def _execute_task_stream_container(
                 message = json.loads(text)
             except json.JSONDecodeError:
                 logger.info("sandbox child stdout task_id=%s %s", params.task_id, text)
+                _append_task_log(log_path, f"stdout {_clip_log_text(text)}")
                 continue
             message_type = str(message.get("type") or "")
             if message_type == "record":
@@ -493,14 +531,27 @@ async def _execute_task_stream_container(
                 result_payload = message.get("result") or {}
                 if isinstance(result_payload, dict):
                     result = _result_from_payload(result_payload, params)
+                    _append_task_log(
+                        log_path,
+                        (
+                            f"result task_status={result.task_status} "
+                            f"error={_clip_log_text(result.error)} "
+                            f"content={_clip_log_text(result.content, 1000)}"
+                        ),
+                    )
+                continue
+            _append_task_log(log_path, f"stdout_protocol_unknown type={message_type} payload={_clip_log_text(message)}")
         returncode = await process.wait()
+        _append_task_log(log_path, f"returncode={returncode}")
     finally:
         if process.returncode is None:
             await _kill_container(backend, container_name)
+            _append_task_log(log_path, "container_killed reason=runner_cleanup")
             try:
                 await asyncio.wait_for(process.wait(), timeout=5)
             except asyncio.TimeoutError:
                 logger.warning("sandbox process did not exit after kill task_id=%s", params.task_id)
+                _append_task_log(log_path, "container_kill_timeout")
         if cancel_task is not None:
             cancel_task.cancel()
             await _await_cancelled(cancel_task)
@@ -512,6 +563,7 @@ async def _execute_task_stream_container(
     if result is not None:
         return result
     if params.task_id in CANCELLED_TASK_IDS:
+        _append_task_log(log_path, "result task_status=suspended error=task cancelled")
         return TaskExecutionResult(
             task_status="suspended",
             content="task cancelled",
@@ -519,10 +571,12 @@ async def _execute_task_stream_container(
             provider_id=params.provider_id,
             model=params.model,
         )
+    error_message = f"sandbox container exited without a result: {returncode}"
+    _append_task_log(log_path, f"result task_status=error error={error_message}")
     return TaskExecutionResult(
         task_status="error",
-        content=f"sandbox container exited without a result: {returncode}",
-        error={"code": "sandbox_container_no_result", "message": f"sandbox container exited without a result: {returncode}"},
+        content=error_message,
+        error={"code": "sandbox_container_no_result", "message": error_message},
         provider_id=params.provider_id,
         model=params.model,
     )
@@ -632,13 +686,14 @@ async def _cleanup_stale_sandbox_containers() -> None:
     )
 
 
-async def _log_stderr(stream: asyncio.StreamReader | None, task_id: str) -> None:
+async def _log_stderr(stream: asyncio.StreamReader | None, task_id: str, *, log_path: Path | None = None) -> None:
     if stream is None:
         return
     async for raw in stream:
         text = raw.decode("utf-8", errors="replace").rstrip()
         if text:
             logger.info("sandbox child stderr task_id=%s %s", task_id, text)
+            _append_task_log(log_path, f"stderr {_clip_log_text(text)}")
 
 
 async def _await_cancelled(task: asyncio.Task[Any]) -> None:

@@ -15,8 +15,8 @@ const apiMocks = vi.hoisted(() => ({
     getTask: vi.fn(),
     cancelTask: vi.fn()
   },
-  adminApi: {
-    getSettings: vi.fn()
+  runtimeApi: {
+    getConfig: vi.fn()
   },
   agentApi: {
     listAgents: vi.fn()
@@ -191,7 +191,7 @@ describe('NL2SqlChatV2 URL location', () => {
   beforeEach(() => {
     Object.values(apiMocks.topicApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.taskApi).forEach((fn) => fn.mockReset())
-    Object.values(apiMocks.adminApi).forEach((fn) => fn.mockReset())
+    Object.values(apiMocks.runtimeApi).forEach((fn) => fn.mockReset())
     Object.values(apiMocks.agentApi).forEach((fn) => fn.mockReset())
     Object.values(dataagentApiMock).forEach((fn) => fn.mockReset())
     routerReplace.mockReset()
@@ -208,13 +208,14 @@ describe('NL2SqlChatV2 URL location', () => {
     routeState.query = {}
     routeState.params = {}
 
-    apiMocks.adminApi.getSettings.mockResolvedValue({
+    apiMocks.runtimeApi.getConfig.mockResolvedValue({
       default_provider_id: 'provider-1',
       default_model: 'model-1',
       providers: [
         {
           provider_id: 'provider-1',
-          models: ['model-1']
+          models: ['model-1'],
+          enabled: true
         }
       ]
     })
@@ -446,7 +447,7 @@ describe('NL2SqlChatV2 URL location', () => {
   })
 
   it('disables the send button when no model is available', async () => {
-    apiMocks.adminApi.getSettings.mockResolvedValue({ default_provider_id: '', default_model: '', providers: [] })
+    apiMocks.runtimeApi.getConfig.mockResolvedValue({ default_provider_id: '', default_model: '', providers: [] })
 
     const wrapper = mountChat()
     await flushPromises()

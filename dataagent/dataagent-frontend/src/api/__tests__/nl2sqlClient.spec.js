@@ -109,6 +109,14 @@ describe('createNl2SqlApiClient', () => {
     expect(clients[0].get).toHaveBeenCalledWith('/runtime-config')
   })
 
+  it('exposes only the sdk-event task stream for chat runtime', () => {
+    const client = createNl2SqlApiClient()
+
+    expect(client.taskApi.streamSdkEvents).toEqual(expect.any(Function))
+    expect(client.taskApi.getTaskEvents).toBeUndefined()
+    expect(client.taskApi.streamTaskEvents).toBeUndefined()
+  })
+
   it('updates assistant message feedback through the topic API', () => {
     const client = createNl2SqlApiClient()
 

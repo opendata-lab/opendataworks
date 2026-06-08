@@ -157,7 +157,7 @@ def _patch_skill_runtime(monkeypatch, tmp_path: Path) -> dict[str, list[str]]:
     return captured
 
 
-def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_persists_sdk_records_without_magic_records(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("DATAAGENT_CLAUDE_CLI_PATH", "/tmp/claude-cli")
     _install_fake_sdk(
         monkeypatch,
@@ -229,27 +229,7 @@ def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch
     assert runtime["folders"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
 
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[-1]["content"] == "最终回答"
+    assert emitted == []
 
 
 def test_execute_task_stream_logs_safe_runtime_base_url_and_preserves_env(monkeypatch, tmp_path: Path, caplog):
@@ -440,7 +420,6 @@ def test_execute_task_stream_delegates_to_sandbox_runner_when_enabled(monkeypatc
     async def fake_runner(params, *, emit, is_cancel_requested=None):
         captured["task_id"] = params.task_id
         captured["topic_id"] = params.topic_id
-        emit({"record_type": "event", "event_type": "DEBUG", "data": {"status": "runner"}})
         return task_executor.TaskExecutionResult(
             task_status="finished",
             content="runner-ok",
@@ -459,7 +438,7 @@ def test_execute_task_stream_delegates_to_sandbox_runner_when_enabled(monkeypatc
     assert captured == {"task_id": "task-1", "topic_id": "topic-1"}
     assert result.content == "runner-ok"
     assert result.session_id == "sdk-session-runner"
-    assert emitted[-1]["data"]["status"] == "runner"
+    assert emitted == []
 
 
 def test_sandbox_runner_client_streams_records_and_returns_result(monkeypatch):
@@ -470,7 +449,6 @@ def test_sandbox_runner_client_streams_records_and_returns_result(monkeypatch):
             return None
 
         async def aiter_lines(self):
-            yield json.dumps({"type": "record", "record": {"record_type": "event", "event_type": "DEBUG", "data": {"status": "runner"}}})
             yield json.dumps(
                 {
                     "type": "result",
@@ -526,13 +504,13 @@ def test_sandbox_runner_client_streams_records_and_returns_result(monkeypatch):
     assert FakeClient.last_payload["url"] == "http://runner.local/internal/sandbox/runs"
     assert FakeClient.last_payload["json"]["topic_id"] == "topic-1"
     assert FakeClient.last_payload["json"]["task_id"] == "task-1"
-    assert emitted[-1]["data"]["status"] == "runner"
+    assert emitted == []
     assert result.content == "runner-stream-ok"
     assert result.usage == {"input_tokens": 1}
     assert result.session_id == "sdk-session-stream"
 
 
-def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_preserves_native_partial_text_blocks_without_magic_records(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -599,21 +577,12 @@ def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tm
     result = asyncio.run(_run())
 
     assert result.task_status == "finished"
-    assert result.content == "最近 30 天累计发布 4 次。"
+    assert result.content == "我来帮你查询最近 30 天工作流发布次数的趋势。\n\n最近 30 天累计发布 4 次。"
     assert result.session_id == "sdk-session-2"
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "我来帮你查询最近 30 天工作流发布次数的趋势。"
-    assert chunks[-1]["content"] == "最近 30 天累计发布 4 次。"
+    assert emitted == []
 
 
-def test_execute_task_stream_uses_message_level_magic_events_when_partial_disabled(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_uses_message_level_sdk_text_when_partial_disabled(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -646,25 +615,7 @@ def test_execute_task_stream_uses_message_level_magic_events_when_partial_disabl
     assert result.content == "最终回答"
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is False
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == "1"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[-1]["content"] == "最终回答"
+    assert emitted == []
 
 
 def test_execute_task_stream_keeps_one_shot_answer_out_of_reasoning_when_thinking_arrives_later(monkeypatch, tmp_path: Path):
@@ -698,16 +649,7 @@ def test_execute_task_stream_keeps_one_shot_answer_out_of_reasoning_when_thinkin
 
     assert result.task_status == "finished"
     assert result.content == "smoke-ok"
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "这是一个简单的冒烟测试,不需要工具。"
-    assert chunks[-1]["content"] == "smoke-ok"
+    assert emitted == []
 
 
 def test_execute_task_stream_keeps_tool_loop_in_compatibility_mode(monkeypatch, tmp_path: Path):
@@ -743,28 +685,10 @@ def test_execute_task_stream_keeps_tool_loop_in_compatibility_mode(monkeypatch, 
 
     assert result.task_status == "finished"
     assert result.content == "smoke-ok"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    tool_events = [record for record in emitted if record.get("event_type") == "AFTER_TOOL_CALL"]
-    assert tool_events[0]["data"]["tool"]["output"] == "smoke-ok"
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[-1]["content"] == "smoke-ok"
+    assert emitted == []
 
 
-def test_execute_task_stream_treats_pre_tool_text_as_reasoning_in_compatibility_mode(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_preserves_pre_tool_text_in_compatibility_mode(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -801,33 +725,11 @@ def test_execute_task_stream_treats_pre_tool_text_as_reasoning_in_compatibility_
     result = asyncio.run(_run())
 
     assert result.task_status == "finished"
-    assert result.content == "最近 30 天累计发布 4 次。"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "我来帮你查询最近 30 天工作流发布次数的趋势。"
-    assert chunks[-1]["content"] == "最近 30 天累计发布 4 次。"
+    assert result.content == "我来帮你查询最近 30 天工作流发布次数的趋势。\n\n最近 30 天累计发布 4 次。"
+    assert emitted == []
 
 
-def test_execute_task_stream_treats_text_before_later_tool_as_reasoning_in_compatibility_mode(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_preserves_text_before_later_tool_in_compatibility_mode(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -863,38 +765,12 @@ def test_execute_task_stream_treats_text_before_later_tool_as_reasoning_in_compa
     result = asyncio.run(_run())
 
     assert result.task_status == "finished"
-    assert result.content == "最近 30 天内共发布 4 次。"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "我来帮你查询最近 30 天工作流发布次数的趋势数据。"
-    assert chunks[2]["content"] == "根据参考文档，这是一个趋势分析问题。现在执行 SQL 查询。"
-    assert chunks[-1]["content"] == "最近 30 天内共发布 4 次。"
+    assert result.content == (
+        "我来帮你查询最近 30 天工作流发布次数的趋势数据。\n\n"
+        "根据参考文档，这是一个趋势分析问题。现在执行 SQL 查询。\n\n"
+        "最近 30 天内共发布 4 次。"
+    )
+    assert emitted == []
 
 
 def test_execute_task_stream_surfaces_provider_error_instead_of_exit_code(monkeypatch, tmp_path: Path):
@@ -936,13 +812,7 @@ def test_execute_task_stream_surfaces_provider_error_instead_of_exit_code(monkey
         "exception_type": "RuntimeError",
     }
 
-    error_events = [
-        record for record in emitted
-        if record.get("record_type") == "event" and record.get("event_type") == "ERROR"
-    ]
-    assert error_events[-1]["data"]["error"]["message"] == provider_error
-    assert error_events[-1]["data"]["error"]["code"] == "error_api"
-    assert [record for record in emitted if record.get("record_type") == "chunk"] == []
+    assert emitted == []
 
 
 def test_execute_task_stream_resumes_sdk_session_without_replaying_history(monkeypatch, tmp_path: Path):

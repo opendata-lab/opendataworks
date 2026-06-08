@@ -53,7 +53,7 @@ def _payload(agent_snapshot: dict | None = None) -> dict:
 def test_sandbox_runner_streams_records_and_result(monkeypatch):
     async def fake_execute(params, *, emit, is_cancel_requested=None):
         assert params.topic_id == "topic-1"
-        await emit({"record_type": "event", "event_type": "DEBUG", "data": {"status": "runner"}})
+        await emit({"record_type": "stream", "event_type": "message_start", "data": {"type": "message_start", "status": "runner"}})
         return TaskExecutionResult(
             task_status="finished",
             content="runner-api-ok",
@@ -260,9 +260,9 @@ large_payload = "x" * (96 * 1024)
 print(json.dumps({
     "type": "record",
     "record": {
-        "record_type": "event",
-        "event_type": "DEBUG",
-        "data": {"payload": large_payload},
+        "record_type": "stream",
+        "event_type": "message_start",
+        "data": {"type": "message_start", "payload": large_payload},
     },
 }), flush=True)
 print(json.dumps({
@@ -306,6 +306,59 @@ print(json.dumps({
     assert result.content == "large-line-ok"
     assert emitted[0]["data"]["payload"] == "x" * (96 * 1024)
     assert kill_calls == []
+
+
+def test_sandbox_runner_persists_child_logs_after_container_exit(monkeypatch, tmp_path: Path):
+    settings = get_settings()
+    originals = {
+        "dataagent_sandbox_log_dir": getattr(settings, "dataagent_sandbox_log_dir", ""),
+    }
+    log_dir = tmp_path / "sandbox-logs"
+    sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
+
+    update_settings({"dataagent_sandbox_log_dir": str(log_dir)})
+    child_code = """
+import sys
+
+sys.stdin.read()
+print("plain stdout before crash", flush=True)
+print("child stderr before crash", file=sys.stderr, flush=True)
+sys.exit(7)
+"""
+    monkeypatch.setattr(
+        sandbox_runner_main,
+        "_build_container_command",
+        lambda params: ("docker", "container-1", [sys.executable, "-c", child_code]),
+    )
+
+    async def emit(record: dict) -> None:
+        raise AssertionError(f"unexpected SDK record: {record}")
+
+    try:
+        result = asyncio.run(
+            sandbox_runner_main._execute_task_stream_container(
+                TaskExecutionInput(**_payload()),
+                emit=emit,
+                is_cancel_requested=lambda: False,
+            )
+        )
+    finally:
+        sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
+        update_settings(originals)
+
+    log_path = log_dir / "topic-1" / "task-1.log"
+    assert result.task_status == "error"
+    assert result.error == {
+        "code": "sandbox_container_no_result",
+        "message": "sandbox container exited without a result: 7",
+    }
+    assert log_path.is_file()
+    content = log_path.read_text(encoding="utf-8")
+    assert "container=container-1" in content
+    assert "stdout plain stdout before crash" in content
+    assert "stderr child stderr before crash" in content
+    assert "returncode=7" in content
+    assert "sandbox container exited without a result: 7" in content
 
 
 def test_resolve_host_skills_dir_uses_explicit_setting_only(monkeypatch):

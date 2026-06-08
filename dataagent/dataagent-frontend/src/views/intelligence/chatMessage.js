@@ -87,11 +87,6 @@ export function buildV2StateFromStoredBlocks(item) {
       const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
       turn.blocks.push(block)
       v2state.blocks.push(block)
-    } else if (kind === 'tool' && b?.tool) {
-      // Legacy magic-event format: nested b.tool object.
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool.id || b.tool._toolId || null, name: b.tool.name || 'Tool', inputJson: '', input: b.tool.input, output: b.tool.output, is_error: b.tool.status === 'failed' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
     }
   }
   const content = String(item?.content || '')

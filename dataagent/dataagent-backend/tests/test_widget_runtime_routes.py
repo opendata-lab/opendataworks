@@ -97,17 +97,6 @@ class FakeTopicStore:
             "updated_at": "2026-04-29T10:00:00",
         }
 
-    def list_task_events(self, *, task_id, after_seq=0, limit=200, context=None):
-        self.calls.append(("list_task_events", context))
-        return {
-            "task_id": task_id,
-            "task_status": "waiting",
-            "after_seq": after_seq,
-            "next_after_seq": after_seq,
-            "has_more": False,
-            "events": [],
-        }
-
     def request_task_cancel(self, task_id, *, context=None):
         self.calls.append(("request_task_cancel", context))
         if task_id == "task-forbidden":

@@ -101,6 +101,12 @@ def test_safe_base_url_drops_userinfo_from_log_value():
     assert actual == "https://relay.example.internal/maas/v1/messages"
 
 
+def test_sanitize_user_visible_content_preserves_procedural_preamble():
+    content = "我来先查看表结构并确认字段名。\n结论：最近 30 天工作流发布次数为 3 次。"
+
+    assert agent_runtime._sanitize_user_visible_content("最近 30 天工作流发布次数趋势", content) == content
+
+
 def test_settings_defaults_query_result_limit_to_backend_max(monkeypatch):
     monkeypatch.delenv("QUERY_RESULT_LIMIT", raising=False)
 

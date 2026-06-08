@@ -593,31 +593,6 @@ class TaskStatusResponse(BaseModel):
     updated_at: str = ""
 
 
-class TaskEventRecord(BaseModel):
-    record_type: str
-    seq_id: int
-    created_at: str = ""
-    event_type: Optional[str] = None
-    correlation_id: Optional[str] = None
-    parent_correlation_id: Optional[str] = None
-    content_type: Optional[str] = None
-    data: Dict[str, Any] = Field(default_factory=dict)
-    request_id: Optional[str] = None
-    chunk_id: Optional[int] = None
-    content: Optional[str] = None
-    delta: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class TaskEventPageResponse(BaseModel):
-    task_id: str
-    task_status: str
-    after_seq: int = 0
-    next_after_seq: int = 0
-    has_more: bool = False
-    events: List[TaskEventRecord] = Field(default_factory=list)
-
-
 class CancelTaskResponse(BaseModel):
     task_id: str
     task_status: str
