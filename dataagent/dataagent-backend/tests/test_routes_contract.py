@@ -42,7 +42,7 @@ class _FakeStore:
         self.topics: dict[str, dict] = {}
         self.topic_messages: dict[str, list[dict]] = {}
         self.tasks: dict[str, dict] = {}
-        self.task_events: dict[str, list[dict]] = {}
+        self.sdk_records: dict[str, list[dict]] = {}
         self.queues: dict[str, dict] = {}
         self.schedules: dict[str, dict] = {}
         self.schedule_logs: dict[str, list[dict]] = {}
@@ -197,18 +197,7 @@ class _FakeStore:
         self.topics[topic_id]["current_task_id"] = task_id
         self.topics[topic_id]["current_task_status"] = "waiting"
         self.topics[topic_id]["updated_at"] = _now()
-        self.task_events[task_id] = [
-            {
-                "record_type": "event",
-                "seq_id": 1,
-                "created_at": _now(),
-                "event_type": "BEFORE_AGENT_REPLY",
-                "correlation_id": "content_phase_1",
-                "parent_correlation_id": None,
-                "content_type": "content",
-                "data": {"status": "running"},
-            }
-        ]
+        self.sdk_records[task_id] = []
         return dict(task)
 
     def append_user_message(self, *, topic_id: str, task_id: str, content: str):
@@ -297,19 +286,10 @@ class _FakeStore:
         task = self.tasks.get(task_id)
         return dict(task) if task else None
 
-    def list_task_events(self, *, task_id: str, after_seq: int = 0, limit: int = 200, context=None):
-        rows = [row for row in self.task_events.get(task_id, []) if int(row["seq_id"]) > after_seq]
+    def list_sdk_records(self, *, task_id: str, after_id: int = 0, limit: int = 200):
+        rows = [row for row in self.sdk_records.get(task_id, []) if int(row["seq_id"]) > after_id]
         rows.sort(key=lambda row: int(row["seq_id"]))
-        page = rows[:limit]
-        task = self.tasks[task_id]
-        return {
-            "task_id": task_id,
-            "task_status": task["task_status"],
-            "after_seq": after_seq,
-            "next_after_seq": int(page[-1]["seq_id"]) if page else after_seq,
-            "has_more": len(rows) > limit,
-            "events": page,
-        }
+        return rows[:limit]
 
     def request_task_cancel(self, task_id: str, context=None):
         task = self.tasks.get(task_id)
@@ -560,7 +540,7 @@ def _build_client(monkeypatch):
     return TestClient(main.app), store, coordinator, submit_calls
 
 
-def test_topics_tasks_and_legacy_routes(monkeypatch):
+def test_topics_tasks_and_v2_routes(monkeypatch):
     client, store, coordinator, submit_calls = _build_client(monkeypatch)
     with client:
         created = client.post("/api/v1/nl2sql/topics", json={"title": "智能问数测试话题"})
@@ -659,10 +639,12 @@ def test_topics_tasks_and_legacy_routes(monkeypatch):
         assert task.json()["task_id"] == task_id
         assert task.json()["task_status"] == "waiting"
 
-        events = client.get(f"/api/v1/nl2sql/tasks/{task_id}/events", params={"after_seq": 0})
-        assert events.status_code == 200
-        assert events.json()["events"][0]["event_type"] == "BEFORE_AGENT_REPLY"
-        assert events.json()["events"][0]["content_type"] == "content"
+        sdk_events = client.get(f"/api/v1/nl2sql/tasks/{task_id}/sdk-events", params={"after_id": 0})
+        assert sdk_events.status_code == 200
+        assert sdk_events.json()["records"] == []
+
+        assert client.get(f"/api/v1/nl2sql/tasks/{task_id}/events", params={"after_seq": 0}).status_code == 404
+        assert client.get(f"/api/v1/nl2sql/tasks/{task_id}/events/stream", params={"after_seq": 0}).status_code == 404
 
         cancelled = client.post(f"/api/v1/nl2sql/tasks/{task_id}/cancel")
         assert cancelled.status_code == 200

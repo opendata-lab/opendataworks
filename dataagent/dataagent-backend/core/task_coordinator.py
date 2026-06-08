@@ -13,7 +13,6 @@ import redis.asyncio as redis
 from config import get_settings
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
 from core.task_executor import TaskExecutionInput, execute_task_stream
-from core.task_persistence import TaskPersistenceWriter
 from core.topic_task_store import TopicTaskStore, get_topic_task_store
 
 logger = logging.getLogger(__name__)
@@ -112,7 +111,6 @@ class TaskCoordinator:
             resume_session_id = self.store.get_resumable_conversation_id(topic_id)
             self.store.mark_task_running(task_id)
             self.store.ensure_assistant_message(topic_id=topic_id, task_id=task_id, status="running")
-            writer = TaskPersistenceWriter(store=self.store, topic_id=topic_id, task_id=task_id)
             stop_heartbeat = asyncio.Event()
             lease_lost = asyncio.Event()
             heartbeat_task = asyncio.create_task(
@@ -138,11 +136,17 @@ class TaskCoordinator:
                         sql_write_timeout_seconds=int(task.get("sql_write_timeout_seconds") or 0),
                         agent_snapshot=task.get("agent_snapshot"),
                     ),
-                    emit=writer.persist,
+                    emit=lambda record: self._persist_emitted_sdk_record(
+                        topic_id=topic_id,
+                        task_id=task_id,
+                        record=record,
+                    ),
                     is_cancel_requested=lambda: self._should_stop_task(task_id, lease_lost),
                 )
-                writer.finalize(
-                    task_status=result.task_status,
+                self.store.update_assistant_message(
+                    topic_id=topic_id,
+                    task_id=task_id,
+                    status=result.task_status,
                     content=result.content,
                     usage=result.usage,
                     error=result.error,
@@ -155,7 +159,14 @@ class TaskCoordinator:
             except Exception as exc:
                 logger.exception("Task execution crashed task_id=%s", task_id)
                 error = {"code": "task_execution_failed", "message": str(exc)}
-                writer.finalize(task_status="error", content=str(exc), usage=writer.usage, error=error)
+                self.store.update_assistant_message(
+                    topic_id=topic_id,
+                    task_id=task_id,
+                    status="error",
+                    content=str(exc),
+                    usage=None,
+                    error=error,
+                )
                 self.store.finish_task(task_id=task_id, task_status="error", error=error)
             finally:
                 stop_heartbeat.set()
@@ -165,6 +176,30 @@ class TaskCoordinator:
                 await self._release_lease(task_id)
                 if self._redis is not None:
                     await self._redis.delete(self._cancel_key(task_id))
+
+    def _persist_emitted_sdk_record(self, *, topic_id: str, task_id: str, record: dict[str, Any]) -> None:
+        if not isinstance(record, dict):
+            return
+        record_type = str(record.get("record_type") or "").strip()
+        if record_type not in {"stream", "tool_result", "done", "error"}:
+            return
+        try:
+            turn_index = int(record.get("turn_index") or 0)
+        except (TypeError, ValueError):
+            turn_index = 0
+        raw_event_type = record.get("event_type")
+        event_type = str(raw_event_type) if raw_event_type is not None else None
+        data = record.get("data")
+        if not isinstance(data, dict):
+            data = {"value": data}
+        self.store.append_sdk_record(
+            task_id=task_id,
+            topic_id=topic_id,
+            turn_index=turn_index,
+            record_type=record_type,
+            event_type=event_type,
+            data=data,
+        )
 
     async def _heartbeat_loop(self, task_id: str, *, stop_event: asyncio.Event, lease_lost: asyncio.Event) -> None:
         interval = max(1, int(self.settings.task_heartbeat_seconds or 5))

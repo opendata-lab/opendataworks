@@ -20,7 +20,6 @@ vi.mock('vue-router', async (importOriginal) => ({
 import IntelligentQueryView from '../IntelligentQueryView.vue'
 
 const stubs = {
-  NL2SqlChat: { template: '<div data-test="nl2sql-chat">Agent问答聊天</div>' },
   NL2SqlChatV2: { template: '<div data-test="nl2sql-chat-v2">Chat V2</div>' },
   AgentStudio: { template: '<div data-test="agent-studio">智能体内容</div>' },
   AgentDetailView: { template: '<div data-test="agent-detail">智能体详情</div>' },
@@ -66,6 +65,14 @@ describe('IntelligentQueryView', () => {
     expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('chat-v2')
     expect(wrapper.text()).toContain('Chat')
     expect(wrapper.text()).not.toContain('智能问数')
+  })
+
+  it('treats the legacy chat tab as chat v2', () => {
+    const wrapper = mountView({ query: { tab: 'chat' } })
+
+    expect(wrapper.find('[data-test="nl2sql-chat-v2"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="nl2sql-chat"]').exists()).toBe(false)
+    expect(wrapper.find('.el-menu-stub').attributes('data-active')).toBe('chat-v2')
   })
 
   it('renders Skills from the tab query and updates the query from menu selection', async () => {

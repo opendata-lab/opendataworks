@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import mimetypes
+import json
 from typing import Any, AsyncIterator
 
 import anyio
@@ -11,7 +12,6 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
 from core.followup_suggestions import generate_followup_suggestions
-from core.magic_events import TERMINAL_TASK_STATUSES, encode_sse
 from core.skill_admin_service import current_settings_payload, resolved_chat_settings_payload
 from core.task_coordinator import get_task_coordinator
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
@@ -37,8 +37,6 @@ from models.schemas import (
     RuntimeProviderConfig,
     SdkEventPageResponse,
     SdkEventRecord,
-    TaskEventPageResponse,
-    TaskEventRecord,
     TaskStatusResponse,
     TaskSubmissionResponse,
     TopicDetail,
@@ -56,12 +54,17 @@ from models.schemas import (
 logger = logging.getLogger(__name__)
 
 SUCCESS_MESSAGE_STATUSES = {"finished", "success", "completed"}
+TERMINAL_TASK_STATUSES = {"finished", "error", "suspended"}
 
 router = APIRouter(prefix="/api/v1/nl2sql")
 topic_router = APIRouter(prefix="/topics")
 task_router = APIRouter(prefix="/tasks")
 queue_router = APIRouter(prefix="/message-queue")
 schedule_router = APIRouter(prefix="/message-schedule")
+
+
+def _encode_sse(event: dict[str, Any]) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False, separators=(',', ':'))}\n\n"
 
 
 def _clean_header(value: str | None, max_length: int = 255) -> str:
@@ -486,49 +489,6 @@ async def api_get_task(task_id: str, request: Request):
     return TaskStatusResponse.model_validate(task)
 
 
-@task_router.get("/{task_id}/events", response_model=TaskEventPageResponse)
-async def api_get_task_events(
-    task_id: str,
-    request: Request,
-    after_seq: int = Query(default=0, ge=0),
-    limit: int = Query(default=200, ge=1, le=1000),
-):
-    store = _get_store()
-    context = _request_context(request)
-    task = store.get_task(task_id, context=context)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    page = store.list_task_events(task_id=task_id, after_seq=after_seq, limit=limit, context=context)
-    return TaskEventPageResponse.model_validate(
-        {
-            "task_id": task_id,
-            "task_status": str(page.get("task_status") or task.get("task_status") or "waiting"),
-            "after_seq": int(page.get("after_seq") or after_seq),
-            "next_after_seq": int(page.get("next_after_seq") or after_seq),
-            "has_more": bool(page.get("has_more")),
-            "events": [TaskEventRecord.model_validate(item) for item in page.get("events") or []],
-        }
-    )
-
-
-@task_router.get("/{task_id}/events/stream")
-async def api_stream_task_events(task_id: str, request: Request, after_seq: int = Query(default=0, ge=0)):
-    store = _get_store()
-    context = _request_context(request)
-    task = store.get_task(task_id, context=context)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return StreamingResponse(
-        _stream_task_events(task_id=task_id, after_seq=after_seq, context=context),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
-
-
 @task_router.get("/{task_id}/sdk-events", response_model=SdkEventPageResponse)
 async def api_list_sdk_events(
     task_id: str,
@@ -585,7 +545,7 @@ async def _stream_sdk_events(task_id: str, after_id: int, context: dict[str, str
         records = store.list_sdk_records(task_id=task_id, after_id=next_after_id, limit=200)
         for rec in records:
             next_after_id = max(next_after_id, int(rec.get("seq_id") or 0))
-            yield encode_sse(rec)
+            yield _encode_sse(rec)
         if records:
             since_ping = 0
         else:
@@ -816,36 +776,6 @@ router.include_router(topic_router)
 router.include_router(task_router)
 router.include_router(queue_router)
 router.include_router(schedule_router)
-
-
-async def _stream_task_events(task_id: str, after_seq: int, context: dict[str, str] | None = None) -> AsyncIterator[str]:
-    cfg = get_settings()
-    poll_interval = max(1, int(cfg.run_events_stream_poll_interval_seconds or 1))
-    ping_seconds = max(5, int(cfg.run_events_stream_ping_seconds or 10))
-    next_after_seq = max(0, after_seq)
-    since_ping = 0
-    store = _get_store()
-
-    while True:
-        page = store.list_task_events(task_id=task_id, after_seq=next_after_seq, limit=200, context=context)
-        events = list(page.get("events") or [])
-        for event in events:
-            next_after_seq = max(next_after_seq, int(event.get("seq_id") or 0))
-            yield encode_sse(event)
-        if events:
-            since_ping = 0
-        else:
-            since_ping += poll_interval
-            if since_ping >= ping_seconds:
-                yield ": ping\n\n"
-                since_ping = 0
-
-        task = store.get_task(task_id, context=context)
-        if not task:
-            break
-        if str(task.get("task_status") or "") in TERMINAL_TASK_STATUSES and not page.get("has_more") and not events:
-            break
-        await anyio.sleep(poll_interval)
 
 
 def _get_store():

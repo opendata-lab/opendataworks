@@ -1,22 +1,19 @@
 from __future__ import annotations
 
-import logging
-import os
 import asyncio
 import inspect
 import json
-import time
-import uuid
-from dataclasses import asdict, dataclass, field
-from typing import Any, AsyncIterator, Awaitable, Callable
+import logging
+import os
+from dataclasses import asdict, dataclass
+from typing import Any, Awaitable, Callable
 
 import anyio
 import httpx
 
 from config import get_settings
-from core.claude_cli import resolve_claude_cli_path
+from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot
 from core.agent_runtime import (
-    _append_delta,
     _build_allowed_tools,
     _build_portal_mcp_servers,
     _build_prompt,
@@ -40,16 +37,12 @@ from core.agent_runtime import (
     resolve_enabled_skill_runtime,
     resolve_runtime_provider_selection,
 )
-from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot
+from core.claude_cli import resolve_claude_cli_path
 from core.sdk_block_writer import SdkBlockWriter
 from core.topic_task_store import get_topic_task_store
 from core.topic_workspace import prepare_topic_workspace
 
 logger = logging.getLogger(__name__)
-
-CHUNK_FLUSH_INTERVAL_SECONDS = 0.35
-CHUNK_FLUSH_MIN_CHARS = 80
-TERMINAL_TASK_STATUSES = {"finished", "error", "suspended"}
 
 
 @dataclass
@@ -81,399 +74,28 @@ class TaskExecutionResult:
     session_id: str = ""
 
 
-@dataclass
-class _PhaseState:
-    kind: str
-    correlation_id: str
-    parent_correlation_id: str | None = None
-    full_text: str = ""
-    pending_text: str = ""
-    chunk_started: bool = False
-    last_flush_at: float = field(default_factory=time.monotonic)
+class SdkResultAccumulator:
+    """Derive final task metadata from native Claude SDK messages.
 
+    Chat V2 renders live and historical blocks from da_agent_sdk_record. This
+    accumulator only keeps the compact final assistant message fields used by
+    topic history, follow-up suggestions, and task status.
+    """
 
-@dataclass
-class _ProvisionalReducerState:
-    pending_answer_text: str = ""
-    pending_answer_boundary: int = 0
-    active_reasoning_correlation_id: str | None = None
-    last_seen_tool_boundary: int = 0
-    turn_finished: bool = False
-
-
-class ClaudeToMagicAdapter:
     def __init__(self, params: TaskExecutionInput, *, provider_id: str, model: str):
         self.params = params
         self.provider_id = provider_id
         self.model = model
-        self.request_id = f"task-{params.task_id}"
-        self.chunk_id = 0
-        self.current_phase: _PhaseState | None = None
-        self.before_think_emitted = False
-        self.pending_after_think = False
-        self.answer_phase_order: list[str] = []
-        self.answer_phase_text: dict[str, str] = {}
-        self.tool_state: dict[str, dict[str, Any]] = {}
-        self.latest_tool_id: str | None = None
-        self.block_context: dict[int, dict[str, Any]] = {}
         self.usage: dict[str, Any] = {}
-        self.stop_reason = ""
-        self.stop_sequence = ""
+        self.session_id = ""
         self.result_subtype = ""
         self.result_error = ""
         self.result_is_error = False
         self.provider_error_message = ""
-        self.session_id = ""
-        self.saw_partial_stream = False
-        self.reducer = _ProvisionalReducerState()
-
-    def _new_correlation_id(self, prefix: str) -> str:
-        return f"{prefix}_{uuid.uuid4().hex[:18]}"
-
-    def _event(
-        self,
-        event_type: str,
-        *,
-        content_type: str | None = None,
-        correlation_id: str | None = None,
-        parent_correlation_id: str | None = None,
-        data: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        return {
-            "record_type": "event",
-            "event_type": event_type,
-            "content_type": content_type,
-            "correlation_id": correlation_id,
-            "parent_correlation_id": parent_correlation_id,
-            "data": data or {},
-        }
-
-    def _chunk(
-        self,
-        *,
-        content: str | None,
-        status: str,
-        correlation_id: str,
-        parent_correlation_id: str | None,
-        content_type: str,
-        finish_reason: str | None = None,
-    ) -> dict[str, Any]:
-        self.chunk_id += 1
-        return {
-            "record_type": "chunk",
-            "request_id": self.request_id,
-            "chunk_id": self.chunk_id,
-            "content": content,
-            "delta": {
-                "status": status,
-                "finish_reason": finish_reason,
-            },
-            "metadata": {
-                "correlation_id": correlation_id,
-                "parent_correlation_id": parent_correlation_id,
-                "model_id": self.model,
-                "content_type": content_type,
-            },
-        }
-
-    def _should_flush_pending(self, piece: str) -> bool:
-        if not self.current_phase or not self.current_phase.pending_text:
-            return False
-        if len(self.current_phase.pending_text) >= CHUNK_FLUSH_MIN_CHARS:
-            return True
-        if any(mark in piece for mark in ("\n", "。", "！", "？", ".", "!", "?", ";", "；")):
-            return True
-        return (time.monotonic() - self.current_phase.last_flush_at) >= CHUNK_FLUSH_INTERVAL_SECONDS
-
-    def _flush_phase(self, *, force: bool = False) -> list[dict[str, Any]]:
-        if not self.current_phase or not self.current_phase.pending_text:
-            return []
-        if not force and not self._should_flush_pending(self.current_phase.pending_text[-1:]):
-            return []
-        status = "START" if not self.current_phase.chunk_started else "STREAMING"
-        payload = self._chunk(
-            content=self.current_phase.pending_text,
-            status=status,
-            correlation_id=self.current_phase.correlation_id,
-            parent_correlation_id=self.current_phase.parent_correlation_id,
-            content_type=self.current_phase.kind,
-        )
-        self.current_phase.chunk_started = True
-        self.current_phase.pending_text = ""
-        self.current_phase.last_flush_at = time.monotonic()
-        return [payload]
-
-    def _append_phase_text(self, kind: str, piece: str) -> list[dict[str, Any]]:
-        text = str(piece or "")
-        if not text:
-            return []
-
-        records: list[dict[str, Any]] = []
-        if self.current_phase and self.current_phase.kind != kind:
-            records.extend(self._close_phase())
-
-        if self.current_phase is None:
-            correlation_id = self._new_correlation_id(kind)
-            if kind == "reasoning":
-                if not self.before_think_emitted:
-                    records.append(
-                        self._event(
-                            "BEFORE_AGENT_THINK",
-                            content_type="reasoning",
-                            correlation_id=correlation_id,
-                            data={"status": "running"},
-                        )
-                    )
-                    self.before_think_emitted = True
-                self.pending_after_think = True
-            elif self.pending_after_think:
-                records.append(
-                    self._event(
-                        "AFTER_AGENT_THINK",
-                        content_type="reasoning",
-                        data={"status": "running"},
-                    )
-                )
-                self.pending_after_think = False
-                self.reducer.active_reasoning_correlation_id = None
-
-            self.current_phase = _PhaseState(kind=kind, correlation_id=correlation_id)
-            if kind == "reasoning":
-                self.reducer.active_reasoning_correlation_id = correlation_id
-            records.append(
-                self._event(
-                    "BEFORE_AGENT_REPLY",
-                    content_type=kind,
-                    correlation_id=correlation_id,
-                    data={"status": "running"},
-                )
-            )
-
-        self.current_phase.full_text = f"{self.current_phase.full_text}{text}"
-        self.current_phase.pending_text = f"{self.current_phase.pending_text}{text}"
-        records.extend(self._flush_phase())
-        return records
-
-    def _close_phase(self, *, final_status: str = "running", finish_reason: str | None = None) -> list[dict[str, Any]]:
-        if self.current_phase is None:
-            return []
-
-        phase = self.current_phase
-        records = self._flush_phase(force=True)
-        if phase.chunk_started or phase.full_text:
-            records.append(
-                self._chunk(
-                    content=phase.full_text,
-                    status="END",
-                    correlation_id=phase.correlation_id,
-                    parent_correlation_id=phase.parent_correlation_id,
-                    content_type=phase.kind,
-                    finish_reason=finish_reason,
-                )
-            )
-
-        data: dict[str, Any] = {"status": final_status}
-        if final_status in TERMINAL_TASK_STATUSES and self.usage:
-            data["token_usage"] = dict(self.usage)
-        records.append(
-            self._event(
-                "AFTER_AGENT_REPLY",
-                content_type=phase.kind,
-                correlation_id=phase.correlation_id,
-                parent_correlation_id=phase.parent_correlation_id,
-                data=data,
-            )
-        )
-
-        if phase.kind == "content":
-            if phase.correlation_id not in self.answer_phase_order:
-                self.answer_phase_order.append(phase.correlation_id)
-            self.answer_phase_text[phase.correlation_id] = phase.full_text
-
-        self.current_phase = None
-        return records
-
-    def _current_answer_text(self) -> str:
-        parts: list[str] = []
-        for correlation_id in self.answer_phase_order:
-            parts.append(self.answer_phase_text.get(correlation_id, ""))
-        if self.current_phase and self.current_phase.kind == "content":
-            parts.append(self.current_phase.full_text)
-        return "".join(parts)
-
-    def _buffer_pending_answer_text(self, piece: str) -> None:
-        text = str(piece or "")
-        if not text:
-            return
-        if not self.reducer.pending_answer_text:
-            self.reducer.pending_answer_boundary = self.reducer.last_seen_tool_boundary
-        self.reducer.pending_answer_text = f"{self.reducer.pending_answer_text}{text}"
-
-    def _flush_pending_answer_text(self, kind: str) -> list[dict[str, Any]]:
-        text = str(self.reducer.pending_answer_text or "")
-        self.reducer.pending_answer_text = ""
-        if not text:
-            return []
-        if kind == "content" and self.reducer.pending_answer_boundary != self.reducer.last_seen_tool_boundary:
-            kind = "reasoning"
-        self.reducer.pending_answer_boundary = self.reducer.last_seen_tool_boundary
-        return self._append_phase_text(kind, text)
-
-    def _promote_pending_answer_to_reasoning(self) -> list[dict[str, Any]]:
-        return self._flush_pending_answer_text("reasoning")
-
-    def _commit_pending_answer_to_content(self) -> list[dict[str, Any]]:
-        if not self.reducer.turn_finished:
-            return []
-        return self._flush_pending_answer_text("content")
-
-    def _discard_pending_answer_text(self) -> None:
-        self.reducer.pending_answer_text = ""
-        self.reducer.pending_answer_boundary = self.reducer.last_seen_tool_boundary
-
-    def _mark_tool_boundary(self) -> None:
-        self.reducer.last_seen_tool_boundary += 1
-
-    def _tool_payload(
-        self,
-        *,
-        tool_id: str,
-        name: str,
-        status: str,
-        input_value: Any = None,
-        output_value: Any = None,
-    ) -> dict[str, Any]:
-        payload = {
-            "id": tool_id,
-            "name": name or "Tool",
-            "status": status,
-        }
-        if input_value is not None:
-            payload["input"] = input_value
-        if output_value is not None:
-            payload["output"] = output_value
-        return payload
-
-    def _start_tool(self, block_payload: dict[str, Any]) -> list[dict[str, Any]]:
-        tool_id = str(block_payload.get("id") or f"tool_{uuid.uuid4().hex[:12]}")
-        tool_name = str(block_payload.get("name") or "Tool")
-        tool_input = block_payload.get("input")
-
-        records = self._promote_pending_answer_to_reasoning()
-        self._mark_tool_boundary()
-        if self.current_phase:
-            records.extend(self._close_phase())
-
-        parent_correlation_id = (
-            self.current_phase.correlation_id
-            if self.current_phase
-            else self.reducer.active_reasoning_correlation_id
-        )
-        self.tool_state[tool_id] = {
-            "id": tool_id,
-            "name": tool_name,
-            "input": tool_input,
-            "output": None,
-            "parent_correlation_id": parent_correlation_id,
-        }
-        self.latest_tool_id = tool_id
-
-        records.append(
-            self._event(
-                "PENDING_TOOL_CALL",
-                correlation_id=tool_id,
-                parent_correlation_id=parent_correlation_id,
-                data={
-                    "status": "running",
-                    "tool": self._tool_payload(
-                        tool_id=tool_id,
-                        name=tool_name,
-                        status="pending",
-                        input_value=tool_input,
-                    ),
-                },
-            )
-        )
-        records.append(
-            self._event(
-                "BEFORE_TOOL_CALL",
-                correlation_id=tool_id,
-                parent_correlation_id=parent_correlation_id,
-                data={
-                    "status": "running",
-                    "tool": self._tool_payload(
-                        tool_id=tool_id,
-                        name=tool_name,
-                        status="running",
-                        input_value=tool_input,
-                    ),
-                },
-            )
-        )
-        return records
-
-    def _append_tool_input(self, block_payload: dict[str, Any], partial_json: str) -> None:
-        tool_id = str(block_payload.get("id") or self.latest_tool_id or "")
-        if not tool_id:
-            return
-        state = self.tool_state.setdefault(
-            tool_id,
-            {
-                "id": tool_id,
-                "name": str(block_payload.get("name") or "Tool"),
-                "input": "",
-                "output": None,
-                "parent_correlation_id": self.current_phase.correlation_id if self.current_phase else None,
-            },
-        )
-        current = str(state.get("input") or "")
-        merged, _ = _append_delta(current, partial_json)
-        state["input"] = merged
-
-    def _complete_tool(self, *, tool_id: str | None, name: str | None, output: Any) -> list[dict[str, Any]]:
-        resolved_id = str(tool_id or self.latest_tool_id or "")
-        if not resolved_id:
-            return []
-
-        state = self.tool_state.setdefault(
-            resolved_id,
-            {
-                "id": resolved_id,
-                "name": str(name or "Tool"),
-                "input": None,
-                "output": None,
-                "parent_correlation_id": self.current_phase.correlation_id if self.current_phase else None,
-            },
-        )
-        if name:
-            state["name"] = str(name)
-
-        if isinstance(state.get("output"), str) and isinstance(output, str):
-            merged, _ = _append_delta(str(state.get("output") or ""), output)
-            state["output"] = merged
-        elif output is not None:
-            state["output"] = output
-
-        return [
-            self._event(
-                "AFTER_TOOL_CALL",
-                correlation_id=resolved_id,
-                parent_correlation_id=state.get("parent_correlation_id"),
-                data={
-                    "status": "running",
-                    "tool": self._tool_payload(
-                        tool_id=resolved_id,
-                        name=str(state.get("name") or "Tool"),
-                        status="success",
-                        input_value=state.get("input"),
-                        output_value=state.get("output"),
-                    ),
-                },
-            )
-        ]
-
-    def _is_internal_skill_bootstrap(self, text: str) -> bool:
-        return str(text or "").lstrip().startswith("Base directory for this skill:")
+        self._text_order: list[int] = []
+        self._text_by_index: dict[int, str] = {}
+        self._block_context: dict[int, dict[str, Any]] = {}
+        self._next_message_block_index = 10_000
 
     def _remember_provider_error(self, message: Any) -> None:
         text = str(message or "").strip()
@@ -492,105 +114,25 @@ class ClaudeToMagicAdapter:
             return str(self.result_subtype or "provider_error")
         return "model_call_failed"
 
-    def ingest_stream_event(self, raw_event: dict[str, Any]) -> list[dict[str, Any]]:
-        self.saw_partial_stream = True
-        event_type = str(raw_event.get("type") or "").strip()
-        if not event_type:
-            return []
+    def _append_text(self, block_index: int, piece: str) -> None:
+        text = str(piece or "")
+        if not text:
+            return
+        if block_index not in self._text_by_index:
+            self._text_order.append(block_index)
+            self._text_by_index[block_index] = ""
+        self._text_by_index[block_index] = f"{self._text_by_index[block_index]}{text}"
 
-        records: list[dict[str, Any]] = []
+    def _append_message_text(self, text: str) -> None:
+        self._next_message_block_index += 1
+        self._append_text(self._next_message_block_index, text)
 
-        if event_type == "message_start":
-            message_payload = raw_event.get("message")
-            if isinstance(message_payload, dict):
-                if message_payload.get("id"):
-                    self.request_id = str(message_payload.get("id"))
-                if isinstance(message_payload.get("usage"), dict):
-                    self.usage = {**self.usage, **dict(message_payload.get("usage") or {})}
-            return records
+    def current_answer_text(self) -> str:
+        parts = [str(self._text_by_index.get(index) or "").strip() for index in self._text_order]
+        return "\n\n".join(part for part in parts if part).strip()
 
-        if event_type == "message_delta":
-            delta_payload = raw_event.get("delta")
-            if isinstance(delta_payload, dict):
-                if delta_payload.get("stop_reason") is not None:
-                    self.stop_reason = str(delta_payload.get("stop_reason") or "")
-                if delta_payload.get("stop_sequence") is not None:
-                    self.stop_sequence = str(delta_payload.get("stop_sequence") or "")
-                if isinstance(delta_payload.get("usage"), dict):
-                    self.usage = {**self.usage, **dict(delta_payload.get("usage") or {})}
-            return records
-
-        if event_type == "content_block_start":
-            block_index = raw_event.get("index")
-            block_payload = raw_event.get("content_block") if isinstance(raw_event.get("content_block"), dict) else {}
-            block_type = str(block_payload.get("type") or "").strip().lower()
-            self.block_context[int(block_index or 0)] = {"type": block_type}
-
-            if block_type == "thinking":
-                self.block_context[int(block_index or 0)]["phase_kind"] = "reasoning"
-                if block_payload.get("thinking"):
-                    records.extend(self._append_phase_text("reasoning", str(block_payload.get("thinking") or "")))
-                return records
-
-            if block_type == "text":
-                self.block_context[int(block_index or 0)]["phase_kind"] = "content"
-                if block_payload.get("text"):
-                    self._buffer_pending_answer_text(str(block_payload.get("text") or ""))
-                return records
-
-            if block_type in {"tool_use", "server_tool_use"}:
-                self.block_context[int(block_index or 0)]["tool_id"] = str(block_payload.get("id") or "")
-                records.extend(self._start_tool(block_payload))
-                return records
-
-            if block_type == "tool_result":
-                self.block_context[int(block_index or 0)]["tool_id"] = str(
-                    block_payload.get("tool_use_id") or block_payload.get("tool_id") or ""
-                )
-                if block_payload.get("content") is not None:
-                    records.extend(
-                        self._complete_tool(
-                            tool_id=str(block_payload.get("tool_use_id") or block_payload.get("tool_id") or ""),
-                            name=str(block_payload.get("name") or "Tool"),
-                            output=block_payload.get("content"),
-                        )
-                    )
-                return records
-
-            return records
-
-        if event_type == "content_block_delta":
-            block_index = int(raw_event.get("index") or 0)
-            delta_payload = raw_event.get("delta") if isinstance(raw_event.get("delta"), dict) else {}
-            delta_type = str(delta_payload.get("type") or "").strip()
-            if delta_type == "thinking_delta":
-                records.extend(self._append_phase_text("reasoning", str(delta_payload.get("thinking") or "")))
-                return records
-            if delta_type == "text_delta":
-                self._buffer_pending_answer_text(str(delta_payload.get("text") or ""))
-                return records
-            if delta_type == "input_json_delta":
-                block_payload = self.block_context.get(block_index) or {}
-                self._append_tool_input(block_payload, str(delta_payload.get("partial_json") or ""))
-            return []
-
-        if event_type == "content_block_stop":
-            block_index = int(raw_event.get("index") or 0)
-            block_payload = self.block_context.get(block_index) or {}
-            phase_kind = str(block_payload.get("phase_kind") or "")
-            if phase_kind and self.current_phase and self.current_phase.kind == phase_kind:
-                return self._close_phase()
-            return []
-
-        if event_type == "message_stop":
-            return []
-
-        return []
-
-    def ingest_sdk_message(self, msg: Any) -> list[dict[str, Any]]:
+    def ingest(self, msg: Any) -> None:
         msg_type = type(msg).__name__
-        records: list[dict[str, Any]] = []
-        content = getattr(msg, "content", None)
         session_id = str(getattr(msg, "session_id", "") or "").strip()
         if session_id:
             self.session_id = session_id
@@ -601,100 +143,76 @@ class ClaudeToMagicAdapter:
             result_raw = getattr(msg, "result", None)
             if result_raw is not None:
                 self.result_error = _clip_text(_safe_stringify(result_raw), 2000)
+                if not self.current_answer_text() and not self.result_is_error and isinstance(result_raw, str):
+                    self._append_message_text(result_raw)
             if self.result_is_error and self.result_error:
                 self._remember_provider_error(self.result_error)
-                self._discard_pending_answer_text()
-            return records
+            return
 
         if msg_type == "StreamEvent":
             raw_event = getattr(msg, "event", None)
             if isinstance(raw_event, dict):
-                return self.ingest_stream_event(raw_event)
-            return records
+                self._ingest_stream_event(raw_event)
+            return
 
-        if isinstance(content, list):
-            text_parts: list[str] = []
-            assistant_error = str(getattr(msg, "error", "") or "").strip() if msg_type == "AssistantMessage" else ""
+        content = getattr(msg, "content", None)
+        if msg_type == "AssistantMessage":
+            assistant_error = str(getattr(msg, "error", "") or "").strip()
             if assistant_error:
                 self._remember_provider_error(assistant_error)
-            for block in content:
-                block_type, block_text, block_payload = _extract_block(block)
-                lower_type = block_type.lower()
-                if "toolresult" in lower_type or lower_type in {"tool_result", "toolresultblock"}:
-                    records.extend(
-                        self._complete_tool(
-                            tool_id=str(
-                                block_payload.get("tool_use_id")
-                                or block_payload.get("tool_id")
-                                or block_payload.get("id")
-                                or ""
-                            ),
-                            name=str(block_payload.get("name") or "Tool"),
-                            output=block_payload.get("content"),
-                        )
-                    )
-                    continue
-                if "tooluse" in lower_type or lower_type in {"tool_use", "tooluseblock"}:
-                    records.extend(self._start_tool(block_payload))
-                    continue
-                if msg_type == "AssistantMessage" and not self.saw_partial_stream and block_text:
-                    if "thinking" in lower_type:
-                        records.extend(self._append_phase_text("reasoning", block_text))
-                    else:
-                        self._buffer_pending_answer_text(block_text)
-                    continue
-                if msg_type == "UserMessage" and block_text:
-                    text_parts.append(block_text)
+            self._ingest_assistant_content(content)
 
-            if text_parts and self.latest_tool_id:
-                text = "\n".join(text_parts).strip()
-                if text and not self._is_internal_skill_bootstrap(text):
-                    records.extend(
-                        self._complete_tool(
-                            tool_id=self.latest_tool_id,
-                            name=str((self.tool_state.get(self.latest_tool_id) or {}).get("name") or "Tool"),
-                            output=text,
-                        )
-                    )
-            return records
+    def _ingest_assistant_content(self, content: Any) -> None:
+        if isinstance(content, str):
+            self._append_message_text(content)
+            return
+        if not isinstance(content, list):
+            return
+        for block in content:
+            block_type, block_text, _payload = _extract_block(block)
+            lower_type = block_type.lower()
+            if block_text and ("text" in lower_type or lower_type in {"textblock", "text"}):
+                self._append_message_text(block_text)
 
-        if isinstance(content, str) and content.strip():
-            if msg_type == "AssistantMessage" and not self.saw_partial_stream:
-                self._buffer_pending_answer_text(content)
-                return records
-            if self.latest_tool_id and not self._is_internal_skill_bootstrap(content):
-                records.extend(
-                    self._complete_tool(
-                        tool_id=self.latest_tool_id,
-                        name=str((self.tool_state.get(self.latest_tool_id) or {}).get("name") or "Tool"),
-                        output=content,
-                    )
-                )
-        return records
+    def _ingest_stream_event(self, raw_event: dict[str, Any]) -> None:
+        event_type = str(raw_event.get("type") or "").strip()
+        if not event_type:
+            return
 
-    def finalize_records(self, *, final_status: str, commit_pending_answer: bool) -> list[dict[str, Any]]:
-        records: list[dict[str, Any]] = []
-        self.reducer.turn_finished = final_status == "finished"
-        if commit_pending_answer:
-            records.extend(self._commit_pending_answer_to_content())
-        else:
-            self._discard_pending_answer_text()
-        if self.current_phase:
-            records.extend(self._close_phase(final_status=final_status, finish_reason=self.stop_reason or None))
-        if self.pending_after_think:
-            records.append(
-                self._event(
-                    "AFTER_AGENT_THINK",
-                    content_type="reasoning",
-                    data={"status": final_status},
-                )
-            )
-            self.pending_after_think = False
-            self.reducer.active_reasoning_correlation_id = None
-        return records
+        if event_type == "message_start":
+            message_payload = raw_event.get("message")
+            if isinstance(message_payload, dict):
+                if isinstance(message_payload.get("usage"), dict):
+                    self.usage = {**self.usage, **dict(message_payload.get("usage") or {})}
+            return
+
+        if event_type == "message_delta":
+            delta_payload = raw_event.get("delta") if isinstance(raw_event.get("delta"), dict) else {}
+            for usage in (raw_event.get("usage"), delta_payload.get("usage")):
+                if isinstance(usage, dict):
+                    self.usage = {**self.usage, **dict(usage or {})}
+            return
+
+        if event_type == "content_block_start":
+            block_index = int(raw_event.get("index") or 0)
+            block_payload = raw_event.get("content_block") if isinstance(raw_event.get("content_block"), dict) else {}
+            block_type = str(block_payload.get("type") or "").strip().lower()
+            self._block_context[block_index] = {"type": block_type}
+            if block_type == "text" and block_payload.get("text"):
+                self._append_text(block_index, str(block_payload.get("text") or ""))
+            return
+
+        if event_type == "content_block_delta":
+            block_index = int(raw_event.get("index") or 0)
+            block_payload = self._block_context.get(block_index) or {}
+            if str(block_payload.get("type") or "") != "text":
+                return
+            delta_payload = raw_event.get("delta") if isinstance(raw_event.get("delta"), dict) else {}
+            if str(delta_payload.get("type") or "") == "text_delta":
+                self._append_text(block_index, str(delta_payload.get("text") or ""))
 
     def build_result(self) -> TaskExecutionResult:
-        content = self._current_answer_text().strip()
+        content = self.current_answer_text()
         if self.result_is_error or self.provider_error_message:
             reason = self.preferred_error_message("模型会话异常结束")
             return TaskExecutionResult(
@@ -706,6 +224,7 @@ class ClaudeToMagicAdapter:
                 model=self.model,
                 session_id=self.session_id,
             )
+
         if self.result_subtype.startswith("error"):
             reason = _result_subtype_to_reason(self.result_subtype, self.result_error)
             recovered_content = _recover_partial_content(
@@ -741,16 +260,6 @@ class ClaudeToMagicAdapter:
             model=self.model,
             session_id=self.session_id,
         )
-
-
-async def _emit_records(
-    emit: Callable[[dict[str, Any]], Awaitable[None] | None],
-    records: list[dict[str, Any]],
-) -> None:
-    for record in records:
-        result = emit(record)
-        if inspect.isawaitable(result):
-            await result
 
 
 async def execute_task_stream(
@@ -877,7 +386,7 @@ async def _execute_task_stream_local(
     if not model:
         model = _default_model_for_provider(provider_id)
 
-    adapter = ClaudeToMagicAdapter(params, provider_id=provider_id, model=model)
+    accumulator = SdkResultAccumulator(params, provider_id=provider_id, model=model)
     sdk_writer = SdkBlockWriter(get_topic_task_store(), params.task_id, params.topic_id)
 
     prompt = str(params.question or "").strip() if params.resume_session_id else _build_prompt(params.history, params.question)
@@ -894,53 +403,18 @@ async def _execute_task_stream_local(
     )
     system_prompt = _build_system_prompt(params.database_hint, skill_runtime, agent_snapshot)
 
-    if params.debug:
-        await _emit_records(
-            emit,
-            [
-                {
-                    "record_type": "event",
-                    "event_type": "DEBUG",
-                    "data": {
-                        "status": "running",
-                        "provider_id": provider_id,
-                        "model": model,
-                        "prompt_preview": _clip_text(prompt, 4000),
-                        "system_prompt_preview": _clip_text(system_prompt, 1200),
-                        "agent_id": str((agent_snapshot or {}).get("agent_id") or DEFAULT_AGENT_ID),
-                    },
-                }
-            ],
-        )
-
     try:
         from claude_agent_sdk import ClaudeAgentOptions, query as claude_query
     except ImportError as exc:
         reason = "claude-agent-sdk 未安装"
-        await _emit_records(
-            emit,
-            [
-                {
-                    "record_type": "event",
-                    "event_type": "ERROR",
-                    "data": {
-                        "status": "error",
-                        "error": {
-                            "code": "sdk_not_installed",
-                            "message": reason,
-                            "detail": str(exc),
-                        },
-                    },
-                }
-            ],
-        )
+        sdk_writer.append_error(code="sdk_not_installed", message=reason, detail=str(exc))
         return TaskExecutionResult(
             task_status="error",
             content=reason,
             error={"code": "sdk_not_installed", "message": reason, "detail": str(exc)},
             provider_id=provider_id,
             model=model,
-            session_id=adapter.session_id,
+            session_id=accumulator.session_id,
         )
 
     env_payload = _build_provider_env(
@@ -1033,7 +507,7 @@ async def _execute_task_stream_local(
         if is_cancel_requested is None:
             return False
         result = is_cancel_requested()
-        if isinstance(result, Awaitable):
+        if inspect.isawaitable(result):
             return bool(await result)
         return bool(result)
 
@@ -1041,37 +515,22 @@ async def _execute_task_stream_local(
         with anyio.fail_after(timeout_seconds):
             async for msg in claude_query(prompt=prompt, options=options):
                 if await _cancelled():
-                    await _emit_records(
-                        emit,
-                        adapter.finalize_records(final_status="suspended", commit_pending_answer=False)
-                        + [
-                            {
-                                "record_type": "event",
-                                "event_type": "AGENT_SUSPENDED",
-                                "data": {
-                                    "status": "suspended",
-                                    "error": {
-                                        "code": "task_cancelled",
-                                        "message": "任务已取消",
-                                    },
-                                },
-                            }
-                        ],
-                    )
+                    error = {"code": "task_cancelled", "message": "任务已取消"}
+                    sdk_writer.append_error(**error)
                     return TaskExecutionResult(
                         task_status="suspended",
-                        content=adapter._current_answer_text().strip(),
-                        usage=adapter.usage or None,
-                        error={"code": "task_cancelled", "message": "任务已取消"},
+                        content=accumulator.current_answer_text(),
+                        usage=accumulator.usage or None,
+                        error=error,
                         provider_id=provider_id,
                         model=model,
-                        session_id=adapter.session_id,
+                        session_id=accumulator.session_id,
                     )
-                await _emit_records(emit, adapter.ingest_sdk_message(msg))
+                accumulator.ingest(msg)
                 sdk_writer.ingest(msg)
     except Exception as exc:
         reason = _format_exception_reason(exc)
-        partial = adapter._current_answer_text().strip()
+        partial = accumulator.current_answer_text()
         if _is_recoverable_timeout_reason(reason):
             recovered_content = _recover_partial_content(
                 question=params.question,
@@ -1080,52 +539,41 @@ async def _execute_task_stream_local(
                 reason=reason,
             )
             if recovered_content:
-                await _emit_records(emit, adapter.finalize_records(final_status="finished", commit_pending_answer=False))
+                sdk_writer.append_done(is_error=False, subtype="recovered_timeout")
                 return TaskExecutionResult(
                     task_status="finished",
                     content=recovered_content,
-                    usage=adapter.usage or None,
+                    usage=accumulator.usage or None,
                     provider_id=provider_id,
                     model=model,
-                    session_id=adapter.session_id,
+                    session_id=accumulator.session_id,
                 )
 
-        error_message = adapter.preferred_error_message(reason)
-        error_code = adapter.preferred_error_code()
-        await _emit_records(
-            emit,
-            adapter.finalize_records(final_status="error", commit_pending_answer=False)
-            + [
-                {
-                    "record_type": "event",
-                    "event_type": "ERROR",
-                    "data": {
-                        "status": "error",
-                        "error": {
-                            "code": error_code,
-                            "message": error_message,
-                            "exception_type": exc.__class__.__name__,
-                        },
-                    },
-                }
-            ],
-        )
+        error_message = accumulator.preferred_error_message(reason)
+        error_code = accumulator.preferred_error_code()
+        error = {
+            "code": error_code,
+            "message": error_message,
+            "exception_type": exc.__class__.__name__,
+        }
+        sdk_writer.append_error(**error)
         return TaskExecutionResult(
             task_status="error",
             content=error_message if error_code != "model_call_failed" else (partial or error_message),
-            usage=adapter.usage or None,
-            error={
-                "code": error_code,
-                "message": error_message,
-                "exception_type": exc.__class__.__name__,
-            },
+            usage=accumulator.usage or None,
+            error=error,
             provider_id=provider_id,
             model=model,
-            session_id=adapter.session_id,
+            session_id=accumulator.session_id,
         )
 
-    await _emit_records(emit, adapter.finalize_records(final_status="finished", commit_pending_answer=True))
-    result = adapter.build_result()
+    result = accumulator.build_result()
+    if result.task_status == "error":
+        sdk_writer.append_error(
+            code=str((result.error or {}).get("code") or "model_error"),
+            message=str((result.error or {}).get("message") or result.content or "模型会话异常结束"),
+            detail=str((result.error or {}).get("detail") or ""),
+        )
     logger.info(
         "task.done task_id=%s task_status=%s provider=%s model=%s",
         params.task_id,

@@ -91,35 +91,6 @@ def _http_json(method: str, url: str, *, payload: dict[str, Any] | None, timeout
         return json.loads(response.read().decode("utf-8"))
 
 
-def _parse_sse_events(raw_text: str) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for chunk in raw_text.split("\n\n"):
-        lines = [line for line in chunk.splitlines() if line.startswith("data:")]
-        if not lines:
-            continue
-        payload = "\n".join(line[5:].lstrip() for line in lines)
-        try:
-            events.append(json.loads(payload))
-        except json.JSONDecodeError:
-            continue
-    return events
-
-
-def _http_sse(url: str, *, payload: dict[str, Any], timeout_seconds: int) -> list[dict[str, Any]]:
-    request = Request(
-        url,
-        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Accept": "text/event-stream",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    with urlopen(request, timeout=timeout_seconds) as response:
-        raw = response.read().decode("utf-8")
-    return _parse_sse_events(raw)
-
-
 def _maybe_json(value: Any) -> Any:
     if isinstance(value, str):
         stripped = value.strip()
@@ -218,22 +189,22 @@ def _validate_scenario(scenario: Scenario, analysis: dict[str, Any]) -> tuple[bo
 
 def _wait_task(base_url: str, task_id: str, timeout_seconds: int) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     deadline = time.time() + timeout_seconds
-    after_seq = 0
-    events: list[dict[str, Any]] = []
+    after_id = 0
+    sdk_records: list[dict[str, Any]] = []
     while time.time() < deadline:
         page = _http_json(
             "GET",
-            f"{base_url}/api/v1/nl2sql/tasks/{task_id}/events?after_seq={after_seq}",
+            f"{base_url}/api/v1/nl2sql/tasks/{task_id}/sdk-events?after_id={after_id}",
             payload=None,
             timeout_seconds=timeout_seconds,
         )
-        batch = page.get("events") or []
+        batch = page.get("records") or []
         if batch:
-            events.extend(batch)
-            after_seq = max(int(item.get("seq_id") or 0) for item in batch)
+            sdk_records.extend(batch)
+            after_id = max(int(item.get("seq_id") or 0) for item in batch)
         task = _http_json("GET", f"{base_url}/api/v1/nl2sql/tasks/{task_id}", payload=None, timeout_seconds=timeout_seconds)
         if str(task.get("task_status") or "") in {"finished", "error", "suspended"}:
-            return task, events
+            return task, sdk_records
         time.sleep(2)
     raise TimeoutError(f"task {task_id} did not reach terminal status within {timeout_seconds}s")
 
@@ -260,7 +231,7 @@ def _run_via_topic_task(base_url: str, scenario: Scenario, provider_id: str, mod
         timeout_seconds=timeout_seconds,
     )
     task_id = str(accepted.get("task_id") or "")
-    task, events = _wait_task(base_url, task_id, timeout_seconds)
+    task, sdk_records = _wait_task(base_url, task_id, timeout_seconds)
     topic_messages = _http_json(
         "GET",
         f"{base_url}/api/v1/nl2sql/topics/{topic_id}/messages?page=1&page_size=500&order=asc",
@@ -278,9 +249,9 @@ def _run_via_topic_task(base_url: str, scenario: Scenario, provider_id: str, mod
         {},
     )
     tool_outputs = [
-        ((event.get("data") or {}).get("tool") or {}).get("output")
-        for event in events
-        if str(event.get("record_type") or "") == "event" and str(event.get("event_type") or "") == "AFTER_TOOL_CALL"
+        (record.get("data") or {}).get("content")
+        for record in sdk_records
+        if str(record.get("record_type") or "") == "tool_result"
     ]
     analysis = _analyze_response(
         content=str(assistant.get("content") or ""),
@@ -296,8 +267,8 @@ def _run_via_topic_task(base_url: str, scenario: Scenario, provider_id: str, mod
         "elapsed_seconds": elapsed,
         "passed": passed,
         "reasons": reasons,
-        "event_count": len(events),
-        "event_types": [str(event.get("event_type") or event.get("record_type") or "") for event in events],
+        "sdk_record_count": len(sdk_records),
+        "sdk_record_types": [str(record.get("event_type") or record.get("record_type") or "") for record in sdk_records],
         "response": analysis,
     }
 
