@@ -6,6 +6,7 @@ import json
 import logging
 import os
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 import anyio
@@ -375,6 +376,7 @@ async def _execute_task_stream_local(
     *,
     emit: Callable[[dict[str, Any]], Awaitable[None] | None],
     is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None = None,
+    prepared_workspace_dir: str | Path | None = None,
 ) -> TaskExecutionResult:
     cfg = get_settings()
     runtime_target = resolve_runtime_provider_selection(params.provider_id, params.model)
@@ -428,20 +430,18 @@ async def _execute_task_stream_local(
         os.environ[key] = value
 
     enabled_folders = skill_runtime.get("enabled_folders") or []
-    prepared_workspace_dir = ""
-    if str(os.environ.get("DATAAGENT_WORKSPACE_PREPARED") or "").strip() == "1":
-        prepared_workspace_dir = str(os.environ.get("DATAAGENT_WORKSPACE_DIR") or "").strip()
+    workspace_dir = str(prepared_workspace_dir or "").strip()
     project_cwd = prepare_topic_workspace(
         params.topic_id,
         enabled_folders,
         allow_empty=bool(agent_snapshot) or not enabled_folders,
-        workspace_dir=prepared_workspace_dir or None,
+        workspace_dir=workspace_dir or None,
     )
     workspace_env = {
-        "HOME": str(project_cwd),
         "PWD": str(project_cwd),
-        "DATAAGENT_WORKSPACE_DIR": str(project_cwd),
     }
+    runtime_env.pop("DATAAGENT_WORKSPACE_DIR", None)
+    runtime_env.pop("DATAAGENT_WORKSPACE_PREPARED", None)
     runtime_env.update(workspace_env)
     for key, value in workspace_env.items():
         os.environ[key] = value

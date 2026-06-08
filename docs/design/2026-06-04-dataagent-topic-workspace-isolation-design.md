@@ -1,5 +1,9 @@
 # DataAgent Topic Workspace Isolation Design
 
+> 2026-06-08 update: SDK `HOME` is no longer set to the topic workspace. See
+> `2026-06-08-dataagent-sandbox-path-separation-design.md` for the current
+> HOME/workspace separation contract.
+
 ## Current State
 
 DataAgent executes Claude Agent SDK runs through topic/task records. `da_agent_topic` owns the user-visible conversation and stores the current resumable SDK session id in `chat_conversation_id`. `da_agent_task` represents one execution attempt with queue, lease, event, cancellation, and recovery state.

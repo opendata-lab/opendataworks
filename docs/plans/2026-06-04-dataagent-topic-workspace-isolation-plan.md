@@ -1,5 +1,9 @@
 # DataAgent Topic Workspace Isolation Plan
 
+> 2026-06-08 update: SDK `HOME` is no longer injected as the topic workspace.
+> Use `2026-06-08-dataagent-sandbox-path-separation-plan.md` for the current
+> HOME/workspace contract.
+
 ## Goal
 
 Make DataAgent file and Claude SDK session state topic-scoped instead of agent-profile-scoped, while preserving task as an internal run/execution record.

@@ -1,5 +1,9 @@
 # DataAgent Sandbox Scoped Skills Plan
 
+> 2026-06-08 update: child path semantics were revised by
+> `2026-06-08-dataagent-sandbox-path-separation-plan.md`. Use that plan for
+> current child workspace, HOME, and skill target paths.
+
 ## Goal
 
 Make sandbox child containers clean and deterministic: they run from `/app`, use
