@@ -43,12 +43,18 @@ File: `sandbox_runner_main.py`
 - `_container_spec_signature(params)`: stable hash over backend, image, topic
   workspace path, sorted enabled skill folders, isolation knobs, uid/gid.
 - Extend `_build_container_command` with optional `container_name`,
-  `task_id_label`, and `extra_env` so warm children get a stable name and the
-  child idle-timeout env without changing the default (3-tuple) contract.
-- `WarmChild` dataclass + `WARM_POOL` + `WARM_POOL_LOCK` + signature reuse.
+  `task_id_label`, and `extra_env` so warm children get a deterministic warm-pool name
+  and the child idle-timeout env without changing the default (3-tuple) contract.
+- `WarmChild` dataclass + `WARM_POOL` + `WARM_POOL_LOCK`/condition + signature reuse.
 - `_acquire_warm_child` / `_run_on_warm_child` / `_release_warm_child`,
   `_start_warm_child`, `_close_warm_child`, `_drain_warm_stderr`,
   `_watch_cancel_warm`, `_evict_idle_over_cap_locked`.
+- Enforce one active warm child per topic: same-topic concurrent acquires wait,
+  and same-topic idle children with a stale signature are closed before a
+  replacement starts.
+- Enforce `dataagent_sandbox_max_warm_containers` as a hard cap: evict idle LRU
+  children when possible, otherwise wait for a busy child to release before
+  starting another child.
 - `_execute_task_stream_warm` orchestrates acquire/run/release.
 - Dispatch in `run_sandbox_task.execute()`: warm path when
   `_should_reuse_containers()`, else existing `_execute_task_stream_container`.
@@ -86,6 +92,12 @@ File: `tests/test_sandbox_runner_main.py`
   different topic or enabled-skill set.
 - warm reuse: two sequential tasks with a stub loop child create one container
   and reuse it (pool holds a single child, reused on the second run).
+- same-topic concurrent acquires wait for the current child to release even when
+  the pool has spare capacity.
+- same-topic signature changes close the old idle warm child before starting a
+  replacement.
+- max-cap backpressure: with `max_warm_containers=1`, a second acquire waits
+  until the busy child is released instead of creating a second child.
 - idle reaper kills and removes an idle warm child past the TTL.
 - cancel kills the warm child and the run returns suspended.
 - `_build_container_command` honors `container_name`, `task_id_label`, and
