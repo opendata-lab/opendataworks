@@ -296,6 +296,24 @@ def test_deepeval_runner_opts_out_of_cloud_telemetry(monkeypatch):
     assert os.environ.get("DEEPEVAL_UPDATE_WARNING_OPT_OUT") == "YES"
 
 
+def test_deepeval_runner_forces_opt_out_over_falsy_environment(monkeypatch):
+    # DeepEval treats any falsy/empty value as telemetry ON, which reopens the
+    # cloud connection and hangs the run on an intranet after every case. A stray
+    # value already present in the environment must not survive import.
+    _install_fake_deepeval(monkeypatch)
+
+    import os
+
+    for falsy in ("", "0", "false", "no"):
+        monkeypatch.setenv("DEEPEVAL_TELEMETRY_OPT_OUT", falsy)
+        monkeypatch.setenv("DEEPEVAL_UPDATE_WARNING_OPT_OUT", falsy)
+
+        _load_runner()
+
+        assert os.environ.get("DEEPEVAL_TELEMETRY_OPT_OUT") == "YES"
+        assert os.environ.get("DEEPEVAL_UPDATE_WARNING_OPT_OUT") == "YES"
+
+
 def test_deepeval_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
