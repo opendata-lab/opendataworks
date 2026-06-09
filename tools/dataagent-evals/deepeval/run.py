@@ -20,8 +20,17 @@ from typing import Any
 # before importing deepeval so the import never triggers telemetry, update
 # checks, or Confident AI cloud coupling. The runner drives the judge metric
 # itself and does not depend on any deepeval.com / Confident AI service.
-os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
-os.environ.setdefault("DEEPEVAL_UPDATE_WARNING_OPT_OUT", "YES")
+#
+# The telemetry opt-out is FORCED rather than set via setdefault: DeepEval keeps
+# telemetry ON for any falsy/empty value ("", "0", "false", "no"), so a stray
+# value already present in the container / CI / compose environment would
+# silently reopen the Sentry, PostHog and anonymous-IP cloud connections. On an
+# intranet those outbound requests are dropped and block until socket timeout,
+# which is exactly the "hangs after every case has finished" symptom. This tool
+# is offline by contract, so it must not be re-enabled by the ambient
+# environment. The progress bar is cosmetic and stays overridable.
+os.environ["DEEPEVAL_TELEMETRY_OPT_OUT"] = "YES"
+os.environ["DEEPEVAL_UPDATE_WARNING_OPT_OUT"] = "YES"
 os.environ.setdefault("DEEPEVAL_DISABLE_PROGRESS_BAR", "YES")
 
 try:
