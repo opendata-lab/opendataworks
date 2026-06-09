@@ -96,8 +96,12 @@ The runner maintains an in-process pool of warm children keyed by container
 name, with a signature index, a busy flag, and a `last_used` timestamp:
 
 - **acquire**: under a pool lock, reuse an alive, idle child with a matching
-  signature; otherwise create a new child (evicting an idle LRU child first if
-  the pool is at capacity). The acquired child is marked busy.
+  signature. If the same topic already has a busy child, wait until it releases
+  because one topic represents one conversation/session. If the topic has an
+  idle child with a different signature, close that old child before starting a
+  replacement. For other topics, create a new child only when the pool is below
+  capacity; if the pool is at capacity, evict an idle LRU child to make room or
+  wait when every child is busy. The acquired child is marked busy.
 - **run**: write the payload line to the child's stdin (kept open), stream
   stdout `record`/`result` lines for this task, and stop at the `result` line,
   leaving the child idle for the next task.
@@ -108,8 +112,10 @@ name, with a signature index, a busy flag, and a `last_used` timestamp:
 - **shutdown**: kill and remove all warm children on runner shutdown; the
   existing label-based startup cleanup still reaps stragglers.
 
-A warm child serves one task at a time. Concurrent tasks with the same signature
-simply create additional warm children, bounded by the max-pool-size cap.
+A warm child serves one task at a time. Concurrent tasks for the same topic are
+serialized onto that topic's warm child. Additional warm children are only
+created for other topics/signatures while the pool is below the max-pool-size
+cap; once the cap is reached, later acquires wait for a release.
 
 ### Cancellation
 
@@ -162,8 +168,9 @@ New runner/runtime configuration (all under the existing sandbox namespace):
   today's one-shot-per-task container path.
 - `DATAAGENT_SANDBOX_IDLE_TTL_SECONDS` (int, default `600`): idle lifetime of a
   warm child before the reaper removes it.
-- `DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS` (int, default `32`): soft cap on warm
-  children; idle LRU children are evicted to make room.
+- `DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS` (int, default `32`): hard cap on warm
+  children; idle LRU children are evicted to make room, and all-busy pools apply
+  backpressure by waiting for a child to release.
 - `DATAAGENT_SANDBOX_REAPER_INTERVAL_SECONDS` (int, default `30`): how often the
   reaper scans the pool.
 
@@ -171,8 +178,8 @@ Internal runtime contract additions:
 
 - The runner sets `DATAAGENT_SANDBOX_CHILD_IDLE_TIMEOUT` on warm children to
   switch the child into serve-loop mode; the value is the idle TTL plus a buffer.
-- Warm children are named `dataagent-warm-<topic>-<sig>` and labelled with the
-  existing sandbox labels (task id label is `warm`), so the existing
+- Warm children are named `dataagent-warm-<topic>-<sig>` and labelled with
+  the existing sandbox labels (task id label is `warm`), so the existing
   label-based startup cleanup continues to reap them.
 - The runner sends each warm payload as one newline-terminated JSON line and
   keeps the child's stdin open across tasks.
@@ -184,8 +191,8 @@ Internal runtime contract additions:
   bind-mount sharing and is desirable for session continuity; reuse never
   crosses topics or isolation profiles.
 - Warm children hold resources during the idle window. This is bounded by the
-  idle TTL, the max-pool-size cap with idle LRU eviction, and the child-side
-  self-idle exit.
+  idle TTL, the hard max-pool-size cap with idle LRU eviction / busy backpressure,
+  and the child-side self-idle exit.
 - The change is gated behind `DATAAGENT_SANDBOX_REUSE_ENABLED`. Disabling it
   restores the exact current one-shot container behavior as a single-layer
   fallback.

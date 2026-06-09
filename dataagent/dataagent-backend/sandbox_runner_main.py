@@ -697,6 +697,18 @@ class WarmChild:
 
 WARM_POOL: dict[str, WarmChild] = {}
 WARM_POOL_LOCK = asyncio.Lock()
+WARM_POOL_CONDITION = asyncio.Condition(WARM_POOL_LOCK)
+WARM_POOL_CONDITION_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def _warm_pool_condition() -> asyncio.Condition:
+    global WARM_POOL_LOCK, WARM_POOL_CONDITION, WARM_POOL_CONDITION_LOOP
+    loop = asyncio.get_running_loop()
+    if WARM_POOL_CONDITION_LOOP is not loop:
+        WARM_POOL_LOCK = asyncio.Lock()
+        WARM_POOL_CONDITION = asyncio.Condition(WARM_POOL_LOCK)
+        WARM_POOL_CONDITION_LOOP = loop
+    return WARM_POOL_CONDITION
 
 
 def _container_spec_signature(params: TaskExecutionInput) -> str:
@@ -753,25 +765,40 @@ async def _execute_task_stream_warm(
 
 async def _acquire_warm_child(params: TaskExecutionInput) -> tuple[WarmChild, bool]:
     signature = _container_spec_signature(params)
-    async with WARM_POOL_LOCK:
-        for child in WARM_POOL.values():
-            if (
-                child.signature == signature
-                and not child.busy
+    condition = _warm_pool_condition()
+    async with condition:
+        while True:
+            await _drop_dead_warm_children_locked()
+            for child in WARM_POOL.values():
+                if (
+                    child.signature == signature
+                    and child.topic_id == params.topic_id
+                    and not child.busy
+                    and _warm_child_alive(child)
+                ):
+                    child.busy = True
+                    child.last_used = time.monotonic()
+                    child.current_task_id = params.task_id
+                    RUNNING_CONTAINERS[params.task_id] = (child.backend, child.container_name)
+                    return child, True
+            if any(
+                child.topic_id == params.topic_id
+                and child.busy
                 and _warm_child_alive(child)
+                for child in WARM_POOL.values()
             ):
+                await condition.wait()
+                continue
+            await _evict_idle_same_topic_mismatch_locked(params.topic_id, signature)
+            await _evict_idle_over_cap_locked()
+            if len(WARM_POOL) < _warm_max_containers():
+                child = await _start_warm_child(params, signature)
                 child.busy = True
-                child.last_used = time.monotonic()
                 child.current_task_id = params.task_id
+                WARM_POOL[child.container_name] = child
                 RUNNING_CONTAINERS[params.task_id] = (child.backend, child.container_name)
-                return child, True
-        await _evict_idle_over_cap_locked()
-        child = await _start_warm_child(params, signature)
-        child.busy = True
-        child.current_task_id = params.task_id
-        WARM_POOL[child.container_name] = child
-        RUNNING_CONTAINERS[params.task_id] = (child.backend, child.container_name)
-        return child, False
+                return child, False
+            await condition.wait()
 
 
 async def _start_warm_child(params: TaskExecutionInput, signature: str) -> WarmChild:
@@ -920,7 +947,8 @@ async def _watch_cancel_warm(
 
 async def _release_warm_child(child: WarmChild, task_id: str) -> None:
     dead: WarmChild | None = None
-    async with WARM_POOL_LOCK:
+    condition = _warm_pool_condition()
+    async with condition:
         RUNNING_CONTAINERS.pop(task_id, None)
         CANCELLED_TASK_IDS.discard(task_id)
         child.busy = False
@@ -929,6 +957,7 @@ async def _release_warm_child(child: WarmChild, task_id: str) -> None:
         if not child.healthy or not _warm_child_alive(child):
             WARM_POOL.pop(child.container_name, None)
             dead = child
+        condition.notify_all()
     if dead is not None:
         await _close_warm_child(dead)
 
@@ -944,6 +973,34 @@ async def _evict_idle_over_cap_locked() -> None:
         WARM_POOL.pop(victim.container_name, None)
         await _kill_container(victim.backend, victim.container_name)
         await _close_warm_child(victim)
+
+
+async def _evict_idle_same_topic_mismatch_locked(topic_id: str, signature: str) -> None:
+    """Keep at most one idle warm child per topic when the container spec changes."""
+    victims = [
+        child
+        for child in WARM_POOL.values()
+        if child.topic_id == topic_id
+        and child.signature != signature
+        and not child.busy
+    ]
+    for victim in victims:
+        WARM_POOL.pop(victim.container_name, None)
+        await _kill_container(victim.backend, victim.container_name)
+        await _close_warm_child(victim)
+    if victims:
+        _warm_pool_condition().notify_all()
+
+
+async def _drop_dead_warm_children_locked() -> None:
+    dead = [child for child in WARM_POOL.values() if not _warm_child_alive(child)]
+    for child in dead:
+        WARM_POOL.pop(child.container_name, None)
+        if child.current_task_id is not None:
+            RUNNING_CONTAINERS.pop(child.current_task_id, None)
+        await _close_warm_child(child)
+    if dead:
+        _warm_pool_condition().notify_all()
 
 
 async def _close_warm_child(child: WarmChild) -> None:
@@ -981,13 +1038,16 @@ async def _warm_pool_reaper() -> None:
         idle_ttl = _warm_idle_ttl()
         now = time.monotonic()
         expired: list[tuple[WarmChild, bool]] = []
-        async with WARM_POOL_LOCK:
+        condition = _warm_pool_condition()
+        async with condition:
             for name, child in list(WARM_POOL.items()):
                 dead = not _warm_child_alive(child)
                 idle_expired = (not child.busy) and (now - child.last_used > idle_ttl)
                 if dead or idle_expired:
                     WARM_POOL.pop(name, None)
                     expired.append((child, dead))
+            if expired:
+                condition.notify_all()
         for child, dead in expired:
             if not dead:
                 await _kill_container(child.backend, child.container_name)
@@ -996,9 +1056,11 @@ async def _warm_pool_reaper() -> None:
 
 
 async def _shutdown_warm_pool() -> None:
-    async with WARM_POOL_LOCK:
+    condition = _warm_pool_condition()
+    async with condition:
         children = list(WARM_POOL.values())
         WARM_POOL.clear()
+        condition.notify_all()
     for child in children:
         await _kill_container(child.backend, child.container_name)
         await _close_warm_child(child)

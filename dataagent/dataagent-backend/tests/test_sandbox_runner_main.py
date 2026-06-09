@@ -439,6 +439,40 @@ time.sleep(60)
 """
 
 
+class _FakeWarmStream:
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        raise StopAsyncIteration
+
+
+class _FakeWarmStdin:
+    def __init__(self):
+        self.closed = False
+
+    def is_closing(self):
+        return self.closed
+
+    def close(self):
+        self.closed = True
+
+
+class _FakeWarmProcess:
+    def __init__(self):
+        self.returncode = None
+        self.stdin = _FakeWarmStdin()
+        self.stdout = _FakeWarmStream()
+        self.stderr = _FakeWarmStream()
+
+    async def wait(self):
+        self.returncode = 0
+        return 0
+
+    def kill(self):
+        self.returncode = -9
+
+
 def _warm_settings(tmp_path: Path) -> dict:
     settings = get_settings()
     keys = [
@@ -558,6 +592,182 @@ def test_warm_pool_reuses_container_for_followup(monkeypatch, tmp_path: Path):
     assert len(build_calls) == 1
     assert pool_size == 1
     assert build_calls[0]["task_id_label"] == "warm"
+
+
+def test_warm_pool_waits_for_busy_same_topic_even_when_pool_has_capacity(monkeypatch, tmp_path: Path):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.RUNNING_CONTAINERS.clear()
+    originals = _warm_settings(tmp_path)
+    update_settings({"dataagent_sandbox_max_warm_containers": 2})
+    started: list[str] = []
+
+    async def fake_start(params, signature):
+        container_name = f"warm-child-{len(started) + 1}"
+        started.append(container_name)
+        return sandbox_runner_main.WarmChild(
+            backend="docker",
+            container_name=container_name,
+            signature=signature,
+            topic_id=params.topic_id,
+            process=_FakeWarmProcess(),
+        )
+
+    async def fake_kill(backend: str, container_name: str) -> None:
+        child = sandbox_runner_main.WARM_POOL.get(container_name)
+        if child is not None:
+            child.process.kill()
+
+    monkeypatch.setattr(sandbox_runner_main, "_start_warm_child", fake_start)
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill)
+
+    async def scenario():
+        first = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        second = TaskExecutionInput(
+            **{**_payload(agent_snapshot=_agent_snapshot([])), "task_id": "task-2"}
+        )
+        child_first, reused_first = await sandbox_runner_main._acquire_warm_child(first)
+        pending_second = asyncio.create_task(sandbox_runner_main._acquire_warm_child(second))
+        await asyncio.sleep(0.05)
+        assert pending_second.done() is False
+        assert started == ["warm-child-1"]
+
+        await sandbox_runner_main._release_warm_child(child_first, first.task_id)
+        child_second, reused_second = await asyncio.wait_for(pending_second, timeout=1)
+        try:
+            assert reused_first is False
+            assert reused_second is True
+            assert child_second.container_name == "warm-child-1"
+            assert started == ["warm-child-1"]
+            assert len(sandbox_runner_main.WARM_POOL) == 1
+        finally:
+            await sandbox_runner_main._release_warm_child(child_second, second.task_id)
+            await sandbox_runner_main._shutdown_warm_pool()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        sandbox_runner_main.RUNNING_CONTAINERS.clear()
+        update_settings(originals)
+
+
+def test_warm_pool_replaces_idle_same_topic_child_when_signature_changes(monkeypatch, tmp_path: Path):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.RUNNING_CONTAINERS.clear()
+    originals = _warm_settings(tmp_path)
+    update_settings({"dataagent_sandbox_max_warm_containers": 2})
+    started: list[str] = []
+    killed: list[str] = []
+
+    async def fake_start(params, signature):
+        container_name = f"warm-child-{len(started) + 1}"
+        started.append(container_name)
+        return sandbox_runner_main.WarmChild(
+            backend="docker",
+            container_name=container_name,
+            signature=signature,
+            topic_id=params.topic_id,
+            process=_FakeWarmProcess(),
+        )
+
+    async def fake_kill(backend: str, container_name: str) -> None:
+        killed.append(container_name)
+        child = sandbox_runner_main.WARM_POOL.get(container_name)
+        if child is not None:
+            child.process.kill()
+
+    monkeypatch.setattr(sandbox_runner_main, "_start_warm_child", fake_start)
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill)
+
+    async def scenario():
+        first = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        changed_signature = TaskExecutionInput(
+            **{
+                **_payload(agent_snapshot=_agent_snapshot(["new-skill"])),
+                "task_id": "task-2",
+            }
+        )
+        child_first, reused_first = await sandbox_runner_main._acquire_warm_child(first)
+        await sandbox_runner_main._release_warm_child(child_first, first.task_id)
+        child_second, reused_second = await sandbox_runner_main._acquire_warm_child(changed_signature)
+        try:
+            assert reused_first is False
+            assert reused_second is False
+            assert child_second.container_name == "warm-child-2"
+            assert started == ["warm-child-1", "warm-child-2"]
+            assert killed == ["warm-child-1"]
+            assert list(sandbox_runner_main.WARM_POOL) == ["warm-child-2"]
+        finally:
+            await sandbox_runner_main._release_warm_child(child_second, changed_signature.task_id)
+            await sandbox_runner_main._shutdown_warm_pool()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        sandbox_runner_main.RUNNING_CONTAINERS.clear()
+        update_settings(originals)
+
+
+def test_warm_pool_waits_at_cap_until_busy_child_releases(monkeypatch, tmp_path: Path):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.RUNNING_CONTAINERS.clear()
+    originals = _warm_settings(tmp_path)
+    update_settings({"dataagent_sandbox_max_warm_containers": 1})
+    started: list[str] = []
+
+    async def fake_start(params, signature):
+        container_name = f"warm-child-{len(started) + 1}"
+        started.append(container_name)
+        return sandbox_runner_main.WarmChild(
+            backend="docker",
+            container_name=container_name,
+            signature=signature,
+            topic_id=params.topic_id,
+            process=_FakeWarmProcess(),
+        )
+
+    async def fake_kill(backend: str, container_name: str) -> None:
+        child = sandbox_runner_main.WARM_POOL.get(container_name)
+        if child is not None:
+            child.process.kill()
+
+    monkeypatch.setattr(sandbox_runner_main, "_start_warm_child", fake_start)
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill)
+
+    async def scenario():
+        first = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        second = TaskExecutionInput(
+            **{
+                **_payload(agent_snapshot=_agent_snapshot([])),
+                "task_id": "task-2",
+                "topic_id": "topic-2",
+            }
+        )
+        child_first, reused_first = await sandbox_runner_main._acquire_warm_child(first)
+        pending_second = asyncio.create_task(sandbox_runner_main._acquire_warm_child(second))
+        await asyncio.sleep(0.05)
+        assert pending_second.done() is False
+        assert started == ["warm-child-1"]
+
+        await sandbox_runner_main._release_warm_child(child_first, first.task_id)
+        child_second, reused_second = await asyncio.wait_for(pending_second, timeout=1)
+        try:
+            assert reused_first is False
+            assert reused_second is False
+            assert child_second.container_name == "warm-child-2"
+            assert started == ["warm-child-1", "warm-child-2"]
+            assert len(sandbox_runner_main.WARM_POOL) == 1
+        finally:
+            await sandbox_runner_main._release_warm_child(child_second, second.task_id)
+            await sandbox_runner_main._shutdown_warm_pool()
+
+    try:
+        asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        sandbox_runner_main.RUNNING_CONTAINERS.clear()
+        update_settings(originals)
 
 
 def test_warm_pool_cancel_kills_child_and_returns_suspended(monkeypatch, tmp_path: Path):
