@@ -435,6 +435,7 @@ def test_build_system_prompt_includes_methodology_and_non_negotiables():
         "企业级智能问数 Data Agent",
         "准确理解用户的数据分析需求",
         "输出可解释、可复核、边界清晰的结果",
+        "无论用户使用何种语言提问，必须始终使用简体中文回复",
         "不编造表、字段、指标、口径、数据结果",
         "不在未确认 schema、字段或业务语义时直接臆造 SQL",
         "如果上下文不足以完成查询，先提澄清问题",
