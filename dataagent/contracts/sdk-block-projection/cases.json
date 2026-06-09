@@ -63,6 +63,17 @@
       ]
     },
     {
+      "name": "orphan tool_result records become synthetic tool blocks",
+      "records": [
+        {"seq_id": 1, "record_type": "tool_result", "data": {"tool_use_id": "call_skill_1", "content": "Launching skill: opendataworks-business-knowledge", "is_error": false}},
+        {"seq_id": 2, "record_type": "tool_result", "data": {"tool_use_id": "call_read_1", "content": "1\t# 业务知识地图", "is_error": false}}
+      ],
+      "expected": [
+        {"kind": "tool_use", "tool_name": "Skill", "input": {"skill": "opendataworks-business-knowledge"}, "output": "Launching skill: opendataworks-business-knowledge", "is_error": false},
+        {"kind": "tool_use", "tool_name": "Tool", "input": null, "output": "1\t# 业务知识地图", "is_error": false}
+      ]
+    },
+    {
       "name": "empty text block is dropped",
       "records": [
         {"seq_id": 1, "record_type": "stream", "data": {"type": "message_start"}},
