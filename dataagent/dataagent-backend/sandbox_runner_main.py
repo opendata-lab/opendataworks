@@ -24,7 +24,7 @@ from config import get_settings
 from core.agent_profile_service import normalize_agent_snapshot
 from core.skill_admin_service import resolve_enabled_skill_runtime
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
-from core.topic_workspace import LOGS_DIRNAME, sanitize_topic_id
+from core.topic_workspace import CONTAINER_RUNTIME_ROOT, LOGS_DIRNAME, sanitize_topic_id
 
 logger = logging.getLogger(__name__)
 
@@ -268,18 +268,57 @@ def _safe_container_fragment(value: str) -> str:
 
 
 def _host_sandbox_root() -> Path:
+    """Host-side runtime root, used ONLY as the child bind-mount ``source=``.
+
+    This is ``DATAAGENT_HOST_ROOT`` as seen by the host Docker/Podman daemon. It
+    must NOT be used for filesystem operations the runner performs itself: the
+    runner sees the same persistent volume at the fixed container path
+    ``/dataagent_runtime`` (see ``_container_runtime_root``), which equals this
+    host path only in the default deployment. Mixing the two breaks custom
+    ``DATAAGENT_HOST_ROOT`` values, because the runner would mkdir/chown/write
+    against a path that does not exist inside its own container.
+    """
     cfg = get_settings()
     raw = str(getattr(cfg, "dataagent_host_root", "") or "").strip()
     return Path(raw or "/dataagent_runtime").expanduser().resolve()
 
 
+def _container_runtime_root() -> Path:
+    """Runtime root as seen INSIDE the runner container (the mounted volume).
+
+    Compose mounts ``DATAAGENT_HOST_ROOT`` to this fixed container path for the
+    runner, so every directory the runner creates/owns/writes for a topic must be
+    rooted here. The host equivalent (``_host_sandbox_root``) is only the child
+    bind-mount source resolved by the host daemon.
+    """
+    return CONTAINER_RUNTIME_ROOT
+
+
+def _topic_container_workspace(topic_id: str) -> Path:
+    # Agent cwd as seen inside the runner: <container_root>/<topic>/workspace.
+    # Used for the runner's own mkdir/skill-target prep/chown.
+    return _container_runtime_root() / sanitize_topic_id(topic_id) / "workspace"
+
+
+def _topic_container_home(topic_id: str) -> Path:
+    # Per-topic Claude HOME as seen inside the runner: <container_root>/<topic>/home.
+    return _container_runtime_root() / sanitize_topic_id(topic_id) / "home"
+
+
+def _topic_container_logs(topic_id: str) -> Path:
+    # Per-task sandbox logs as seen inside the runner. Logs are written by the
+    # runner process itself, so they live under the container runtime root (the
+    # mounted volume), never the host-path string.
+    return _container_runtime_root() / sanitize_topic_id(topic_id) / LOGS_DIRNAME
+
+
 def _topic_host_workspace(topic_id: str) -> Path:
-    # Agent cwd bind source: <sandbox_root>/<topic>/workspace.
+    # Agent cwd bind source resolved by the host daemon: <host_root>/<topic>/workspace.
     return _host_sandbox_root() / sanitize_topic_id(topic_id) / "workspace"
 
 
 def _topic_host_home(topic_id: str) -> Path:
-    """Per-topic persisted Claude HOME on the host.
+    """Per-topic persisted Claude HOME bind source on the host.
 
     Claude stores resume session transcripts under ``$HOME/.claude/projects``.
     A child-local tmpfs HOME would drop them when the container is recreated
@@ -288,7 +327,7 @@ def _topic_host_home(topic_id: str) -> Path:
     resume working across the child container lifecycle.
 
     It is a sibling of ``workspace`` under the topic root
-    (``<sandbox_root>/<topic>/home``), so it sits next to the topic's other
+    (``<host_root>/<topic>/home``), so it sits next to the topic's other
     files (easy to find, cleaned up with the topic) but is NOT inside the agent
     workspace bind. The child mounts it at the distinct path ``/mnt/home`` (not
     ``/mnt/workspace``), so HOME never equals cwd, project skill registration is
@@ -297,14 +336,8 @@ def _topic_host_home(topic_id: str) -> Path:
     return _host_sandbox_root() / sanitize_topic_id(topic_id) / "home"
 
 
-def _topic_host_logs(topic_id: str) -> Path:
-    # Per-task sandbox logs live under <sandbox_root>/<topic>/logs, a sibling of
-    # workspace/ and home/. Host-side only (never bind-mounted into the child).
-    return _host_sandbox_root() / sanitize_topic_id(topic_id) / LOGS_DIRNAME
-
-
 def _sandbox_task_log_path(params: TaskExecutionInput) -> Path:
-    return _topic_host_logs(params.topic_id) / f"{_safe_container_fragment(params.task_id)}.log"
+    return _topic_container_logs(params.topic_id) / f"{_safe_container_fragment(params.task_id)}.log"
 
 
 def _append_task_log(log_path: Path | None, line: str) -> None:
@@ -448,15 +481,21 @@ def _build_container_command(
     if not image:
         raise RuntimeError("DATAAGENT_SANDBOX_IMAGE is required for container sandbox backend")
 
-    topic_workspace = _topic_host_workspace(params.topic_id)
-    topic_workspace.mkdir(parents=True, exist_ok=True)
-    topic_home = _topic_host_home(params.topic_id)
-    topic_home.mkdir(parents=True, exist_ok=True)
+    # Filesystem prep runs inside the runner container, so it must target the
+    # mounted volume at the container runtime root. The child bind-mount sources
+    # below use the host-path equivalents (resolved by the host daemon); the two
+    # only coincide when DATAAGENT_HOST_ROOT == the fixed container root.
+    container_workspace = _topic_container_workspace(params.topic_id)
+    container_workspace.mkdir(parents=True, exist_ok=True)
+    container_home = _topic_container_home(params.topic_id)
+    container_home.mkdir(parents=True, exist_ok=True)
+    host_workspace = _topic_host_workspace(params.topic_id)
+    host_home = _topic_host_home(params.topic_id)
     enabled_folders = _enabled_skill_folders_for_task(params)
     skill_mounts = _build_skill_mounts(cfg, enabled_folders)
-    _prepare_child_skill_mount_targets(topic_workspace, enabled_folders)
-    _ensure_topic_workspace_owner(topic_workspace)
-    _ensure_host_path_owner(topic_home)
+    _prepare_child_skill_mount_targets(container_workspace, enabled_folders)
+    _ensure_topic_workspace_owner(container_workspace)
+    _ensure_host_path_owner(container_home)
     container_name = container_name or (
         f"dataagent-task-{_safe_container_fragment(params.topic_id)[:32]}-"
         f"{_safe_container_fragment(params.task_id)[:32]}"
@@ -483,9 +522,9 @@ def _build_container_command(
         "--workdir",
         CHILD_WORKSPACE_ROOT,
         "--mount",
-        f"type=bind,source={topic_workspace},target={CHILD_WORKSPACE_ROOT}",
+        f"type=bind,source={host_workspace},target={CHILD_WORKSPACE_ROOT}",
         "--mount",
-        f"type=bind,source={topic_home},target={CHILD_CLAUDE_HOME}",
+        f"type=bind,source={host_home},target={CHILD_CLAUDE_HOME}",
     ]
     # Runtime isolation hardening. The workspace bind-mount, the per-topic HOME
     # bind-mount, and read-only skill mounts are the only host paths the child can
