@@ -29,6 +29,11 @@ class UserMessage:
         self.content = content
 
 
+class StreamEvent:
+    def __init__(self, event):
+        self.event = event
+
+
 class TextBlock:
     type = "text"
 
@@ -114,6 +119,51 @@ def test_assistant_message_tool_use_is_recorded_as_stream_events() -> None:
         "content": "Launching skill: opendataworks-business-knowledge",
         "is_error": False,
     }
+
+
+def test_partial_stream_events_suppress_assistant_message_projection() -> None:
+    """When the SDK streams partial StreamEvents, the trailing whole
+    AssistantMessage must not be projected again, otherwise thinking, tool
+    calls, and conclusion blocks would be duplicated."""
+    store = FakeStore()
+    writer = SdkBlockWriter(store, task_id="task-1", topic_id="topic-1")
+
+    # Partial-streaming path: SDK emits raw StreamEvents for the same content.
+    writer.ingest(StreamEvent({"type": "message_start"}))
+    writer.ingest(
+        StreamEvent(
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text"},
+            }
+        )
+    )
+    writer.ingest(
+        StreamEvent(
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {"type": "text_delta", "text": "结论。"},
+            }
+        )
+    )
+    writer.ingest(StreamEvent({"type": "content_block_stop", "index": 0}))
+    writer.ingest(StreamEvent({"type": "message_stop"}))
+
+    records_before = len(store.records)
+
+    # The SDK also yields the assembled AssistantMessage for the same turn.
+    writer.ingest(AssistantMessage([TextBlock("结论。")]))
+
+    # No additional records should be produced by the AssistantMessage.
+    assert len(store.records) == records_before
+    message_starts = [
+        record
+        for record in store.records
+        if record["record_type"] == "stream" and record["event_type"] == "message_start"
+    ]
+    assert len(message_starts) == 1
 
 
 def test_sdk_dataclass_tool_use_without_type_field_is_recorded() -> None:

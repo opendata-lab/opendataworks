@@ -16,6 +16,7 @@ class SdkBlockWriter:
         self._task_id = task_id
         self._topic_id = topic_id
         self._turn_index = 0
+        self._saw_stream_event = False
 
     def ingest(self, msg: Any) -> None:
         """Process one SDK message from the claude_query() stream."""
@@ -28,6 +29,7 @@ class SdkBlockWriter:
         type_name = type(msg).__name__
 
         if type_name == "StreamEvent":
+            self._saw_stream_event = True
             evt = getattr(msg, "event", None) or {}
             self._append_stream_event(evt)
 
@@ -80,6 +82,13 @@ class SdkBlockWriter:
                 )
 
     def _ingest_assistant_message(self, msg: Any) -> None:
+        # In partial-streaming mode the SDK already emitted StreamEvent records
+        # carrying every block of this message. Projecting the whole
+        # AssistantMessage on top of that would duplicate thinking, tool calls,
+        # and conclusion blocks. Only normalize whole messages when no partial
+        # StreamEvent was observed (supports_partial_messages=false providers).
+        if self._saw_stream_event:
+            return
         content = getattr(msg, "content", None)
         if isinstance(content, str):
             blocks = [{"type": "text", "text": content}]
