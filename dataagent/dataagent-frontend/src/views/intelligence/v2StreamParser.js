@@ -10,6 +10,8 @@
  *   done record (after ResultMessage)
  */
 
+const SKILL_LAUNCH_OUTPUT_RE = /^Launching skill(?::\s*(.+))?$/i
+
 /**
  * Create a fresh chat state for one assistant message.
  * One state object maps to one user question + all AI reply turns.
@@ -124,10 +126,50 @@ function _handleStreamEvent(state, evt) {
 function _handleToolResult(state, data) {
   const toolUseId = data.tool_use_id
   if (!toolUseId) return
-  const block = state.blocks.find((b) => b.type === 'tool_use' && b.id === toolUseId)
-  if (!block) return
+  let block = state.blocks.find((b) => b.type === 'tool_use' && b.id === toolUseId)
+  if (!block) {
+    block = _createSyntheticToolBlock(state, data)
+  }
   block.output = data.content
   block.is_error = Boolean(data.is_error)
+}
+
+function _createSyntheticToolBlock(state, data) {
+  const currentTurn = _ensureCurrentTurn(state)
+  const skillName = _extractSkillLaunchName(data.content)
+  const block = {
+    turnIndex: currentTurn.turnIndex,
+    blockIndex: currentTurn.blocks.length,
+    type: 'tool_use',
+    content: '',
+    status: 'done',
+    id: data.tool_use_id,
+    name: skillName != null ? 'Skill' : 'Tool',
+    inputJson: '',
+    input: skillName ? { skill: skillName } : null,
+    output: null,
+    is_error: false,
+  }
+  currentTurn.blocks.push(block)
+  state.blocks.push(block)
+  return block
+}
+
+function _ensureCurrentTurn(state) {
+  let currentTurn = state.turns.at(-1)
+  if (!currentTurn || currentTurn.status === 'done') {
+    currentTurn = { turnIndex: state.turns.length, blocks: [], status: 'streaming' }
+    state.turns.push(currentTurn)
+    if (state.status === 'idle') state.status = 'streaming'
+  }
+  return currentTurn
+}
+
+function _extractSkillLaunchName(output) {
+  if (typeof output !== 'string') return null
+  const match = output.trim().match(SKILL_LAUNCH_OUTPUT_RE)
+  if (!match) return null
+  return String(match[1] || '').trim()
 }
 
 function _findBlock(turn, index) {

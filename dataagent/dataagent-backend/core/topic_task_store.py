@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import uuid
 from datetime import datetime
@@ -58,6 +59,7 @@ WIDGET_EVENT_TYPES = frozenset({
 })
 MAX_WIDGET_EVENTS_PER_BATCH = 50
 MAX_WIDGET_PAYLOAD_BYTES = 4096
+SKILL_LAUNCH_OUTPUT_RE = re.compile(r"^Launching skill(?::\s*(.+))?$", re.IGNORECASE)
 
 
 def _parse_client_ts(value: Any) -> datetime | None:
@@ -174,6 +176,12 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 blk = blocks_by_tool_id[tool_use_id]
                 blk["output"] = data.get("content")
                 blk["is_error"] = bool(data.get("is_error"))
+            elif tool_use_id:
+                block = _synthetic_tool_result_block(data, len(ordered_blocks))
+                ordered_blocks.append(block)
+                blocks_by_tool_id[tool_use_id] = block
+                if current_turn_blocks is not None:
+                    current_turn_blocks.append(block)
 
     result: list[dict[str, Any]] = []
     for block in ordered_blocks:
@@ -184,6 +192,34 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         result.append(clean)
 
     return {"blocks": result, "resume_after_seq": max_seq_id}
+
+
+def _synthetic_tool_result_block(data: dict[str, Any], index: int) -> dict[str, Any]:
+    skill_name = _extract_skill_launch_name(data.get("content"))
+    if skill_name is not None:
+        tool_name = "Skill"
+        tool_input = {"skill": skill_name} if skill_name else None
+    else:
+        tool_name = "Tool"
+        tool_input = None
+    return {
+        "type": "tool_use",
+        "tool_id": str(data.get("tool_use_id") or f"synthetic_tool_{index}"),
+        "tool_name": tool_name,
+        "input": tool_input,
+        "output": data.get("content"),
+        "is_error": bool(data.get("is_error")),
+        "_idx": index,
+    }
+
+
+def _extract_skill_launch_name(content: Any) -> str | None:
+    if not isinstance(content, str):
+        return None
+    match = SKILL_LAUNCH_OUTPUT_RE.match(content.strip())
+    if not match:
+        return None
+    return str(match.group(1) or "").strip()
 
 
 class TopicTaskStore:

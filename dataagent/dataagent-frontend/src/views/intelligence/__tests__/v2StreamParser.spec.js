@@ -144,12 +144,19 @@ describe('processV2Record — tool_result', () => {
     expect(state.blocks[0]).toMatchObject({ output: 'boom', is_error: true })
   })
 
-  it('ignores a tool_result with no matching block', () => {
+  it('creates a synthetic tool block for a tool_result with no matching block', () => {
     const state = feed(createChatState(), [
-      stream({ type: 'message_start' }),
-      toolResult({ tool_use_id: 'missing', content: 'x' }),
+      toolResult({ tool_use_id: 'call_skill_1', content: 'Launching skill: opendataworks-business-knowledge' }),
     ])
-    expect(state.blocks).toHaveLength(0)
+    expect(state.blocks).toHaveLength(1)
+    expect(state.blocks[0]).toMatchObject({
+      type: 'tool_use',
+      id: 'call_skill_1',
+      name: 'Skill',
+      input: { skill: 'opendataworks-business-knowledge' },
+      output: 'Launching skill: opendataworks-business-knowledge',
+      status: 'done',
+    })
   })
 })
 
