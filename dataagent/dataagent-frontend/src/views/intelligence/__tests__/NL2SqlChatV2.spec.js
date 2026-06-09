@@ -489,6 +489,48 @@ describe('NL2SqlChatV2 URL location', () => {
     resolveStream()
   })
 
+  it('resumes the live stream and shows the stop button when re-entering a running topic', async () => {
+    let resolveStream
+    apiMocks.topicApi.listTopics.mockResolvedValue({
+      list: [
+        { ...makeTopic('topic-run', 'Running topic'), current_task_id: 'task-run', current_task_status: 'running' }
+      ]
+    })
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => ({
+      topic_id: topicId,
+      page: 1,
+      page_size: 500,
+      order: 'asc',
+      total: 1,
+      items: [
+        { message_id: 'u-run', topic_id: topicId, sender_type: 'user', content: 'running question', created_at: '2026-05-30T02:00:00Z' }
+      ]
+    }))
+    apiMocks.taskApi.streamSdkEvents.mockImplementation((_taskId, opts) => {
+      opts.onRecord({ record_type: 'stream', data: { type: 'message_start', usage: {} } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'resumed stream' } } })
+      return new Promise((resolve) => { resolveStream = resolve })
+    })
+    routeState.query = { tab: 'chat-v2', topic_id: 'topic-run' }
+
+    const wrapper = mountChat()
+    await flushPromises()
+    await nextTick()
+
+    // The engine re-attaches to the still-running backend task from seq 0.
+    expect(apiMocks.taskApi.streamSdkEvents).toHaveBeenCalledWith('task-run', expect.objectContaining({ afterId: 0 }))
+    expect(wrapper.text()).toContain('resumed stream')
+    // An active task turns the send button into the stop/cancel control.
+    const button = wrapper.get('.v2-send-btn')
+    expect(button.classes()).toContain('v2-cancel-btn')
+    expect(button.attributes('disabled')).toBeUndefined()
+    // The composer stays editable mid-run so the next question can be typed.
+    expect(wrapper.find('textarea').attributes('disabled')).toBeUndefined()
+
+    resolveStream()
+  })
+
   it('forwards the selected assistant to the widget topic query', async () => {
     routeState.query = { tab: 'chat-v2', agent_id: 'agent_sales' }
     const wrapper = mountChat()

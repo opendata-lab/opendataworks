@@ -318,8 +318,8 @@
               ref="textareaRef"
               v-model="inputText"
               class="v2-textarea"
-              :placeholder="isStreaming ? '正在回复中…' : '输入数据问题…'"
-              :disabled="isStreaming || !availableModels.length"
+              placeholder="输入数据问题…"
+              :disabled="!availableModels.length"
               rows="1"
               @keydown.enter="onEnterKey"
               @input="autoResize"
@@ -497,6 +497,7 @@ const {
   availableModels, canSend, isBusy: isStreaming, activeTaskId,
   thinkingExpanded, toggleThinking,
   send: engineSend, cancel: engineCancel, detach,
+  resumeActiveTopicTask,
   loadConfig,
 } = chat
 const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
@@ -762,6 +763,14 @@ async function loadAgents() {
   }
 }
 
+// The session list is always scoped to one assistant. A deep-link agent_id in
+// the route takes priority; otherwise fall back to the live selector value
+// (defaulted in loadAgents) so a fresh entry never lists every assistant's
+// sessions before the route has been seeded.
+function currentAgentFilterId() {
+  return normalizeQueryValue(route.query.agent_id) || String(agentSelectValue.value || '').trim()
+}
+
 async function loadTopics() {
   if (sourceMode.value === 'widget') {
     await loadWidgetTopics()
@@ -769,7 +778,8 @@ async function loadTopics() {
   }
   try {
     const params = { page: 1, page_size: 50 }
-    if (route.query.agent_id) params.agent_id = route.query.agent_id
+    const agentId = currentAgentFilterId()
+    if (agentId) params.agent_id = agentId
     const data = await topicApi.listTopics(params)
     topics.value = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
     const requestedTopicId = routeTopicId()
@@ -790,7 +800,8 @@ async function loadWidgetTopics() {
     const params = { page: 1, page_size: 50 }
     // Assistant filter mirrors portal mode so the same agent selector narrows
     // both sources; the admin widget endpoint accepts agent_id server-side.
-    if (route.query.agent_id) params.agent_id = route.query.agent_id
+    const agentId = currentAgentFilterId()
+    if (agentId) params.agent_id = agentId
     // User filter is applied server-side so it stays accurate across pages.
     if (filterUser.value.startsWith('ext:')) params.external_user_id = filterUser.value.slice(4)
     else if (filterUser.value.startsWith('vis:')) params.visitor_id = filterUser.value.slice(4)
@@ -831,6 +842,12 @@ async function selectTopic(topicId, options = {}) {
       : await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
     messages.value = list.map(hydrateMessageFromApi)
+    // Re-attach to a still-running task so re-entering a live conversation keeps
+    // streaming and exposes the stop button. Widget mode is a read-only audit
+    // view of other users' sessions, so it never resumes a live stream.
+    if (!isWidgetMode.value) {
+      resumeActiveTopicTask(normalizedTopicId)
+    }
     const messageId = normalizeQueryValue(options.messageId)
     if (messageId) {
       focusMessage(messageId)

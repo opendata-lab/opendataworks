@@ -201,7 +201,6 @@
               v-model="inputText"
               class="query-textarea"
               rows="1"
-              :disabled="isBusy"
               placeholder="输入数据问题…"
               @keydown.enter="onEnterKey"
               @input="autoResizeTextarea"
