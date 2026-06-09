@@ -24,7 +24,7 @@ from config import get_settings
 from core.agent_profile_service import normalize_agent_snapshot
 from core.skill_admin_service import resolve_enabled_skill_runtime
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
-from core.topic_workspace import resolve_topic_root, sanitize_topic_id
+from core.topic_workspace import LOGS_DIRNAME, resolve_topic_root, sanitize_topic_id
 
 logger = logging.getLogger(__name__)
 
@@ -305,13 +305,14 @@ def _topic_host_home(topic_id: str) -> Path:
     return _host_sandbox_root() / sanitize_topic_id(topic_id) / "home"
 
 
+def _topic_host_logs(topic_id: str) -> Path:
+    # Per-task sandbox logs live under <sandbox_root>/<topic>/logs, a sibling of
+    # workspace/ and home/. Host-side only (never bind-mounted into the child).
+    return _host_sandbox_root() / sanitize_topic_id(topic_id) / LOGS_DIRNAME
+
+
 def _sandbox_task_log_path(params: TaskExecutionInput) -> Path:
-    cfg = get_settings()
-    raw_root = str(getattr(cfg, "dataagent_sandbox_log_dir", "") or "/workspaces/.sandbox-logs").strip()
-    root = Path(raw_root).expanduser()
-    if not root.is_absolute():
-        root = _host_sandbox_root() / root
-    return root / sanitize_topic_id(params.topic_id) / f"{_safe_container_fragment(params.task_id)}.log"
+    return _topic_host_logs(params.topic_id) / f"{_safe_container_fragment(params.task_id)}.log"
 
 
 def _append_task_log(log_path: Path | None, line: str) -> None:

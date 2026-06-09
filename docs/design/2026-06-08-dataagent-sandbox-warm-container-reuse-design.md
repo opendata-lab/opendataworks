@@ -132,12 +132,15 @@ sibling subdirectories:
 ```text
 <sandbox_root>/<topic>/            # topic root (never bind-mounted directly)
   ├─ workspace/   -> /mnt/workspace # agent cwd: uploads/, output/, .claude/skills
-  └─ home/        -> /mnt/home      # persisted Claude HOME (resume transcripts)
+  ├─ home/        -> /mnt/home      # persisted Claude HOME (resume transcripts)
+  └─ logs/                          # per-task sandbox logs (host-side only)
 ```
 
-- `home` is a sibling of `workspace`, not inside it, so the agent working in
-  `/mnt/workspace` never sees session data, while both stay under `<topic>` for
-  findability and are removed together when the topic is deleted.
+- `home` and `logs` are siblings of `workspace`, not inside it, so the agent
+  working in `/mnt/workspace` never sees session data or logs, while everything
+  stays under `<topic>` for findability and is removed together when the topic
+  is deleted (`delete_topic_workspace` physically rmtrees the whole topic root,
+  logs included).
 - `/mnt/home` stays a distinct path from cwd `/mnt/workspace`, preserving project
   skill registration.
 - The shared workspace contract `resolve_topic_workspace(topic)` (backend topic

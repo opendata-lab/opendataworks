@@ -93,7 +93,8 @@ class Settings(BaseSettings):
     dataagent_sandbox_backend: str = "docker"
     dataagent_sandbox_network: str = ""
     dataagent_sandbox_host_skills_dir: str = ""
-    dataagent_sandbox_log_dir: str = "/workspaces/.sandbox-logs"
+    # Per-task sandbox logs are written under <sandbox_root>/<topic>/logs so they
+    # sit next to the topic's workspace/ and home/ subdirs; no separate root.
     # Runtime isolation hardening for the child task container. The workspace
     # bind-mount is always the only writable host path; these tighten the rest.
     # read_only_rootfs locks the container root filesystem read-only so the

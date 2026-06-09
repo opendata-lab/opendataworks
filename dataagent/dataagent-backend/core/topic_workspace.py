@@ -11,6 +11,10 @@ from core.skill_discovery import SkillDiscoveryError, resolve_skill_discovery_ro
 
 logger = logging.getLogger(__name__)
 
+# Subdir of the topic root that holds per-task sandbox logs, a sibling of
+# workspace/ and home/. Deleted together with the topic root on topic deletion.
+LOGS_DIRNAME = "logs"
+
 
 def _backend_root() -> Path:
     return Path(__file__).resolve().parent.parent
@@ -222,8 +226,9 @@ def _format_skill_entry(entry: dict) -> str:
 
 
 def delete_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> bool:
-    # Remove the whole topic root so the workspace and the persisted home
-    # subdir are deleted together (no leftover session/home data).
+    # Physical delete (rmtree) of the whole topic root: workspace/, home/, and
+    # logs/ are all removed together. This is a destructive interface; it is only
+    # invoked on explicit topic deletion, so do not wire it to other triggers.
     topic_root = resolve_topic_root(topic_id, sandbox_root=sandbox_root)
     if not topic_root.exists():
         return False

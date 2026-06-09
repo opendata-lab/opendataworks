@@ -196,19 +196,21 @@ def test_prepare_topic_workspace_copies_once_and_refreshes_on_source_change(monk
         )
 
 
-def test_delete_topic_workspace_removes_topic_root_with_workspace_and_home(tmp_path: Path):
+def test_delete_topic_workspace_removes_topic_root_including_logs(tmp_path: Path):
     root = tmp_path / "topics"
     topic_root = root / "topic_1"
     sibling = root / "topic_2"
-    # New layout: workspace/ and home/ are siblings under the topic root.
+    # New layout: workspace/, home/, and logs/ are siblings under the topic root.
     (topic_root / "workspace" / ".claude").mkdir(parents=True)
     (topic_root / "home" / ".claude").mkdir(parents=True)
+    (topic_root / "logs").mkdir(parents=True)
+    (topic_root / "logs" / "task-1.log").write_text("log", encoding="utf-8")
     (sibling / "workspace").mkdir(parents=True)
 
     deleted = delete_topic_workspace("topic_1", sandbox_root=root)
 
     assert deleted is True
-    # The whole topic root is removed, so both workspace and home are gone.
+    # Physical delete removes the whole topic root: workspace, home, AND logs.
     assert not topic_root.exists()
     assert sibling.exists()
 

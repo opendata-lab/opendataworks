@@ -334,12 +334,18 @@ print(json.dumps({
 def test_sandbox_runner_persists_child_logs_after_container_exit(monkeypatch, tmp_path: Path):
     settings = get_settings()
     originals = {
-        "dataagent_sandbox_log_dir": getattr(settings, "dataagent_sandbox_log_dir", ""),
+        "dataagent_sandbox_host_root": settings.dataagent_sandbox_host_root,
+        "dataagent_sandbox_root": settings.dataagent_sandbox_root,
     }
-    log_dir = tmp_path / "sandbox-logs"
+    host_root = tmp_path / "workspaces"
     sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
 
-    update_settings({"dataagent_sandbox_log_dir": str(log_dir)})
+    update_settings(
+        {
+            "dataagent_sandbox_host_root": str(host_root),
+            "dataagent_sandbox_root": str(host_root),
+        }
+    )
     child_code = """
 import sys
 
@@ -369,7 +375,7 @@ sys.exit(7)
         sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
         update_settings(originals)
 
-    log_path = log_dir / "topic-1" / "task-1.log"
+    log_path = host_root / "topic-1" / "logs" / "task-1.log"
     assert result.task_status == "error"
     assert result.error == {
         "code": "sandbox_container_no_result",

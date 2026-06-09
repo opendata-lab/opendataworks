@@ -3,6 +3,12 @@
 **Date:** 2026-06-08
 **Related design:** `docs/design/2026-06-08-sandbox-task-log-persistence-design.md`
 
+> Updated (2026-06-09): the `DATAAGENT_SANDBOX_LOG_DIR` setting and the
+> `/workspaces/.sandbox-logs` root described below were removed. Per-task logs
+> now live at `<sandbox_root>/<topic>/logs/<task>.log` (a sibling of the topic's
+> `workspace/` and `home/`), derived from the topic root with no separate
+> setting, and are deleted with the topic root on `delete_topic_workspace`.
+
 ## Objective
 
 Persist child sandbox task logs after `docker run --rm` removes the task container.
