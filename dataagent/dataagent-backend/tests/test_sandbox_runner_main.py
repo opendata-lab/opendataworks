@@ -5,6 +5,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +19,22 @@ from core.task_executor import TaskExecutionResult
 
 
 OLD_SANDBOX_ROOT_ENV_PREFIX = "DATAAGENT_" "SANDBOX_ROOT="
+
+
+@pytest.fixture(autouse=True)
+def _isolate_container_runtime_root(tmp_path_factory, monkeypatch):
+    """Redirect the in-container runtime root to a writable temp dir.
+
+    The runner performs its own filesystem prep (mkdir/skill-target prep/chown/
+    logs) under the container runtime root, which in production is the mounted
+    volume at ``/dataagent_runtime`` — distinct from the host bind source
+    (``DATAAGENT_HOST_ROOT``). Tests run outside a container, so point the
+    container root at a temp dir to avoid touching the real ``/dataagent_runtime``
+    and to keep host vs container roots genuinely separate.
+    """
+    container_root = tmp_path_factory.mktemp("container-runtime")
+    monkeypatch.setattr(sandbox_runner_main, "CONTAINER_RUNTIME_ROOT", container_root)
+    return container_root
 
 
 def _agent_snapshot(skill_folders: list[str] | None = None) -> dict:
@@ -119,23 +136,29 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
 
     assert backend == "docker"
     assert container_name.startswith("dataagent-task-topic-1-task-1")
-    # The topic root holds two separately mounted subdirs: workspace/ and home/.
-    topic_workspace = host_root / "topic-1" / "workspace"
-    assert topic_workspace == tmp_path / "topics" / "topic-1" / "workspace"
-    assert topic_workspace.is_dir()
-    assert (topic_workspace / ".claude" / "skills").is_dir()
-    assert f"type=bind,source={topic_workspace},target=/mnt/workspace" in command
+    # The runner prepares files under the container runtime root (the mounted
+    # volume it sees), NOT under the host bind source. With a custom host root the
+    # two differ, which is exactly what broke before: prep must hit the volume.
+    container_root = sandbox_runner_main.CONTAINER_RUNTIME_ROOT
+    assert container_root != host_root
+    created_workspace = container_root / "topic-1" / "workspace"
+    assert created_workspace.is_dir()
+    assert (created_workspace / ".claude" / "skills").is_dir()
+    created_home = container_root / "topic-1" / "home"
+    assert created_home.is_dir()
+    # Child bind sources are the HOST-path equivalents, resolved by the host daemon.
+    host_workspace = host_root / "topic-1" / "workspace"
+    host_home = host_root / "topic-1" / "home"
+    assert f"type=bind,source={host_workspace},target=/mnt/workspace" in command
+    assert f"type=bind,source={host_home},target=/mnt/home" in command
+    # The container-path (where prep landed) must never leak in as a bind source.
+    assert f"type=bind,source={created_workspace},target=/mnt/workspace" not in command
     assert f"type=bind,source={host_root / 'topic-1'},target=/mnt/workspace" not in command
     assert f"type=bind,source={host_root},target=/mnt/workspace" not in command
-    # HOME is a per-topic persisted bind-mount at <topic>/home, a sibling of
-    # workspace (not inside it), mounted at the distinct path /mnt/home so resume
-    # transcripts survive child container recreation and the agent never sees them.
-    topic_home = host_root / "topic-1" / "home"
-    assert topic_home.is_dir()
-    assert f"type=bind,source={topic_home},target=/mnt/home" in command
-    # home is NOT under the workspace bind source, so it cannot appear in /mnt/workspace.
-    assert topic_home.parent == topic_workspace.parent
-    assert topic_home not in topic_workspace.parents
+    # home is a sibling of workspace under the same topic root, never inside it.
+    assert host_home.parent == host_workspace.parent
+    assert host_home not in host_workspace.parents
+    assert created_home.parent == created_workspace.parent
     workdir_index = command.index("--workdir")
     assert command[workdir_index + 1] == "/mnt/workspace"
     assert "--network" in command
@@ -368,7 +391,9 @@ sys.exit(7)
         sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
         update_settings(originals)
 
-    log_path = host_root / "topic-1" / "logs" / "task-1.log"
+    # Logs are written by the runner process itself, so they land under the
+    # container runtime root (the mounted volume), not the host-path string.
+    log_path = sandbox_runner_main.CONTAINER_RUNTIME_ROOT / "topic-1" / "logs" / "task-1.log"
     assert result.task_status == "error"
     assert result.error == {
         "code": "sandbox_container_no_result",
