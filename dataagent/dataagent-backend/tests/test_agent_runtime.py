@@ -358,13 +358,13 @@ def test_workspace_boundary_denies_bash_parent_directory_lookup(tmp_path: Path):
     assert "parent directory" in denial
 
 
-def test_workspace_boundary_denies_shared_dataagent_home_lookup():
-    workspace = Path("/workspaces/topic_1")
+def test_workspace_boundary_denies_shared_container_runtime_root_lookup():
+    workspace = Path("/dataagent_runtime/topic_1/workspace")
     allowed_roots = agent_runtime._build_workspace_allowed_roots(workspace, {"enabled_roots": {}})
 
     denial = agent_runtime._validate_workspace_tool_boundary(
         "Read",
-        {"file_path": "/workspaces"},
+        {"file_path": "/dataagent_runtime"},
         workspace,
         allowed_roots,
         {"DATAAGENT_PYTHON_BIN": sys.executable},

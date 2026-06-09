@@ -4,7 +4,7 @@ from __future__ import annotations
 Per-topic conversation file helpers.
 
 Uploaded inputs and agent-generated outputs live in the topic workspace
-(`/workspaces/<topic_id>/workspace/`). Only two curated subdirectories are listed and
+(`/dataagent_runtime/<topic_id>/workspace/`). Only two curated subdirectories are listed and
 served: `uploads/` (user-attached inputs) and `output/` (deliverables the agent
 is told to write). Everything else — scratch files the agent writes elsewhere in
 the workspace, plus the reserved `.claude/` subtree (skills + SDK sessions) — is
