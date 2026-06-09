@@ -32,6 +32,52 @@ def _payload() -> dict:
     }
 
 
+def test_serve_loop_processes_multiple_payloads_then_exits_on_eof(monkeypatch, tmp_path: Path):
+    captured: list[str] = []
+
+    async def fake_execute_and_emit(params):
+        captured.append(params.task_id)
+        return TaskExecutionResult(
+            task_status="finished",
+            content=f"warm-{params.task_id}",
+            provider_id=params.provider_id,
+            model=params.model,
+        )
+
+    async def fake_reader():
+        reader = asyncio.StreamReader()
+        first = json.dumps(_payload())
+        second_payload = _payload()
+        second_payload["task_id"] = "task-2"
+        second = json.dumps(second_payload)
+        reader.feed_data((first + "\n" + second + "\n").encode("utf-8"))
+        reader.feed_eof()
+        return reader
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sandbox_task_main, "_execute_and_emit", fake_execute_and_emit)
+    monkeypatch.setattr(sandbox_task_main, "_stdin_reader", fake_reader)
+
+    exit_code = asyncio.run(sandbox_task_main._serve_loop())
+
+    assert exit_code == 0
+    assert captured == ["task-1", "task-2"]
+
+
+def test_serve_loop_exits_on_idle_timeout(monkeypatch, tmp_path: Path):
+    async def fake_reader():
+        reader = asyncio.StreamReader()
+        # never feeds data and never EOFs -> readline blocks until idle timeout
+        return reader
+
+    monkeypatch.setenv("DATAAGENT_SANDBOX_CHILD_IDLE_TIMEOUT", "0.1")
+    monkeypatch.setattr(sandbox_task_main, "_stdin_reader", fake_reader)
+
+    exit_code = asyncio.run(sandbox_task_main._serve_loop())
+
+    assert exit_code == 0
+
+
 def test_sandbox_task_main_uses_process_cwd_as_prepared_workspace(monkeypatch, tmp_path: Path, capsys):
     captured: dict[str, object] = {}
 

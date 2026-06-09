@@ -101,6 +101,14 @@ class Settings(BaseSettings):
     # workspace; a writable tmpfs is mounted at /tmp for transient scratch.
     dataagent_sandbox_read_only_rootfs: bool = False
     dataagent_sandbox_tmpfs_size: str = "512m"
+    # Warm child container reuse. When the container backend is active, keep a
+    # finished child alive for an idle window so same-conversation follow-ups
+    # reuse it instead of paying full container/SDK cold-start each turn.
+    # Set reuse_enabled to false to restore one-shot-per-task containers.
+    dataagent_sandbox_reuse_enabled: bool = True
+    dataagent_sandbox_idle_ttl_seconds: int = 600
+    dataagent_sandbox_max_warm_containers: int = 32
+    dataagent_sandbox_reaper_interval_seconds: int = 30
 
     # ---- 运行策略 ----
     max_few_shot_examples: int = 5
