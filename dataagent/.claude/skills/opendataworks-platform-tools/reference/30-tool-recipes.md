@@ -27,6 +27,8 @@
 - 表 DDL：`mcp__portal__portal_get_table_ddl`
 - 只读 SQL：`mcp__portal__portal_query_readonly`
 
+调用任一 `mcp__portal__portal_*` 工具时，附带一个简短中文 `description`，说明本次调用意图（如“搜索订单相关表”“查询 ads_sales_di 血缘”）。该字段仅用于前端工具轨迹展示，不影响查询逻辑；省略时前端只能回退到工具名。
+
 只有当前 run 看不到这些工具时，才回退到脚本。
 
 ## inspect_metadata.py

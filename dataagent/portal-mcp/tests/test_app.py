@@ -261,3 +261,28 @@ async def test_query_readonly_forwards_default_limit():
         },
     )
     assert result.structuredContent["kind"] == "query_result"
+
+
+@pytest.mark.anyio
+async def test_display_description_is_accepted_but_not_forwarded():
+    # The display-only description must be accepted by the strict (extra="forbid")
+    # schema yet stripped from the payload sent to the backend.
+    backend = FakeBackendClient()
+
+    await _call_mcp_tool(
+        create_app(settings=_settings(), backend_client=backend),
+        tool_name="portal_search_tables",
+        arguments={"keyword": "发布", "description": "搜索发布相关表"},
+    )
+    assert backend.calls[-1] == ("inspect", {"keyword": "发布", "tableLimit": 12})
+
+    result, _ = await _call_mcp_tool(
+        create_app(settings=_settings(), backend_client=backend),
+        tool_name="portal_query_readonly",
+        arguments={"database": "dw", "sql": "SELECT 1", "description": "执行只读查询"},
+    )
+    assert backend.calls[-1] == (
+        "query_readonly",
+        {"database": "dw", "sql": "SELECT 1", "limit": 1000, "timeoutSeconds": 30},
+    )
+    assert result.structuredContent["kind"] == "query_result"

@@ -16,18 +16,34 @@ from .scope_context import set_data_scope_header
 from .service import PortalToolService
 
 
-class SearchTablesInput(BaseModel):
+class PortalToolInput(BaseModel):
+    """Shared base for portal tool inputs.
+
+    Carries an optional, display-only ``description`` so the agent can attach a
+    short natural-language summary of the call's intent. It is surfaced by the
+    frontend tool-trace ("执行工具：…") and intentionally never forwarded to the
+    backend, so ``to_payload`` strips it from the outgoing request.
+    """
+
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
+    description: str | None = Field(
+        default=None,
+        description="本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。",
+    )
+
+    def to_payload(self) -> dict[str, Any]:
+        return self.model_dump(exclude_none=True, exclude={"description"})
+
+
+class SearchTablesInput(PortalToolInput):
     database: str | None = Field(default=None, description="数据库名，可选")
     table: str | None = Field(default=None, description="表名，可选")
     keyword: str | None = Field(default=None, description="表注释、字段注释或字段名关键字，可选")
     table_limit: int = Field(default=12, ge=1, le=100, description="返回表数量上限")
 
 
-class LineageInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
+class LineageInput(PortalToolInput):
     table: str | None = Field(default=None, description="表名，可选")
     db_name: str | None = Field(default=None, description="数据库名，可选")
     table_id: int | None = Field(default=None, description="表 ID，可选")
@@ -40,23 +56,17 @@ class LineageInput(BaseModel):
         return self
 
 
-class ResolveDatasourceInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
+class ResolveDatasourceInput(PortalToolInput):
     database: str = Field(..., description="数据库名")
     preferred_engine: Literal["mysql", "doris"] | None = Field(default=None, description="期望引擎，可选")
 
 
-class ExportMetadataInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
+class ExportMetadataInput(PortalToolInput):
     kind: Literal["tables", "lineage", "datasource"] = Field(..., description="导出类型")
     database: str | None = Field(default=None, description="数据库过滤条件，可选")
 
 
-class TableDdlInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
+class TableDdlInput(PortalToolInput):
     database: str | None = Field(default=None, description="数据库名，可选")
     table: str | None = Field(default=None, description="表名，可选")
     table_id: int | None = Field(default=None, description="表 ID，可选")
@@ -68,9 +78,7 @@ class TableDdlInput(BaseModel):
         return self
 
 
-class QueryReadonlyInput(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
+class QueryReadonlyInput(PortalToolInput):
     database: str = Field(..., description="数据库名")
     sql: str = Field(..., min_length=1, description="单条只读 SQL")
     preferred_engine: Literal["mysql", "doris"] | None = Field(default=None, description="期望引擎，可选")
@@ -132,7 +140,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_search_tables(params: SearchTablesInput) -> dict[str, Any]:
         """Search data-portal tables by database, table name, or comment keyword."""
-        payload = params.model_dump(exclude_none=True)
+        payload = params.to_payload()
         payload["tableLimit"] = payload.pop("table_limit")
         return await service.search_tables(payload)
 
@@ -142,7 +150,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_get_lineage(params: LineageInput) -> dict[str, Any]:
         """Get lineage information for a table by table name or table id."""
-        payload = params.model_dump(exclude_none=True)
+        payload = params.to_payload()
         if "db_name" in payload:
             payload["dbName"] = payload.pop("db_name")
         if "table_id" in payload:
@@ -155,7 +163,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_resolve_datasource(params: ResolveDatasourceInput) -> dict[str, Any]:
         """Resolve datasource summary and routing metadata for a database."""
-        payload = params.model_dump(exclude_none=True)
+        payload = params.to_payload()
         if "preferred_engine" in payload:
             payload["preferredEngine"] = payload.pop("preferred_engine")
         return await service.resolve_datasource(payload)
@@ -166,7 +174,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_export_metadata(params: ExportMetadataInput) -> list[dict[str, Any]]:
         """Export metadata rows for tables, lineage, or datasource records."""
-        return await service.export_metadata(params.model_dump(exclude_none=True))
+        return await service.export_metadata(params.to_payload())
 
     @mcp.tool(
         name="portal_get_table_ddl",
@@ -174,7 +182,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_get_table_ddl(params: TableDdlInput) -> dict[str, Any]:
         """Get live table DDL together with data-portal metadata summary."""
-        payload = params.model_dump(exclude_none=True)
+        payload = params.to_payload()
         if "table_id" in payload:
             payload["tableId"] = payload.pop("table_id")
         return await service.get_table_ddl(payload)
@@ -185,7 +193,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_query_readonly(params: QueryReadonlyInput) -> dict[str, Any]:
         """Execute a single read-only SQL query through the backend read-only query path."""
-        payload = params.model_dump(exclude_none=True)
+        payload = params.to_payload()
         if "preferred_engine" in payload:
             payload["preferredEngine"] = payload.pop("preferred_engine")
         if "timeout_seconds" in payload:
