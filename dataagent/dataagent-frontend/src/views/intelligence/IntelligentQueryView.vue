@@ -1,6 +1,14 @@
 <template>
   <div class="intelligent-query-view">
     <aside class="intelligent-query-sidebar">
+      <div class="intelligent-query-brand">
+        <img
+          class="intelligent-query-brand__logo"
+          :src="brandLogo"
+          alt="DataAgent"
+        />
+        <span class="intelligent-query-brand__title">DataAgent</span>
+      </div>
       <el-menu
         :default-active="activeMenu"
         class="intelligent-query-menu"
@@ -57,6 +65,8 @@ const route = useRoute()
 const router = useRouter()
 const validTabs = new Set(['chat-v2', 'skills', 'agents', 'models', 'widget'])
 
+const brandLogo = `${import.meta.env.BASE_URL}opendataworks-icon.svg`
+
 const isSkillDetailRoute = computed(() => (
   route.name === 'IntelligentQuerySkillDetail' || route.path.startsWith('/intelligent-query/skills/')
 ))
@@ -104,15 +114,43 @@ const handleMenuSelect = (index) => {
 
 .intelligent-query-sidebar {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid #dbe3ef;
   background: #ffffff;
   overflow: hidden;
 }
 
+.intelligent-query-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 16px;
+  border-bottom: 1px solid #eef2f8;
+}
+
+.intelligent-query-brand__logo {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+}
+
+.intelligent-query-brand__title {
+  min-width: 0;
+  font-size: 17px;
+  font-weight: 600;
+  color: #1f2d3d;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .intelligent-query-menu {
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   border-right: none;
-  padding: 12px 0;
+  padding: 8px 0;
 }
 
 .intelligent-query-menu :deep(.el-menu-item) {
@@ -144,8 +182,13 @@ const handleMenuSelect = (index) => {
     border-bottom: 1px solid #dbe3ef;
   }
 
+  .intelligent-query-brand {
+    display: none;
+  }
+
   .intelligent-query-menu {
     display: flex;
+    flex: 0 0 auto;
     height: auto;
     padding: 6px;
     overflow-x: auto;
