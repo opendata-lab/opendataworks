@@ -318,7 +318,7 @@
               ref="textareaRef"
               v-model="inputText"
               class="v2-textarea"
-              :placeholder="isStreaming ? '可继续输入，回复结束后发送…' : '输入数据问题…'"
+              placeholder="输入数据问题…"
               :disabled="!availableModels.length"
               rows="1"
               @keydown.enter="onEnterKey"
