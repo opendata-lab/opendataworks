@@ -318,8 +318,8 @@
               ref="textareaRef"
               v-model="inputText"
               class="v2-textarea"
-              :placeholder="isStreaming ? '正在回复中…' : '输入数据问题…'"
-              :disabled="isStreaming || !availableModels.length"
+              :placeholder="isStreaming ? '可继续输入，回复结束后发送…' : '输入数据问题…'"
+              :disabled="!availableModels.length"
               rows="1"
               @keydown.enter="onEnterKey"
               @input="autoResize"
@@ -497,6 +497,7 @@ const {
   availableModels, canSend, isBusy: isStreaming, activeTaskId,
   thinkingExpanded, toggleThinking,
   send: engineSend, cancel: engineCancel, detach,
+  resumeActiveTopicTask,
   loadConfig,
 } = chat
 const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
@@ -841,6 +842,12 @@ async function selectTopic(topicId, options = {}) {
       : await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
     const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
     messages.value = list.map(hydrateMessageFromApi)
+    // Re-attach to a still-running task so re-entering a live conversation keeps
+    // streaming and exposes the stop button. Widget mode is a read-only audit
+    // view of other users' sessions, so it never resumes a live stream.
+    if (!isWidgetMode.value) {
+      resumeActiveTopicTask(normalizedTopicId)
+    }
     const messageId = normalizeQueryValue(options.messageId)
     if (messageId) {
       focusMessage(messageId)

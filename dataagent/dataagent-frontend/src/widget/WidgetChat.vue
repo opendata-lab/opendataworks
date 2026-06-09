@@ -201,8 +201,7 @@
               v-model="inputText"
               class="query-textarea"
               rows="1"
-              :disabled="isBusy"
-              placeholder="输入数据问题…"
+              :placeholder="isBusy ? '可继续输入，回复结束后发送…' : '输入数据问题…'"
               @keydown.enter="onEnterKey"
               @input="autoResizeTextarea"
             />
