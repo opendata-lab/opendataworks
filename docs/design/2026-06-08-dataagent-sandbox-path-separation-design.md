@@ -63,8 +63,17 @@ Internal runtime contract changes:
   behavior.
 - Do not use `/tmp` as HOME. It would work technically, but it mixes Claude
   state with generic scratch files.
-- Do not create a persisted host HOME for child tasks. Claude HOME state is not
-  part of task output and should not persist across tasks or topics.
+- Claude HOME must remain a distinct path from cwd; do not collapse them.
+
+> Superseded (2026-06-09): the original tradeoff "do not create a persisted host
+> HOME for child tasks" assumed single-turn child tasks. Multi-turn resume needs
+> the session transcript under `$HOME/.claude/projects` to survive child
+> container recreation, so HOME is now a per-topic persisted host bind-mount.
+> The topic root is split into two separately mounted sibling subdirs:
+> `<topic>/workspace` -> `/mnt/workspace` (cwd) and `<topic>/home` -> `/mnt/home`
+> (HOME). HOME stays a distinct path from cwd and is not inside the workspace
+> bind, so the agent never sees session data. See
+> `docs/design/2026-06-08-dataagent-sandbox-warm-container-reuse-design.md`.
 
 ## Verification
 

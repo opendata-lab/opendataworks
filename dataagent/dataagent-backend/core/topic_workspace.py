@@ -11,6 +11,10 @@ from core.skill_discovery import SkillDiscoveryError, resolve_skill_discovery_ro
 
 logger = logging.getLogger(__name__)
 
+# Subdir of the topic root that holds per-task sandbox logs, a sibling of
+# workspace/ and home/. Deleted together with the topic root on topic deletion.
+LOGS_DIRNAME = "logs"
+
 
 def _backend_root() -> Path:
     return Path(__file__).resolve().parent.parent
@@ -39,9 +43,27 @@ def _resolve_sandbox_root(raw: str | None = None) -> Path:
     return (home / "workspaces").resolve()
 
 
-def resolve_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> Path:
+def resolve_topic_root(topic_id: str, *, sandbox_root: str | Path | None = None) -> Path:
+    """Per-topic root dir ``<sandbox_root>/<topic_id>``.
+
+    The root holds two separately mounted child subdirs: ``workspace`` (agent
+    cwd) and ``home`` (persisted Claude HOME). Deletion and orphan cleanup
+    operate at this root level so both are removed together; the container never
+    bind-mounts the root directly.
+    """
     root = Path(sandbox_root).expanduser().resolve() if sandbox_root else _resolve_sandbox_root(get_settings().dataagent_sandbox_root)
     return root / _safe_topic_id(topic_id)
+
+
+def resolve_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> Path:
+    """Agent working directory ``<sandbox_root>/<topic_id>/workspace``.
+
+    This is the shared workspace contract used by the agent cwd, the backend
+    topic file APIs (``uploads/``, ``output/``), and the sandbox runner's
+    ``/mnt/workspace`` bind source. It is a subdir of the topic root so the
+    persisted ``home`` sibling never appears inside the agent's workspace.
+    """
+    return resolve_topic_root(topic_id, sandbox_root=sandbox_root) / "workspace"
 
 
 def _tree_max_mtime(root: Path) -> float:
@@ -204,10 +226,13 @@ def _format_skill_entry(entry: dict) -> str:
 
 
 def delete_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> bool:
-    workspace = resolve_topic_workspace(topic_id, sandbox_root=sandbox_root)
-    if not workspace.exists():
+    # Physical delete (rmtree) of the whole topic root: workspace/, home/, and
+    # logs/ are all removed together. This is a destructive interface; it is only
+    # invoked on explicit topic deletion, so do not wire it to other triggers.
+    topic_root = resolve_topic_root(topic_id, sandbox_root=sandbox_root)
+    if not topic_root.exists():
         return False
-    shutil.rmtree(workspace)
+    shutil.rmtree(topic_root)
     return True
 
 

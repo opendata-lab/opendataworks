@@ -10,7 +10,13 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from config import get_settings, update_settings
-from core.topic_workspace import cleanup_orphan_topic_workspaces, delete_topic_workspace, prepare_topic_workspace, resolve_topic_workspace
+from core.topic_workspace import (
+    cleanup_orphan_topic_workspaces,
+    delete_topic_workspace,
+    prepare_topic_workspace,
+    resolve_topic_root,
+    resolve_topic_workspace,
+)
 
 
 def _write_skill(root: Path, folder: str) -> None:
@@ -24,10 +30,13 @@ def test_resolve_topic_workspace_uses_topic_id_only(monkeypatch, tmp_path: Path)
     update_settings({"dataagent_sandbox_root": str(tmp_path / "topics")})
     try:
         workspace = resolve_topic_workspace("topic unsafe/id")
+        topic_root = resolve_topic_root("topic unsafe/id")
     finally:
         update_settings({"dataagent_sandbox_root": original_root})
 
-    assert workspace == tmp_path / "topics" / "topic-unsafe-id"
+    # Workspace is the <topic>/workspace subdir; the topic root is its parent.
+    assert topic_root == tmp_path / "topics" / "topic-unsafe-id"
+    assert workspace == tmp_path / "topics" / "topic-unsafe-id" / "workspace"
 
 
 def test_prepare_topic_workspace_copies_enabled_skills(monkeypatch, tmp_path: Path):
@@ -60,7 +69,7 @@ def test_prepare_topic_workspace_copies_enabled_skills(monkeypatch, tmp_path: Pa
 
     skill_copy = workspace / ".claude" / "skills" / "opendataworks-business-knowledge"
     platform_copy = workspace / ".claude" / "skills" / "opendataworks-platform-tools"
-    assert workspace == tmp_path / "topics" / "topic_1"
+    assert workspace == tmp_path / "topics" / "topic_1" / "workspace"
     # Real directory copies, not symlinks, so SDK skill discovery sees real files.
     assert skill_copy.is_dir() and not skill_copy.is_symlink()
     assert platform_copy.is_dir() and not platform_copy.is_symlink()
@@ -187,17 +196,22 @@ def test_prepare_topic_workspace_copies_once_and_refreshes_on_source_change(monk
         )
 
 
-def test_delete_topic_workspace_removes_only_topic_directory(tmp_path: Path):
+def test_delete_topic_workspace_removes_topic_root_including_logs(tmp_path: Path):
     root = tmp_path / "topics"
-    workspace = root / "topic_1"
+    topic_root = root / "topic_1"
     sibling = root / "topic_2"
-    (workspace / ".claude").mkdir(parents=True)
-    (sibling / ".claude").mkdir(parents=True)
+    # New layout: workspace/, home/, and logs/ are siblings under the topic root.
+    (topic_root / "workspace" / ".claude").mkdir(parents=True)
+    (topic_root / "home" / ".claude").mkdir(parents=True)
+    (topic_root / "logs").mkdir(parents=True)
+    (topic_root / "logs" / "task-1.log").write_text("log", encoding="utf-8")
+    (sibling / "workspace").mkdir(parents=True)
 
     deleted = delete_topic_workspace("topic_1", sandbox_root=root)
 
     assert deleted is True
-    assert not workspace.exists()
+    # Physical delete removes the whole topic root: workspace, home, AND logs.
+    assert not topic_root.exists()
     assert sibling.exists()
 
 

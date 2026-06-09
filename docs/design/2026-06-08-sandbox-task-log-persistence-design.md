@@ -23,15 +23,20 @@ When a child task fails and the container is destroyed, debugging depends on whe
 
 ## Design
 
-The runner writes a per-task log file under:
+The runner writes a per-task log file under the topic root, as a sibling of the
+`workspace/` and `home/` subdirs:
 
-`DATAAGENT_SANDBOX_LOG_DIR` or `/workspaces/.sandbox-logs`
+`<sandbox_root>/<sanitized-topic-id>/logs/<sanitized-task-id>.log`
 
-The final path is:
+This keeps everything for a topic together under `<sandbox_root>/<topic>/`
+(`workspace/`, `home/`, `logs/`). The logs are host-side only (never
+bind-mounted into the child) and are removed together with the topic root when
+the topic is deleted via `delete_topic_workspace` (a physical delete).
 
-`<log-root>/<sanitized-topic-id>/<sanitized-task-id>.log`
-
-The compose files expose the setting with a default under `/workspaces`, which is already mounted from `DATAAGENT_HOME_HOST_DIR`.
+> Updated (2026-06-09): superseded the original `DATAAGENT_SANDBOX_LOG_DIR` /
+> `/workspaces/.sandbox-logs` root. There is no separate log-dir setting; the
+> path is derived from the topic root so logs live next to the topic's other
+> data and are cleaned up with it.
 
 During container execution, the runner appends structured text lines for:
 

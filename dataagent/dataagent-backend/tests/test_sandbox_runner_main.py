@@ -120,11 +120,23 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
 
     assert backend == "docker"
     assert container_name.startswith("dataagent-task-topic-1-task-1")
-    assert host_root / "topic-1" == tmp_path / "topics" / "topic-1"
-    assert (host_root / "topic-1").is_dir()
-    assert (host_root / "topic-1" / ".claude" / "skills").is_dir()
-    assert f"type=bind,source={host_root / 'topic-1'},target=/mnt/workspace" in command
+    # The topic root holds two separately mounted subdirs: workspace/ and home/.
+    topic_workspace = host_root / "topic-1" / "workspace"
+    assert topic_workspace == tmp_path / "topics" / "topic-1" / "workspace"
+    assert topic_workspace.is_dir()
+    assert (topic_workspace / ".claude" / "skills").is_dir()
+    assert f"type=bind,source={topic_workspace},target=/mnt/workspace" in command
+    assert f"type=bind,source={host_root / 'topic-1'},target=/mnt/workspace" not in command
     assert f"type=bind,source={host_root},target=/mnt/workspace" not in command
+    # HOME is a per-topic persisted bind-mount at <topic>/home, a sibling of
+    # workspace (not inside it), mounted at the distinct path /mnt/home so resume
+    # transcripts survive child container recreation and the agent never sees them.
+    topic_home = host_root / "topic-1" / "home"
+    assert topic_home.is_dir()
+    assert f"type=bind,source={topic_home},target=/mnt/home" in command
+    # home is NOT under the workspace bind source, so it cannot appear in /mnt/workspace.
+    assert topic_home.parent == topic_workspace.parent
+    assert topic_home not in topic_workspace.parents
     workdir_index = command.index("--workdir")
     assert command[workdir_index + 1] == "/mnt/workspace"
     assert "--network" in command
@@ -146,8 +158,8 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     assert "--security-opt" in command
     assert "no-new-privileges" in command
     assert "--read-only" not in command
-    assert "--tmpfs" in command
-    assert "/mnt/home:rw,nosuid,nodev,size=64m,mode=1777" in command
+    # Without read-only rootfs there is no tmpfs; HOME is a persisted bind-mount.
+    assert "--tmpfs" not in command
 
     env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
     assert "HOME=/mnt/home" in env_values
@@ -191,8 +203,14 @@ def test_sandbox_runner_read_only_rootfs_opt_in(monkeypatch, tmp_path: Path):
 
     assert "--read-only" in command
     assert "--tmpfs" in command
-    assert "/mnt/home:rw,nosuid,nodev,size=64m,mode=1777" in command
     assert "/tmp:rw,nosuid,nodev,size=256m" in command
+    # HOME stays a persisted bind-mount even under read-only rootfs so resume
+    # session transcripts survive; only /tmp is an ephemeral tmpfs.
+    assert not any(arg.startswith("/mnt/home:") for arg in command)
+    assert any(
+        arg.startswith("type=bind,") and "target=/mnt/home" in arg and "readonly" not in arg
+        for arg in command
+    )
     # The workspace bind-mount remains read-write so the agent can still produce files.
     assert any(
         arg.startswith("type=bind,") and "target=/mnt/workspace" in arg and "readonly" not in arg
@@ -316,12 +334,18 @@ print(json.dumps({
 def test_sandbox_runner_persists_child_logs_after_container_exit(monkeypatch, tmp_path: Path):
     settings = get_settings()
     originals = {
-        "dataagent_sandbox_log_dir": getattr(settings, "dataagent_sandbox_log_dir", ""),
+        "dataagent_sandbox_host_root": settings.dataagent_sandbox_host_root,
+        "dataagent_sandbox_root": settings.dataagent_sandbox_root,
     }
-    log_dir = tmp_path / "sandbox-logs"
+    host_root = tmp_path / "workspaces"
     sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
 
-    update_settings({"dataagent_sandbox_log_dir": str(log_dir)})
+    update_settings(
+        {
+            "dataagent_sandbox_host_root": str(host_root),
+            "dataagent_sandbox_root": str(host_root),
+        }
+    )
     child_code = """
 import sys
 
@@ -351,7 +375,7 @@ sys.exit(7)
         sandbox_runner_main.CANCELLED_TASK_IDS.discard("task-1")
         update_settings(originals)
 
-    log_path = log_dir / "topic-1" / "task-1.log"
+    log_path = host_root / "topic-1" / "logs" / "task-1.log"
     assert result.task_status == "error"
     assert result.error == {
         "code": "sandbox_container_no_result",
@@ -364,6 +388,258 @@ sys.exit(7)
     assert "stderr child stderr before crash" in content
     assert "returncode=7" in content
     assert "sandbox container exited without a result: 7" in content
+
+
+_WARM_LOOP_CHILD = """
+import asyncio
+import json
+import sys
+
+
+async def main():
+    loop = asyncio.get_event_loop()
+    reader = asyncio.StreamReader()
+    await loop.connect_read_pipe(lambda: asyncio.StreamReaderProtocol(reader), sys.stdin)
+    while True:
+        line = await reader.readline()
+        if not line:
+            break
+        text = line.decode("utf-8").strip()
+        if not text:
+            continue
+        payload = json.loads(text)
+        print(json.dumps({
+            "type": "record",
+            "record": {
+                "record_type": "stream",
+                "event_type": "message_start",
+                "data": {"task_id": payload["task_id"]},
+            },
+        }), flush=True)
+        print(json.dumps({
+            "type": "result",
+            "result": {
+                "task_status": "finished",
+                "content": "warm-ok-" + payload["task_id"],
+                "provider_id": "openrouter",
+                "model": "anthropic/claude-sonnet-4.5",
+            },
+        }), flush=True)
+
+
+asyncio.run(main())
+"""
+
+_WARM_BLOCKING_CHILD = """
+import sys
+import time
+
+sys.stdin.readline()
+time.sleep(60)
+"""
+
+
+def _warm_settings(tmp_path: Path) -> dict:
+    settings = get_settings()
+    keys = [
+        "dataagent_sandbox_backend",
+        "dataagent_sandbox_image",
+        "dataagent_sandbox_host_root",
+        "dataagent_sandbox_root",
+        "dataagent_sandbox_reuse_enabled",
+        "dataagent_sandbox_idle_ttl_seconds",
+        "dataagent_sandbox_max_warm_containers",
+        "dataagent_sandbox_reaper_interval_seconds",
+    ]
+    originals = {key: getattr(settings, key) for key in keys}
+    update_settings(
+        {
+            "dataagent_sandbox_backend": "docker",
+            "dataagent_sandbox_image": "opendataworks-dataagent-runner:test",
+            "dataagent_sandbox_host_root": str(tmp_path / "topics"),
+            "dataagent_sandbox_root": str(tmp_path / "container-topics"),
+            "dataagent_sandbox_reuse_enabled": True,
+            "dataagent_sandbox_idle_ttl_seconds": 600,
+            "dataagent_sandbox_max_warm_containers": 32,
+            "dataagent_sandbox_reaper_interval_seconds": 1,
+        }
+    )
+    return originals
+
+
+def test_container_spec_signature_stable_per_topic_and_skills(monkeypatch, tmp_path: Path):
+    originals = _warm_settings(tmp_path)
+    try:
+        base = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        same_topic_other_task = TaskExecutionInput(
+            **{**_payload(agent_snapshot=_agent_snapshot([])), "task_id": "task-2"}
+        )
+        other_topic = TaskExecutionInput(
+            **{**_payload(agent_snapshot=_agent_snapshot([])), "topic_id": "topic-2"}
+        )
+        other_skills = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot(["some-skill"])))
+
+        sig_base = sandbox_runner_main._container_spec_signature(base)
+        assert sig_base == sandbox_runner_main._container_spec_signature(same_topic_other_task)
+        assert sig_base != sandbox_runner_main._container_spec_signature(other_topic)
+        assert sig_base != sandbox_runner_main._container_spec_signature(other_skills)
+    finally:
+        update_settings(originals)
+
+
+def test_build_container_command_honors_warm_overrides(monkeypatch, tmp_path: Path):
+    originals = _warm_settings(tmp_path)
+    update_settings({"dataagent_sandbox_host_skills_dir": ""})
+    try:
+        _, container_name, command = sandbox_runner_main._build_container_command(
+            TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([]))),
+            container_name="dataagent-warm-topic-1-abc123",
+            task_id_label="warm",
+            extra_env={"DATAAGENT_SANDBOX_CHILD_IDLE_TIMEOUT": "660"},
+        )
+    finally:
+        update_settings(originals)
+
+    assert container_name == "dataagent-warm-topic-1-abc123"
+    name_index = command.index("--name")
+    assert command[name_index + 1] == "dataagent-warm-topic-1-abc123"
+    assert f"{sandbox_runner_main.SANDBOX_TASK_ID_LABEL}=warm" in command
+    env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
+    assert "DATAAGENT_SANDBOX_CHILD_IDLE_TIMEOUT=660" in env_values
+
+
+def test_warm_pool_reuses_container_for_followup(monkeypatch, tmp_path: Path):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.CANCELLED_TASK_IDS.clear()
+    originals = _warm_settings(tmp_path)
+    build_calls: list[dict] = []
+
+    def fake_build(params, **kwargs):
+        build_calls.append(kwargs)
+        return ("docker", "warm-container-1", [sys.executable, "-c", _WARM_LOOP_CHILD])
+
+    async def fake_kill(backend: str, container_name: str) -> None:
+        return None
+
+    monkeypatch.setattr(sandbox_runner_main, "_build_container_command", fake_build)
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill)
+
+    emitted: list[dict] = []
+
+    async def emit(record: dict) -> None:
+        emitted.append(record)
+
+    async def scenario():
+        first = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        result_first = await sandbox_runner_main._execute_task_stream_warm(
+            first, emit=emit, is_cancel_requested=lambda: False
+        )
+        second = TaskExecutionInput(
+            **{**_payload(agent_snapshot=_agent_snapshot([])), "task_id": "task-2"}
+        )
+        result_second = await sandbox_runner_main._execute_task_stream_warm(
+            second, emit=emit, is_cancel_requested=lambda: False
+        )
+        pool_size = len(sandbox_runner_main.WARM_POOL)
+        await sandbox_runner_main._shutdown_warm_pool()
+        return result_first, result_second, pool_size
+
+    try:
+        result_first, result_second, pool_size = asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        update_settings(originals)
+
+    assert result_first.task_status == "finished"
+    assert result_first.content == "warm-ok-task-1"
+    assert result_second.task_status == "finished"
+    assert result_second.content == "warm-ok-task-2"
+    # Container is created once and reused for the follow-up task.
+    assert len(build_calls) == 1
+    assert pool_size == 1
+    assert build_calls[0]["task_id_label"] == "warm"
+
+
+def test_warm_pool_cancel_kills_child_and_returns_suspended(monkeypatch, tmp_path: Path):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.CANCELLED_TASK_IDS.clear()
+    originals = _warm_settings(tmp_path)
+
+    def fake_build(params, **kwargs):
+        return ("docker", "warm-container-cancel", [sys.executable, "-c", _WARM_BLOCKING_CHILD])
+
+    async def fake_kill(backend: str, container_name: str) -> None:
+        child = sandbox_runner_main.WARM_POOL.get(container_name)
+        if child is not None:
+            child.process.kill()
+
+    monkeypatch.setattr(sandbox_runner_main, "_build_container_command", fake_build)
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill)
+
+    async def emit(record: dict) -> None:
+        return None
+
+    async def scenario():
+        params = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        sandbox_runner_main.CANCELLED_TASK_IDS.add(params.task_id)
+        result = await sandbox_runner_main._execute_task_stream_warm(
+            params, emit=emit, is_cancel_requested=lambda: False
+        )
+        pool_size = len(sandbox_runner_main.WARM_POOL)
+        await sandbox_runner_main._shutdown_warm_pool()
+        return result, pool_size
+
+    try:
+        result, pool_size = asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        sandbox_runner_main.CANCELLED_TASK_IDS.clear()
+        update_settings(originals)
+
+    assert result.task_status == "suspended"
+    # A killed warm child is dropped from the pool on release.
+    assert pool_size == 0
+
+
+def test_warm_pool_evicts_idle_lru_over_cap(monkeypatch, tmp_path: Path):
+    sandbox_runner_main.WARM_POOL.clear()
+    originals = _warm_settings(tmp_path)
+    update_settings({"dataagent_sandbox_max_warm_containers": 1})
+
+    def fake_build(params, **kwargs):
+        return ("docker", kwargs.get("container_name") or "warm-evict", [sys.executable, "-c", _WARM_BLOCKING_CHILD])
+
+    killed: list[str] = []
+
+    async def fake_kill(backend: str, container_name: str) -> None:
+        killed.append(container_name)
+        child = sandbox_runner_main.WARM_POOL.get(container_name)
+        if child is not None:
+            child.process.kill()
+
+    monkeypatch.setattr(sandbox_runner_main, "_build_container_command", fake_build)
+    monkeypatch.setattr(sandbox_runner_main, "_kill_container", fake_kill)
+
+    async def scenario():
+        params = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
+        child = await sandbox_runner_main._start_warm_child(params, "sig-old")
+        child.busy = False
+        child.last_used = 0.0
+        sandbox_runner_main.WARM_POOL[child.container_name] = child
+        async with sandbox_runner_main.WARM_POOL_LOCK:
+            await sandbox_runner_main._evict_idle_over_cap_locked()
+        pool_size = len(sandbox_runner_main.WARM_POOL)
+        await sandbox_runner_main._shutdown_warm_pool()
+        return pool_size
+
+    try:
+        pool_size = asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        update_settings(originals)
+
+    assert pool_size == 0
+    assert killed  # the idle child was killed to free capacity
 
 
 def test_resolve_host_skills_dir_uses_explicit_setting_only(monkeypatch):
