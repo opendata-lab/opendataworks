@@ -120,11 +120,23 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
 
     assert backend == "docker"
     assert container_name.startswith("dataagent-task-topic-1-task-1")
-    assert host_root / "topic-1" == tmp_path / "topics" / "topic-1"
-    assert (host_root / "topic-1").is_dir()
-    assert (host_root / "topic-1" / ".claude" / "skills").is_dir()
-    assert f"type=bind,source={host_root / 'topic-1'},target=/mnt/workspace" in command
+    # The topic root holds two separately mounted subdirs: workspace/ and home/.
+    topic_workspace = host_root / "topic-1" / "workspace"
+    assert topic_workspace == tmp_path / "topics" / "topic-1" / "workspace"
+    assert topic_workspace.is_dir()
+    assert (topic_workspace / ".claude" / "skills").is_dir()
+    assert f"type=bind,source={topic_workspace},target=/mnt/workspace" in command
+    assert f"type=bind,source={host_root / 'topic-1'},target=/mnt/workspace" not in command
     assert f"type=bind,source={host_root},target=/mnt/workspace" not in command
+    # HOME is a per-topic persisted bind-mount at <topic>/home, a sibling of
+    # workspace (not inside it), mounted at the distinct path /mnt/home so resume
+    # transcripts survive child container recreation and the agent never sees them.
+    topic_home = host_root / "topic-1" / "home"
+    assert topic_home.is_dir()
+    assert f"type=bind,source={topic_home},target=/mnt/home" in command
+    # home is NOT under the workspace bind source, so it cannot appear in /mnt/workspace.
+    assert topic_home.parent == topic_workspace.parent
+    assert topic_home not in topic_workspace.parents
     workdir_index = command.index("--workdir")
     assert command[workdir_index + 1] == "/mnt/workspace"
     assert "--network" in command
@@ -146,8 +158,8 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     assert "--security-opt" in command
     assert "no-new-privileges" in command
     assert "--read-only" not in command
-    assert "--tmpfs" in command
-    assert "/mnt/home:rw,nosuid,nodev,size=64m,mode=1777" in command
+    # Without read-only rootfs there is no tmpfs; HOME is a persisted bind-mount.
+    assert "--tmpfs" not in command
 
     env_values = [command[index + 1] for index, item in enumerate(command) if item == "--env"]
     assert "HOME=/mnt/home" in env_values
@@ -191,8 +203,14 @@ def test_sandbox_runner_read_only_rootfs_opt_in(monkeypatch, tmp_path: Path):
 
     assert "--read-only" in command
     assert "--tmpfs" in command
-    assert "/mnt/home:rw,nosuid,nodev,size=64m,mode=1777" in command
     assert "/tmp:rw,nosuid,nodev,size=256m" in command
+    # HOME stays a persisted bind-mount even under read-only rootfs so resume
+    # session transcripts survive; only /tmp is an ephemeral tmpfs.
+    assert not any(arg.startswith("/mnt/home:") for arg in command)
+    assert any(
+        arg.startswith("type=bind,") and "target=/mnt/home" in arg and "readonly" not in arg
+        for arg in command
+    )
     # The workspace bind-mount remains read-write so the agent can still produce files.
     assert any(
         arg.startswith("type=bind,") and "target=/mnt/workspace" in arg and "readonly" not in arg

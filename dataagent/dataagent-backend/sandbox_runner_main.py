@@ -24,7 +24,7 @@ from config import get_settings
 from core.agent_profile_service import normalize_agent_snapshot
 from core.skill_admin_service import resolve_enabled_skill_runtime
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
-from core.topic_workspace import resolve_topic_workspace, sanitize_topic_id
+from core.topic_workspace import resolve_topic_root, sanitize_topic_id
 
 logger = logging.getLogger(__name__)
 
@@ -278,11 +278,31 @@ def _host_sandbox_root() -> Path:
         raw = str(getattr(cfg, "dataagent_sandbox_root", "") or "").strip()
     if raw:
         return Path(raw).expanduser().resolve()
-    return resolve_topic_workspace("_placeholder_").parent
+    return resolve_topic_root("_placeholder_").parent
 
 
 def _topic_host_workspace(topic_id: str) -> Path:
-    return _host_sandbox_root() / sanitize_topic_id(topic_id)
+    # Agent cwd bind source: <sandbox_root>/<topic>/workspace.
+    return _host_sandbox_root() / sanitize_topic_id(topic_id) / "workspace"
+
+
+def _topic_host_home(topic_id: str) -> Path:
+    """Per-topic persisted Claude HOME on the host.
+
+    Claude stores resume session transcripts under ``$HOME/.claude/projects``.
+    A child-local tmpfs HOME would drop them when the container is recreated
+    (idle TTL eviction, reuse disabled, restart), so follow-ups in the same
+    conversation fail with "session not found". Persisting HOME per topic keeps
+    resume working across the child container lifecycle.
+
+    It is a sibling of ``workspace`` under the topic root
+    (``<sandbox_root>/<topic>/home``), so it sits next to the topic's other
+    files (easy to find, cleaned up with the topic) but is NOT inside the agent
+    workspace bind. The child mounts it at the distinct path ``/mnt/home`` (not
+    ``/mnt/workspace``), so HOME never equals cwd, project skill registration is
+    unaffected, and the agent never sees session data in its workspace.
+    """
+    return _host_sandbox_root() / sanitize_topic_id(topic_id) / "home"
 
 
 def _sandbox_task_log_path(params: TaskExecutionInput) -> Path:
@@ -437,10 +457,13 @@ def _build_container_command(
 
     topic_workspace = _topic_host_workspace(params.topic_id)
     topic_workspace.mkdir(parents=True, exist_ok=True)
+    topic_home = _topic_host_home(params.topic_id)
+    topic_home.mkdir(parents=True, exist_ok=True)
     enabled_folders = _enabled_skill_folders_for_task(params)
     skill_mounts = _build_skill_mounts(cfg, enabled_folders)
     _prepare_child_skill_mount_targets(topic_workspace, enabled_folders)
     _ensure_topic_workspace_owner(topic_workspace)
+    _ensure_host_path_owner(topic_home)
     container_name = container_name or (
         f"dataagent-task-{_safe_container_fragment(params.topic_id)[:32]}-"
         f"{_safe_container_fragment(params.task_id)[:32]}"
@@ -468,17 +491,20 @@ def _build_container_command(
         CHILD_WORKSPACE_ROOT,
         "--mount",
         f"type=bind,source={topic_workspace},target={CHILD_WORKSPACE_ROOT}",
+        "--mount",
+        f"type=bind,source={topic_home},target={CHILD_CLAUDE_HOME}",
     ]
-    # Runtime isolation hardening. The workspace bind-mount (and read-only skill
-    # mounts) are the only host paths the child can touch; block privilege
-    # escalation, and optionally lock the rest of the container filesystem
-    # read-only so the agent's Bash/Python cannot persist anything outside the
-    # bind-mounted workspace (true runtime write isolation, independent of the
-    # static PreToolUse boundary hook). Claude HOME is a child-local tmpfs so
-    # user-level Claude state never aliases the project workspace that owns
-    # .claude/skills.
+    # Runtime isolation hardening. The workspace bind-mount, the per-topic HOME
+    # bind-mount, and read-only skill mounts are the only host paths the child can
+    # touch; block privilege escalation, and optionally lock the rest of the
+    # container filesystem read-only so the agent's Bash/Python cannot persist
+    # anything outside those binds (true runtime write isolation, independent of
+    # the static PreToolUse boundary hook). Claude HOME is a per-topic persisted
+    # bind-mount of <topic>/home (sibling of the workspace, not inside it),
+    # mounted at the distinct path /mnt/home, so resume session transcripts under
+    # $HOME/.claude/projects survive child container recreation while HOME never
+    # equals cwd and the agent never sees session data in its workspace.
     command.extend(["--security-opt", "no-new-privileges"])
-    command.extend(["--tmpfs", f"{CHILD_CLAUDE_HOME}:rw,nosuid,nodev,size=64m,mode=1777"])
     if bool(getattr(cfg, "dataagent_sandbox_read_only_rootfs", False)):
         tmpfs_size = str(getattr(cfg, "dataagent_sandbox_tmpfs_size", "") or "512m").strip()
         command.append("--read-only")
@@ -496,6 +522,20 @@ def _build_container_command(
         command.extend(["--env", f"{key}={value}"])
     command.extend([image, "python", f"{BACKEND_CODE_ROOT}/sandbox_task_main.py"])
     return backend, container_name, command
+
+
+def _ensure_host_path_owner(path: Path) -> None:
+    uid = str(os.environ.get("DATAAGENT_RUNTIME_UID") or "").strip()
+    gid = str(os.environ.get("DATAAGENT_RUNTIME_GID") or "").strip()
+    if not uid or not gid or not path.exists():
+        return
+    try:
+        os.chown(path, int(uid), int(gid))
+        os.chmod(path, 0o775)
+    except PermissionError:
+        logger.warning("cannot chown host path=%s uid=%s gid=%s", path, uid, gid)
+    except ValueError:
+        logger.warning("invalid DATAAGENT_RUNTIME_UID/GID uid=%s gid=%s", uid, gid)
 
 
 def _ensure_topic_workspace_owner(topic_workspace: Path) -> None:

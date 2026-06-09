@@ -55,7 +55,30 @@ File: `sandbox_runner_main.py`
 - Lifespan: start the reaper and kill all warm children on shutdown when reuse
   is enabled.
 
-### 4. Tests
+### 4. Session persistence (topic dir split)
+
+Persist Claude HOME per topic so resume survives child container recreation
+(TTL eviction, restart, reuse disabled). Split the topic root into two separately
+mounted sibling subdirs.
+
+File: `core/topic_workspace.py`
+- Add `resolve_topic_root(topic_id)` -> `<sandbox_root>/<topic>`.
+- `resolve_topic_workspace(topic_id)` -> `resolve_topic_root(...) / "workspace"`.
+- `delete_topic_workspace` removes the topic root (workspace + home together).
+- `cleanup_orphan_topic_workspaces` unchanged (still scans topic roots).
+
+File: `sandbox_runner_main.py`
+- `_topic_host_workspace` -> `<sandbox_root>/<topic>/workspace`; `_topic_host_home`
+  -> `<sandbox_root>/<topic>/home` (sibling, not inside workspace); both
+  bind-mounted (workspace -> /mnt/workspace, home -> /mnt/home).
+- `_host_sandbox_root` fallback uses `resolve_topic_root(...).parent`.
+
+File: `core/topic_files.py`
+- Docstring path update only (resolution follows `resolve_topic_workspace`).
+
+Migration: none; split applies to new topics only.
+
+### 5. Tests
 
 File: `tests/test_sandbox_runner_main.py`
 
@@ -68,10 +91,20 @@ File: `tests/test_sandbox_runner_main.py`
 - `_build_container_command` honors `container_name`, `task_id_label`, and
   `extra_env`.
 
+- session persistence: HOME is a per-topic bind-mount at `<topic>/home` (sibling
+  of `<topic>/workspace`), mounted at `/mnt/home`; workspace bind source is
+  `<topic>/workspace`.
+
 File: `tests/test_sandbox_task_main.py`
 
 - `_serve_loop` processes multiple newline-delimited payloads, emitting one
   result line per payload, and exits on stdin EOF.
+
+File: `tests/test_topic_workspace.py`, `tests/test_topic_files.py`
+
+- `resolve_topic_workspace` returns `<topic>/workspace`; `delete_topic_workspace`
+  removes the whole topic root; topic file uploads/output live under
+  `<topic>/workspace`.
 
 ## Verification
 

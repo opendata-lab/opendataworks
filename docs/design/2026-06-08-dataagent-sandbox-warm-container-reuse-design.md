@@ -118,6 +118,36 @@ container. The run loop observes EOF and returns a suspended result, and release
 drops the killed child from the pool. Mid-run interruption without destroying
 the container is intentionally out of scope.
 
+### Session persistence (topic dir split)
+
+Warm reuse keeps the same container alive within the idle window, so resume
+works there. But a follow-up after TTL eviction, a runner restart, or with reuse
+disabled lands on a fresh container. Claude stores resume session transcripts
+under `$HOME/.claude/projects`, so HOME must persist on the host, not in a
+child-local tmpfs, otherwise the follow-up fails with "session not found".
+
+The per-topic host directory is therefore split into two separately mounted
+sibling subdirectories:
+
+```text
+<sandbox_root>/<topic>/            # topic root (never bind-mounted directly)
+  ├─ workspace/   -> /mnt/workspace # agent cwd: uploads/, output/, .claude/skills
+  └─ home/        -> /mnt/home      # persisted Claude HOME (resume transcripts)
+```
+
+- `home` is a sibling of `workspace`, not inside it, so the agent working in
+  `/mnt/workspace` never sees session data, while both stay under `<topic>` for
+  findability and are removed together when the topic is deleted.
+- `/mnt/home` stays a distinct path from cwd `/mnt/workspace`, preserving project
+  skill registration.
+- The shared workspace contract `resolve_topic_workspace(topic)` (backend topic
+  file APIs, local execution, runner bind source) now resolves to
+  `<topic>/workspace`; `resolve_topic_root(topic)` resolves to `<topic>` and is
+  used for deletion and orphan cleanup. Backend and runner must agree on this
+  path or file I/O and warm reuse signatures diverge.
+- Existing on-disk topics from the pre-split layout are not migrated; the split
+  applies to new topics only.
+
 ## Interfaces
 
 No public API or database schema changes.
