@@ -9,18 +9,19 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-from config import get_settings, update_settings
+import core.topic_files as topic_files
 from core.topic_files import TopicFileError, list_files, safe_workspace_file, save_upload
 
 
 @pytest.fixture(autouse=True)
-def sandbox_root(tmp_path: Path):
-    original = get_settings().dataagent_sandbox_root
-    update_settings({"dataagent_sandbox_root": str(tmp_path / "workspaces")})
-    try:
-        yield tmp_path / "workspaces"
-    finally:
-        update_settings({"dataagent_sandbox_root": original})
+def sandbox_root(monkeypatch, tmp_path: Path):
+    root = tmp_path / "dataagent_runtime"
+    monkeypatch.setattr(
+        topic_files,
+        "resolve_topic_workspace",
+        lambda topic_id: root / str(topic_id) / "workspace",
+    )
+    yield root
 
 
 def test_save_upload_writes_into_uploads_dir(sandbox_root: Path):

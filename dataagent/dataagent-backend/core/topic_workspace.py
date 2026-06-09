@@ -6,7 +6,6 @@ import re
 import shutil
 from pathlib import Path
 
-from config import get_settings
 from core.skill_discovery import SkillDiscoveryError, resolve_skill_discovery_root_dir
 
 logger = logging.getLogger(__name__)
@@ -14,6 +13,7 @@ logger = logging.getLogger(__name__)
 # Subdir of the topic root that holds per-task sandbox logs, a sibling of
 # workspace/ and home/. Deleted together with the topic root on topic deletion.
 LOGS_DIRNAME = "logs"
+CONTAINER_RUNTIME_ROOT = Path("/dataagent_runtime")
 
 
 def _backend_root() -> Path:
@@ -31,7 +31,7 @@ def sanitize_topic_id(topic_id: str) -> str:
     return _safe_topic_id(topic_id)
 
 
-def _resolve_sandbox_root(raw: str | None = None) -> Path:
+def _resolve_runtime_root(raw: str | None = None) -> Path:
     value = str(raw or "").strip()
     if value:
         path = Path(value).expanduser()
@@ -39,31 +39,30 @@ def _resolve_sandbox_root(raw: str | None = None) -> Path:
             return path.resolve()
         return (_backend_root() / path).resolve()
 
-    home = Path(os.environ.get("HOME") or str(Path.home())).expanduser()
-    return (home / "workspaces").resolve()
+    return CONTAINER_RUNTIME_ROOT.resolve()
 
 
-def resolve_topic_root(topic_id: str, *, sandbox_root: str | Path | None = None) -> Path:
-    """Per-topic root dir ``<sandbox_root>/<topic_id>``.
+def resolve_topic_root(topic_id: str, *, runtime_root: str | Path | None = None) -> Path:
+    """Per-topic root dir ``<runtime_root>/<topic_id>``.
 
     The root holds two separately mounted child subdirs: ``workspace`` (agent
     cwd) and ``home`` (persisted Claude HOME). Deletion and orphan cleanup
     operate at this root level so both are removed together; the container never
     bind-mounts the root directly.
     """
-    root = Path(sandbox_root).expanduser().resolve() if sandbox_root else _resolve_sandbox_root(get_settings().dataagent_sandbox_root)
+    root = Path(runtime_root).expanduser().resolve() if runtime_root else _resolve_runtime_root()
     return root / _safe_topic_id(topic_id)
 
 
-def resolve_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> Path:
-    """Agent working directory ``<sandbox_root>/<topic_id>/workspace``.
+def resolve_topic_workspace(topic_id: str, *, runtime_root: str | Path | None = None) -> Path:
+    """Agent working directory ``<runtime_root>/<topic_id>/workspace``.
 
     This is the shared workspace contract used by the agent cwd, the backend
     topic file APIs (``uploads/``, ``output/``), and the sandbox runner's
     ``/mnt/workspace`` bind source. It is a subdir of the topic root so the
     persisted ``home`` sibling never appears inside the agent's workspace.
     """
-    return resolve_topic_root(topic_id, sandbox_root=sandbox_root) / "workspace"
+    return resolve_topic_root(topic_id, runtime_root=runtime_root) / "workspace"
 
 
 def _tree_max_mtime(root: Path) -> float:
@@ -110,10 +109,10 @@ def prepare_topic_workspace(
     enabled_folders: list[str] | tuple[str, ...],
     *,
     allow_empty: bool = False,
-    sandbox_root: str | Path | None = None,
+    runtime_root: str | Path | None = None,
     workspace_dir: str | Path | None = None,
 ) -> Path:
-    workspace = Path(workspace_dir).expanduser().resolve() if workspace_dir else resolve_topic_workspace(topic_id, sandbox_root=sandbox_root)
+    workspace = Path(workspace_dir).expanduser().resolve() if workspace_dir else resolve_topic_workspace(topic_id, runtime_root=runtime_root)
     runtime_skills_dir = workspace / ".claude" / "skills"
     runtime_skills_dir.mkdir(parents=True, exist_ok=True)
 
@@ -225,11 +224,11 @@ def _format_skill_entry(entry: dict) -> str:
     )
 
 
-def delete_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = None) -> bool:
+def delete_topic_workspace(topic_id: str, *, runtime_root: str | Path | None = None) -> bool:
     # Physical delete (rmtree) of the whole topic root: workspace/, home/, and
     # logs/ are all removed together. This is a destructive interface; it is only
     # invoked on explicit topic deletion, so do not wire it to other triggers.
-    topic_root = resolve_topic_root(topic_id, sandbox_root=sandbox_root)
+    topic_root = resolve_topic_root(topic_id, runtime_root=runtime_root)
     if not topic_root.exists():
         return False
     shutil.rmtree(topic_root)
@@ -239,9 +238,9 @@ def delete_topic_workspace(topic_id: str, *, sandbox_root: str | Path | None = N
 def cleanup_orphan_topic_workspaces(
     active_topic_ids: set[str] | list[str] | tuple[str, ...],
     *,
-    sandbox_root: str | Path | None = None,
+    runtime_root: str | Path | None = None,
 ) -> list[str]:
-    root = Path(sandbox_root).expanduser().resolve() if sandbox_root else _resolve_sandbox_root(get_settings().dataagent_sandbox_root)
+    root = Path(runtime_root).expanduser().resolve() if runtime_root else _resolve_runtime_root()
     if not root.is_dir():
         return []
 

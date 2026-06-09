@@ -171,23 +171,6 @@ ensure_dataagent_cli_executable() {
     fi
 }
 
-ensure_dataagent_sandbox_host_skills_dir() {
-    local configured
-    configured="$(read_env_value "DATAAGENT_SANDBOX_HOST_SKILLS_DIR" "$ENV_FILE")"
-    if [ -n "$configured" ]; then
-        return 0
-    fi
-
-    local skills_dir
-    skills_dir="$(resolve_dataagent_skills_dir)"
-    if [ ! -d "$skills_dir" ]; then
-        return 0
-    fi
-
-    set_env_value "DATAAGENT_SANDBOX_HOST_SKILLS_DIR" "$skills_dir" "$ENV_FILE"
-    echo "🔧 已设置 DataAgent sandbox live skills 宿主路径: $skills_dir"
-}
-
 if [ ! -f "$COMPOSE_FILE" ]; then
     echo "❌ 错误: 未找到 $COMPOSE_FILE"
     exit 1
@@ -241,7 +224,6 @@ echo "🚀 启动 OpenDataWorks 服务..."
 echo ""
 
 ensure_dataagent_cli_executable
-ensure_dataagent_sandbox_host_skills_dir
 
 # 启动服务
 pushd "$DEPLOY_DIR" >/dev/null

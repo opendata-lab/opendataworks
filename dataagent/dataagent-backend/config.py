@@ -84,16 +84,17 @@ class Settings(BaseSettings):
     dataagent_portal_mcp_token: str = ""
     dataagent_portal_mcp_token_header_name: str = "X-Portal-MCP-Token"
 
-    # ---- Topic workspace / sandbox ----
+    # ---- Topic runtime root / sandbox ----
+    # Host-visible persistent root used by the sandbox runner when asking the
+    # host Docker/Podman daemon to bind-mount topic subdirectories into child
+    # containers.
+    dataagent_host_root: str = "/dataagent_runtime"
     dataagent_sandbox_mode: str = ""
     dataagent_sandbox_runner_url: str = ""
-    dataagent_sandbox_root: str = ""
-    dataagent_sandbox_host_root: str = ""
     dataagent_sandbox_image: str = ""
     dataagent_sandbox_backend: str = "docker"
     dataagent_sandbox_network: str = ""
-    dataagent_sandbox_host_skills_dir: str = ""
-    # Per-task sandbox logs are written under <sandbox_root>/<topic>/logs so they
+    # Per-task sandbox logs are written under <runtime_root>/<topic>/logs so they
     # sit next to the topic's workspace/ and home/ subdirs; no separate root.
     # Runtime isolation hardening for the child task container. The workspace
     # bind-mount is always the only writable host path; these tighten the rest.

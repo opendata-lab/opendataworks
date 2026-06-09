@@ -105,7 +105,7 @@ services:
       timeout: 10s
       retries: 3
 
-  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /workspaces 报 permission denied）
+  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /dataagent_runtime 报 permission denied）
   dataagent-home-init:
     image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
     pull_policy: always
@@ -117,11 +117,11 @@ services:
       - -c
       - |
         set -e
-        mkdir -p /workspaces
-        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /workspaces
-        chmod -R u+rwX /workspaces
+        mkdir -p /dataagent_runtime
+        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /dataagent_runtime
+        chmod -R u+rwX /dataagent_runtime
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
+      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
 
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
@@ -134,7 +134,7 @@ services:
     user: "${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}"
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /workspaces
+      HOME: /dataagent_runtime
       HOST: 0.0.0.0
       PORT: 8900
       MYSQL_HOST: mysql
@@ -160,16 +160,14 @@ services:
       ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
       DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
       DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
-      DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
       SKILLS_ROOT_DIR: /app/.claude/skills
       DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
-      DATAAGENT_SANDBOX_RUNNER_URL: ${DATAAGENT_SANDBOX_RUNNER_URL:-http://dataagent-sandbox-runner:8910}
-      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/workspaces}
-      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/workspaces}
-      DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
+      DATAAGENT_SANDBOX_RUNNER_URL: http://dataagent-sandbox-runner:8910
+      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
       DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
-      DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
+      DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
     ports:
       - "8900:8900"
     depends_on:
@@ -188,7 +186,7 @@ services:
       retries: 5
       start_period: 60s
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
+      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
 
   # DataAgent 沙箱 Runner（内部服务）
@@ -202,14 +200,12 @@ services:
     user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /workspaces
+      HOME: /dataagent_runtime
+      DATAAGENT_HOST_ROOT: ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}
       DATAAGENT_SANDBOX_MODE: ""
-      DATAAGENT_SANDBOX_ROOT: ${DATAAGENT_SANDBOX_ROOT:-/workspaces}
-      DATAAGENT_SANDBOX_HOST_ROOT: ${DATAAGENT_SANDBOX_HOST_ROOT:-/workspaces}
-      DATAAGENT_SANDBOX_IMAGE: ${DATAAGENT_SANDBOX_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
+      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
       DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
-      DATAAGENT_SANDBOX_NETWORK: ${DATAAGENT_SANDBOX_NETWORK:-container:opendataworks-dataagent-sandbox-runner}
-      DATAAGENT_SANDBOX_HOST_SKILLS_DIR: ${DATAAGENT_SANDBOX_HOST_SKILLS_DIR:-}
+      DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
       DATAAGENT_SANDBOX_REUSE_ENABLED: ${DATAAGENT_SANDBOX_REUSE_ENABLED:-true}
       DATAAGENT_SANDBOX_IDLE_TTL_SECONDS: ${DATAAGENT_SANDBOX_IDLE_TTL_SECONDS:-600}
       DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS: ${DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS:-32}
@@ -225,8 +221,8 @@ services:
       ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
       DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
       DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
-      DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
       SKILLS_ROOT_DIR: /app/.claude/skills
     depends_on:
       dataagent-home-init:
@@ -240,7 +236,7 @@ services:
       retries: 5
       start_period: 30s
     volumes:
-      - ${DATAAGENT_HOME_HOST_DIR:-/workspaces}:/workspaces
+      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
       - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
@@ -258,8 +254,8 @@ services:
       PORTAL_MCP_BACKEND_BASE_URL: ${PORTAL_MCP_BACKEND_BASE_URL:-http://backend:8080/api}
       PORTAL_MCP_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
       PORTAL_MCP_BACKEND_TIMEOUT_SECONDS: ${PORTAL_MCP_BACKEND_TIMEOUT_SECONDS:-30}
-      PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_FRONTDOOR_TOKEN:-odw-portal-mcp-token}
-      PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
     ports:
       - "8801:8801"
     depends_on:

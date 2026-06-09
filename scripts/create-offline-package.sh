@@ -234,7 +234,6 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
-        -e "s|^DATAAGENT_SANDBOX_IMAGE=.*|DATAAGENT_SANDBOX_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
         -e "s|^DATAAGENT_LLM_JSON_FILE=.*|DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json|" \
         -e "s|^DATAAGENT_SKILLS_DIR=.*|DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills|" \
         "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
@@ -255,8 +254,6 @@ rewrite_offline_env_file() {
         echo "OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_PORTAL_MCP_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}" >> "$env_file"
-    grep -q '^DATAAGENT_SANDBOX_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "DATAAGENT_SANDBOX_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" >> "$env_file"
     grep -q '^DATAAGENT_LLM_JSON_FILE=' "$env_file" 2>/dev/null || \
         echo "DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json" >> "$env_file"
     grep -q '^DATAAGENT_SKILLS_DIR=' "$env_file" 2>/dev/null || \

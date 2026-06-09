@@ -26,13 +26,9 @@ def _write_skill(root: Path, folder: str) -> None:
 
 
 def test_resolve_topic_workspace_uses_topic_id_only(monkeypatch, tmp_path: Path):
-    original_root = get_settings().dataagent_sandbox_root
-    update_settings({"dataagent_sandbox_root": str(tmp_path / "topics")})
-    try:
-        workspace = resolve_topic_workspace("topic unsafe/id")
-        topic_root = resolve_topic_root("topic unsafe/id")
-    finally:
-        update_settings({"dataagent_sandbox_root": original_root})
+    runtime_root = tmp_path / "topics"
+    workspace = resolve_topic_workspace("topic unsafe/id", runtime_root=runtime_root)
+    topic_root = resolve_topic_root("topic unsafe/id", runtime_root=runtime_root)
 
     # Workspace is the <topic>/workspace subdir; the topic root is its parent.
     assert topic_root == tmp_path / "topics" / "topic-unsafe-id"
@@ -40,7 +36,6 @@ def test_resolve_topic_workspace_uses_topic_id_only(monkeypatch, tmp_path: Path)
 
 
 def test_prepare_topic_workspace_copies_enabled_skills(monkeypatch, tmp_path: Path):
-    original_root = get_settings().dataagent_sandbox_root
     original_skills = get_settings().skills_output_dir
     original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     project = tmp_path / "project"
@@ -49,7 +44,6 @@ def test_prepare_topic_workspace_copies_enabled_skills(monkeypatch, tmp_path: Pa
     _write_skill(skills_root, "opendataworks-platform-tools")
     update_settings(
         {
-            "dataagent_sandbox_root": str(tmp_path / "topics"),
             "skills_root_dir": str(skills_root),
         }
     )
@@ -57,11 +51,11 @@ def test_prepare_topic_workspace_copies_enabled_skills(monkeypatch, tmp_path: Pa
         workspace = prepare_topic_workspace(
             "topic_1",
             ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
+            runtime_root=tmp_path / "topics",
         )
     finally:
         update_settings(
             {
-                "dataagent_sandbox_root": original_root,
                 "skills_output_dir": original_skills,
                 "skills_root_dir": original_skills_root,
             }
@@ -78,7 +72,6 @@ def test_prepare_topic_workspace_copies_enabled_skills(monkeypatch, tmp_path: Pa
 
 
 def test_prepare_topic_workspace_keeps_skills_mounted_inside_workspace(monkeypatch, tmp_path: Path):
-    original_root = get_settings().dataagent_sandbox_root
     original_skills = get_settings().skills_output_dir
     original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     workspace = tmp_path / "topic-workspace"
@@ -89,7 +82,6 @@ def test_prepare_topic_workspace_keeps_skills_mounted_inside_workspace(monkeypat
     (stale / "SKILL.md").write_text("# stale\n", encoding="utf-8")
     update_settings(
         {
-            "dataagent_sandbox_root": str(tmp_path / "topics"),
             "skills_root_dir": str(skills_root),
         }
     )
@@ -102,7 +94,6 @@ def test_prepare_topic_workspace_keeps_skills_mounted_inside_workspace(monkeypat
     finally:
         update_settings(
             {
-                "dataagent_sandbox_root": original_root,
                 "skills_output_dir": original_skills,
                 "skills_root_dir": original_skills_root,
             }
@@ -116,7 +107,6 @@ def test_prepare_topic_workspace_keeps_skills_mounted_inside_workspace(monkeypat
 
 
 def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_path: Path):
-    original_root = get_settings().dataagent_sandbox_root
     original_skills = get_settings().skills_output_dir
     original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     project = tmp_path / "project"
@@ -125,7 +115,6 @@ def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_
     _write_skill(skills_root, "opendataworks-business-knowledge")
     update_settings(
         {
-            "dataagent_sandbox_root": str(tmp_path / "topics"),
             "skills_root_dir": str(skills_root),
         }
     )
@@ -138,7 +127,6 @@ def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_
     finally:
         update_settings(
             {
-                "dataagent_sandbox_root": original_root,
                 "skills_output_dir": original_skills,
                 "skills_root_dir": original_skills_root,
             }
@@ -152,19 +140,17 @@ def test_prepare_topic_workspace_can_use_pre_mounted_workspace(monkeypatch, tmp_
 
 
 def test_prepare_topic_workspace_copies_once_and_refreshes_on_source_change(monkeypatch, tmp_path: Path):
-    original_root = get_settings().dataagent_sandbox_root
     original_skills_root = getattr(get_settings(), "skills_root_dir", "")
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
     _write_skill(skills_root, "imported-skill")
     update_settings(
         {
-            "dataagent_sandbox_root": str(tmp_path / "topics"),
             "skills_root_dir": str(skills_root),
         }
     )
     try:
-        workspace = prepare_topic_workspace("topic_1", ["imported-skill"])
+        workspace = prepare_topic_workspace("topic_1", ["imported-skill"], runtime_root=tmp_path / "topics")
         skill_dir = workspace / ".claude" / "skills" / "imported-skill"
         copied = skill_dir / "SKILL.md"
         assert copied.read_text(encoding="utf-8") == "# imported-skill\n"
@@ -174,7 +160,7 @@ def test_prepare_topic_workspace_copies_once_and_refreshes_on_source_change(monk
         # would wipe.
         sentinel = skill_dir / "sentinel.txt"
         sentinel.write_text("keep", encoding="utf-8")
-        prepare_topic_workspace("topic_1", ["imported-skill"])
+        prepare_topic_workspace("topic_1", ["imported-skill"], runtime_root=tmp_path / "topics")
         assert sentinel.exists()
         assert copied.read_text(encoding="utf-8") == "# imported-skill\n"
 
@@ -184,13 +170,12 @@ def test_prepare_topic_workspace_copies_once_and_refreshes_on_source_change(monk
         src_md.write_text("# reimported\n", encoding="utf-8")
         future = time.time() + 1000
         os.utime(src_md, (future, future))
-        prepare_topic_workspace("topic_1", ["imported-skill"])
+        prepare_topic_workspace("topic_1", ["imported-skill"], runtime_root=tmp_path / "topics")
         assert copied.read_text(encoding="utf-8") == "# reimported\n"
         assert not sentinel.exists()
     finally:
         update_settings(
             {
-                "dataagent_sandbox_root": original_root,
                 "skills_root_dir": original_skills_root,
             }
         )
@@ -207,7 +192,7 @@ def test_delete_topic_workspace_removes_topic_root_including_logs(tmp_path: Path
     (topic_root / "logs" / "task-1.log").write_text("log", encoding="utf-8")
     (sibling / "workspace").mkdir(parents=True)
 
-    deleted = delete_topic_workspace("topic_1", sandbox_root=root)
+    deleted = delete_topic_workspace("topic_1", runtime_root=root)
 
     assert deleted is True
     # Physical delete removes the whole topic root: workspace, home, AND logs.
@@ -220,7 +205,7 @@ def test_cleanup_orphan_topic_workspaces_keeps_active_topics(tmp_path: Path):
     (root / "topic_keep").mkdir(parents=True)
     (root / "topic_orphan").mkdir(parents=True)
 
-    removed = cleanup_orphan_topic_workspaces({"topic_keep"}, sandbox_root=root)
+    removed = cleanup_orphan_topic_workspaces({"topic_keep"}, runtime_root=root)
 
     assert removed == ["topic_orphan"]
     assert (root / "topic_keep").exists()

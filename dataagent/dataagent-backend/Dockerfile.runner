@@ -2,8 +2,7 @@ FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV HOME=/workspaces
-ENV DATAAGENT_SANDBOX_ROOT=/workspaces
+ENV HOME=/dataagent_runtime
 
 WORKDIR /opt/dataagent-backend
 
@@ -16,7 +15,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
-RUN mkdir -p /workspaces /app/.claude/skills && chmod 1777 /workspaces
+RUN mkdir -p /dataagent_runtime /app/.claude/skills && chmod 1777 /dataagent_runtime
 
 COPY dataagent/dataagent-backend /opt/dataagent-backend
 

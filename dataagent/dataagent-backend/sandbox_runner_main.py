@@ -24,7 +24,7 @@ from config import get_settings
 from core.agent_profile_service import normalize_agent_snapshot
 from core.skill_admin_service import resolve_enabled_skill_runtime
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
-from core.topic_workspace import LOGS_DIRNAME, resolve_topic_root, sanitize_topic_id
+from core.topic_workspace import LOGS_DIRNAME, sanitize_topic_id
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +44,8 @@ BACKEND_CODE_ROOT = "/opt/dataagent-backend"
 # container must bind-mount so children see live (and offline-package) skills.
 RUNNER_SKILLS_MOUNT_TARGET = "/app/.claude/skills"
 
-# Host source of the runner's own skills mount, auto-discovered at startup so the
-# child skill mounts work by default without setting DATAAGENT_SANDBOX_HOST_SKILLS_DIR.
+# Host source of the runner's own skills mount, auto-discovered at startup so
+# child skill mounts are derived from the single DATAAGENT_SKILLS_DIR bind.
 _AUTO_HOST_SKILLS_DIR: str | None = None
 
 
@@ -215,9 +215,8 @@ async def _discover_host_skills_dir() -> str:
     The runner shares the host Docker socket, so it can inspect itself and read
     the host path backing its live skills bind. Child task containers then use
     that same host path as their skill bind-mount source, so they pick up
-    live/offline-updated skills without operators having to set
-    ``DATAAGENT_SANDBOX_HOST_SKILLS_DIR`` to a path that also happens to be
-    visible inside the runner. Best-effort: any failure returns "".
+    live/offline-updated skills without operators having to configure a second
+    host skills variable. Best-effort: any failure returns "".
     """
     if not _should_use_container_backend():
         return ""
@@ -259,10 +258,7 @@ async def _discover_host_skills_dir() -> str:
 
 
 def _resolve_host_skills_dir(cfg: Any) -> str:
-    """Explicit override wins; otherwise use the auto-discovered runner mount."""
-    explicit = str(getattr(cfg, "dataagent_sandbox_host_skills_dir", "") or "").strip()
-    if explicit:
-        return explicit
+    """Host source of DATAAGENT_SKILLS_DIR, auto-discovered from runner mount."""
     return _AUTO_HOST_SKILLS_DIR or ""
 
 
@@ -273,12 +269,8 @@ def _safe_container_fragment(value: str) -> str:
 
 def _host_sandbox_root() -> Path:
     cfg = get_settings()
-    raw = str(getattr(cfg, "dataagent_sandbox_host_root", "") or "").strip()
-    if not raw:
-        raw = str(getattr(cfg, "dataagent_sandbox_root", "") or "").strip()
-    if raw:
-        return Path(raw).expanduser().resolve()
-    return resolve_topic_root("_placeholder_").parent
+    raw = str(getattr(cfg, "dataagent_host_root", "") or "").strip()
+    return Path(raw or "/dataagent_runtime").expanduser().resolve()
 
 
 def _topic_host_workspace(topic_id: str) -> Path:
@@ -389,8 +381,8 @@ def _build_skill_mounts(cfg: Any, enabled_folders: list[str]) -> list[tuple[str,
     host_source_root = _resolve_host_skills_dir(cfg)
     if not host_source_root:
         raise RuntimeError(
-            "DATAAGENT_SANDBOX_HOST_SKILLS_DIR is required when sandbox task enables skills "
-            "and host skills auto-discovery is unavailable"
+            "host skills auto-discovery is unavailable when sandbox task enables skills; "
+            "check DATAAGENT_SKILLS_DIR volume configuration and Docker/Podman inspect access"
         )
     # host_root is the child bind-mount source, resolved by the host docker daemon.
     # It is generally NOT visible inside this runner container (the runner sees the
