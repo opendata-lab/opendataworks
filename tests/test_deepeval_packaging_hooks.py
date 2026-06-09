@@ -112,6 +112,18 @@ def test_start_script_pins_sandbox_child_skills_to_runtime_skills_dir():
     assert f'set_env_value "{OLD_SANDBOX_HOST_SKILLS_DIR}" "$skills_dir" "$ENV_FILE"' not in start_script
 
 
+def test_start_script_resolves_and_exports_dataagent_host_root():
+    start_script = (REPO_ROOT / "scripts" / "start.sh").read_text(encoding="utf-8")
+
+    # Relative DATAAGENT_HOST_ROOT must be normalized to a host absolute path and
+    # exported before compose so backend bind mounts and the sandbox runner's
+    # forwarded value agree on one host directory.
+    assert "resolve_dataagent_host_root()" in start_script
+    assert 'normalize_path "$DEPLOY_DIR/$configured"' in start_script
+    assert 'DATAAGENT_HOST_ROOT="$(resolve_dataagent_host_root)"' in start_script
+    assert "export DATAAGENT_HOST_ROOT" in start_script
+
+
 def test_compose_sets_container_skills_root_dir():
     prod_compose = (REPO_ROOT / "deploy" / "docker-compose.prod.yml").read_text(encoding="utf-8")
     dev_compose = (REPO_ROOT / "deploy" / "docker-compose.dev.yml").read_text(encoding="utf-8")
