@@ -20,6 +20,7 @@
     </licenses>
 
     <modules>
+        <module>odw-auth</module>
         <module>backend-agent-api</module>
         <module>backend</module>
     </modules>

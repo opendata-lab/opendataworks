@@ -10,19 +10,24 @@
 
 按风险与依赖分五阶段,可分 PR 交付。阶段 0 立模块骨架;阶段 1-2 让平台具备登录与保护能力;阶段 3 收口 dataagent;阶段 4 部署收敛。
 
+## 进展记录
+
+- 2026-06-10: 按「先支持管理员密码登录、暂不实现 OAuth」交付了阶段 0、阶段 1、阶段 2 的密码登录前端子集(LoginView 不含 OAuth 按钮)、阶段 4 的 env 模板部分。OAuth 相关条目(阶段 2 后端/配置、阶段 3)未动。使用说明见 `docs/handbook/authentication.md`。
+  - 与计划的偏差: jjwt / spring-security-crypto 依赖加在 `odw-auth/pom.xml` 而非 backend(代码在模块内,遵循模块设计文档); 模块内响应包装用 `com.onedata.auth.web.ApiResponse`(与宿主 `Result` 同 `{code,message,data}` 契约,模块不依赖 backend); 白名单匹配去掉 context-path 后的路径(`/auth/**`、`/v1/health`、`/v1/ai/**`),并补充 `AUTH_ANONYMOUS_ENABLED` 作为回滚开关。
+
 ---
 
 ## 阶段 0:建立 odw-auth 独立模块骨架
 
 目标:Reactor 注册新模块,自动装配可空跑接入。
 
-- [ ] `odw-auth/pom.xml`:`packaging=jar`,parent=`spring-boot-starter-parent`,依赖 jjwt / nimbus-jose-jwt / spring-security-crypto / mybatis-plus / spring-boot-starter-web+aop+webflux。
-- [ ] 根 `pom.xml` `<modules>` 增加 `odw-auth`(置于 `backend` 前)。
-- [ ] `autoconfigure/OdwAuthProperties.java`(`@ConfigurationProperties("odw.auth")`)+ `OdwAuthAutoConfiguration.java`。
-- [ ] `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`。
-- [ ] 迁移旧代码进模块:`UserContext` / `UserContextHolder`(简化去 oauthUserId,加 role)。
-- [ ] `backend/pom.xml` 增 `odw-auth` 依赖;删除 backend 旧 `context/UserContextHolder`、`aspect/AuthenticationAspect`、`annotation/RequireAuth`、`auth.anonymous.*`;批量改 import。
-- [ ] 验证:`mvn -q -pl odw-auth,backend -am compile` 通过;backend 启动不报装配错误。
+- [x] `odw-auth/pom.xml`:`packaging=jar`,parent=`spring-boot-starter-parent`,依赖 jjwt / nimbus-jose-jwt / spring-security-crypto / mybatis-plus / spring-boot-starter-web+aop+webflux。
+- [x] 根 `pom.xml` `<modules>` 增加 `odw-auth`(置于 `backend` 前)。
+- [x] `autoconfigure/OdwAuthProperties.java`(`@ConfigurationProperties("odw.auth")`)+ `OdwAuthAutoConfiguration.java`。
+- [x] `resources/META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports`。
+- [x] 迁移旧代码进模块:`UserContext` / `UserContextHolder`(简化去 oauthUserId,加 role)。
+- [x] `backend/pom.xml` 增 `odw-auth` 依赖;删除 backend 旧 `context/UserContextHolder`、`aspect/AuthenticationAspect`、`annotation/RequireAuth`、`auth.anonymous.*`;批量改 import。
+- [x] 验证:`mvn -q -pl odw-auth,backend -am compile` 通过;backend 启动不报装配错误。
 
 ---
 
@@ -31,28 +36,28 @@
 目标:平台具备本地密码登录、会话签发/校验、默认拦截全部 + 白名单。所有代码落在 `odw-auth`。
 
 ### 数据库
-- [ ] `backend/src/main/resources/db/migration/V44__create_sys_user.sql`
+- [x] `backend/src/main/resources/db/migration/V44__create_sys_user.sql`
   - 建 `sys_user` 表(见设计 5.1)。
   - 直接插入初始 `admin`:`role=admin`、`auth_source=local`、`password_hash` = `admin123` 的 bcrypt 哈希(写死在迁移里)。
 
 ### 依赖
-- [ ] `backend/pom.xml` 增加 `io.jsonwebtoken:jjwt-api/impl/jackson`、`org.springframework.security:spring-security-crypto`。
+- [x] `backend/pom.xml` 增加 `io.jsonwebtoken:jjwt-api/impl/jackson`、`org.springframework.security:spring-security-crypto`。
 
 ### 代码(`backend/src/main/java/com/onedata/portal/`)
 (以下类均在 `odw-auth` 模块 `com.onedata.auth.*` 包内)
 
-- [ ] `user/SysUser.java`(镜像 `DolphinConfig` 注解范式,`password_hash` 加 `@JsonProperty(WRITE_ONLY)`)+ `user/SysUserMapper.java`(按 username / external_id 查询)。
-- [ ] `user/SysUserService.java`:bcrypt 校验、失败计数 + 锁定、upsert OAuth 用户。
-- [ ] `jwt/JwtService.java`(接口)+ `jwt/Hs256JwtService.java`:HS256 签发/校验(读 `odw.auth.jwt.*`)。
-- [ ] `filter/AuthenticationFilter.java`:非白名单校验 `odw_session` Cookie → 填 `UserContextHolder`;失败按 `odw.auth.anonymous.enabled` 决定 401 / 匿名;`finally` 清理。
-- [ ] `web/AuthController.java`:`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password`(登录后改密)。
-- [ ] `annotation/RequireAuth`(重写,基于 `UserContextHolder`)+ `annotation/RequireRole` + `aspect/AuthorizationAspect`。
-- [ ] `autoconfigure/OdwAuthAutoConfiguration`:注册 Filter(顺序在 CORS 之后)、各 Bean 加 `@ConditionalOnMissingBean`;白名单来自 `OdwAuthProperties`。
-- [ ] `db/migration/V44__create_sys_user.sql`(建表 + 写死 `admin123` 的 bcrypt 哈希初始 admin)。
+- [x] `user/SysUser.java`(镜像 `DolphinConfig` 注解范式,`password_hash` 加 `@JsonProperty(WRITE_ONLY)`)+ `user/SysUserMapper.java`(按 username / external_id 查询)。
+- [x] `user/SysUserService.java`:bcrypt 校验、失败计数 + 锁定、upsert OAuth 用户。
+- [x] `jwt/JwtService.java`(接口)+ `jwt/Hs256JwtService.java`:HS256 签发/校验(读 `odw.auth.jwt.*`)。
+- [x] `filter/AuthenticationFilter.java`:非白名单校验 `odw_session` Cookie → 填 `UserContextHolder`;失败按 `odw.auth.anonymous.enabled` 决定 401 / 匿名;`finally` 清理。
+- [x] `web/AuthController.java`:`POST /api/auth/login`、`POST /api/auth/logout`、`GET /api/auth/me`、`POST /api/auth/password`(登录后改密)。
+- [x] `annotation/RequireAuth`(重写,基于 `UserContextHolder`)+ `annotation/RequireRole` + `aspect/AuthorizationAspect`。
+- [x] `autoconfigure/OdwAuthAutoConfiguration`:注册 Filter(顺序在 CORS 之后)、各 Bean 加 `@ConditionalOnMissingBean`;白名单来自 `OdwAuthProperties`。
+- [x] `db/migration/V44__create_sys_user.sql`(建表 + 写死 `admin123` 的 bcrypt 哈希初始 admin)。
 
 ### 验证
-- [ ] 编译:`mvn -q -pl odw-auth,backend -am compile`。
-- [ ] `odw-auth` 单测:`Hs256JwtService` / `SysUserService` / `AuthenticationFilter`(密码校验、锁定、JWT 签发解析、过期/篡改拒绝、白名单/401)。
+- [x] 编译:`mvn -q -pl odw-auth,backend -am compile`。
+- [x] `odw-auth` 单测:`Hs256JwtService` / `SysUserService` / `AuthenticationFilter`(密码校验、锁定、JWT 签发解析、过期/篡改拒绝、白名单/401)。
 - [ ] 手测:backend 引入模块后,登录拿 Cookie → 带 Cookie 访问受保护接口 200 → 不带 401。
 
 ---
@@ -73,15 +78,15 @@
 - [ ] 白名单加入 `/api/auth/oauth/{config,authorize,callback}`。
 
 ### 前端(`frontend/src/`)
-- [ ] `views/LoginView.vue` + 路由 `/login`(置于 `Layout` 外公开路由);密码表单 + 条件 OAuth 按钮(读 `/api/auth/oauth/config`)。
-- [ ] `router/index.js`:`beforeEach` 守卫,无会话跳 `/login`;`/auth/callback` 落地处理。
-- [ ] `stores/auth.js`:`useAuthStore`(`currentUser`、`fetchMe`、`logout`)。
-- [ ] `utils/request.js`:`withCredentials: true`;响应拦截 401 → 跳 `/login`。`api/nl2sql.js` / `api/dataagent.js` 同步加 `withCredentials`。
-- [ ] `views/Layout.vue`:头部右侧用户区 + 退出登录。
+- [x] `views/LoginView.vue` + 路由 `/login`(置于 `Layout` 外公开路由);密码表单 + 条件 OAuth 按钮(读 `/api/auth/oauth/config`)。
+- [x] `router/index.js`:`beforeEach` 守卫,无会话跳 `/login`;`/auth/callback` 落地处理。
+- [x] `stores/auth.js`:`useAuthStore`(`currentUser`、`fetchMe`、`logout`)。
+- [x] `utils/request.js`:`withCredentials: true`;响应拦截 401 → 跳 `/login`。`api/nl2sql.js` / `api/dataagent.js` 同步加 `withCredentials`。
+- [x] `views/Layout.vue`:头部右侧用户区 + 退出登录。
 - [ ] `views/settings/OAuthConfig.vue` + 在 `views/settings/ConfigurationManagement.vue` 增「OAuth 配置」Tab(镜像 `DolphinConfig.vue`);`api/settings.js` 增 OAuth 配置接口。
 
 ### 验证
-- [ ] 前端:`nvm use` 后 `npm --prefix frontend run build`(或 lint)。
+- [x] 前端:`nvm use` 后 `npm --prefix frontend run build`(或 lint)。
 - [ ] 手测:未配置 OAuth → 登录页只有密码;配置并启用 → 出现 OAuth 按钮;走完 authorize→callback→落 Cookie→进首页。
 
 ---
@@ -106,11 +111,11 @@
 
 ## 阶段 4:部署与配置收敛
 
-- [ ] `deploy/.env.example` 增:`AUTH_JWT_SECRET`、`AUTH_JWT_ISSUER=opendataworks`、`AUTH_JWT_TTL=8h`、`DATAAGENT_REQUIRE_AUTH`、前端域(CORS)。(无需 `ADMIN_INIT_PASSWORD`,初始口令已存库)
+- [x] `deploy/.env.example` 增:`AUTH_JWT_SECRET`、`AUTH_JWT_ISSUER=opendataworks`、`AUTH_JWT_TTL=8h`、`DATAAGENT_REQUIRE_AUTH`、前端域(CORS)。(无需 `ADMIN_INIT_PASSWORD`,初始口令已存库)
 - [ ] `deploy/docker-compose.prod.yml`:为 `backend` 与 `dataagent-backend` 注入同一 `AUTH_JWT_SECRET`。
 - [ ] 反向代理:**已就绪**。`frontend/nginx.conf` 已把 `/`、`/api/`、`/api/v1/{dataagent,nl2sql,nl2sql-admin}/` 收敛到单域,`odw_session` Cookie 自动同域可见,无需改动路由;仅需确认 cookie 透传不被 nginx 剥离。
 - [ ] 生产 Cookie `Secure` 开启;dataagent CORS `Allow-Origin` 由 `*` 改为具体域。
-- [ ] 文档:更新 `docs/handbook/` 登录与认证说明(含默认 admin 口令 `admin123` 与首登改密提示);若改动公共 API/部署行为,同步相关文档。
+- [x] 文档:更新 `docs/handbook/` 登录与认证说明(含默认 admin 口令 `admin123` 与首登改密提示);若改动公共 API/部署行为,同步相关文档。(见 `docs/handbook/authentication.md`)
 
 ---
 

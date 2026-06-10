@@ -1,16 +1,16 @@
-package com.onedata.portal.context;
+package com.onedata.auth.context;
 
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * 用户上下文持有者
- * 使用ThreadLocal存储当前线程的用户上下文
+ * 使用ThreadLocal存储当前线程的用户上下文，由 AuthenticationFilter 负责填充与清理
  */
 @Slf4j
 public class UserContextHolder {
-    
+
     private static final ThreadLocal<UserContext> CONTEXT_HOLDER = new ThreadLocal<>();
-    
+
     /**
      * 设置当前用户上下文
      */
@@ -22,18 +22,14 @@ public class UserContextHolder {
         CONTEXT_HOLDER.set(context);
         log.debug("User context set: userId={}, username={}", context.getUserId(), context.getUsername());
     }
-    
+
     /**
      * 获取当前用户上下文
      */
     public static UserContext getContext() {
-        UserContext context = CONTEXT_HOLDER.get();
-        if (context == null) {
-            log.warn("No user context found in current thread");
-        }
-        return context;
+        return CONTEXT_HOLDER.get();
     }
-    
+
     /**
      * 获取当前用户ID
      */
@@ -41,7 +37,7 @@ public class UserContextHolder {
         UserContext context = getContext();
         return context != null ? context.getUserId() : null;
     }
-    
+
     /**
      * 获取当前用户名
      */
@@ -49,7 +45,15 @@ public class UserContextHolder {
         UserContext context = getContext();
         return context != null ? context.getUsername() : null;
     }
-    
+
+    /**
+     * 是否已认证（上下文存在且有用户ID）
+     */
+    public static boolean isAuthenticated() {
+        UserContext context = getContext();
+        return context != null && context.getUserId() != null;
+    }
+
     /**
      * 清除当前用户上下文
      */

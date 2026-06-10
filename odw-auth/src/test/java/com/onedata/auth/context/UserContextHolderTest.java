@@ -1,4 +1,4 @@
-package com.onedata.portal.context;
+package com.onedata.auth.context;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -20,102 +20,86 @@ class UserContextHolderTest {
 
     @AfterEach
     void tearDown() {
-        // 确保每个测试后清理上下文
         UserContextHolder.clear();
     }
 
     @Test
     void testSetAndGetContext() {
-        // 创建用户上下文
-        UserContext context = new UserContext("user123", "testuser", "oauth123");
-        
-        // 设置上下文
+        UserContext context = new UserContext("user123", "testuser", "admin", "local");
+
         UserContextHolder.setContext(context);
-        
-        // 获取上下文
+
         UserContext retrieved = UserContextHolder.getContext();
-        
+
         assertNotNull(retrieved);
         assertEquals("user123", retrieved.getUserId());
         assertEquals("testuser", retrieved.getUsername());
-        assertEquals("oauth123", retrieved.getOauthUserId());
+        assertEquals("admin", retrieved.getRole());
+        assertEquals("local", retrieved.getAuthSource());
+        assertTrue(UserContextHolder.isAuthenticated());
     }
 
     @Test
     void testGetCurrentUserId() {
-        UserContext context = new UserContext("user456", "anotheruser", "oauth456");
-        UserContextHolder.setContext(context);
-        
-        String userId = UserContextHolder.getCurrentUserId();
-        
-        assertEquals("user456", userId);
+        UserContextHolder.setContext(new UserContext("user456", "anotheruser", "user", "local"));
+
+        assertEquals("user456", UserContextHolder.getCurrentUserId());
     }
 
     @Test
     void testGetCurrentUsername() {
-        UserContext context = new UserContext("user789", "thirduser", "oauth789");
-        UserContextHolder.setContext(context);
-        
-        String username = UserContextHolder.getCurrentUsername();
-        
-        assertEquals("thirduser", username);
+        UserContextHolder.setContext(new UserContext("user789", "thirduser", "user", "local"));
+
+        assertEquals("thirduser", UserContextHolder.getCurrentUsername());
     }
 
     @Test
     void testClearContext() {
-        UserContext context = new UserContext("user999", "clearuser", "oauth999");
-        UserContextHolder.setContext(context);
-        
+        UserContextHolder.setContext(new UserContext("user999", "clearuser", "user", "local"));
+
         assertNotNull(UserContextHolder.getContext());
-        
+
         UserContextHolder.clear();
-        
+
         assertNull(UserContextHolder.getContext());
+        assertFalse(UserContextHolder.isAuthenticated());
     }
 
     @Test
     void testSetNullContext() {
         UserContextHolder.setContext(null);
-        
+
         assertNull(UserContextHolder.getContext());
     }
 
     @Test
     void testGetContextWhenNotSet() {
-        UserContext context = UserContextHolder.getContext();
-        
-        assertNull(context);
+        assertNull(UserContextHolder.getContext());
+        assertFalse(UserContextHolder.isAuthenticated());
     }
 
     @Test
     void testThreadIsolation() throws InterruptedException {
-        // 主线程设置上下文
-        UserContext mainContext = new UserContext("main-user", "mainuser", "oauth-main");
+        UserContext mainContext = new UserContext("main-user", "mainuser", "admin", "local");
         UserContextHolder.setContext(mainContext);
-        
-        // 创建另一个线程
+
         CountDownLatch latch = new CountDownLatch(1);
         List<UserContext> otherThreadContext = new ArrayList<>();
-        
+
         Thread otherThread = new Thread(() -> {
-            // 其他线程应该看不到主线程的上下文
             otherThreadContext.add(UserContextHolder.getContext());
-            
-            // 设置其他线程自己的上下文
-            UserContext threadContext = new UserContext("thread-user", "threaduser", "oauth-thread");
-            UserContextHolder.setContext(threadContext);
-            
+
+            UserContextHolder.setContext(new UserContext("thread-user", "threaduser", "user", "local"));
+
             latch.countDown();
         });
-        
+
         otherThread.start();
         latch.await(5, TimeUnit.SECONDS);
         otherThread.join();
-        
-        // 验证其他线程看不到主线程的上下文
+
         assertNull(otherThreadContext.get(0));
-        
-        // 验证主线程的上下文没有被影响
+
         UserContext mainRetrieved = UserContextHolder.getContext();
         assertNotNull(mainRetrieved);
         assertEquals("main-user", mainRetrieved.getUserId());
@@ -127,28 +111,24 @@ class UserContextHolderTest {
         ExecutorService executor = Executors.newFixedThreadPool(threadCount);
         CountDownLatch latch = new CountDownLatch(threadCount);
         List<String> results = new ArrayList<>();
-        
+
         for (int i = 0; i < threadCount; i++) {
             final int threadId = i;
             executor.submit(() -> {
                 try {
-                    // 每个线程设置自己的上下文
-                    UserContext context = new UserContext(
+                    UserContextHolder.setContext(new UserContext(
                             "user-" + threadId,
                             "username-" + threadId,
-                            "oauth-" + threadId
-                    );
-                    UserContextHolder.setContext(context);
-                    
-                    // 模拟一些工作
+                            "user",
+                            "local"));
+
                     Thread.sleep(10);
-                    
-                    // 验证上下文没有被其他线程影响
+
                     UserContext retrieved = UserContextHolder.getContext();
                     synchronized (results) {
                         results.add(retrieved.getUserId());
                     }
-                    
+
                     UserContextHolder.clear();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -157,11 +137,10 @@ class UserContextHolderTest {
                 }
             });
         }
-        
+
         latch.await(10, TimeUnit.SECONDS);
         executor.shutdown();
-        
-        // 验证每个线程都获取到了正确的上下文
+
         assertEquals(threadCount, results.size());
         for (int i = 0; i < threadCount; i++) {
             assertTrue(results.contains("user-" + i));

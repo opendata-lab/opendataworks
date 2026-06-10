@@ -1,6 +1,6 @@
 package com.onedata.portal.controller;
 
-import com.onedata.portal.annotation.RequireAuth;
+import com.onedata.auth.annotation.RequireAuth;
 import com.onedata.portal.dto.Result;
 import com.onedata.portal.entity.MinioConfig;
 import com.onedata.portal.service.MinioConfigService;

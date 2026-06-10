@@ -1,10 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isDemoMode } from '@/demo/runtime'
+import { useAuthStore } from '@/stores/auth'
 
 const demoHomePath = '/dashboard'
 const defaultHomePath = isDemoMode ? demoHomePath : '/dashboard'
 
 const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { title: '登录', public: true }
+  },
   {
     path: '/',
     component: () => import('@/views/Layout.vue'),
@@ -121,6 +128,22 @@ const router = createRouter({
   history: createWebHistory(),
   routes
 })
+
+if (!isDemoMode) {
+  router.beforeEach(async (to) => {
+    if (to.meta.public) {
+      return true
+    }
+    const authStore = useAuthStore()
+    if (!authStore.initialized) {
+      await authStore.fetchMe()
+    }
+    if (!authStore.isLoggedIn) {
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
+    return true
+  })
+}
 
 if (isDemoMode) {
   const allowedPrefixes = [

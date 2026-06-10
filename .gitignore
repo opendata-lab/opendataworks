@@ -4,7 +4,9 @@ dolphinscheduler/
 dolphinscheduler-sdk-python/
 
 # Maven
+target/
 backend/target/
+odw-auth/target/
 backend/*.jar
 backend/*.war
 backend/*.ear
