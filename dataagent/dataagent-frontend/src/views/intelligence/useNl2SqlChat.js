@@ -119,6 +119,11 @@ export function useNl2SqlChat(options) {
     if (target) target.current_task_status = String(status || '')
   }
 
+  // Recency comes from the server's updated_at only: the backend bumps it when
+  // messages persist, when a task starts running, and when a run reaches a
+  // terminal state, so refreshing the list (working-topic poll / afterRun) is
+  // what keeps the order current. No local timestamps are mixed in, avoiding
+  // client/server clock skew and timestamp-format mismatches.
   const sortTopics = () => {
     topics.value = [...topics.value].sort(compareTopicsByRecency)
   }
