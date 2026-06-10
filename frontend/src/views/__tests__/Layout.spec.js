@@ -1,4 +1,5 @@
 import { mount } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const routeState = vi.hoisted(() => ({
@@ -52,7 +53,7 @@ describe('Layout', () => {
 
   it('renames the intelligent query menu entry to Agent问答', () => {
     const wrapper = mount(Layout, {
-      global: { stubs }
+      global: { plugins: [createPinia()], stubs }
     })
 
     const intelligentQueryItem = wrapper.find('[data-index="/intelligent-query"]')
@@ -64,7 +65,7 @@ describe('Layout', () => {
   it('loads the remote DataAgent widget script and installs the floating widget', async () => {
     const installWidget = vi.fn(() => ({ destroy: vi.fn() }))
     const wrapper = mount(Layout, {
-      global: { stubs }
+      global: { plugins: [createPinia()], stubs }
     })
 
     const script = document.querySelector('script[data-odw-dataagent-widget-script]')

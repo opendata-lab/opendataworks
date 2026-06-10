@@ -56,12 +56,23 @@ logging:
     com.onedata.portal: debug
     org.springframework.web: info
 
-# 认证配置
-auth:
-  anonymous:
+# 认证配置（odw-auth 模块，详见 docs/design/2026-05-30-odw-auth-module-design.md）
+odw:
+  auth:
     enabled: true
-    user-id: 1
-    username: admin
+    jwt:
+      secret: ${AUTH_JWT_SECRET:opendataworks-dev-jwt-secret-change-me}
+      issuer: ${AUTH_JWT_ISSUER:opendataworks}
+      ttl: ${AUTH_JWT_TTL:8h}
+    session:
+      cookie-name: odw_session
+      same-site: Lax
+      secure: ${AUTH_COOKIE_SECURE:false}
+    anonymous:
+      # 临时回滚开关：true 时会话缺失回退为匿名 admin（恢复旧行为）
+      enabled: ${AUTH_ANONYMOUS_ENABLED:false}
+      user-id: 1
+      username: admin
 
 workflow:
   runtime-sync:

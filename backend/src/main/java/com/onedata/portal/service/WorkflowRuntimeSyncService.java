@@ -2,7 +2,7 @@ package com.onedata.portal.service;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.onedata.portal.context.UserContextHolder;
+import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.DolphinDatasourceOption;
 import com.onedata.portal.dto.PageResult;
 import com.onedata.portal.dto.SqlTableAnalyzeResponse;

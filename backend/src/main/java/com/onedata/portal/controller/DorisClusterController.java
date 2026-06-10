@@ -1,7 +1,7 @@
 package com.onedata.portal.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.onedata.portal.annotation.RequireAuth;
+import com.onedata.auth.annotation.RequireAuth;
 import com.onedata.portal.dto.backup.SchemaBackupConfigRequest;
 import com.onedata.portal.dto.backup.SchemaBackupItem;
 import com.onedata.portal.dto.backup.SchemaBackupRestoreRequest;
