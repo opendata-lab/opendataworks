@@ -13,7 +13,8 @@ Upgrade Skill management from a single-active Skill model to multi-active Skill 
 - Add `DATAAGENT_ENABLED_SKILLS` and `DATAAGENT_ENABLED_SKILL_ROOTS`; keep `DATAAGENT_SKILL_ROOT` for existing scripts.
 - Extract shared provider/prompt/env helpers into `core/agent_runtime.py` and remove the unused direct `stream_agent_reply` executor so only the task executor owns agent execution.
 - Simplify frontend copy and layout: `已启用 / 未启用`, compact cards, custom detail title bar, merged left overview/file tree, `SKILL.md` first, lower-weight version history.
-- Add `POST /api/v1/dataagent/skills/imports` for ZIP upload. Safely extract one Skill, reject unsafe paths/symlinks/folder conflicts, index files, and keep the imported Skill disabled by default.
+- Add `POST /api/v1/dataagent/skills/imports` for ZIP upload. Safely extract one Skill, reject unsafe paths/symlinks, index files, and keep a first-time imported Skill disabled by default.
+- Support re-import of an existing managed Skill when the front matter `version` differs: replace files in place, prune stale document rows, and preserve the enabled state. Reject same-version re-import and built-in Skill overwrite.
 - Add `DELETE /api/v1/dataagent/skills/{folder}` for managed Skill uninstall. Reject built-in Skill removal and last-enabled removal, remove indexed documents, clean `skill_runtime`, and reassign primary Skill when needed.
 - Add list/detail UI actions for importing ZIP packages and uninstalling `source=managed` Skills with typed folder confirmation.
 
@@ -22,7 +23,7 @@ Upgrade Skill management from a single-active Skill model to multi-active Skill 
 - Backend:
   - contract tests for enriched document fields, runtime toggle API, import API, uninstall API, and uninstall error mapping
   - service tests for multi-enable, disabling one Skill, rejecting last-disable, and primary Skill reassignment
-  - service tests for root ZIP import, folder ZIP import, unsafe archive rejection, duplicate folder rejection, missing `SKILL.md`, managed uninstall cleanup, built-in uninstall rejection, and last-enabled uninstall rejection
+  - service tests for root ZIP import, folder ZIP import, unsafe archive rejection, same-version duplicate rejection, version-bump replacement, built-in overwrite rejection, missing `SKILL.md`, managed uninstall cleanup, built-in uninstall rejection, and last-enabled uninstall rejection
   - loader test proving runtime cwd exposes only enabled Skills
   - agent runtime-env test for enabled Skill env variables
   - task executor test covering the generated multi-Skill runtime cwd

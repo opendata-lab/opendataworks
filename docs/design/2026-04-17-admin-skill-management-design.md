@@ -20,6 +20,7 @@ Administrators also need a controlled way to add local Skills without editing th
 - Reject disabling the last enabled Skill. If disabling the current primary Skill, move `skills_output_dir` to the first remaining enabled Skill.
 - Resolve document `enabled` from `skill_runtime`, not from `skills_output_dir`.
 - Allow uploading one ZIP package containing either `<folder>/SKILL.md` or a root `SKILL.md` with front matter `name`; imported Skills are copied under the discovery root, indexed into `da_skill_document`, marked `source=managed`, and default to disabled.
+- Allow re-importing an existing managed Skill when the front matter `version` differs; the import replaces the Skill files, prunes stale document index rows, and preserves the Skill's enabled state. Same-version re-import and overwriting built-in Skills are rejected.
 - Allow uninstalling only `source=managed` Skills. Uninstall removes the Skill directory, document index rows and version rows, and its `skill_runtime` entry. Built-in `dataagent-nl2sql` can be disabled but cannot be uninstalled.
 - During background NL2SQL execution, `core/task_executor.py` uses shared helpers in `core/agent_runtime.py` to create a runtime project under `dataagent/dataagent-backend/.runtime/enabled-skills` and expose only enabled Skills through `.claude/skills` symlinks.
 - Keep `DATAAGENT_SKILL_ROOT` pointed at the primary Skill and add `DATAAGENT_ENABLED_SKILLS` plus `DATAAGENT_ENABLED_SKILL_ROOTS` for multi-Skill-aware scripts.
@@ -61,11 +62,17 @@ Request:
 
 Response:
 
-- `{ "skill_id": "<folder>", "source": "managed", "enabled": false, "imported_documents": [...], "document_count": n }`
+- `{ "skill_id": "<folder>", "source": "managed", "enabled": false, "replaced": false, "version": "<front matter version or empty>", "previous_version": "", "imported_documents": [...], "document_count": n }`
+
+Re-import semantics:
+
+- If the Skill folder already exists and the incoming `SKILL.md` front matter `version` differs from the installed one, the import replaces the Skill files in place; the response carries `replaced=true`, `previous_version`, and `enabled` keeps the Skill's current runtime state instead of resetting to disabled.
+- If the versions are identical (including both missing), the import is rejected.
+- Built-in Skill folders can never be overwritten by import.
 
 Failure:
 
-- `400` for non-ZIP files, unsafe archive paths, symlinks, missing `SKILL.md`, invalid folder names, multiple Skills in one package, or folder conflicts.
+- `400` for non-ZIP files, unsafe archive paths, symlinks, missing `SKILL.md`, invalid folder names, multiple Skills in one package, same-version folder conflicts, or attempts to overwrite a built-in Skill.
 
 Uninstall API:
 

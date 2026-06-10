@@ -707,6 +707,8 @@ def test_import_skill_from_root_zip_defaults_to_disabled(monkeypatch, tmp_path):
     assert payload["skill_id"] == "marketing-insights"
     assert payload["source"] == "managed"
     assert payload["enabled"] is False
+    assert payload["replaced"] is False
+    assert payload["previous_version"] == ""
     assert persisted["skill_runtime"]["marketing-insights"]["enabled"] is False
     assert "marketing-insights/SKILL.md" in store.documents
 
@@ -755,14 +757,99 @@ def test_import_skill_rejects_unsafe_zip_path(monkeypatch, tmp_path):
         )
 
 
-def test_import_skill_rejects_duplicate_folder(monkeypatch, tmp_path):
+def test_import_skill_rejects_duplicate_folder_with_same_version(monkeypatch, tmp_path):
+    discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+    (discovery_root / "marketing-insights").mkdir()
+    (discovery_root / "marketing-insights" / "SKILL.md").write_text(
+        "---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="版本相同"):
+        skill_admin_service.import_skill_from_zip(
+            "marketing-insights.zip",
+            make_zip(
+                {"marketing-insights/SKILL.md": "---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing\n"}
+            ),
+        )
+
+
+def test_import_skill_rejects_duplicate_folder_without_version(monkeypatch, tmp_path):
     discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
     (discovery_root / "marketing-insights").mkdir()
 
-    with pytest.raises(ValueError, match="already exists"):
+    with pytest.raises(ValueError, match="版本相同"):
         skill_admin_service.import_skill_from_zip(
             "marketing-insights.zip",
             make_zip({"marketing-insights/SKILL.md": "# Marketing\n"}),
+        )
+
+
+def test_import_skill_replaces_existing_when_version_differs(monkeypatch, tmp_path):
+    settings = {
+        "skills_output_dir": f"../.claude/skills/{BUSINESS_SKILL}",
+        "skill_runtime": {
+            BUSINESS_SKILL: {"enabled": True},
+            "marketing-insights": {"enabled": True},
+        },
+    }
+    discovery_root, store, persisted = configure_skill_filesystem(monkeypatch, tmp_path, settings=settings)
+    existing = discovery_root / "marketing-insights"
+    existing.mkdir()
+    (existing / "SKILL.md").write_text(
+        "---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing v1\n",
+        encoding="utf-8",
+    )
+    (existing / "reference").mkdir()
+    (existing / "reference" / "legacy.md").write_text("# Legacy\n", encoding="utf-8")
+    store.save_document(
+        relative_path="marketing-insights/SKILL.md",
+        content="---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing v1\n",
+        change_source="upload",
+    )
+    store.save_document(
+        relative_path="marketing-insights/reference/legacy.md",
+        content="# Legacy\n",
+        change_source="upload",
+    )
+
+    payload = skill_admin_service.import_skill_from_zip(
+        "marketing-insights.zip",
+        make_zip(
+            {
+                "marketing-insights/SKILL.md": "---\nname: marketing-insights\nversion: 2.0.0\n---\n# Marketing v2\n",
+                "marketing-insights/reference/guide.md": "# Guide\n",
+            }
+        ),
+    )
+
+    assert payload["skill_id"] == "marketing-insights"
+    assert payload["replaced"] is True
+    assert payload["version"] == "2.0.0"
+    assert payload["previous_version"] == "1.0.0"
+    assert payload["enabled"] is True
+    assert persisted["skill_runtime"]["marketing-insights"]["enabled"] is True
+    assert (discovery_root / "marketing-insights" / "reference" / "guide.md").exists()
+    assert not (discovery_root / "marketing-insights" / "reference" / "legacy.md").exists()
+    assert "marketing-insights/reference/legacy.md" not in store.documents
+    assert "marketing-insights/reference/guide.md" in store.documents
+    assert "2.0.0" in store.documents["marketing-insights/SKILL.md"]["current_content"]
+
+
+def test_import_skill_rejects_overwriting_builtin_folder(monkeypatch, tmp_path):
+    discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+    (discovery_root / BUSINESS_SKILL).mkdir()
+    (discovery_root / BUSINESS_SKILL / "SKILL.md").write_text(
+        f"---\nname: {BUSINESS_SKILL}\nversion: 1.0.0\n---\n# Builtin\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="内置 Skill 不支持覆盖导入"):
+        skill_admin_service.import_skill_from_zip(
+            "builtin.zip",
+            make_zip(
+                {f"{BUSINESS_SKILL}/SKILL.md": f"---\nname: {BUSINESS_SKILL}\nversion: 2.0.0\n---\n# Builtin\n"}
+            ),
         )
 
 
