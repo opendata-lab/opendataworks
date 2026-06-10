@@ -30,6 +30,9 @@ def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
         "硬性约束",
         "SQL 前确认清单",
         "图表输出",
+        "结论与图表的关联要求",
+        "结论部分必须明确引用该图表",
+        "不得超出图表所呈现的事实范围做推断",
         "输出要求",
     ]
     for token in required_tokens:
