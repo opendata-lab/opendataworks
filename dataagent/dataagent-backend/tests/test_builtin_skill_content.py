@@ -78,6 +78,28 @@ def test_system_prompt_documents_data_quality_gate():
         assert token in snapshot
 
 
+def test_system_prompt_documents_pre_sql_confirmation_checklist():
+    snapshot = SYSTEM_PROMPT.read_text(encoding="utf-8")
+
+    required_tokens = [
+        "SQL 前确认清单",
+        "本体业务含义确认",
+        "时间维度确认",
+        "物理结构确认",
+        "取值与过滤条件确认",
+        "关联与粒度确认",
+        "结果合理性校验",
+        "每日全量快照表默认只取最新快照日期",
+        "每日增量表优先采用本体或指标定义中的默认时间字段与默认时间范围",
+        "不在 SQL 中使用任何未经元数据验证的表名或字段名",
+        "不凭经验猜枚举值",
+        "join 键来自本体关系或血缘定义",
+        "警惕一对多 join 导致的重复计数",
+    ]
+    for token in required_tokens:
+        assert token in snapshot
+
+
 def test_platform_tools_skill_documents_run_sql_as_only_recommended_sql_execution_entrypoint():
     snapshot = _skill_text_snapshot(PLATFORM_TOOLS_SKILL_ROOT)
 
