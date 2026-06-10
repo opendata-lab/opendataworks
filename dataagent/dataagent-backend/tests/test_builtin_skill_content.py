@@ -27,13 +27,10 @@ def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
     required_tokens = [
         "企业级智能问数 Data Agent",
         "你不是单纯的 SQL 生成器",
-        "任务路由",
-        "标准工作流",
-        "澄清规则",
-        "SQL 与数据使用原则",
-        "归因分析原则",
-        "输出规范",
-        "失败处理",
+        "硬性约束",
+        "SQL 前确认清单",
+        "图表输出",
+        "输出要求",
     ]
     for token in required_tokens:
         assert token in snapshot
@@ -64,15 +61,13 @@ def test_system_prompt_documents_data_quality_gate():
     snapshot = SYSTEM_PROMPT.read_text(encoding="utf-8")
 
     required_tokens = [
-        "先确认相关表、字段、关联关系和时间字段",
-        "生成的查询应尽量简单、可解释、可审查",
-        "查询条件、聚合逻辑和时间范围必须与用户问题一致",
-        "区分目标表是每日全量快照表还是每日增量表",
-        "每日全量快照表用于常规问数时默认只查最新日期",
+        "是每日全量快照表还是每日增量表",
+        "每日全量快照表用于常规问数时默认只取最新快照日期",
+        "避免重复累计历史快照",
         "只有归因分析、趋势分析、对比分析等需要历史基线的场景才查询历史日期",
         "每日增量表按用户给定或澄清后的时间范围查询",
-        "不确定字段含义时，先查元数据或业务语义，不盲写",
-        "输出时说明关键过滤条件与统计口径",
+        "未指定时优先采用本体或指标定义中的默认时间字段与默认时间范围",
+        "任何默认时间口径都必须在回答中显式说明",
     ]
     for token in required_tokens:
         assert token in snapshot
@@ -89,8 +84,6 @@ def test_system_prompt_documents_pre_sql_confirmation_checklist():
         "取值与过滤条件确认",
         "关联与粒度确认",
         "结果合理性校验",
-        "每日全量快照表默认只取最新快照日期",
-        "每日增量表优先采用本体或指标定义中的默认时间字段与默认时间范围",
         "不在 SQL 中使用任何未经元数据验证的表名或字段名",
         "不凭经验猜枚举值",
         "join 键来自本体关系或血缘定义",
