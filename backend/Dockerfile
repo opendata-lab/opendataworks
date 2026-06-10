@@ -7,6 +7,7 @@ WORKDIR /app
 COPY pom.xml ./pom.xml
 COPY backend/pom.xml ./backend/pom.xml
 COPY backend-agent-api/pom.xml ./backend-agent-api/pom.xml
+COPY odw-auth/pom.xml ./odw-auth/pom.xml
 
 # 下载依赖（利用 Docker 缓存）
 RUN mvn -f pom.xml -pl backend -am dependency:go-offline -B
@@ -14,6 +15,7 @@ RUN mvn -f pom.xml -pl backend -am dependency:go-offline -B
 # 复制源代码
 COPY backend/src ./backend/src
 COPY backend-agent-api/src ./backend-agent-api/src
+COPY odw-auth/src ./odw-auth/src
 
 # 构建应用
 RUN mvn -f pom.xml -pl backend -am clean package -DskipTests
