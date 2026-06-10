@@ -75,6 +75,7 @@ public class DataTaskService {
     public Page<DataTask> list(int pageNum,
             int pageSize,
             String taskType,
+            String dolphinNodeType,
             String status,
             String taskName,
             Long workflowId,
@@ -89,6 +90,9 @@ public class DataTaskService {
 
         if (taskType != null && !taskType.isEmpty()) {
             wrapper.eq(DataTask::getTaskType, taskType);
+        }
+        if (StringUtils.hasText(dolphinNodeType)) {
+            wrapper.eq(DataTask::getDolphinNodeType, dolphinNodeType);
         }
         if (status != null && !status.isEmpty()) {
             wrapper.eq(DataTask::getStatus, status);
@@ -428,8 +432,9 @@ public class DataTaskService {
 
             Long datasourceId = null;
             Long targetDatasourceId = null;
+            String targetDatasourceType = null;
             if ("DATAX".equalsIgnoreCase(nodeType)) {
-                // For DataX, get both source and target datasource IDs
+                // For DataX, get both source and target datasource IDs and types
                 if (StringUtils.hasText(dataTask.getDatasourceName())) {
                     DolphinDatasourceOption sourceOption = resolveDatasourceOptionByName(
                             datasourceByName, dataTask.getDatasourceName());
@@ -449,6 +454,7 @@ public class DataTaskService {
                                 "Target datasource '%s' not found for task '%s'",
                                 dataTask.getTargetDatasourceName(), taskLabel(dataTask)));
                     }
+                    targetDatasourceType = resolveDatasourceType(targetOption, null);
                 }
                 if (datasourceId == null || targetDatasourceId == null) {
                     throw new IllegalStateException(String.format(
@@ -502,6 +508,7 @@ public class DataTaskService {
                     resolveDatasourceType(resolveDatasourceOptionByName(datasourceByName, dataTask.getDatasourceName()),
                             dataTask.getDatasourceType()),
                     targetDatasourceId,
+                    targetDatasourceType,
                     dataTask.getSourceTable(),
                     dataTask.getTargetTable(),
                     dataTask.getColumnMapping(),

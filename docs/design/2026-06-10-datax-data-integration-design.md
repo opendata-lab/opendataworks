@@ -67,8 +67,8 @@ DataX 已端到端接入为 **dolphin DATAX 任务类型**，不是纯占位：
    - 空 → 全列同步（`SELECT * FROM source_table` 或由 dolphin 默认推断）。
    - 列清单 JSON → 生成 `SELECT <mapped columns> FROM source_table`。
    - 完整 DataX JSON → 自定义模式（`customConfig=1` + `json`）。
-3. **建 / 改时补 DATAX 校验**：在 `DataTaskService.validateTask()` 加入对源 / 目标数据源、源 / 目标表的校验，与发布时 `validatePublishMetadata()` 对齐。
-4. **数据集成页实化**：`DataIntegration.vue` 改为 DataX 维度的列表 + 创建 / 编辑视图，复用现有任务 API（按 `dolphinNodeType=DATAX` 过滤）与 DATAX 锁定版的 `TaskEditDrawer`。
+3. **DATAX 参数校验（修订）**：构建 DATAX 参数时，对"形似 JSON（以 `{`/`[` 开头）但解析失败"的 `column_mapping` **显式抛错**，避免静默降级成错误的 `SELECT`。源 / 目标数据源等必填项继续在发布期 `validatePublishMetadata()` 校验，**不在建 / 改时强制**，以保留既有「宽松建 / 改、严格发布」契约（见 `createDataXTaskWithoutDatasourceShouldSucceed`）。
+4. **数据集成页实化**：`DataIntegration.vue` 改为「同步任务 / 数据源管理」分页，同步任务页复用 `TaskTable`（新增 `nodeType` 入参，注入 `dolphinNodeType=DATAX` 过滤）。
 
 ## Interfaces
 
@@ -111,6 +111,18 @@ DataX 已端到端接入为 **dolphin DATAX 任务类型**，不是纯占位：
 - 后端单测：扩展 `backend/src/test/java/com/onedata/portal/service/DataTaskServiceWorkflowMetadataTest.java`（已用 Mockito + `ArgumentCaptor` 捕获 `buildTaskDefinition` 参数），断言 DATAX `taskParams` 关键字段正确、`column_mapping` 三种格式、建 / 改 DATAX 校验。
 - 前端：先 `nvm use`，再跑 `integration/` + `tasks/` 触达区域的最小构建 / lint。
 - 本地 smoke（环境可用时）：建 DATAX 任务 → 发布 → 确认同步出的 dolphin DATAX 节点参数合法 → 跑一次实例 → 状态回流 `getLatestExecutionStatus`；若本地无 DataX 运行时，明确声明执行层未验证、仅验证载荷形状与单测。
+
+## 实现状态（2026-06-10）
+
+已落地并通过单测 / 构建验证：
+
+- 缺口 1 / 2：`DolphinSchedulerService` 新增 `buildDataxParams(...)`，发出 dolphin 原生 DATAX schema（`customConfig` / `dsType` / `dataSource` / `dtType` / `dataTarget` / `sql` / `targetTable` / `jobSpeedByte` / `jobSpeedRecord` / `xms` / `xmx`），区分向导 / 自定义模式并翻译 `column_mapping` 三态；删除共用 `TaskParams` 的 DataX 字段，杜绝 shell/sql 字段泄漏。`buildTaskDefinition` 增加 `targetDatasourceType` 入参，`DataTaskService.publish()` 解析并下发源 / 目标数据源类型。
+- 缺口 3（修订）：非法 JSON 列映射在 `buildDataxParams` 显式抛错；保留宽松建 / 改、严格发布契约。
+- 缺口 5：`DataTaskService.list` / 控制器新增 `dolphinNodeType` 过滤；`TaskTable.vue` 新增 `nodeType` 入参；`DataIntegration.vue` 升级为「同步任务 / 数据源管理」分页，同步任务页按 DATAX 过滤。
+- 缺口 4：`deploy/README.md` 增补 DataX 运行时 / `environmentCode` 前提说明（暴露 `environmentCode` 入参留作后续）。
+- 测试：新增 `DolphinSchedulerDataxParamsTest`（向导 / 列清单 / JSON 数组 / 对象映射 / 自定义 JSON / 非法 JSON 报错，全部通过）；`DataTaskServiceWorkflowMetadataTest` 发布断言已对齐新签名；前端 `npm run build` 与 `taskEditForm.spec.js` 通过。
+
+**未验证**：受限于本环境无可用 DolphinScheduler + DataX 运行时，**执行层端到端 smoke 未运行**（任务发布到 dolphin、真实 DataX 节点执行、状态回流）。需在实际 dolphin 版本上验证 DATAX 参数 schema 与一次真实同步。
 
 ## 关联文档
 
