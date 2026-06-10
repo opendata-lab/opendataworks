@@ -2,7 +2,7 @@ package com.onedata.portal.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.onedata.portal.config.DorisJdbcProperties;
-import com.onedata.portal.context.UserContextHolder;
+import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.DorisCredential;
 import com.onedata.portal.dto.TableStatistics;
 import com.onedata.portal.entity.DorisCluster;

@@ -1,8 +1,8 @@
 package com.onedata.portal.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.onedata.portal.annotation.RequireAuth;
-import com.onedata.portal.context.UserContextHolder;
+import com.onedata.auth.annotation.RequireAuth;
+import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.PageResult;
 import com.onedata.portal.dto.Result;
 import com.onedata.portal.dto.TaskExecutionStatus;
