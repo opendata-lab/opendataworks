@@ -495,6 +495,27 @@ def auto_rule_check(case: dict[str, Any], *, final_answer: str, blocks: list[dic
     }
 
 
+def _build_conversation_log(messages_response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a structured conversation log from topic messages for post-eval analysis."""
+    log: list[dict[str, Any]] = []
+    for msg in messages_response.get("items") or []:
+        if not isinstance(msg, dict):
+            continue
+        entry: dict[str, Any] = {
+            "role": str(msg.get("sender_type") or "unknown"),
+            "content": str(msg.get("content") or ""),
+        }
+        if msg.get("task_id"):
+            entry["task_id"] = str(msg["task_id"])
+        blocks = msg.get("blocks")
+        if isinstance(blocks, list) and blocks:
+            entry["blocks"] = blocks
+        if msg.get("created_at"):
+            entry["created_at"] = str(msg["created_at"])
+        log.append(entry)
+    return log
+
+
 def _final_assistant_message(messages: dict[str, Any], task_id: str) -> dict[str, Any]:
     """Pick the last assistant message for ``task_id`` (Chat V2 projected blocks)."""
     candidates = []
@@ -623,6 +644,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     task: dict[str, Any] = {}
     message: dict[str, Any] = {}
     final_answer = ""
+    conversation: list[dict[str, Any]] = []
     try:
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
         task_id = _submit_task(base_url, topic_id, case, args)
@@ -636,6 +658,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
             timeout=30,
         )
         message = _final_assistant_message(messages, final_task_id)
+        conversation = _build_conversation_log(messages)
         final_answer = str(message.get("content") or "").strip()
         status = str(task.get("task_status") or "").lower()
         if status and status not in SUCCESS_STATUSES:
@@ -669,6 +692,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         "veto_rules_triggered": list(rule_check.get("triggered_veto_rules") or []),
         "case_passed": False,
         "errors": errors,
+        "conversation": conversation,
     }
 
 
@@ -1183,6 +1207,26 @@ def write_outputs(output_dir: Path, results: list[dict[str, Any]], summary: dict
                     json.dumps(item, ensure_ascii=False, indent=2, sort_keys=True),
                     encoding="utf-8",
                 )
+    if results:
+        conversations_dir = output_dir / "conversations"
+        conversations_dir.mkdir(parents=True, exist_ok=True)
+        for item in results:
+            case_id = str(item.get("case_id") or "unknown")
+            conversation_entry = {
+                "case_id": case_id,
+                "category": item.get("category"),
+                "question": item.get("question"),
+                "topic_id": item.get("topic_id"),
+                "task_id": item.get("task_id"),
+                "task_status": item.get("task_status"),
+                "score": float((item.get("judge") or {}).get("score") or 0),
+                "case_passed": bool(item.get("case_passed")),
+                "conversation": item.get("conversation") or [],
+            }
+            (conversations_dir / f"{case_id}.json").write_text(
+                json.dumps(conversation_entry, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     (output_dir / "report.md").write_text(render_report(summary, results), encoding="utf-8")
 

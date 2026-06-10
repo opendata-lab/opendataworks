@@ -655,6 +655,21 @@ def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monk
     assert result["task_status"] == "finished"
     assert result["judge"]["score"] == 9.0
     assert result["case_passed"] is True
+
+    # Assert conversations directory and files
+    conversations_dir = output_dir / "conversations"
+    assert conversations_dir.is_dir()
+    case_file = conversations_dir / "ODW_SAMPLE_001.json"
+    assert case_file.exists()
+    case_data = json.loads(case_file.read_text(encoding="utf-8"))
+    assert case_data["case_id"] == "ODW_SAMPLE_001"
+    assert case_data["case_passed"] is True
+    assert isinstance(case_data["conversation"], list)
+    assert len(case_data["conversation"]) == 1
+    assert case_data["conversation"][0]["role"] == "assistant"
+    assert case_data["conversation"][0]["content"] == "最近 30 天工作流发布次数按日期聚合如下。"
+    assert case_data["conversation"][0]["blocks"][0]["type"] == "tool_use"
+
     # Offline runner drives the judge metric locally; DeepEval's cloud-coupled
     # evaluate() is never invoked.
     assert calls["test_cases"] == []

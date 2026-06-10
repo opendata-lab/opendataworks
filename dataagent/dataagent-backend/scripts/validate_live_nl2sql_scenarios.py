@@ -269,6 +269,14 @@ def _run_via_topic_task(base_url: str, scenario: Scenario, provider_id: str, mod
         "reasons": reasons,
         "sdk_record_count": len(sdk_records),
         "sdk_record_types": [str(record.get("event_type") or record.get("record_type") or "") for record in sdk_records],
+        "conversation": [
+            {
+                "role": str(msg.get("sender_type") or "unknown"),
+                "content": str(msg.get("content") or ""),
+            }
+            for msg in messages
+            if isinstance(msg, dict)
+        ],
         "response": analysis,
     }
 

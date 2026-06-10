@@ -824,6 +824,21 @@ def test_fake_http_success_generates_passing_report(tmp_path):
     assert summary["passed"] is True
     assert summary["recommendation"] == "建议上线"
 
+    # Assert conversations directory and files
+    conversations_dir = tmp_path / "conversations"
+    assert conversations_dir.is_dir()
+    case_file = conversations_dir / "ODW_SAMPLE_002.json"
+    assert case_file.exists()
+    case_data = json.loads(case_file.read_text(encoding="utf-8"))
+    assert case_data["case_id"] == "ODW_SAMPLE_002"
+    assert case_data["case_passed"] is True
+    assert isinstance(case_data["conversation"], list)
+    assert len(case_data["conversation"]) == 2
+    assert case_data["conversation"][0]["role"] == "user"
+    assert case_data["conversation"][0]["content"] == "q"
+    assert case_data["conversation"][1]["role"] == "assistant"
+    assert case_data["conversation"][1]["content"] == "answer with opendataworks.workflow_publish_record"
+
 
 def test_task_failure_generates_report_and_exit_1(tmp_path):
     code = _run_fake_scenario(tmp_path, "task_failed")
