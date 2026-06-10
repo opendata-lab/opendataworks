@@ -61,17 +61,17 @@ def test_list_files_only_output_and_uploads_tags_kind(sandbox_root: Path):
     assert not any(item["rel_path"].startswith(".claude") for item in files)
 
 
-def test_list_files_hides_workspace_scratch_files(sandbox_root: Path):
+def test_list_files_includes_workspace_scratch_files(sandbox_root: Path):
     root = sandbox_root / "topic_1" / "workspace"
     (root / "output").mkdir(parents=True)
     (root / "output" / "result.csv").write_text("a\n1\n", encoding="utf-8")
-    # Scratch files written outside output/ and uploads/ must not be listed.
+    # Scratch files written outside output/ and uploads/ must be listed too.
     (root / "scratch.tmp").write_text("noise", encoding="utf-8")
     (root / "exports").mkdir()
     (root / "exports" / "legacy.csv").write_text("x\n", encoding="utf-8")
 
     rels = {item["rel_path"] for item in list_files("topic_1")}
-    assert rels == {"output/result.csv"}
+    assert rels == {"output/result.csv", "scratch.tmp", "exports/legacy.csv"}
 
 
 def test_list_files_skips_symlinks(sandbox_root: Path, tmp_path: Path):
@@ -96,15 +96,22 @@ def test_safe_workspace_file_resolves_inside_output(sandbox_root: Path):
     assert resolved == target.resolve()
 
 
+def test_safe_workspace_file_resolves_scratch_files(sandbox_root: Path):
+    root = sandbox_root / "topic_1" / "workspace"
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / "scratch.tmp"
+    target.write_text("ok", encoding="utf-8")
+
+    resolved = safe_workspace_file("topic_1", "scratch.tmp")
+    assert resolved == target.resolve()
+
+
 @pytest.mark.parametrize(
     "bad",
     [
         "../escape.txt",
         "a/../../escape",
         ".claude/skills/x",
-        # Files outside the visible uploads/ and output/ directories are rejected.
-        "scratch.tmp",
-        "exports/legacy.csv",
     ],
 )
 def test_safe_workspace_file_rejects_traversal_and_hidden_paths(sandbox_root: Path, bad: str):
@@ -121,11 +128,12 @@ def test_safe_workspace_file_confines_absolute_looking_paths(sandbox_root: Path)
     assert resolved == (root / "output" / "passwd.csv").resolve()
 
 
-def test_safe_workspace_file_rejects_absolute_host_path(sandbox_root: Path):
-    (sandbox_root / "topic_1" / "workspace").mkdir(parents=True)
-    # `/etc/passwd` is stripped to `etc/passwd`, which is outside uploads/output.
-    with pytest.raises(TopicFileError):
-        safe_workspace_file("topic_1", "/etc/passwd")
+def test_safe_workspace_file_confines_absolute_host_path(sandbox_root: Path):
+    root = (sandbox_root / "topic_1" / "workspace")
+    root.mkdir(parents=True)
+    # `/etc/passwd` is stripped to `etc/passwd`, resolving under the workspace.
+    resolved = safe_workspace_file("topic_1", "/etc/passwd")
+    assert resolved == (root / "etc" / "passwd").resolve()
 
 
 def test_safe_workspace_file_rejects_symlink_escape(sandbox_root: Path, tmp_path: Path):

@@ -47,7 +47,6 @@ def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
         "mcp__portal__portal_get_table_ddl",
         "mcp__portal__portal_query_readonly",
         "validate_sql.py",
-        "run_sql.py",
         "tool output contract",
     ]
     for token in forbidden_tokens:

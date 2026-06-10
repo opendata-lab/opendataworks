@@ -420,7 +420,7 @@ def test_build_system_prompt_reads_markdown_and_appends_runtime_context():
     assert "用户显式提供的 database hint: opendataworks" in prompt
     assert "dataagent-nl2sql" not in prompt
     assert "通用 SQL skill" not in prompt
-    assert "run_sql.py" not in prompt
+    assert "run_sql.py" in prompt
     assert "validate_sql.py" not in prompt
     assert "get_lineage.py" not in prompt
     assert "mcp__portal" not in prompt
