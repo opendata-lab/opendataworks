@@ -412,9 +412,9 @@ def test_build_system_prompt_reads_markdown_and_appends_runtime_context():
 
     assert "你是企业级智能问数 Data Agent" in prompt
     assert "你不是单纯的 SQL 生成器" in prompt
-    assert "# 三、任务路由" in prompt
-    assert "# 四、标准工作流" in prompt
-    assert "# 六、SQL 与数据使用原则" in prompt
+    assert "# 一、硬性约束" in prompt
+    assert "# 二、SQL 前确认清单" in prompt
+    assert "# 三、图表输出" in prompt
     assert "# 运行时上下文" in prompt
     assert "当前已启用：opendataworks-business-knowledge、opendataworks-platform-tools" in prompt
     assert "用户显式提供的 database hint: opendataworks" in prompt
@@ -433,55 +433,37 @@ def test_build_system_prompt_includes_methodology_and_non_negotiables():
 
     required_fragments = [
         "企业级智能问数 Data Agent",
-        "准确理解用户的数据分析需求",
-        "输出可解释、可复核、边界清晰的结果",
         "无论用户使用何种语言提问，必须始终使用简体中文回复",
         "不编造表、字段、指标、口径、数据结果",
-        "不在未确认 schema、字段或业务语义时直接臆造 SQL",
-        "如果上下文不足以完成查询，先提澄清问题",
-        "已启用 Skills",
         "不执行有副作用的操作",
+        "文件读写只在当前会话工作区目录内进行",
+        "不伪造成功结果",
+        "先提出最小澄清问题",
+        "必须显式说明默认假设",
+        "已启用 Skills",
     ]
     for fragment in required_fragments:
         assert fragment in prompt
 
 
-def test_build_system_prompt_defines_evidence_first_task_routing():
+def test_build_system_prompt_omits_generic_model_known_methodology():
     prompt = agent_runtime._build_system_prompt(
         None,
         {"enabled_folders": ["opendataworks-business-knowledge", "opendataworks-platform-tools"]},
     )
 
-    required_fragments = [
+    removed_fragments = [
+        "任务路由",
+        "标准工作流",
+        "澄清规则",
+        "归因分析原则",
+        "失败处理",
         "先理解问题，再决定是否查语义、查元数据、生成 SQL、做分析",
-        "如果用户在问业务术语、指标定义、统计口径、实体含义、时间口径",
-        "如果用户在问“查什么表、字段、DDL、血缘、来源关系”",
-        "如果用户在问具体数据结果、统计值、明细、排行、汇总",
-        "如果用户在问“为什么上涨/下降”“原因是什么”“哪个因素导致变化”",
-        "通过可用能力获取业务语义、元数据或查询结果",
-        "如证据不足，不输出伪确定结论",
-    ]
-    for fragment in required_fragments:
-        assert fragment in prompt
-
-
-def test_build_system_prompt_documents_high_level_work_order():
-    prompt = agent_runtime._build_system_prompt(
-        None,
-        {"enabled_folders": ["opendataworks-business-knowledge"]},
-    )
-
-    required_fragments = [
         "提取指标、维度、对象、过滤条件、时间范围、比较关系、输出形式",
-        "判断是否存在歧义、缺失条件或业务术语未定义",
-        "如果缺少关键条件且会影响结果，先发起澄清",
-        "若可基于默认口径继续，必须明确说明默认假设",
         "先给结论",
-        "再给支撑证据",
-        "再说明口径、过滤条件、时间范围和限制",
     ]
-    for fragment in required_fragments:
-        assert fragment in prompt
+    for fragment in removed_fragments:
+        assert fragment not in prompt
     assert "SQL 验证层" not in prompt
     assert "run_sql.py --database" not in prompt
 
