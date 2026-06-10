@@ -162,6 +162,30 @@ describe('useNl2SqlChat engine', () => {
     }))
   })
 
+  it('re-sorts conversations on refresh by the server updated_at (reply recency)', async () => {
+    const api = makeApi()
+    // The backend bumps a topic's updated_at when messages persist, when a
+    // task starts, and when a run terminates; refreshing the list is what
+    // reorders conversations by their latest reply.
+    api.topicApi.listTopics
+      .mockResolvedValueOnce([
+        { topic_id: 'topic-a', title: '会话 A', updated_at: '2026-06-02T00:00:00' },
+        { topic_id: 'topic-b', title: '会话 B', updated_at: '2026-06-01T00:00:00' },
+      ])
+      .mockResolvedValueOnce([
+        { topic_id: 'topic-a', title: '会话 A', updated_at: '2026-06-02T00:00:00' },
+        { topic_id: 'topic-b', title: '会话 B', updated_at: '2026-06-03T09:00:00' },
+      ])
+    const chat = await ready(api)
+
+    await chat.refreshTopics()
+    expect(chat.topics.value.map((t) => t.topic_id)).toEqual(['topic-a', 'topic-b'])
+
+    // topic-b's reply finished on the server: the next refresh floats it.
+    await chat.refreshTopics()
+    expect(chat.topics.value.map((t) => t.topic_id)).toEqual(['topic-b', 'topic-a'])
+  })
+
   it('cancel aborts locally and cancels the backend task (suspended)', async () => {
     const api = makeApi()
     // Honor the abort signal so the in-flight send unwinds like a real fetch.
