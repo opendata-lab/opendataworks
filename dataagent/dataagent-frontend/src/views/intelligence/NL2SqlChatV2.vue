@@ -423,29 +423,38 @@
       <el-scrollbar v-else class="v2-artifacts-scroll">
         <div v-if="artifactsLoading" class="v2-artifacts-empty">加载中…</div>
         <div v-else-if="!artifacts.length" class="v2-artifacts-empty">暂无文件</div>
-        <button
-          v-for="file in artifacts"
-          v-else
-          :key="file.rel_path"
-          type="button"
-          class="v2-artifact-item"
-          @click="openArtifact(file)"
-        >
-          <span class="v2-artifact-name" :title="file.name">{{ file.name }}</span>
-          <span class="v2-artifact-meta">
-            <span class="v2-artifact-tag" :class="file.kind">{{ file.kind === 'input' ? '上传' : '生成' }}</span>
-            <span class="v2-artifact-size">{{ formatBytes(file.size) }}</span>
-          </span>
-          <a
-            class="v2-artifact-row-dl"
-            :href="artifactDownloadUrl(file)"
-            download
-            title="下载"
-            @click.stop
-          >
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>
-          </a>
-        </button>
+        <div v-else v-for="group in groupedArtifacts" :key="group.dir" class="v2-artifact-group">
+          <div class="v2-artifact-group-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" class="v2-folder-icon">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+            <span>{{ group.dir === '/' ? '工作区根目录' : group.dir }}</span>
+          </div>
+          <div class="v2-artifact-group-files">
+            <button
+              v-for="file in group.files"
+              :key="file.rel_path"
+              type="button"
+              class="v2-artifact-item"
+              @click="openArtifact(file)"
+            >
+              <span class="v2-artifact-name" :title="file.name">{{ file.name }}</span>
+              <span class="v2-artifact-meta">
+                <span class="v2-artifact-tag" :class="file.kind">{{ file.kind === 'input' ? '上传' : '生成' }}</span>
+                <span class="v2-artifact-size">{{ formatBytes(file.size) }}</span>
+              </span>
+              <a
+                class="v2-artifact-row-dl"
+                :href="artifactDownloadUrl(file)"
+                download
+                title="下载"
+                @click.stop
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>
+              </a>
+            </button>
+          </div>
+        </div>
       </el-scrollbar>
     </aside>
   </div>
@@ -1018,6 +1027,25 @@ const canSendV2 = computed(
 const ARTIFACTS_PREF_KEY = 'nl2sql.artifactsPanelOpen'
 const artifactsPanelOpen = ref(readArtifactsPref())
 const artifacts = ref([])
+const groupedArtifacts = computed(() => {
+  const groups = {}
+  for (const file of artifacts.value) {
+    const parts = file.rel_path.split('/')
+    const dir = parts.length > 1 ? parts.slice(0, -1).join('/') : '/'
+    if (!groups[dir]) {
+      groups[dir] = []
+    }
+    groups[dir].push(file)
+  }
+  return Object.keys(groups).sort((a, b) => {
+    if (a === '/') return -1
+    if (b === '/') return 1
+    return a.localeCompare(b)
+  }).map(dir => ({
+    dir,
+    files: groups[dir]
+  }))
+})
 const artifactsLoading = ref(false)
 const previewArtifact = ref(null)
 const previewText = ref('')
@@ -1238,9 +1266,33 @@ onBeforeUnmount(() => {
 .v2-artifacts-actions button:hover { background: #EEF1F5; color: #111827; }
 .v2-artifacts-scroll { flex: 1; min-height: 0; }
 .v2-artifacts-empty { padding: 24px 14px; color: #9AA4B2; font-size: 13px; text-align: center; }
+.v2-artifact-group {
+  display: flex;
+  flex-direction: column;
+}
+.v2-artifact-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6B7280;
+  text-transform: uppercase;
+  background: #F8FAFC;
+  border-top: 1px solid #EDF0F4;
+  border-bottom: 1px solid #EDF0F4;
+}
+.v2-folder-icon {
+  color: #9AA4B2;
+}
+.v2-artifact-group-files {
+  display: flex;
+  flex-direction: column;
+}
 .v2-artifact-item {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 10px 14px; border: none; border-bottom: 1px solid #F1F3F6;
+  padding: 10px 14px 10px 24px; border: none; border-bottom: 1px solid #F1F3F6;
   background: transparent; cursor: pointer; text-align: left;
 }
 .v2-artifact-item:hover { background: #F2F5F9; }
