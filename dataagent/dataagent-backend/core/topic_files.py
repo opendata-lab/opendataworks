@@ -64,9 +64,9 @@ def _file_meta(root: Path, path: Path) -> dict:
 
 
 def safe_workspace_file(topic_id: str, rel_path: str) -> Path:
-    """Resolve a workspace-relative path, confined to the visible `uploads/` and
-    `output/` directories. Raises TopicFileError on traversal/symlink escape or
-    any path outside those directories (including `.claude/`)."""
+    """Resolve a workspace-relative path, confined to the workspace root and
+    excluding hidden files/directories (like `.claude/`). Raises TopicFileError
+    on traversal/symlink escape or any hidden path."""
     root = _workspace_root(topic_id)
     raw = str(rel_path or "").strip().lstrip("/")
     if not raw:
@@ -78,8 +78,8 @@ def safe_workspace_file(topic_id: str, rel_path: str) -> Path:
     if candidate != root and root not in candidate.parents:
         raise TopicFileError("path escapes the conversation workspace")
     rel = candidate.relative_to(root)
-    if not rel.parts or rel.parts[0] not in _VISIBLE_DIRNAMES:
-        raise TopicFileError("only files under uploads/ or output/ are accessible")
+    if any(part.startswith(".") for part in rel.parts):
+        raise TopicFileError("access to hidden files or directories is not allowed")
     return candidate
 
 
@@ -104,21 +104,20 @@ def save_upload(topic_id: str, filename: str, data: bytes) -> dict:
 
 
 def list_files(topic_id: str) -> list[dict]:
-    """List downloadable files under `uploads/` and `output/` only (excluding
-    symlinks and anything else in the workspace), newest first."""
+    """List downloadable files in the workspace (excluding .claude and hidden files), newest first."""
     root = _workspace_root(topic_id)
     if not root.is_dir():
         return []
     items: list[dict] = []
-    for dirname in _VISIBLE_DIRNAMES:
-        base = root / dirname
-        if not base.is_dir() or base.is_symlink():
-            continue
-        for dirpath, _dirnames, filenames in os.walk(base, followlinks=False):
-            for name in filenames:
-                path = Path(dirpath) / name
-                if path.is_symlink() or not path.is_file():
-                    continue
-                items.append(_file_meta(root, path))
+    for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
+        # Prune hidden directories in-place so os.walk skips them
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            if name.startswith("."):
+                continue
+            path = Path(dirpath) / name
+            if path.is_symlink() or not path.is_file():
+                continue
+            items.append(_file_meta(root, path))
     items.sort(key=lambda item: item["modified_at"], reverse=True)
     return items
