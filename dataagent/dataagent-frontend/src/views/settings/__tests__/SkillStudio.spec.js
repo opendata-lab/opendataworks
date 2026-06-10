@@ -223,6 +223,27 @@ describe('SkillStudio', () => {
     expect(messageMocks.success).toHaveBeenCalledWith('Skill「customer-care」已导入，默认未启用')
   })
 
+  it('reimports an existing skill with a new version and reports the update', async () => {
+    apiMocks.importSkill.mockResolvedValue({
+      skill_id: 'marketing-insights',
+      source: 'managed',
+      enabled: true,
+      replaced: true,
+      version: '2.0.0',
+      previous_version: '1.0.0',
+      imported_documents: [],
+      document_count: 3
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const file = new File(['zip'], 'marketing-insights.zip', { type: 'application/zip' })
+    await wrapper.vm.handleSkillUpload({ file })
+    await flushPromises()
+
+    expect(messageMocks.success).toHaveBeenCalledWith('Skill「marketing-insights」已更新（版本 2.0.0）')
+  })
+
   it('uninstalls managed skills only after folder confirmation', async () => {
     const wrapper = mountView()
     await flushPromises()

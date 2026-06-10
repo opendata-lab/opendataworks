@@ -182,7 +182,12 @@ const handleSkillUpload = async ({ file }) => {
   try {
     const payload = await dataagentApi.importSkill(file)
     await loadDocuments()
-    ElMessage.success(`Skill「${payload.skill_id}」已导入，默认未启用`)
+    if (payload.replaced) {
+      const versionText = payload.version ? `（版本 ${payload.version}）` : ''
+      ElMessage.success(`Skill「${payload.skill_id}」已更新${versionText}`)
+    } else {
+      ElMessage.success(`Skill「${payload.skill_id}」已导入，默认未启用`)
+    }
   } catch (error) {
     notifyError(error, '导入 Skill 失败')
   } finally {

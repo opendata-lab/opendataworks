@@ -343,6 +343,9 @@ class SkillImportResponse(BaseModel):
     skill_id: str
     source: str = "managed"
     enabled: bool = False
+    replaced: bool = False
+    version: str = ""
+    previous_version: str = ""
     imported_documents: List[SkillDocumentSummary] = Field(default_factory=list)
     document_count: int = 0
 

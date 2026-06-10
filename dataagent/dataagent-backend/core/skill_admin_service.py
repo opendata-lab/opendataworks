@@ -1155,25 +1155,11 @@ def _safe_extract_skill_zip(content: bytes, extract_root: Path):
         raise ValueError("ZIP 包未包含可导入文件")
 
 
-def _skill_name_from_front_matter(skill_md: Path) -> str:
+def _front_matter_value(skill_md: Path, key: str) -> str:
     try:
         lines = skill_md.read_text(encoding="utf-8").splitlines()
-    except UnicodeDecodeError as exc:
-        raise ValueError("SKILL.md must be UTF-8 encoded") from exc
-    if not lines or lines[0].strip() != "---":
-        raise ValueError("根目录 SKILL.md 必须包含 front matter name")
-    for line in lines[1:]:
-        if line.strip() == "---":
-            break
-        key, separator, value = line.partition(":")
-        if separator and key.strip() == "name":
-            return value.strip().strip("'\"")
-    raise ValueError("根目录 SKILL.md 必须包含 front matter name")
-
-
-def _optional_skill_name_from_front_matter(skill_md: Path) -> str:
-    try:
-        lines = skill_md.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return ""
     except UnicodeDecodeError as exc:
         raise ValueError("SKILL.md must be UTF-8 encoded") from exc
     if not lines or lines[0].strip() != "---":
@@ -1181,10 +1167,25 @@ def _optional_skill_name_from_front_matter(skill_md: Path) -> str:
     for line in lines[1:]:
         if line.strip() == "---":
             break
-        key, separator, value = line.partition(":")
-        if separator and key.strip() == "name":
+        candidate_key, separator, value = line.partition(":")
+        if separator and candidate_key.strip() == key:
             return value.strip().strip("'\"")
     return ""
+
+
+def _skill_name_from_front_matter(skill_md: Path) -> str:
+    name = _front_matter_value(skill_md, "name")
+    if not name:
+        raise ValueError("根目录 SKILL.md 必须包含 front matter name")
+    return name
+
+
+def _optional_skill_name_from_front_matter(skill_md: Path) -> str:
+    return _front_matter_value(skill_md, "name")
+
+
+def _skill_version_from_front_matter(skill_md: Path) -> str:
+    return _front_matter_value(skill_md, "version")
 
 
 def _resolve_imported_skill_root(extract_root: Path) -> tuple[Path, str]:
@@ -1234,18 +1235,31 @@ def import_skill_from_zip(file_name: str, content: bytes) -> dict[str, Any]:
         skill_root, folder = _resolve_imported_skill_root(extract_root)
 
         target = _resolve_skill_target_dir(folder)
+        incoming_version = _skill_version_from_front_matter(skill_root / "SKILL.md")
+        previous_version = ""
+        replaced = False
         if target.exists() or target.is_symlink():
-            raise ValueError("skill folder already exists")
+            if _is_builtin_skill_folder(folder):
+                raise ValueError("内置 Skill 不支持覆盖导入")
+            if not target.is_dir() or target.is_symlink():
+                raise ValueError("invalid skill folder path")
+            previous_version = _skill_version_from_front_matter(target / "SKILL.md")
+            if incoming_version == previous_version:
+                raise ValueError("同名 Skill 已存在且版本相同，请更新 SKILL.md front matter 中的 version 后重新导入")
+            shutil.rmtree(target)
+            replaced = True
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(skill_root), str(target))
 
     current = current_settings_payload()
     primary_folder = _folder_from_skills_output_dir(str(current.get("skills_output_dir") or "")) or _current_skill_folder()
     skill_runtime = _normalize_skill_runtime(current.get("skill_runtime"), fallback_folder=primary_folder)
-    skill_runtime[folder] = {"enabled": False}
+    enabled = bool((skill_runtime.get(folder) or {}).get("enabled")) if replaced else False
+    skill_runtime[folder] = {"enabled": enabled}
     persist_admin_settings({"skill_runtime": skill_runtime})
 
-    imported = reindex_documents_from_disk(change_source="upload", change_summary=f"导入 Skill {folder}")
+    change_summary = f"更新 Skill {folder}" if replaced else f"导入 Skill {folder}"
+    imported = reindex_documents_from_disk(change_source="upload", change_summary=change_summary)
     imported_documents = [item for item in imported if item.get("folder") == folder]
     if not imported_documents:
         imported_documents = [_document_api_payload(item) for item in _raw_documents_for_skill(folder)]
@@ -1253,7 +1267,10 @@ def import_skill_from_zip(file_name: str, content: bytes) -> dict[str, Any]:
     return {
         "skill_id": folder,
         "source": _skill_source(folder),
-        "enabled": False,
+        "enabled": enabled,
+        "replaced": replaced,
+        "version": incoming_version,
+        "previous_version": previous_version,
         "imported_documents": imported_documents,
         "document_count": len(get_skill_admin_store().list_documents()),
     }
