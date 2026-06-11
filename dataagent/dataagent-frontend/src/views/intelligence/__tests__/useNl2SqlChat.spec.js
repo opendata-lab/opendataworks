@@ -22,6 +22,7 @@ function makeApi(overrides = {}) {
       deliverMessage: vi.fn().mockResolvedValue({ task_id: 'task-1' }),
       streamSdkEvents: vi.fn().mockResolvedValue(),
       getTask: vi.fn().mockResolvedValue({ task_status: 'finished' }),
+      getTaskMessage: vi.fn().mockResolvedValue({ status: 'success', attachments: [] }),
       cancelTask: vi.fn().mockResolvedValue({ status: 'ok' }),
     },
     ...overrides,
@@ -79,6 +80,24 @@ describe('useNl2SqlChat engine', () => {
     const userMsg = chat.messages.value.find((m) => m.role === 'user')
     expect(userMsg.content).toContain('📎')
     expect(userMsg.content).toContain('sales.csv')
+  })
+
+  it('loads run-generated attachments onto the assistant message after the stream ends', async () => {
+    const api = makeApi()
+    api.taskApi.streamSdkEvents.mockImplementation(async (_taskId, opts) => {
+      opts.onRecord({ record_type: 'done', data: {} })
+    })
+    const generated = [{ name: 'r.xlsx', rel_path: 'output/r.xlsx', size: 5, kind: 'output' }]
+    api.taskApi.getTaskMessage.mockResolvedValue({ status: 'success', attachments: generated })
+    const chat = await ready(api)
+
+    chat.inputText.value = '生成报告'
+    await chat.send()
+    await flushPromises()
+
+    expect(api.taskApi.getTaskMessage).toHaveBeenCalledWith('task-1')
+    const assistant = chat.messages.value.find((m) => m.role === 'assistant')
+    expect(assistant.attachments).toEqual(generated)
   })
 
   it('send: works with only attachments and no text', async () => {

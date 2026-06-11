@@ -780,7 +780,7 @@ class TopicTaskStore:
                     """
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, attachments_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE topic_id = %s AND show_in_ui = 1
                     ORDER BY seq_id ASC, created_at ASC
@@ -832,7 +832,7 @@ class TopicTaskStore:
                     f"""
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, attachments_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE topic_id = %s AND show_in_ui = 1
                     ORDER BY seq_id {sort_direction}, created_at {sort_direction}
@@ -925,20 +925,33 @@ class TopicTaskStore:
         content: str,
         usage: dict[str, Any] | None = None,
         error: dict[str, Any] | None = None,
+        attachments: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         self._ensure_ready()
         usage_json = json.dumps(usage, ensure_ascii=False, default=_json_default) if usage else None
         error_json = json.dumps(error, ensure_ascii=False, default=_json_default) if error else None
+        # None means "leave the column untouched" so status-only updates
+        # (ensure_assistant_message, error paths) never wipe persisted attachments.
+        set_attachments = attachments is not None
+        attachments_json = (
+            json.dumps(list(attachments), ensure_ascii=False, default=_json_default) if set_attachments else None
+        )
+        attachments_clause = "attachments_json = %s," if set_attachments else ""
+        params: list[Any] = [status, content or "", usage_json, error_json]
+        if set_attachments:
+            params.append(attachments_json)
+        params.extend([topic_id, task_id])
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     UPDATE da_agent_message
                     SET status = %s,
                         content = %s,
                         usage_json = %s,
                         error_json = %s,
+                        {attachments_clause}
                         updated_at = CURRENT_TIMESTAMP
                     WHERE topic_id = %s
                       AND task_id = %s
@@ -947,7 +960,7 @@ class TopicTaskStore:
                     ORDER BY seq_id ASC
                     LIMIT 1
                     """,
-                    (status, content or "", usage_json, error_json, topic_id, task_id),
+                    params,
                 )
             conn.commit()
         finally:
@@ -963,7 +976,7 @@ class TopicTaskStore:
                     """
                     SELECT message_id, topic_id, task_id, sender_type, type, status, content, event,
                            steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                           content_type, usage_json, feedback, error_json, show_in_ui, created_at, updated_at
+                           content_type, usage_json, feedback, error_json, attachments_json, show_in_ui, created_at, updated_at
                     FROM da_agent_message
                     WHERE task_id = %s AND sender_type = 'assistant' AND show_in_ui = 1
                     ORDER BY seq_id ASC
@@ -987,7 +1000,7 @@ class TopicTaskStore:
                     f"""
                     SELECT m.message_id, m.topic_id, m.task_id, m.sender_type, m.type, m.status, m.content, m.event,
                            m.steps_json, m.tool_json, m.seq_id, m.correlation_id, m.parent_correlation_id,
-                           m.content_type, m.usage_json, m.feedback, m.error_json, m.show_in_ui, m.created_at, m.updated_at
+                           m.content_type, m.usage_json, m.feedback, m.error_json, m.attachments_json, m.show_in_ui, m.created_at, m.updated_at
                     FROM da_agent_message m
                     JOIN da_agent_topic t ON t.topic_id = m.topic_id
                     WHERE m.message_id = %s
@@ -2282,6 +2295,7 @@ class TopicTaskStore:
             "parent_correlation_id": str(row.get("parent_correlation_id") or "") or None,
             "content_type": str(row.get("content_type") or "") or None,
             "usage": _safe_json_load(row.get("usage_json")),
+            "attachments": _safe_json_load(row.get("attachments_json")) or [],
             "feedback": str(row.get("feedback") or ""),
             "show_in_ui": bool(row.get("show_in_ui")),
             "error": _safe_json_load(row.get("error_json")),

@@ -81,6 +81,7 @@
      - **Excel 报表**（指定输出为 `.xlsx`）：如 `output/sales_report.xlsx`。
      - **HTML 报告**（指定输出为 `.html`）：如 `output/analysis_report.html`。
    - 所有生成的最终报告文件都必须存放在 `output/` 目录下（如 `output/<report_name>.xlsx` 或 `output/<report_name>.html`），以供用户进行查看和下载。
+   - 在最终回答中用 markdown 链接引用生成的报告文件（如 `[销售分析报告](output/sales_report.xlsx)`），链接地址必须是以 `output/` 开头的工作区相对路径，前端会将其转换为可点击的下载链接。
 
 - 调用命令模板：
   - SQL 导出数据：

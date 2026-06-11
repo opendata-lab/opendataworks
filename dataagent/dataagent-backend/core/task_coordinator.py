@@ -13,6 +13,7 @@ import redis.asyncio as redis
 from config import get_settings
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
 from core.task_executor import TaskExecutionInput, execute_task_stream
+from core.topic_files import diff_generated_files, snapshot_workspace_state
 from core.topic_task_store import TopicTaskStore, get_topic_task_store
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ class TaskCoordinator:
                 self.store.ensure_assistant_message(topic_id=topic_id, task_id=task_id, status="running")
 
                 history = self._build_history(topic_id=topic_id, task_id=task_id)
+                workspace_before = self._snapshot_workspace(topic_id)
                 result = await execute_task_stream(
                     TaskExecutionInput(
                         task_id=task_id,
@@ -161,6 +163,7 @@ class TaskCoordinator:
                     content=result.content,
                     usage=result.usage,
                     error=result.error,
+                    attachments=self._collect_generated_files(topic_id, task_id, workspace_before),
                 )
                 if result.session_id:
                     self.store.update_topic_conversation_id(topic_id, conversation_id=result.session_id)
@@ -188,6 +191,28 @@ class TaskCoordinator:
             await self._release_lease(task_id)
             if self._redis is not None:
                 await self._redis.delete(self._cancel_key(task_id))
+
+    # Attachment detection is a filesystem diff around the run, so it works the
+    # same for local and sandbox-runner execution (shared workspace volume) and
+    # never depends on the model mentioning the files it wrote. Best-effort:
+    # detection failures must not fail the run.
+    def _snapshot_workspace(self, topic_id: str) -> dict[str, tuple[int, str]]:
+        try:
+            return snapshot_workspace_state(topic_id)
+        except Exception:
+            logger.warning("Workspace snapshot failed topic_id=%s", topic_id, exc_info=True)
+            return {}
+
+    def _collect_generated_files(
+        self, topic_id: str, task_id: str, before: dict[str, tuple[int, str]]
+    ) -> list[dict[str, Any]]:
+        try:
+            return diff_generated_files(topic_id, before)
+        except Exception:
+            logger.warning(
+                "Generated-file diff failed topic_id=%s task_id=%s", topic_id, task_id, exc_info=True
+            )
+            return []
 
     def _persist_emitted_sdk_record(self, *, topic_id: str, task_id: str, record: dict[str, Any]) -> None:
         if not isinstance(record, dict):

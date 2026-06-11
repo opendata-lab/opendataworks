@@ -19,6 +19,42 @@ describe('chatMessage helpers', () => {
     expect(html).toContain('<strong>bold</strong>')
   })
 
+  it('rewrites workspace-relative file links when a resolver is provided', () => {
+    const resolveFileHref = (relPath) => `/api/v1/nl2sql/topics/t1/files/${relPath}?download=1`
+    const html = renderMarkdown(
+      '下载 [销售报告](output/sales_report.xlsx) 和 [原始数据](./uploads/raw.csv)',
+      { resolveFileHref },
+    )
+    expect(html).toContain('href="/api/v1/nl2sql/topics/t1/files/output/sales_report.xlsx?download=1"')
+    expect(html).toContain('href="/api/v1/nl2sql/topics/t1/files/uploads/raw.csv?download=1"')
+  })
+
+  it('rewrites workspace files outside the output/ convention too', () => {
+    const resolveFileHref = (relPath) => `/files/${relPath}`
+    const html = renderMarkdown(
+      '[导出](exports/legacy.csv) 和 [汇总](summary.html)',
+      { resolveFileHref },
+    )
+    expect(html).toContain('href="/files/exports/legacy.csv"')
+    expect(html).toContain('href="/files/summary.html"')
+  })
+
+  it('leaves non-workspace links and resolver-less rendering untouched', () => {
+    const md = '[外部](https://example.com/output/x) [邮件](mailto:a@b.c) [锚点](#sec) [站内](/datastudio) [报告](output/r.html)'
+    expect(renderMarkdown(md)).toContain('href="output/r.html"')
+    const html = renderMarkdown(md, { resolveFileHref: () => '/resolved' })
+    expect(html).toContain('href="https://example.com/output/x"')
+    expect(html).toContain('href="mailto:a@b.c"')
+    expect(html).toContain('href="#sec"')
+    expect(html).toContain('href="/datastudio"')
+    expect(html).toContain('href="/resolved"')
+  })
+
+  it('keeps the original link when the resolver returns empty', () => {
+    const html = renderMarkdown('[报告](output/r.html)', { resolveFileHref: () => '' })
+    expect(html).toContain('href="output/r.html"')
+  })
+
   it('isPlainEnterSubmit only submits on plain Enter (guards IME and modifiers)', () => {
     expect(isPlainEnterSubmit({})).toBe(true)
     expect(isPlainEnterSubmit({ isComposing: true })).toBe(false)
@@ -105,6 +141,14 @@ describe('chatMessage helpers', () => {
     const blocks = m._v2state.turns[0].blocks
     expect(blocks.map((b) => b.type)).toEqual(['thinking', 'tool_use', 'text'])
     expect(blocks[1]).toMatchObject({ name: 'run-sql', output: 'ok' })
+  })
+
+  it('hydrates assistant attachments and defaults them to an empty list', () => {
+    const attachments = [{ name: 'r.xlsx', rel_path: 'output/r.xlsx', size: 10, kind: 'output' }]
+    const withFiles = hydrateMessageFromApi({ sender_type: 'assistant', message_id: 'a2', attachments })
+    expect(withFiles.attachments).toEqual(attachments)
+    const withoutFiles = hydrateMessageFromApi({ sender_type: 'assistant', message_id: 'a3' })
+    expect(withoutFiles.attachments).toEqual([])
   })
 
   it('ignores legacy magic-event nested tool blocks when hydrating stored blocks', () => {

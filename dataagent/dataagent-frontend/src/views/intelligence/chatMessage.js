@@ -14,13 +14,37 @@ const escapeHtml = (text) => String(text || '')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;')
 
-export function renderMarkdown(text) {
+// A workspace file reference is any relative href: no scheme (http:, mailto:,
+// data:, ...), not host/root-absolute, not a fragment. The agent usually writes
+// deliverables under `output/` by convention, but it may emit links to files
+// anywhere in the workspace; a relative link has no other meaning in a chat
+// answer, so rewriting is always an improvement (a missing path just 404s on
+// the confined download endpoint).
+const isWorkspaceFileHref = (href) => Boolean(href)
+  && !/^[a-z][a-z0-9+.-]*:/i.test(href)
+  && !href.startsWith('/')
+  && !href.startsWith('#')
+
+export function renderMarkdown(text, options = {}) {
+  let html
   if (!text) return ''
   try {
-    return marked.parse(escapeHtml(text))
+    html = marked.parse(escapeHtml(text))
   } catch {
     return escapeHtml(text)
   }
+  const resolveFileHref = typeof options.resolveFileHref === 'function' ? options.resolveFileHref : null
+  if (!resolveFileHref) return html
+  // Rewrite workspace-relative file links the agent emits (e.g.
+  // `[报告](output/report.xlsx)`) into real topic file download URLs; every
+  // other link is left untouched.
+  return html.replace(/(<a href=")([^"]+)(")/g, (match, open, rawHref, close) => {
+    if (!isWorkspaceFileHref(rawHref)) return match
+    let relPath = rawHref.replace(/^\.\//, '')
+    try { relPath = decodeURI(relPath) } catch { /* keep the raw path */ }
+    const resolved = resolveFileHref(relPath)
+    return resolved ? `${open}${resolved}${close}` : match
+  })
 }
 
 // Human-readable text from a persisted task/message error object
@@ -140,6 +164,7 @@ export function hydrateMessageFromApi(item) {
     resume_after_seq: Number(item?.resume_after_seq || 0),
     error: item?.error || null,
     feedback: String(item?.feedback || ''),
+    attachments: Array.isArray(item?.attachments) ? item.attachments : [],
     created_at: item?.created_at || '',
     _v2state: reactive(buildV2StateFromStoredBlocks(item)),
   })

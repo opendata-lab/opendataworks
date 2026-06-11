@@ -150,6 +150,7 @@ export function useNl2SqlChat(options) {
       task_id: taskId || '',
       resume_after_seq: 0,
       error: null,
+      attachments: [],
       created_at: new Date().toISOString(),
       _v2state: reactive(createChatState()),
     })
@@ -249,6 +250,30 @@ export function useNl2SqlChat(options) {
   }
 
   // ── Run lifecycle ────────────────────────────────────────────────────────
+  // The coordinator persists run attachments (generated workspace files) just
+  // after the stream's terminal record, so poll the task message briefly
+  // instead of racing a single read. Fire-and-forget: attachment loading never
+  // blocks or fails the run lifecycle.
+  const loadAssistantAttachments = async (taskId, assistant) => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const message = await api.taskApi.getTaskMessage(taskId)
+        const attachments = Array.isArray(message?.attachments) ? message.attachments : []
+        if (attachments.length) {
+          assistant.attachments = attachments
+          triggerRef(messages)
+          return
+        }
+        // A terminal message without attachments is the real answer: stop.
+        const status = String(message?.status || '')
+        if (status && status !== 'running' && status !== 'waiting' && status !== 'queued') return
+      } catch {
+        return
+      }
+      await new Promise((resolve) => setTimeout(resolve, 600))
+    }
+  }
+
   const subscribe = async (taskId, assistant, controller, runId, options = {}) => {
     const { refreshAfterTerminal = false } = options
     // The owning topic is captured up front because a new conversation can change
@@ -285,6 +310,7 @@ export function useNl2SqlChat(options) {
       }
       assistant.status = assistant._v2state.status === 'error' ? 'failed' : 'success'
       setTopicTaskStatus(runTopicId, assistant._v2state.status === 'error' ? 'error' : 'finished')
+      void loadAssistantAttachments(taskId, assistant)
       emitEvent({ name: 'message:done', payload: { taskId } })
       if (refreshAfterTerminal) await afterRun()
     } catch (error) {
