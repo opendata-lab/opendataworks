@@ -489,6 +489,21 @@ async def api_get_task(task_id: str, request: Request):
     return TaskStatusResponse.model_validate(task)
 
 
+@task_router.get("/{task_id}/message", response_model=TopicMessage)
+async def api_get_task_message(task_id: str, request: Request):
+    """The run's persisted assistant message. Lets the live stream path pick up
+    post-run fields (generated-file attachments) without re-fetching the whole
+    topic message page."""
+    store = _get_store()
+    task = store.get_task(task_id, context=_request_context(request))
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    message = store.get_assistant_message(task_id)
+    if not message:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return TopicMessage.model_validate(message)
+
+
 @task_router.get("/{task_id}/sdk-events", response_model=SdkEventPageResponse)
 async def api_list_sdk_events(
     task_id: str,

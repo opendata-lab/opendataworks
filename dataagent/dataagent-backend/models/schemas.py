@@ -450,6 +450,19 @@ class AgentProfile(BaseModel):
     updated_at: str = ""
 
 
+class WorkspaceFile(BaseModel):
+    name: str
+    rel_path: str
+    size: int = 0
+    modified_at: str = ""
+    content_type: str = "application/octet-stream"
+    kind: str = "output"
+
+
+class WorkspaceFileListResponse(BaseModel):
+    files: List[WorkspaceFile] = Field(default_factory=list)
+
+
 class TopicMessage(BaseModel):
     message_id: str
     topic_id: str
@@ -470,22 +483,12 @@ class TopicMessage(BaseModel):
     resume_after_seq: int = 0
     show_in_ui: bool = True
     feedback: str = ""
+    # Files this message's run generated in the topic workspace (per-run diff),
+    # so the chat surface can offer direct downloads on the message itself.
+    attachments: List[WorkspaceFile] = Field(default_factory=list)
     error: Optional[Dict[str, Any]] = None
     created_at: str = ""
     updated_at: str = ""
-
-
-class WorkspaceFile(BaseModel):
-    name: str
-    rel_path: str
-    size: int = 0
-    modified_at: str = ""
-    content_type: str = "application/octet-stream"
-    kind: str = "output"
-
-
-class WorkspaceFileListResponse(BaseModel):
-    files: List[WorkspaceFile] = Field(default_factory=list)
 
 
 class TopicSummary(BaseModel):

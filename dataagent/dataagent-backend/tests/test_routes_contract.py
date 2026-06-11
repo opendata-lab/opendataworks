@@ -639,6 +639,29 @@ def test_topics_tasks_and_v2_routes(monkeypatch):
         assert task.json()["task_id"] == task_id
         assert task.json()["task_status"] == "waiting"
 
+        task_message = client.get(f"/api/v1/nl2sql/tasks/{task_id}/message")
+        assert task_message.status_code == 200
+        assert task_message.json()["message_id"] == assistant_message_id
+        assert task_message.json()["attachments"] == []
+
+        store.get_assistant_message(task_id)["attachments"] = [
+            {
+                "name": "sales.xlsx",
+                "rel_path": "output/sales.xlsx",
+                "size": 1024,
+                "modified_at": "2026-06-11T10:00:00+00:00",
+                "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "kind": "output",
+            }
+        ]
+        task_message_with_files = client.get(f"/api/v1/nl2sql/tasks/{task_id}/message")
+        assert task_message_with_files.status_code == 200
+        assert task_message_with_files.json()["attachments"][0]["rel_path"] == "output/sales.xlsx"
+        history_with_files = client.get(f"/api/v1/nl2sql/topics/{topic_id}/messages", params={"page": 1, "page_size": 50, "order": "asc"})
+        assert history_with_files.json()["items"][1]["attachments"][0]["name"] == "sales.xlsx"
+
+        assert client.get("/api/v1/nl2sql/tasks/task_missing/message").status_code == 404
+
         sdk_events = client.get(f"/api/v1/nl2sql/tasks/{task_id}/sdk-events", params={"after_id": 0})
         assert sdk_events.status_code == 200
         assert sdk_events.json()["records"] == []

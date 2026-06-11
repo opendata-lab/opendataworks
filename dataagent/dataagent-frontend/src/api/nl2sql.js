@@ -191,6 +191,9 @@ export function createNl2SqlApiClient(options = {}) {
     getTask(taskId) {
       return runtimeRequest.get(`/tasks/${taskId}`)
     },
+    getTaskMessage(taskId) {
+      return runtimeRequest.get(`/tasks/${taskId}/message`)
+    },
     cancelTask(taskId) {
       return runtimeRequest.post(`/tasks/${taskId}/cancel`)
     },

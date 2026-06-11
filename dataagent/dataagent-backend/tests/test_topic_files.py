@@ -10,7 +10,14 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 import core.topic_files as topic_files
-from core.topic_files import TopicFileError, list_files, safe_workspace_file, save_upload
+from core.topic_files import (
+    TopicFileError,
+    diff_generated_files,
+    list_files,
+    safe_workspace_file,
+    save_upload,
+    snapshot_workspace_state,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -145,3 +152,44 @@ def test_safe_workspace_file_rejects_symlink_escape(sandbox_root: Path, tmp_path
 
     with pytest.raises(TopicFileError):
         safe_workspace_file("topic_1", "output/link.txt")
+
+
+def test_diff_generated_files_returns_new_and_changed_outputs(sandbox_root: Path):
+    root = sandbox_root / "topic_1" / "workspace"
+    (root / "output").mkdir(parents=True)
+    existing = root / "output" / "old_report.html"
+    existing.write_text("<p>v1</p>", encoding="utf-8")
+    save_upload("topic_1", "input.csv", b"a\n")
+
+    before = snapshot_workspace_state("topic_1")
+
+    # Run effects: one brand-new deliverable, one rewritten deliverable.
+    (root / "output" / "sales.xlsx").write_bytes(b"xlsx-bytes")
+    existing.write_text("<p>v2 longer content</p>", encoding="utf-8")
+
+    rels = {item["rel_path"] for item in diff_generated_files("topic_1", before)}
+    assert rels == {"output/sales.xlsx", "output/old_report.html"}
+
+
+def test_diff_generated_files_ignores_uploads_and_unchanged(sandbox_root: Path):
+    root = sandbox_root / "topic_1" / "workspace"
+    (root / "output").mkdir(parents=True)
+    (root / "output" / "stable.csv").write_text("a\n1\n", encoding="utf-8")
+
+    before = snapshot_workspace_state("topic_1")
+
+    # New uploads during the run are user inputs, never run attachments.
+    save_upload("topic_1", "mid_run_upload.csv", b"b\n")
+
+    assert diff_generated_files("topic_1", before) == []
+
+
+def test_diff_generated_files_caps_attachment_count(sandbox_root: Path, monkeypatch):
+    root = sandbox_root / "topic_1" / "workspace"
+    (root / "output").mkdir(parents=True)
+    before = snapshot_workspace_state("topic_1")
+    monkeypatch.setattr(topic_files, "MAX_RUN_ATTACHMENTS", 3)
+    for index in range(5):
+        (root / "output" / f"part_{index}.csv").write_text(f"{index}\n", encoding="utf-8")
+
+    assert len(diff_generated_files("topic_1", before)) == 3

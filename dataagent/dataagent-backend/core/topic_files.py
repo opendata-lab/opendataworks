@@ -121,3 +121,29 @@ def list_files(topic_id: str) -> list[dict]:
             items.append(_file_meta(root, path))
     items.sort(key=lambda item: item["modified_at"], reverse=True)
     return items
+
+
+# Upper bound on attachments persisted per run; a run that floods the workspace
+# should not bloat the message row or the chat UI.
+MAX_RUN_ATTACHMENTS = 20
+
+
+def snapshot_workspace_state(topic_id: str) -> dict[str, tuple[int, str]]:
+    """Compact pre-run view of the visible workspace: rel_path -> (size, modified_at)."""
+    return {
+        item["rel_path"]: (item["size"], item["modified_at"])
+        for item in list_files(topic_id)
+    }
+
+
+def diff_generated_files(topic_id: str, before: dict[str, tuple[int, str]]) -> list[dict]:
+    """Files the run generated: visible non-upload files that are new or changed
+    versus the pre-run snapshot, newest first, capped at MAX_RUN_ATTACHMENTS."""
+    generated: list[dict] = []
+    for item in list_files(topic_id):
+        if item["kind"] != "output":
+            continue
+        if before.get(item["rel_path"]) == (item["size"], item["modified_at"]):
+            continue
+        generated.append(item)
+    return generated[:MAX_RUN_ATTACHMENTS]
