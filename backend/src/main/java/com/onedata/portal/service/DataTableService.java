@@ -49,6 +49,7 @@ public class DataTableService {
     private final DataLineageMapper dataLineageMapper;
     private final DorisClusterMapper dorisClusterMapper;
     private final DorisConnectionService dorisConnectionService;
+    private final TableMetadataVersionService tableMetadataVersionService;
 
     /**
      * 分页查询表列表
@@ -239,6 +240,8 @@ public class DataTableService {
 
         dataTableMapper.insert(dataTable);
         log.info("Created data table: {}", dataTable.getTableName());
+        tableMetadataVersionService.captureVersion(dataTable.getId(),
+                TableMetadataVersionService.TRIGGER_TABLE_CREATE, null);
         return dataTable;
     }
 
@@ -276,6 +279,8 @@ public class DataTableService {
 
         dataTableMapper.updateById(dataTable);
         log.info("Updated data table: {}", dataTable.getTableName());
+        tableMetadataVersionService.captureVersion(dataTable.getId(),
+                TableMetadataVersionService.TRIGGER_MANUAL_EDIT, null);
         return dataTable;
     }
 
@@ -371,6 +376,8 @@ public class DataTableService {
         update.setDeprecatedAt(null);
         update.setPurgeAt(null);
         dataTableMapper.updateById(update);
+        tableMetadataVersionService.captureVersion(table.getId(),
+                TableMetadataVersionService.TRIGGER_MANUAL_EDIT, null);
         return dataTableMapper.selectById(table.getId());
     }
 
@@ -518,6 +525,8 @@ public class DataTableService {
 
         dataFieldMapper.insert(field);
         log.info("Created field: {} for table: {}", field.getFieldName(), field.getTableId());
+        tableMetadataVersionService.captureVersion(field.getTableId(),
+                TableMetadataVersionService.TRIGGER_MANUAL_EDIT, null);
         return field;
     }
 
@@ -577,6 +586,8 @@ public class DataTableService {
 
         dataFieldMapper.updateById(toUpdate);
         log.info("Updated field: {}", toUpdate.getFieldName());
+        tableMetadataVersionService.captureVersion(toUpdate.getTableId(),
+                TableMetadataVersionService.TRIGGER_MANUAL_EDIT, null);
         return toUpdate;
     }
 
@@ -598,6 +609,8 @@ public class DataTableService {
         }
         dataFieldMapper.deleteById(fieldId);
         log.info("Deleted field: {}", fieldId);
+        tableMetadataVersionService.captureVersion(exists.getTableId(),
+                TableMetadataVersionService.TRIGGER_MANUAL_EDIT, null);
     }
 
     private boolean isDorisTable(DataTable table) {

@@ -231,5 +231,20 @@ export const tableApi = {
         timeout: METADATA_SYNC_TIMEOUT
       }
     )
+  },
+
+  // 分页查询表元数据版本历史
+  listVersions(id, params = {}) {
+    return request.get(`/v1/tables/${id}/versions`, { params })
+  },
+
+  // 获取单个版本详情（含快照 JSON）
+  getVersion(id, versionId) {
+    return request.get(`/v1/tables/${id}/versions/${versionId}`)
+  },
+
+  // 对比两个元数据版本
+  compareTableVersions(id, payload) {
+    return request.post(`/v1/tables/${id}/versions/compare`, payload)
   }
 }

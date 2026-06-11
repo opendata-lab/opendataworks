@@ -41,6 +41,7 @@ public class DorisMetadataSyncService {
     private final TableTaskRelationMapper tableTaskRelationMapper;
     private final DataLineageMapper dataLineageMapper;
     private final TableStatisticsHistoryMapper tableStatisticsHistoryMapper;
+    private final TableMetadataVersionService tableMetadataVersionService;
 
     private static final Set<String> IGNORED_DATABASES = new HashSet<>(Arrays.asList("performance_schema", "sys"));
     private static final int MAX_COMMENT_LENGTH = 5000;
@@ -1153,6 +1154,9 @@ public class DorisMetadataSyncService {
 
         // 同步字段
         syncTableFields(newTable.getId(), database, tableName, columns, result);
+
+        tableMetadataVersionService.captureVersion(newTable.getId(),
+                TableMetadataVersionService.TRIGGER_METADATA_SYNC, "system");
     }
 
     /**
@@ -1355,6 +1359,12 @@ public class DorisMetadataSyncService {
             syncTimeUpdate.setId(localTable.getId());
             syncTimeUpdate.setSyncTime(LocalDateTime.now());
             dataTableMapper.updateById(syncTimeUpdate);
+        }
+
+        // 仅对同步真正触碰的表尝试捕获版本；volatile-only 变更由快照白名单兜底（哈希不变则不记版本）
+        if (tableMetadataUpdated || fieldChanges.hasChanges()) {
+            tableMetadataVersionService.captureVersion(localTable.getId(),
+                    TableMetadataVersionService.TRIGGER_METADATA_SYNC, "system");
         }
     }
 

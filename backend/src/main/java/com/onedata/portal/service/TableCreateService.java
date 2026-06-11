@@ -37,6 +37,7 @@ public class TableCreateService {
     private final DataFieldMapper dataFieldMapper;
     private final TableNameGeneratorService tableNameGeneratorService;
     private final DorisConnectionService dorisConnectionService;
+    private final TableMetadataVersionService tableMetadataVersionService;
 
     /**
      * 预览表设计（生成表名与 DDL）
@@ -75,6 +76,8 @@ public class TableCreateService {
 
         dataTableMapper.updateById(dataTable);
         log.info("Created data table {} and synchronized to Doris: {}", dataTable.getTableName(), dataTable.getIsSynced());
+        tableMetadataVersionService.captureVersion(dataTable.getId(),
+                TableMetadataVersionService.TRIGGER_TABLE_CREATE, null);
         return dataTableMapper.selectById(dataTable.getId());
     }
 
