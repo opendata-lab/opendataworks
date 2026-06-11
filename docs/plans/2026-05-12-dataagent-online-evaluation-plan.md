@@ -30,7 +30,8 @@
 
 - [ ] Do not commit `*-core.jsonl` or any private case file.
 - [ ] Require `--dataset` or `DATAAGENT_EVAL_DATASET` to point at a private JSONL file.
-- [ ] Keep fixed fields: `case_id`, `category`, `question`, `expected_intent`, `expected_ontology_objects`, `expected_relations`, `expected_sql_or_tool_behavior`, `expected_answer_points`, `scoring`, `veto_rules`, `max_wait_seconds`.
+- [ ] Keep fixed fields: `case_id`, `category`, `expected_intent`, `expected_ontology_objects`, `expected_relations`, `expected_sql_or_tool_behavior`, `expected_answer_points`, `scoring`, `veto_rules`, `max_wait_seconds`.
+- [ ] Require each case to include `question` or `turns`; submit `turns` sequentially in one topic for real multi-turn evaluation.
 - [ ] Keep extension fields on every record as arrays/strings: `required_sql_fragments`, `forbidden_sql_patterns`, `expected_tool_names`, `judge_guidance`.
 - [ ] Verify the supplied dataset has unique case IDs with the runner dry-run test.
 

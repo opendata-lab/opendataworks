@@ -50,11 +50,10 @@ Out of scope for the first version:
 
 ## Dataset Contract
 
-The dataset is an external private JSONL file supplied through `--dataset` or `DATAAGENT_EVAL_DATASET`. Each line is one JSON object with these fixed fields:
+The dataset is an external private JSONL file supplied through `--dataset` or `DATAAGENT_EVAL_DATASET`. Each line is one JSON object. Every case must include `question` or `turns`; all other fields below are fixed fields:
 
 - `case_id`
 - `category`
-- `question`
 - `expected_intent`
 - `expected_ontology_objects`
 - `expected_relations`
@@ -63,6 +62,8 @@ The dataset is an external private JSONL file supplied through `--dataset` or `D
 - `scoring`
 - `veto_rules`
 - `max_wait_seconds`
+
+`question` is submitted as a single-turn case. `turns` is a list of user messages submitted sequentially in one topic for real multi-turn evaluation; when `turns` is present, `question` may remain as a short report title instead of the submitted prompt text.
 
 The dataset also preserves these optional extension fields:
 

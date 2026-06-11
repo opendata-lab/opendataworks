@@ -52,7 +52,6 @@ except Exception:  # pragma: no cover
 REQUIRED_CASE_FIELDS = {
     "case_id",
     "category",
-    "question",
     "expected_intent",
     "expected_ontology_objects",
     "expected_relations",
@@ -189,6 +188,33 @@ def _scoring_total(case: dict[str, Any]) -> float:
     return total
 
 
+def _case_turns(case: dict[str, Any]) -> list[str]:
+    raw_turns = case.get("turns")
+    turns: list[str] = []
+    if isinstance(raw_turns, list):
+        for turn in raw_turns:
+            if isinstance(turn, str):
+                text = turn.strip()
+            elif isinstance(turn, dict):
+                text = str(turn.get("content") or turn.get("question") or turn.get("message") or "").strip()
+            else:
+                text = ""
+            if text:
+                turns.append(text)
+    if turns:
+        return turns
+
+    question = str(case.get("question") or "").strip()
+    return [question] if question else []
+
+
+def _case_question(case: dict[str, Any]) -> str:
+    question = str(case.get("question") or "").strip()
+    if question:
+        return question
+    return "\n".join(f"第{index}轮：{turn}" for index, turn in enumerate(_case_turns(case), start=1))
+
+
 def load_dataset(path: Path, case_ids: list[str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     cases = _load_jsonl(path)
     seen: set[str] = set()
@@ -204,6 +230,8 @@ def load_dataset(path: Path, case_ids: list[str] | None = None) -> tuple[list[di
         missing = sorted(field for field in REQUIRED_CASE_FIELDS if field not in item)
         if missing:
             missing_fields.append({"case_id": case_id, "missing": missing})
+        if not _case_turns(item):
+            missing_fields.append({"case_id": case_id, "missing": ["question_or_turns"]})
         if abs(_scoring_total(item) - 10.0) > 0.001:
             invalid_scoring.append(case_id)
 
@@ -438,23 +466,73 @@ def _dedupe(values: list[str]) -> list[str]:
     return result
 
 
+def _tool_output_text(blocks: list[dict[str, Any]]) -> str:
+    values: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        output = block.get("output")
+        if isinstance(output, str):
+            values.append(output)
+        elif output is not None:
+            values.extend(_flatten_strings(output))
+    return "\n".join(values)
+
+
+def _is_sql_tool_block(block: dict[str, Any]) -> bool:
+    tool_name = str(block.get("tool_name") or "").lower()
+    input_text = "\n".join(_flatten_strings(block.get("input"))) if block.get("input") is not None else ""
+    input_text = input_text.lower()
+    return (
+        "run_sql" in tool_name
+        or "validate_sql" in tool_name
+        or "run_sql.py" in input_text
+        or "validate_sql.py" in input_text
+    )
+
+
+def _sql_evidence_text(blocks: list[dict[str, Any]], sql_outputs: list[str]) -> str:
+    values = list(sql_outputs)
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use" or not _is_sql_tool_block(block):
+            continue
+        output = block.get("output")
+        if isinstance(output, str):
+            values.append(output)
+        elif output is not None:
+            values.extend(_flatten_strings(output))
+    return "\n".join(values)
+
+
+def _assessment_evidence(*, final_answer: str, blocks: list[dict[str, Any]], sql_outputs: list[str]) -> dict[str, str]:
+    return {
+        "final_answer_user_visible": str(final_answer or ""),
+        "tool_evidence": _tool_output_text(blocks),
+        "sql_evidence": _sql_evidence_text(blocks, sql_outputs),
+    }
+
+
 def _auto_failure_attribution(
-    combined: str,
+    evidence: dict[str, str],
     *,
     missing_sql_fragments: list[str],
     forbidden_hits: list[str],
     missing_tool_names: list[str],
 ) -> list[str]:
     failures: list[str] = []
-    if re.search(r"请.*执行.*SQL|供.*执行|无法直接执行|未注入.*SQL|没有\s*SQL\s*执行|SQL.*尚未执行", combined, re.I | re.S):
+    final_answer = evidence.get("final_answer_user_visible", "")
+    tool_evidence = evidence.get("tool_evidence", "")
+    sql_evidence = evidence.get("sql_evidence", "")
+    answer_or_sql = "\n".join([final_answer, sql_evidence])
+    if re.search(r"请.*执行.*SQL|供.*执行|无法直接执行|未注入.*SQL|没有\s*SQL\s*执行|SQL.*尚未执行", final_answer, re.I | re.S):
         failures.append("sql_only")
-    if re.search(r"OpenDataWorks\s*平台元数据|托管元数据|data_table|data_lineage|data_task|data_workflow|inspect_metadata\.py|get_lineage\.py", combined, re.I):
+    if re.search(r"OpenDataWorks\s*平台元数据|托管元数据|data_table|data_lineage|data_task|data_workflow|inspect_metadata\.py|get_lineage\.py", answer_or_sql, re.I):
         failures.append("wrong_domain")
-    if re.search(r"\{(?:target_date|TARGET_DATE|start_date|START_DATE|end_date|END_DATE|database_name|DATABASE_NAME|database_schema|DATABASE_SCHEMA|table_name|TABLE_NAME|period|PERIOD|timeDim|RULE_KEY)\}|占位符|TODO", combined):
+    if re.search(r"\{(?:target_date|TARGET_DATE|start_date|START_DATE|end_date|END_DATE|database_name|DATABASE_NAME|database_schema|DATABASE_SCHEMA|table_name|TABLE_NAME|period|PERIOD|timeDim|RULE_KEY)\}|占位符|TODO", answer_or_sql):
         failures.append("placeholder_leak")
-    if re.search(r"超时|timeout", combined, re.I):
+    if re.search(r"超时|timeout", "\n".join([final_answer, tool_evidence]), re.I):
         failures.append("tool_timeout")
-    if re.search(r"未找到|没有找到|不存在|无匹配|空结果集|返回空", combined):
+    if re.search(r"未找到|没有找到|不存在|无匹配|空结果集|返回空", answer_or_sql):
         failures.append("empty_result")
     if missing_sql_fragments:
         failures.append("missing_sql_fragment")
@@ -466,19 +544,20 @@ def _auto_failure_attribution(
 
 
 def auto_rule_check(case: dict[str, Any], *, final_answer: str, blocks: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
-    combined = "\n".join(_flatten_strings(blocks) + sql_outputs + [final_answer])
+    evidence = _assessment_evidence(final_answer=final_answer, blocks=blocks, sql_outputs=sql_outputs)
+    assessment_text = "\n".join([evidence["final_answer_user_visible"], evidence["sql_evidence"]])
     missing_sql_fragments = [
         fragment
         for fragment in case.get("required_sql_fragments") or []
-        if str(fragment or "").strip() and str(fragment) not in combined
+        if str(fragment or "").strip() and str(fragment) not in assessment_text
     ]
     forbidden_hits: list[str] = []
     for pattern in case.get("forbidden_sql_patterns") or []:
         try:
-            if re.search(str(pattern), combined):
+            if re.search(str(pattern), evidence["sql_evidence"]):
                 forbidden_hits.append(str(pattern))
         except re.error:
-            if str(pattern) in combined:
+            if str(pattern) in evidence["sql_evidence"]:
                 forbidden_hits.append(str(pattern))
     missing_tool_names = [
         name
@@ -489,7 +568,7 @@ def auto_rule_check(case: dict[str, Any], *, final_answer: str, blocks: list[dic
     if forbidden_hits:
         triggered_veto_rules.append("SQL 不带 schema 前缀、使用 SELECT * 或明显违反当前 skill SQL 硬规则。")
     failure_attribution = _auto_failure_attribution(
-        combined,
+        evidence,
         missing_sql_fragments=missing_sql_fragments,
         forbidden_hits=forbidden_hits,
         missing_tool_names=missing_tool_names,
@@ -555,10 +634,10 @@ def _create_topic(base_url: str, case: dict[str, Any], agent_id: str) -> str:
     return topic_id
 
 
-def _submit_task(base_url: str, topic_id: str, case: dict[str, Any], args: argparse.Namespace) -> str:
+def _submit_task(base_url: str, topic_id: str, case: dict[str, Any], args: argparse.Namespace, content: str | None = None) -> str:
     payload: dict[str, Any] = {
         "topic_id": topic_id,
-        "content": str(case.get("question") or ""),
+        "content": str(content if content is not None else _case_question(case)),
         "agent_id": str(args.agent_id or "").strip(),
         "execution_mode": "background",
     }
@@ -656,11 +735,17 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     conversation: list[dict[str, Any]] = []
     try:
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
-        task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
-        errors.extend(poll_errors)
-        final_task_id = str(task.get("task_id") or task_id).strip() or task_id
+        final_task_id = ""
+        for turn in _case_turns(case):
+            task_id = _submit_task(base_url, topic_id, case, args, turn)
+            task, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
+            errors.extend(poll_errors)
+            final_task_id = str(task.get("task_id") or task_id).strip() or task_id
+            status = str(task.get("task_status") or "").lower()
+            if status and status not in SUCCESS_STATUSES:
+                errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
+                break
         messages = http_json(
             "GET",
             f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
@@ -669,9 +754,6 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         message = _final_assistant_message(messages, final_task_id)
         conversation = _build_conversation_log(messages)
         final_answer = str(message.get("content") or "").strip()
-        status = str(task.get("task_status") or "").lower()
-        if status and status not in SUCCESS_STATUSES:
-            errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
     except EvalRunnerError as exc:
         errors.append({"code": "runner_error", "message": str(exc)})
 
@@ -684,7 +766,8 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     return {
         "case_id": case.get("case_id"),
         "category": case.get("category"),
-        "question": case.get("question"),
+        "question": _case_question(case),
+        "turns": _case_turns(case),
         "agent_id": str(args.agent_id or "").strip(),
         "topic_id": topic_id,
         "task_id": str(task.get("task_id") or task_id),
@@ -721,7 +804,8 @@ def _run_cases(base_url: str, cases: list[dict[str, Any]], args: argparse.Namesp
                 results[index] = {
                     "case_id": case.get("case_id"),
                     "category": case.get("category"),
-                    "question": case.get("question"),
+                    "question": _case_question(case),
+                    "turns": _case_turns(case),
                     "agent_id": str(getattr(args, "agent_id", "") or "").strip(),
                     "task_status": "runner_error",
                     "final_answer": "",
@@ -764,7 +848,7 @@ def to_deepeval_test_case(case: dict[str, Any], case_result: dict[str, Any]) -> 
     }
     context_payload = {"case": case, "case_result": case_result}
     return LLMTestCase(
-        input=str(case.get("question") or ""),
+        input=_case_question(case),
         actual_output=str(case_result.get("final_answer") or ""),
         expected_output=json.dumps(expected_payload, ensure_ascii=False, sort_keys=True),
         context=[json.dumps(context_payload, ensure_ascii=False, sort_keys=True)],

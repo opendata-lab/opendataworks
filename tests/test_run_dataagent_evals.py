@@ -308,9 +308,9 @@ def test_auto_rule_check_adds_generic_failure_attribution():
 def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
     runner = _load_runner()
     actual_sql = (
-        "SELECT COUNT(cmp_name) AS cmp_cnt "
-        "FROM public.dim_tech_public_env_cmp_df "
-        "WHERE env_name = 'PROD'"
+        "SELECT COUNT(node_name) AS node_cnt "
+        "FROM public.dim_tech_env_workflow_df "
+        "WHERE env_name = 'DEV'"
     )
     blocks = [
         {
@@ -324,24 +324,24 @@ def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
             "tool_id": "toolu_1",
             "tool_name": "run_sql",
             "input": {"sql": actual_sql},
-            "output": [{"type": "text", "text": json.dumps({"rows": [{"cmp_cnt": 301}]})}],
+            "output": [{"type": "text", "text": json.dumps({"rows": [{"node_cnt": 10}]})}],
             "is_error": False,
         },
     ]
 
-    sql_outputs = runner._extract_sql_outputs(blocks, "当前 PROD 环境共有 301 个分级保障组件。")
+    sql_outputs = runner._extract_sql_outputs(blocks, "当前 DEV 环境共有 10 个工作流。")
 
     assert sql_outputs == [actual_sql]
 
 
 def test_extract_evidence_from_bash_script_text_outputs():
     runner = _load_runner()
-    actual_sql = "select count(1) from public.dim_tech_public_env_cmp_df"
+    actual_sql = "select count(1) from public.dim_tech_env_workflow_df"
     chart_spec = {
         "kind": "chart_spec",
         "chart_type": "bar",
-        "dataset": [{"env_name": "PROD", "cmp_cnt": 301}],
-        "series": [{"name": "组件数", "field": "cmp_cnt"}],
+        "dataset": [{"env_name": "DEV", "node_cnt": 10}],
+        "series": [{"name": "工作流数", "field": "node_cnt"}],
     }
     blocks = [
         {
@@ -360,7 +360,7 @@ def test_extract_evidence_from_bash_script_text_outputs():
                         {
                             "kind": "sql_execution",
                             "sql": actual_sql,
-                            "rows": [{"cmp_cnt": 301}],
+                            "rows": [{"node_cnt": 10}],
                         },
                         ensure_ascii=False,
                     ),
@@ -383,13 +383,13 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "required_sql_fragments": ["public.dim_tech_public_env_cmp_df"],
+        "required_sql_fragments": ["public.dim_tech_env_workflow_df"],
         "forbidden_sql_patterns": [r"(?i)select\s+\*"],
     }
     actual_sql = (
         "SELECT * "
-        "FROM public.dim_tech_public_env_cmp_df "
-        "WHERE env_name = 'PROD'"
+        "FROM public.dim_tech_env_workflow_df "
+        "WHERE env_name = 'DEV'"
     )
     blocks = [
         {
@@ -401,7 +401,7 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
 
     result = runner.auto_rule_check(
         case,
-        final_answer="当前 PROD 环境共有 301 个分级保障组件。",
+        final_answer="当前 DEV 环境共有 10 个工作流。",
         blocks=blocks,
         sql_outputs=[actual_sql],
         tool_names=["run_sql"],
@@ -411,6 +411,67 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
     assert result["forbidden_sql_patterns"] == []
     assert "forbidden_sql" not in result["failure_attribution"]
     assert "wrong_domain" not in result["failure_attribution"]
+
+
+def test_run_case_submits_turns_in_order(monkeypatch):
+    runner = _load_runner()
+    case = {
+        **_sample_case("ODW_SAMPLE_MULTITURN_001"),
+        "question": "工作流发布趋势多轮分析",
+        "turns": ["最近 30 天工作流发布次数趋势如何？", "其中发布次数最多的是哪一天？"],
+    }
+    submitted_contents = []
+
+    def fake_http_json(method, url, payload=None, **kwargs):
+        if url.endswith("/api/v1/nl2sql/topics") and method == "POST":
+            return {"topic_id": "topic_1"}
+        if url.endswith("/api/v1/nl2sql/tasks/deliver-message"):
+            submitted_contents.append(payload["content"])
+            return {"task_id": f"task_{len(submitted_contents)}", "accepted": True}
+        if url == "http://dataagent/api/v1/nl2sql/tasks/task_1":
+            return {"task_id": "task_1", "topic_id": "topic_1", "task_status": "finished"}
+        if url == "http://dataagent/api/v1/nl2sql/tasks/task_2":
+            return {"task_id": "task_2", "topic_id": "topic_1", "task_status": "finished"}
+        if url.startswith("http://dataagent/api/v1/nl2sql/topics/topic_1/messages"):
+            return {
+                "items": [
+                    {"sender_type": "user", "content": submitted_contents[0]},
+                    {"sender_type": "assistant", "task_id": "task_1", "content": "第一轮答案"},
+                    {"sender_type": "user", "content": submitted_contents[1]},
+                    {"sender_type": "assistant", "task_id": "task_2", "content": "第二轮答案", "blocks": []},
+                ]
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    def fake_judge_case(judge_config, case, payload):
+        assert payload["user_question"] == "工作流发布趋势多轮分析"
+        assert payload["final_answer"] == "第二轮答案"
+        return {
+            "score": 9,
+            "dimension_scores": {"intent": 1},
+            "hallucination": False,
+            "veto_rules_triggered": [],
+            "failure_attribution": [],
+            "comment": "ok",
+            "judge_failed": False,
+        }
+
+    monkeypatch.setattr(runner, "http_json", fake_http_json)
+    monkeypatch.setattr(runner, "_judge_case", fake_judge_case)
+
+    result = runner.run_case(
+        "http://dataagent",
+        case,
+        types.SimpleNamespace(agent_id="agent_eval", provider_id="", model="", timeout_seconds=5),
+        runner.JudgeConfig(base_url="http://judge", token="t", model="m"),
+    )
+
+    assert submitted_contents == case["turns"]
+    assert result["task_id"] == "task_2"
+    assert result["final_answer"] == "第二轮答案"
+    assert result["turns"] == case["turns"]
+    assert result["case_passed"] is True
+    assert result["errors"] == []
 
 
 def test_judge_payload_removes_sql_style_veto_rules():
@@ -442,14 +503,14 @@ def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
             "tool_name": "run_sql",
             "is_error": False,
             "input": {
-                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
-                "description": "count components",
+                "sql": "select count(1) from public.dim_tech_env_workflow_df",
+                "description": "count workflows",
             },
             "output": {
                 "kind": "sql_execution",
-                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "sql": "select count(1) from public.dim_tech_env_workflow_df",
                 "columns": ["cnt"],
-                "rows": [{"cnt": 301}],
+                "rows": [{"cnt": 10}],
                 "row_count": 1,
                 "result_state": "success",
                 "summary": "返回 1 行结果",
@@ -467,14 +528,14 @@ def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
             "seq_id": 1,
             "tool_name": "run_sql",
             "input": {
-                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
-                "description": "count components",
+                "sql": "select count(1) from public.dim_tech_env_workflow_df",
+                "description": "count workflows",
             },
             "output": {
                 "kind": "sql_execution",
-                "sql": "select count(1) from public.dim_tech_public_env_cmp_df",
+                "sql": "select count(1) from public.dim_tech_env_workflow_df",
                 "columns": ["cnt"],
-                "rows": [{"cnt": 301}],
+                "rows": [{"cnt": 10}],
                 "row_count": 1,
                 "result_state": "success",
                 "summary": "返回 1 行结果",

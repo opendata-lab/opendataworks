@@ -171,14 +171,14 @@ def test_generate_followup_suggestions_extracts_items_from_json_string_without_r
         nonlocal calls
         calls += 1
         return (
-            '{"suggestions":["{\\"suggestions\\":[\\"分级保障等级具体有哪些取值？\\",'
-            '\\"各等级分别代表什么含义？\\"]}"]}'
+            '{"suggestions":["{\\"suggestions\\":[\\"数据层级具体有哪些取值？\\",'
+            '\\"各层级分别代表什么含义？\\"]}"]}'
         )
 
     async def run():
         return await generate_followup_suggestions(
-            previous_question="所有分级保障组件都是普通组件吗？",
-            answer_text="所有分级保障组件都是普通组件，但不是所有普通组件都是分级保障组件。",
+            previous_question="所有每日增量表都是分区表吗？",
+            answer_text="大部分每日增量表都是分区表，但不是所有分区表都是每日增量表。",
             result_summary="",
             provider_id="openrouter",
             model="anthropic/claude-sonnet-4.5",
@@ -189,7 +189,7 @@ def test_generate_followup_suggestions_extracts_items_from_json_string_without_r
 
     assert calls == 1
     assert result == {
-        "suggestions": ["分级保障等级具体有哪些取值？", "各等级分别代表什么含义？"],
+        "suggestions": ["数据层级具体有哪些取值？", "各层级分别代表什么含义？"],
         "source": "generated",
     }
 
@@ -201,14 +201,14 @@ def test_generate_followup_suggestions_extracts_items_from_truncated_json_string
         nonlocal calls
         calls += 1
         return (
-            '{"suggestions":["{\\"suggestions\\":[\\"分级保障等级具体有哪些级别？\\",'
-            '\\"保障策略具体包含哪些内容？\\",\\"如何查询一个普通组件是否具备"]}'
+            '{"suggestions":["{\\"suggestions\\":[\\"数据层级具体有哪些级别？\\",'
+            '\\"分区策略具体包含哪些内容？\\",\\"如何查询一个普通数据表是否具备"]}'
         )
 
     async def run():
         return await generate_followup_suggestions(
-            previous_question="所有分级保障组件都是普通组件吗？",
-            answer_text="简言之：所有分级保障组件都是普通组件，但不是所有普通组件都是分级保障组件。",
+            previous_question="所有每日增量表都是分区表吗？",
+            answer_text="简言之：大部分每日增量表都是分区表，但不是所有分区表都是每日增量表。",
             result_summary="",
             provider_id="openrouter",
             model="anthropic/claude-sonnet-4.5",
@@ -219,7 +219,7 @@ def test_generate_followup_suggestions_extracts_items_from_truncated_json_string
 
     assert calls == 1
     assert result == {
-        "suggestions": ["分级保障等级具体有哪些级别？", "保障策略具体包含哪些内容？", "如何查询一个普通组件是否具备"],
+        "suggestions": ["数据层级具体有哪些级别？", "分区策略具体包含哪些内容？", "如何查询一个普通数据表是否具备"],
         "source": "generated",
     }
 
@@ -234,8 +234,8 @@ def test_generate_followup_suggestions_returns_fallback_when_local_extraction_fi
 
     async def run():
         return await generate_followup_suggestions(
-            previous_question="所有分级保障组件都是普通组件吗？",
-            answer_text="简言之：所有分级保障组件都是普通组件，但不是所有普通组件都是分级保障组件。",
+            previous_question="所有每日增量表都是分区表吗？",
+            answer_text="简言之：大部分每日增量表都是分区表，但不是所有分区表都是每日增量表。",
             result_summary="",
             provider_id="openrouter",
             model="anthropic/claude-sonnet-4.5",
