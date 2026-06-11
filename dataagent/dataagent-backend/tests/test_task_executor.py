@@ -587,6 +587,55 @@ def test_execute_task_stream_preserves_native_partial_text_blocks_without_magic_
     assert emitted == []
 
 
+def test_execute_task_stream_does_not_duplicate_trailing_assistant_message_after_partial_stream(monkeypatch, tmp_path: Path):
+    # In partial-streaming mode the SDK emits per-block StreamEvent deltas and
+    # then a trailing AssistantMessage carrying the same full content. The final
+    # answer must not contain the streamed text twice.
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            StreamEvent({"type": "message_start", "message": {"id": "req-3"}}),
+            StreamEvent({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+            StreamEvent(
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": "最近 30 天累计发布 4 次。"},
+                }
+            ),
+            StreamEvent({"type": "content_block_stop", "index": 0}),
+            StreamEvent({"type": "message_stop"}),
+            AssistantMessage([TextBlock("最近 30 天累计发布 4 次。")]),
+            ResultMessage("success", session_id="sdk-session-3"),
+        ],
+    )
+    monkeypatch.setattr(
+        task_executor,
+        "resolve_runtime_provider_selection",
+        lambda provider_id, model: {
+            "provider_id": provider_id,
+            "model": model,
+            "api_key": "",
+            "auth_token": "",
+            "base_url": "https://example.invalid",
+            "supports_partial_messages": True,
+        },
+    )
+    _patch_skill_runtime(monkeypatch, tmp_path)
+
+    emitted: list[dict] = []
+
+    async def _run():
+        return await task_executor.execute_task_stream(_build_input(), emit=lambda record: emitted.append(record))
+
+    result = asyncio.run(_run())
+
+    assert result.task_status == "finished"
+    assert result.content == "最近 30 天累计发布 4 次。"
+    assert result.session_id == "sdk-session-3"
+    assert emitted == []
+
+
 def test_execute_task_stream_uses_message_level_sdk_text_when_partial_disabled(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
