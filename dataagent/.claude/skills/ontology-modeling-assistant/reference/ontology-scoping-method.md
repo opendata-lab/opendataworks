@@ -78,7 +78,7 @@
 
 登记方式按关系性质分流:
 
-- 实体之间的业务关系:建 `semantic_relation` 对象(kind=relation),在对象属性里描述业务关系性质和基数,再用 relation_kind=connects 的边连接两端实体。
+- 实体之间的业务关系:默认直接登记 relation_kind=connects 的边,在 description 里写清业务性质、join 键和方向;只有当关系本身需要被解释、归类或复用时(对应字段字典中 kind=relation 的定义),才单独建 `semantic_relation` 对象。
 - 实体拥有属性:relation_kind=has_attribute。
 - 指标度量实体:relation_kind=measures。
 - 术语或属性映射物理字段:relation_kind=semantic_mapping。

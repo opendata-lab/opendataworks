@@ -24,10 +24,12 @@ tools: [Read, Bash, Glob, Grep, LS]
   scripts/ontology_schema.py
   scripts/lookup_ontology.py
   scripts/validate_ontology.py
-  tests/test_lookup_ontology.py
-  tests/test_validate_ontology.py
+  tests/test_<domain>_lookup_ontology.py
+  tests/test_<domain>_validate_ontology.py
   tests/evals/evals.json
 ```
+
+测试文件名必须带领域前缀：多个 skill 的同名测试模块会在同一次 pytest 运行中产生导入冲突。
 
 `assets/ontology.json` 顶层只包含 `metadata`、`object_types`、`object_relations`，其中：
 

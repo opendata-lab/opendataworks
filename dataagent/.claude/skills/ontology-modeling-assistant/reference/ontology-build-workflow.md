@@ -54,8 +54,8 @@
 - `scripts/ontology_schema.py`: Pydantic 数据模型、JSON Schema 和 `FIELD_DICTIONARY` 字段字典来源。
 - `scripts/lookup_ontology.py`: 小片段本体查找工具。
 - `scripts/validate_ontology.py`: 本体结构和引用完整性验证工具。
-- `tests/test_lookup_ontology.py`: 确认核心对象、关系和 `relation_kind` 可查。
-- `tests/test_validate_ontology.py`: 确认本体 JSON 结构、关系端点和字段枚举有效。
+- `tests/test_<domain>_lookup_ontology.py`: 确认核心对象、关系和 `relation_kind` 可查。
+- `tests/test_<domain>_validate_ontology.py`: 确认本体 JSON 结构、关系端点和字段枚举有效。测试文件名带领域前缀，避免和其他 skill 的同名测试模块在同一次 pytest 运行中冲突。
 - `tests/evals/evals.json`: 2-3 个真实用户提示词，用于验证 skill 是否能触发并交付正确语义。
 
 ## 6. 验证和迭代
