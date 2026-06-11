@@ -1278,6 +1278,27 @@ def import_skill_from_zip(file_name: str, content: bytes) -> dict[str, Any]:
     }
 
 
+def export_skill_as_zip(folder: str) -> tuple[str, bytes]:
+    target_folder = _validate_skill_folder_name(folder)
+
+    available_folders = _discovered_skill_folders()
+    if target_folder not in available_folders:
+        raise ValueError("skill folder not found")
+
+    target = _resolve_skill_target_dir(target_folder)
+    if not target.is_dir() or target.is_symlink():
+        raise ValueError("invalid skill folder path")
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(target.rglob("*")):
+            if path.is_symlink() or not path.is_file():
+                continue
+            arcname = f"{target_folder}/{path.relative_to(target).as_posix()}"
+            archive.write(path, arcname)
+    return f"{target_folder}.zip", buffer.getvalue()
+
+
 def uninstall_skill(folder: str) -> dict[str, Any]:
     target_folder = _validate_skill_folder_name(folder)
     if _is_builtin_skill_folder(target_folder):

@@ -896,6 +896,32 @@ def test_uninstall_skill_removes_managed_folder_and_runtime(monkeypatch, tmp_pat
     assert persisted["skills_output_dir"] == f"../.claude/skills/{BUSINESS_SKILL}"
 
 
+def test_export_skill_as_zip_packs_folder_contents(monkeypatch, tmp_path):
+    discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+    (discovery_root / "marketing-insights").mkdir()
+    (discovery_root / "marketing-insights" / "SKILL.md").write_text("# Marketing\n", encoding="utf-8")
+    (discovery_root / "marketing-insights" / "scripts").mkdir()
+    (discovery_root / "marketing-insights" / "scripts" / "run.py").write_text("print('ok')\n", encoding="utf-8")
+
+    file_name, content = skill_admin_service.export_skill_as_zip("marketing-insights")
+
+    assert file_name == "marketing-insights.zip"
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        names = set(archive.namelist())
+        assert names == {
+            "marketing-insights/SKILL.md",
+            "marketing-insights/scripts/run.py",
+        }
+        assert archive.read("marketing-insights/scripts/run.py").decode("utf-8") == "print('ok')\n"
+
+
+def test_export_skill_as_zip_rejects_unknown_folder(monkeypatch, tmp_path):
+    configure_skill_filesystem(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="skill folder not found"):
+        skill_admin_service.export_skill_as_zip("does-not-exist")
+
+
 def test_uninstall_skill_rejects_builtin(monkeypatch, tmp_path):
     configure_skill_filesystem(monkeypatch, tmp_path)
 

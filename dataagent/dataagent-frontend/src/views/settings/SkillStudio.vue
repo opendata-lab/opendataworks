@@ -58,6 +58,14 @@
         <div class="skill-card__footer">
           <el-button text type="primary" @click="openSkillDetail(skill.folder)">查看详情</el-button>
           <el-button
+            text
+            type="primary"
+            :loading="downloadingFolder === skill.folder"
+            @click="downloadSkill(skill)"
+          >
+            下载
+          </el-button>
+          <el-button
             v-if="skill.source === 'managed'"
             text
             type="danger"
@@ -91,6 +99,7 @@ const importLoading = ref(false)
 const searchKeyword = ref('')
 const documents = ref([])
 const runtimeUpdatingFolder = ref('')
+const downloadingFolder = ref('')
 
 const skillItems = computed(() => buildSkillItems(documents.value))
 const enabledSkillCount = computed(() => skillItems.value.filter((item) => item.enabled).length)
@@ -192,6 +201,27 @@ const handleSkillUpload = async ({ file }) => {
     notifyError(error, '导入 Skill 失败')
   } finally {
     importLoading.value = false
+  }
+}
+
+const downloadSkill = async (skill) => {
+  if (!skill?.folder || downloadingFolder.value) return
+  downloadingFolder.value = skill.folder
+  try {
+    const blob = await dataagentApi.exportSkill(skill.folder)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${skill.folder}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success(`Skill「${skill.folder}」已下载`)
+  } catch (error) {
+    notifyError(error, '下载 Skill 失败')
+  } finally {
+    downloadingFolder.value = ''
   }
 }
 
