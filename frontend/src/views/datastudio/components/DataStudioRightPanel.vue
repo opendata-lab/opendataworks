@@ -549,6 +549,22 @@
               </section>
             </div>
           </el-tab-pane>
+
+          <el-tab-pane name="versions" label="版本" lazy>
+            <div class="meta-section meta-section-fill">
+              <section class="section-block section-fill">
+                <div class="section-header">
+                  <div class="section-title">版本历史</div>
+                </div>
+                <el-scrollbar class="meta-scroll">
+                  <TableVersionHistoryPanel
+                    :table-id="state.table?.id"
+                    :active="state.metaTab === 'versions'"
+                  />
+                </el-scrollbar>
+              </section>
+            </div>
+          </el-tab-pane>
         </el-tabs>
       </section>
 
@@ -593,6 +609,7 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { Warning } from '@element-plus/icons-vue'
 import { tableApi } from '@/api/table'
 import DataStudioRightPanelLineage from './DataStudioRightPanelLineage.vue'
+import TableVersionHistoryPanel from './TableVersionHistoryPanel.vue'
 import { isDemoMode } from '@/demo/runtime'
 import { loadEcharts } from '@/utils/loadEcharts'
 

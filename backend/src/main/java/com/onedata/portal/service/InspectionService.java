@@ -37,6 +37,7 @@ public class InspectionService {
     private final HealthCheckService healthCheckService;
     private final DorisClusterService dorisClusterService;
     private final DorisConnectionService dorisConnectionService;
+    private final TableMetadataVersionService tableMetadataVersionService;
 
     private static final Pattern RECOMMENDED_REPLICA_PATTERN = Pattern.compile("推荐\\s*[:：]?\\s*(\\d+)");
     private static final Pattern RANGE_REPLICA_PATTERN = Pattern.compile("(\\d+)\\s*-\\s*(\\d+)");
@@ -1627,6 +1628,8 @@ public class InspectionService {
         dataTableMapper.updateById(updateTable);
 
         String operator = StringUtils.hasText(fixedBy) ? fixedBy.trim() : "system";
+        tableMetadataVersionService.captureVersion(context.getTable().getId(),
+                TableMetadataVersionService.TRIGGER_INSPECTION_FIX, operator);
         issue.setStatus("resolved");
         issue.setResolvedBy(operator);
         issue.setResolvedTime(LocalDateTime.now());

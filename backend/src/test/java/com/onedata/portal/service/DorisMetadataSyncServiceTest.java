@@ -61,6 +61,9 @@ class DorisMetadataSyncServiceTest {
     @Mock
     private TableStatisticsHistoryMapper tableStatisticsHistoryMapper;
 
+    @Mock
+    private TableMetadataVersionService tableMetadataVersionService;
+
     @InjectMocks
     private DorisMetadataSyncService service;
 
