@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 import pymysql
@@ -235,7 +233,7 @@ def normalize_agent_profile_payload(
 
 
 def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
-    return {
+    snapshot = {
         "agent_id": str(profile.get("agent_id") or DEFAULT_AGENT_ID),
         "name": str(profile.get("name") or DEFAULT_AGENT_NAME),
         "description": str(profile.get("description") or ""),
@@ -247,10 +245,13 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "max_turns": int(profile.get("max_turns") or 0),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
         "data_scope": normalize_data_scope(profile.get("data_scope") or {}),
-        "preset_questions": _validate_preset_questions(profile.get("preset_questions") or []),
         "is_default": bool(profile.get("is_default")),
         "is_builtin": bool(profile.get("is_builtin")),
     }
+    preset_questions = _validate_preset_questions(profile.get("preset_questions") or [])
+    if preset_questions:
+        snapshot["preset_questions"] = preset_questions
+    return snapshot
 
 
 def agent_summary_from_snapshot(snapshot: dict[str, Any] | None) -> dict[str, Any]:
@@ -334,25 +335,6 @@ def ontology_modeling_agent_payload() -> dict[str, Any]:
     }
 
 
-def _runtime_root() -> Path:
-    cfg = get_settings()
-    value = str(getattr(cfg, "dataagent_runtime_project_cwd", "") or "").strip()
-    if value:
-        path = Path(value).expanduser()
-        if path.is_absolute():
-            return path.resolve()
-        return (Path(__file__).resolve().parent.parent / path).resolve()
-    home = Path(os.environ.get("HOME") or str(Path.home())).expanduser()
-    return (home / ".dataagent" / "runtime" / "enabled-skills").resolve()
-
-
-def resolved_agent_workdir(agent_id: str, *, is_default: bool = False) -> str:
-    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(agent_id or "").strip()) or "agent"
-    if is_default and not str(agent_id or "").strip():
-        safe_id = DEFAULT_AGENT_ID
-    return str((_runtime_root().parent / "workspaces" / safe_id).resolve())
-
-
 def _new_agent_id() -> str:
     return f"agent_{uuid.uuid4().hex[:24]}"
 
@@ -411,7 +393,6 @@ class AgentProfileStore:
             "created_at": _to_iso(row.get("created_at")),
             "updated_at": _to_iso(row.get("updated_at")),
         }
-        item["resolved_workdir"] = resolved_agent_workdir(item["agent_id"], is_default=item["is_default"])
         return item
 
     def list_profiles(self) -> list[dict[str, Any]]:

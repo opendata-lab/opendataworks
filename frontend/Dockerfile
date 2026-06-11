@@ -3,6 +3,9 @@ FROM node:20.19-alpine AS builder
 
 WORKDIR /app
 
+ARG VITE_DATAAGENT_WIDGET_JS_URL=/dataagent/widget/opendataworks-widget.bundle.js
+ENV VITE_DATAAGENT_WIDGET_JS_URL=${VITE_DATAAGENT_WIDGET_JS_URL}
+
 # 复制 package 文件
 COPY package*.json ./
 
@@ -12,8 +15,8 @@ RUN npm install
 # 复制源代码
 COPY . .
 
-# 构建生产版本和可嵌入 widget
-RUN npm run build && npm run build:widget
+# 构建生产版本
+RUN npm run build
 
 # 生产运行镜像 - 使用 nginx 提供静态文件
 FROM nginx:alpine

@@ -343,6 +343,9 @@ class SkillImportResponse(BaseModel):
     skill_id: str
     source: str = "managed"
     enabled: bool = False
+    replaced: bool = False
+    version: str = ""
+    previous_version: str = ""
     imported_documents: List[SkillDocumentSummary] = Field(default_factory=list)
     document_count: int = 0
 
@@ -432,7 +435,6 @@ class AgentProfile(BaseModel):
     agent_id: str
     name: str
     description: str = ""
-    resolved_workdir: str = ""
     system_prompt: str = ""
     permission_mode: str = "inherit"
     allowed_tools: List[str] = Field(default_factory=list)
@@ -471,6 +473,19 @@ class TopicMessage(BaseModel):
     error: Optional[Dict[str, Any]] = None
     created_at: str = ""
     updated_at: str = ""
+
+
+class WorkspaceFile(BaseModel):
+    name: str
+    rel_path: str
+    size: int = 0
+    modified_at: str = ""
+    content_type: str = "application/octet-stream"
+    kind: str = "output"
+
+
+class WorkspaceFileListResponse(BaseModel):
+    files: List[WorkspaceFile] = Field(default_factory=list)
 
 
 class TopicSummary(BaseModel):
@@ -528,6 +543,19 @@ class AdminWidgetTopicPage(BaseModel):
     page_size: int = 20
 
 
+class AdminWidgetUser(BaseModel):
+    """A distinct widget user (logged-in external user or anonymous visitor)
+    for the admin user filter, with how many conversations they own."""
+
+    kind: str = "vis"          # 'ext' (external_user_id) | 'vis' (visitor_id)
+    user_id: str = ""
+    topic_count: int = 0
+
+
+class AdminWidgetUserList(BaseModel):
+    items: List[AdminWidgetUser] = Field(default_factory=list)
+
+
 class UpdateMessageFeedbackRequest(BaseModel):
     feedback: str = ""
 
@@ -566,31 +594,6 @@ class TaskStatusResponse(BaseModel):
     error: Optional[Dict[str, Any]] = None
     created_at: str = ""
     updated_at: str = ""
-
-
-class TaskEventRecord(BaseModel):
-    record_type: str
-    seq_id: int
-    created_at: str = ""
-    event_type: Optional[str] = None
-    correlation_id: Optional[str] = None
-    parent_correlation_id: Optional[str] = None
-    content_type: Optional[str] = None
-    data: Dict[str, Any] = Field(default_factory=dict)
-    request_id: Optional[str] = None
-    chunk_id: Optional[int] = None
-    content: Optional[str] = None
-    delta: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
-
-
-class TaskEventPageResponse(BaseModel):
-    task_id: str
-    task_status: str
-    after_seq: int = 0
-    next_after_seq: int = 0
-    has_more: bool = False
-    events: List[TaskEventRecord] = Field(default_factory=list)
 
 
 class CancelTaskResponse(BaseModel):

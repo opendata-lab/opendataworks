@@ -31,7 +31,7 @@ bash scripts/stop.sh
 ### Build
 Build the project using scripts in `build/`.
 ```bash
-# Build images (multi-arch, including integrated frontend and DataAgent backend)
+# Build images (multi-arch, including main frontend, DataAgent frontend, DataAgent backend, and DataAgent runner)
 bash scripts/build/build-multiarch.sh
 ```
 

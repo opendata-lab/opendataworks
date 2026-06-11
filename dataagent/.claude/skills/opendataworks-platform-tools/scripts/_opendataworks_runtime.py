@@ -255,6 +255,7 @@ def query_readonly(
     preferred_engine: str | None = None,
     limit: int | None = None,
     timeout_seconds: int | None = None,
+    for_export: bool = False,
 ) -> dict[str, Any]:
     target_database = str(database or "").strip()
     if not target_database:
@@ -270,6 +271,8 @@ def query_readonly(
         preferred_engine=preferred_engine,
         limit=limit,
         timeout_seconds=timeout_seconds,
+        # 导出模式：结果写盘、不进模型上下文，跳过后端字节守卫（仍受行数上限保护）。
+        for_export="true" if for_export else None,
     )
     return {
         "kind": payload.get("kind"),
@@ -281,6 +284,8 @@ def query_readonly(
         "row_count": payload.get("row_count"),
         "has_more": payload.get("has_more"),
         "duration_ms": payload.get("duration_ms"),
+        "truncated_by_size": payload.get("truncated_by_size"),
+        "notice": payload.get("notice"),
     }
 
 

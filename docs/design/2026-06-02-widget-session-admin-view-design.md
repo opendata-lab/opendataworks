@@ -3,6 +3,7 @@
 - 日期：2026-06-02
 - 范围：`dataagent/dataagent-backend`、`frontend`
 - 类型：中型（新增公开 API 契约 + 新前端页面，跨 dataagent/frontend 层）
+- 状态：后端 API 与前端 API 客户端已合并并保留；独立的 `WidgetConversations.vue` 审计页与 `widget-sessions` Tab 已被后续方案取代，详见 `2026-06-02-chat-v2-session-filter-design.md`。
 
 ## 现状
 

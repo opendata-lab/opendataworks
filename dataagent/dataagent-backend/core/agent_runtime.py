@@ -19,7 +19,6 @@ from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_lo
 from core.data_scope import encode_scope_header, normalize_data_scope
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
-    prepare_enabled_skills_project_cwd,
     resolve_builtin_skill_root_dir,
     resolve_skill_discovery_root_dir,
 )
@@ -41,6 +40,10 @@ _FILE_BOUNDARY_PATH_KEYS = {
     "LS": ("path",),
     "Glob": ("path", "pattern"),
     "Grep": ("path", "glob"),
+    "Write": ("file_path",),
+    "Edit": ("file_path",),
+    "MultiEdit": ("file_path",),
+    "NotebookEdit": ("notebook_path",),
 }
 _BASH_PARENT_SEGMENT_RE = re.compile(r"(^|[\s;&|()])\.\.(?=$|[/\s;&|()])")
 _URL_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
@@ -284,60 +287,8 @@ def resolve_agent_skill_runtime(
     }
 
 
-def _looks_like_procedural_preamble(text: str) -> bool:
-    snippet = str(text or "").strip()
-    if not snippet or len(snippet) > 900:
-        return False
-    markers = (
-        "问题类型",
-        "我来",
-        "让我",
-        "先确认",
-        "先查看",
-        "先读",
-        "先按固定阅读顺序",
-        "按照固定阅读顺序",
-        "需要先确认",
-        "查看表结构",
-        "字段名",
-        "直接执行",
-        "现在执行",
-        "执行 sql",
-        "生成饼图",
-        "生成条形图",
-        "生成折线图",
-        "数据已拿到",
-        "根据 playbook",
-    )
-    lower = snippet.lower()
-    return any(marker in snippet or marker in lower for marker in markers)
-
-
 def _sanitize_user_visible_content(question: str, content: str) -> str:
-    text = str(content or "").strip()
-    if not text:
-        return text
-
-    anchors: list[int] = []
-    question_text = str(question or "").strip()
-    if question_text:
-        question_index = text.find(question_text)
-        if question_index > 0:
-            anchors.append(question_index)
-
-    for marker in ("\n## ", "## ", "\n### ", "### ", "\n结论：", "结论："):
-        index = text.find(marker)
-        if index > 0:
-            anchors.append(index + 1 if marker.startswith("\n") else index)
-
-    if not anchors:
-        return text
-
-    anchor = min(anchors)
-    preamble = text[:anchor].strip()
-    if not _looks_like_procedural_preamble(preamble):
-        return text
-    return text[anchor:].lstrip()
+    return str(content or "").strip()
 
 
 def _extract_block(block: Any) -> tuple[str, str, dict[str, Any]]:

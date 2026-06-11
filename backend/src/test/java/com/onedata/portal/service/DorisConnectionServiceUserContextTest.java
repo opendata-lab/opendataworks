@@ -1,7 +1,7 @@
 package com.onedata.portal.service;
 
-import com.onedata.portal.context.UserContext;
-import com.onedata.portal.context.UserContextHolder;
+import com.onedata.auth.context.UserContext;
+import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.DorisCredential;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
@@ -61,7 +61,7 @@ class DorisConnectionServiceUserContextTest {
     @Test
     void testGetConnectionWithUserContext() throws Exception {
         // 设置用户上下文
-        UserContext userContext = new UserContext("user123", "testuser", "oauth123");
+        UserContext userContext = new UserContext("user123", "testuser", "user", "local");
         UserContextHolder.setContext(userContext);
 
         // Mock用户映射服务返回用户凭据
@@ -101,7 +101,7 @@ class DorisConnectionServiceUserContextTest {
     @Test
     void testGetConnectionFallbackToClusterCredentialOnError() throws Exception {
         // 设置用户上下文
-        UserContext userContext = new UserContext("user456", "anotheruser", "oauth456");
+        UserContext userContext = new UserContext("user456", "anotheruser", "user", "local");
         UserContextHolder.setContext(userContext);
 
         // Mock用户映射服务抛出异常
@@ -123,7 +123,7 @@ class DorisConnectionServiceUserContextTest {
     @Test
     void testGetConnectionWithoutDatabaseUsesClusterCredential() throws Exception {
         // 设置用户上下文
-        UserContext userContext = new UserContext("user789", "thirduser", "oauth789");
+        UserContext userContext = new UserContext("user789", "thirduser", "user", "local");
         UserContextHolder.setContext(userContext);
 
         // 调用getConnection但不指定数据库

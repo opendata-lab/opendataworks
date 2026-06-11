@@ -7,8 +7,7 @@ import pytest
 
 from config import get_settings, update_settings
 from core.skill_discovery import (
-    SkillDiscoveryError,
-    prepare_enabled_skills_project_cwd,
+    resolve_builtin_skill_root_dir,
     resolve_agent_project_cwd,
     resolve_skill_discovery_root_dir,
     resolve_skills_root_dir,
@@ -18,16 +17,11 @@ from core.skill_discovery import (
 @pytest.fixture(autouse=True)
 def restore_skill_settings():
     original = get_settings().skills_output_dir
-    original_runtime_cwd = get_settings().dataagent_runtime_project_cwd
+    original_root = getattr(get_settings(), "skills_root_dir", "")
     try:
         yield
     finally:
-        update_settings(
-            {
-                "skills_output_dir": original,
-                "dataagent_runtime_project_cwd": original_runtime_cwd,
-            }
-        )
+        update_settings({"skills_output_dir": original, "skills_root_dir": original_root})
 
 
 def _write_skill(root: Path, folder: str):
@@ -41,54 +35,29 @@ def _write_skill(root: Path, folder: str):
     )
 
 
-def test_discovery_paths_are_based_on_primary_skill_root(tmp_path: Path):
+def test_discovery_paths_are_based_on_skills_root_dir(tmp_path: Path):
     project = tmp_path / "project"
     skills_root = project / ".claude" / "skills"
     _write_skill(skills_root, "opendataworks-business-knowledge")
-    update_settings({"skills_output_dir": str(skills_root / "opendataworks-business-knowledge")})
+    update_settings({"skills_root_dir": str(skills_root)})
 
-    assert resolve_skills_root_dir() == skills_root / "opendataworks-business-knowledge"
+    assert resolve_builtin_skill_root_dir() == skills_root
+    assert resolve_skills_root_dir() == skills_root
     assert resolve_skill_discovery_root_dir() == skills_root
     assert resolve_agent_project_cwd() == project
 
 
-def test_prepare_enabled_skills_project_cwd_exposes_only_enabled_skills(tmp_path: Path):
-    project = tmp_path / "project"
-    skills_root = project / ".claude" / "skills"
-    _write_skill(skills_root, "opendataworks-business-knowledge")
-    _write_skill(skills_root, "marketing-insights")
-    _write_skill(skills_root, "disabled-skill")
-    runtime_root = tmp_path / "runtime"
-    update_settings(
-        {
-            "skills_output_dir": str(skills_root / "opendataworks-business-knowledge"),
-            "dataagent_runtime_project_cwd": str(runtime_root),
-        }
-    )
+def test_discovery_requires_skills_root_dir():
+    update_settings({"skills_root_dir": ""})
 
-    project_cwd = prepare_enabled_skills_project_cwd(["opendataworks-business-knowledge", "marketing-insights"])
-
-    runtime_skills = project_cwd / ".claude" / "skills"
-    assert (runtime_skills / "opendataworks-business-knowledge" / "SKILL.md").exists()
-    assert (runtime_skills / "marketing-insights" / "SKILL.md").exists()
-    assert not (runtime_skills / "disabled-skill").exists()
+    with pytest.raises(Exception, match="SKILLS_ROOT_DIR"):
+        resolve_skill_discovery_root_dir()
 
 
-def test_prepare_enabled_skills_project_cwd_rejects_missing_skill_md(tmp_path: Path):
-    project = tmp_path / "project"
-    skills_root = project / ".claude" / "skills"
-    (skills_root / "broken-skill").mkdir(parents=True)
-    update_settings({"skills_output_dir": str(skills_root / "broken-skill")})
+def test_discovery_rejects_non_claude_skills_root(tmp_path: Path):
+    root = tmp_path / "skills"
+    root.mkdir(parents=True)
+    update_settings({"skills_root_dir": str(root)})
 
-    with pytest.raises(SkillDiscoveryError, match="SKILL.md"):
-        prepare_enabled_skills_project_cwd(["broken-skill"])
-
-
-def test_prepare_enabled_skills_project_cwd_rejects_empty_enabled_list(tmp_path: Path):
-    project = tmp_path / "project"
-    skills_root = project / ".claude" / "skills"
-    _write_skill(skills_root, "opendataworks-business-knowledge")
-    update_settings({"skills_output_dir": str(skills_root / "opendataworks-business-knowledge")})
-
-    with pytest.raises(SkillDiscoveryError, match="no enabled skills"):
-        prepare_enabled_skills_project_cwd([])
+    with pytest.raises(Exception, match=".claude/skills"):
+        resolve_skill_discovery_root_dir()

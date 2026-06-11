@@ -1,10 +1,17 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { isDemoMode } from '@/demo/runtime'
+import { useAuthStore } from '@/stores/auth'
 
 const demoHomePath = '/dashboard'
 const defaultHomePath = isDemoMode ? demoHomePath : '/dashboard'
 
 const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/LoginView.vue'),
+    meta: { title: '登录', public: true }
+  },
   {
     path: '/',
     component: () => import('@/views/Layout.vue'),
@@ -74,20 +81,16 @@ const routes = [
       {
         path: '/intelligent-query',
         name: 'IntelligentQuery',
-        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
+        component: () => import('@/views/IntelligentQueryRemoteEmbed.vue'),
         meta: { title: '智能问数' }
       },
       {
         path: '/intelligent-query/skills/:folder',
-        name: 'IntelligentQuerySkillDetail',
-        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
-        meta: { title: 'Skill 详情' }
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/intelligent-query/agents/:agentId',
-        name: 'IntelligentQueryAgentDetail',
-        component: () => import('@/views/intelligence/IntelligentQueryView.vue'),
-        meta: { title: '智能体详情' }
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/nl2sql',
@@ -101,20 +104,11 @@ const routes = [
       },
       {
         path: '/settings/skills',
-        redirect: (to) => ({
-          path: '/intelligent-query',
-          query: {
-            ...to.query,
-            tab: 'skills'
-          }
-        })
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/settings/skills/:folder',
-        redirect: (to) => ({
-          path: `/intelligent-query/skills/${encodeURIComponent(String(to.params.folder || ''))}`,
-          query: to.query
-        })
+        redirect: (to) => ({ path: '/intelligent-query', query: to.query, hash: to.hash })
       },
       {
         path: '/playground',
@@ -134,6 +128,22 @@ const router = createRouter({
   history: createWebHistory(),
   routes
 })
+
+if (!isDemoMode) {
+  router.beforeEach(async (to) => {
+    if (to.meta.public) {
+      return true
+    }
+    const authStore = useAuthStore()
+    if (!authStore.initialized) {
+      await authStore.fetchMe()
+    }
+    if (!authStore.isLoggedIn) {
+      return { path: '/login', query: { redirect: to.fullPath } }
+    }
+    return true
+  })
+}
 
 if (isDemoMode) {
   const allowedPrefixes = [

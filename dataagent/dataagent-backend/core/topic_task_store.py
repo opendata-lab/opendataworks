@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import uuid
 from datetime import datetime
@@ -11,6 +12,7 @@ import pymysql
 
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, agent_summary_from_snapshot, default_agent_payload, normalize_agent_snapshot
+from core.topic_workspace import delete_topic_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,7 @@ WIDGET_EVENT_TYPES = frozenset({
 })
 MAX_WIDGET_EVENTS_PER_BATCH = 50
 MAX_WIDGET_PAYLOAD_BYTES = 4096
+SKILL_LAUNCH_OUTPUT_RE = re.compile(r"^Launching skill(?::\s*(.+))?$", re.IGNORECASE)
 
 
 def _parse_client_ts(value: Any) -> datetime | None:
@@ -81,177 +84,11 @@ def _is_placeholder_conversation_id(value: str | None) -> bool:
     return text.startswith("chat_conv_") or text.startswith("chat_conversation_")
 
 
-def _append_str(base: str | None, delta: str | None) -> str:
-    next_text = str(delta or "")
-    if not next_text:
-        return str(base or "")
-    prev_text = str(base or "")
-    if not prev_text:
-        return next_text
-    if next_text == prev_text:
-        return prev_text
-    if next_text.startswith(prev_text):
-        return next_text
-    return f"{prev_text}{next_text}"
-
-
-def _normalize_tool_status(value: str | None) -> str:
-    status = str(value or "").strip().lower()
-    if status in {"", "success", "finished", "completed"}:
-        return "success"
-    if status in {"waiting", "pending"}:
-        return "pending"
-    if status in {"running", "streaming", "in_progress"}:
-        return "streaming"
-    if status in {"error", "failed", "cancelled", "canceled", "suspended"}:
-        return "failed"
-    return status
-
-
-def _tool_status_from_event(event_type: str, tool_status: str | None) -> str:
-    if event_type == "PENDING_TOOL_CALL":
-        return "pending"
-    if event_type == "BEFORE_TOOL_CALL":
-        return "streaming"
-    return _normalize_tool_status(tool_status)
-
-
-def _ensure_projected_block(
-    ordered_blocks: list[dict[str, Any]],
-    block_map: dict[str, dict[str, Any]],
-    *,
-    block_id: str,
-    block_type: str,
-) -> dict[str, Any]:
-    if block_id not in block_map:
-        block: dict[str, Any] = {
-            "block_id": block_id,
-            "type": block_type,
-            "status": "streaming",
-        }
-        if block_type in {"thinking", "main_text", "error"}:
-            block["text"] = ""
-        elif block_type == "tool":
-            block["tool_id"] = None
-            block["tool_name"] = "Tool"
-            block["input"] = None
-            block["output"] = None
-        ordered_blocks.append(block)
-        block_map[block_id] = block
-    return block_map[block_id]
-
-
-def _extract_error_message(record: dict[str, Any]) -> str:
-    data = dict(record.get("data") or {})
-    error = data.get("error")
-    if isinstance(error, dict):
-        message = str(error.get("message") or "").strip()
-        if message:
-            return message
-    message = str(data.get("message") or "").strip()
-    if message:
-        return message
-    return "请求失败"
-
-
-def _project_task_history(records: list[dict[str, Any]], *, fallback_resume_after_seq: int = 0) -> dict[str, Any]:
-    ordered_blocks: list[dict[str, Any]] = []
-    block_map: dict[str, dict[str, Any]] = {}
-    resume_after_seq = max(0, int(fallback_resume_after_seq or 0))
-
-    for record in sorted(records, key=lambda item: int(item.get("seq_id") or 0)):
-        seq_id = int(record.get("seq_id") or 0)
-        if seq_id > resume_after_seq:
-            resume_after_seq = seq_id
-
-        record_type = str(record.get("record_type") or "").strip()
-        if record_type == "chunk":
-            metadata = dict(record.get("metadata") or {})
-            delta = dict(record.get("delta") or {})
-            correlation_id = str(metadata.get("correlation_id") or "").strip()
-            content_type = str(metadata.get("content_type") or "").strip()
-            if not correlation_id or content_type not in {"reasoning", "content"}:
-                continue
-            block_type = "thinking" if content_type == "reasoning" else "main_text"
-            block = _ensure_projected_block(
-                ordered_blocks,
-                block_map,
-                block_id=f"{content_type}:{correlation_id}",
-                block_type=block_type,
-            )
-            chunk_text = str(record.get("content") or "")
-            delta_status = str(delta.get("status") or "").strip().upper()
-            block["status"] = "success" if delta_status == "END" else "streaming"
-            block["text"] = chunk_text if delta_status == "END" else _append_str(block.get("text"), chunk_text)
-            continue
-
-        if record_type != "event":
-            continue
-
-        event_type = str(record.get("event_type") or "").strip()
-        correlation_id = str(record.get("correlation_id") or "").strip()
-        content_type = str(record.get("content_type") or "").strip()
-        data = dict(record.get("data") or {})
-
-        if event_type == "BEFORE_AGENT_REPLY" and correlation_id and content_type in {"reasoning", "content"}:
-            block_type = "thinking" if content_type == "reasoning" else "main_text"
-            _ensure_projected_block(
-                ordered_blocks,
-                block_map,
-                block_id=f"{content_type}:{correlation_id}",
-                block_type=block_type,
-            )["status"] = "streaming"
-            continue
-
-        if event_type == "AFTER_AGENT_REPLY" and correlation_id and content_type in {"reasoning", "content"}:
-            block = block_map.get(f"{content_type}:{correlation_id}")
-            if block and str(block.get("status") or "") != "failed":
-                block["status"] = "success"
-            continue
-
-        if event_type in {"PENDING_TOOL_CALL", "BEFORE_TOOL_CALL", "AFTER_TOOL_CALL"}:
-            tool = data.get("tool")
-            if not isinstance(tool, dict):
-                tool = {}
-            tool_id = str(tool.get("id") or correlation_id or "").strip() or f"tool:{seq_id}"
-            block = _ensure_projected_block(
-                ordered_blocks,
-                block_map,
-                block_id=f"tool:{tool_id}",
-                block_type="tool",
-            )
-            block["tool_id"] = tool_id
-            block["tool_name"] = str(tool.get("name") or block.get("tool_name") or "Tool")
-            if "input" in tool:
-                block["input"] = tool.get("input")
-            if "output" in tool:
-                block["output"] = tool.get("output")
-            block["status"] = _tool_status_from_event(event_type, str(tool.get("status") or ""))
-            continue
-
-        if event_type in {"ERROR", "AGENT_SUSPENDED"}:
-            message = _extract_error_message(record)
-            block = _ensure_projected_block(
-                ordered_blocks,
-                block_map,
-                block_id=f"error:{seq_id}",
-                block_type="error",
-            )
-            block["status"] = "failed"
-            block["text"] = message
-
-    return {
-        "blocks": ordered_blocks,
-        "resume_after_seq": resume_after_seq,
-    }
-
-
 def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Rebuild v2-compatible blocks from da_agent_sdk_record rows.
 
     Mirrors the logic in v2StreamParser.js so history blocks match the
-    schema produced during live streaming.  Returns the same shape as
-    _project_task_history: {"blocks": [...], "resume_after_seq": int}.
+    schema produced during live streaming.
     """
     ordered_blocks: list[dict[str, Any]] = []
     current_turn_blocks: list[dict[str, Any]] | None = None
@@ -339,6 +176,12 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 blk = blocks_by_tool_id[tool_use_id]
                 blk["output"] = data.get("content")
                 blk["is_error"] = bool(data.get("is_error"))
+            elif tool_use_id:
+                block = _synthetic_tool_result_block(data, len(ordered_blocks))
+                ordered_blocks.append(block)
+                blocks_by_tool_id[tool_use_id] = block
+                if current_turn_blocks is not None:
+                    current_turn_blocks.append(block)
 
     result: list[dict[str, Any]] = []
     for block in ordered_blocks:
@@ -349,6 +192,34 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
         result.append(clean)
 
     return {"blocks": result, "resume_after_seq": max_seq_id}
+
+
+def _synthetic_tool_result_block(data: dict[str, Any], index: int) -> dict[str, Any]:
+    skill_name = _extract_skill_launch_name(data.get("content"))
+    if skill_name is not None:
+        tool_name = "Skill"
+        tool_input = {"skill": skill_name} if skill_name else None
+    else:
+        tool_name = "Tool"
+        tool_input = None
+    return {
+        "type": "tool_use",
+        "tool_id": str(data.get("tool_use_id") or f"synthetic_tool_{index}"),
+        "tool_name": tool_name,
+        "input": tool_input,
+        "output": data.get("content"),
+        "is_error": bool(data.get("is_error")),
+        "_idx": index,
+    }
+
+
+def _extract_skill_launch_name(content: Any) -> str | None:
+    if not isinstance(content, str):
+        return None
+    match = SKILL_LAUNCH_OUTPUT_RE.match(content.strip())
+    if not match:
+        return None
+    return str(match.group(1) or "").strip()
 
 
 class TopicTaskStore:
@@ -712,6 +583,86 @@ class TopicTaskStore:
             "page_size": safe_page_size,
         }
 
+    def admin_list_widget_users(
+        self,
+        *,
+        source: str = "widget",
+        website_id: str | None = None,
+        keyword: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Distinct widget users for the admin user filter. Each user is a
+        logged-in `external_user_id` or, when absent, an anonymous
+        `visitor_id`; the two namespaces are kept apart via `kind` so the
+        composite key matches the frontend's `ext:`/`vis:` filter value.
+        Returns the conversation count per user, most recently active first.
+        """
+        self._ensure_ready()
+        filters: list[str] = []
+        params: list[Any] = []
+
+        safe_source = str(source or "").strip().lower()
+        if safe_source:
+            filters.append("t.source = %s")
+            params.append(safe_source)
+
+        safe_website = str(website_id or "").strip()
+        if safe_website:
+            filters.append("t.website_id = %s")
+            params.append(safe_website)
+
+        # Only rows that actually carry a user identity.
+        filters.append(
+            "(NULLIF(t.external_user_id, '') IS NOT NULL OR NULLIF(t.visitor_id, '') IS NOT NULL)"
+        )
+
+        safe_keyword = str(keyword or "").strip()
+        if safe_keyword:
+            filters.append("(t.external_user_id LIKE %s OR t.visitor_id LIKE %s)")
+            params.append(f"%{safe_keyword}%")
+            params.append(f"%{safe_keyword}%")
+
+        where_sql = " AND ".join(filters) if filters else "1 = 1"
+        safe_limit = max(1, min(500, int(limit or 100)))
+
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
+                    SELECT
+                        CASE WHEN NULLIF(t.external_user_id, '') IS NOT NULL
+                             THEN 'ext' ELSE 'vis' END AS kind,
+                        CASE WHEN NULLIF(t.external_user_id, '') IS NOT NULL
+                             THEN t.external_user_id ELSE t.visitor_id END AS user_id,
+                        COUNT(*) AS topic_count,
+                        MAX(t.updated_at) AS last_active_at
+                    FROM da_agent_topic t
+                    WHERE {where_sql}
+                    GROUP BY kind, user_id
+                    ORDER BY last_active_at DESC, topic_count DESC
+                    LIMIT %s
+                    """,
+                    [*params, safe_limit],
+                )
+                rows = cur.fetchall() or []
+        finally:
+            conn.close()
+
+        users: list[dict[str, Any]] = []
+        for row in rows:
+            user_id = str(row.get("user_id") or "").strip()
+            if not user_id:
+                continue
+            users.append(
+                {
+                    "kind": "ext" if str(row.get("kind") or "") == "ext" else "vis",
+                    "user_id": user_id,
+                    "topic_count": int(row.get("topic_count") or 0),
+                }
+            )
+        return users
+
     def get_topic(self, topic_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
         self._ensure_ready()
         context_sql, context_params = self._topic_context_predicate(context, alias="t")
@@ -815,6 +766,10 @@ class TopicTaskStore:
             conn.commit()
         finally:
             conn.close()
+        try:
+            delete_topic_workspace(topic_id)
+        except Exception as exc:
+            logger.warning("Failed to delete topic workspace topic_id=%s error=%s", topic_id, exc)
 
     def list_topic_messages(self, topic_id: str) -> list[dict[str, Any]]:
         self._ensure_ready()
@@ -1521,198 +1476,6 @@ class TopicTaskStore:
             "finished",
             "error",
             "suspended",
-        }
-
-    def append_lifecycle_event(
-        self,
-        *,
-        topic_id: str,
-        task_id: str,
-        event_type: str,
-        content_type: str | None,
-        correlation_id: str | None,
-        parent_correlation_id: str | None,
-        data: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        self._ensure_ready()
-        message_id = _new_id("evt")
-        data = data or {}
-        content = str(data.get("content") or "")
-        steps_json = json.dumps(data.get("steps"), ensure_ascii=False, default=_json_default) if data.get("steps") else None
-        tool_json = json.dumps(data.get("tool"), ensure_ascii=False, default=_json_default) if data.get("tool") else None
-        usage_json = json.dumps(data.get("token_usage"), ensure_ascii=False, default=_json_default) if data.get("token_usage") else None
-        error_json = json.dumps(data.get("error"), ensure_ascii=False, default=_json_default) if data.get("error") else None
-        conn = self._connect(database=self._schema_name())
-        try:
-            with conn.cursor() as cur:
-                seq_id = self._next_task_seq(cur, task_id)
-                cur.execute(
-                    """
-                    INSERT INTO da_agent_message (
-                        message_id, topic_id, task_id, sender_type, type, status, content, event,
-                        steps_json, tool_json, seq_id, correlation_id, parent_correlation_id,
-                        content_type, usage_json, error_json, show_in_ui
-                    ) VALUES (%s, %s, %s, 'assistant', 'event', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 0)
-                    """,
-                    (
-                        message_id,
-                        topic_id,
-                        task_id,
-                        str(data.get("status") or "running"),
-                        content,
-                        event_type,
-                        steps_json,
-                        tool_json,
-                        seq_id,
-                        correlation_id,
-                        parent_correlation_id,
-                        content_type,
-                        usage_json,
-                        error_json,
-                    ),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-        return {
-            "record_type": "event",
-            "seq_id": seq_id,
-            "created_at": _to_iso(datetime.utcnow()),
-            "event_type": event_type,
-            "correlation_id": correlation_id,
-            "parent_correlation_id": parent_correlation_id,
-            "content_type": content_type,
-            "data": data,
-        }
-
-    def append_chunk(
-        self,
-        *,
-        topic_id: str,
-        task_id: str,
-        request_id: str,
-        chunk_id: int,
-        content: str | None,
-        delta: dict[str, Any],
-        metadata: dict[str, Any],
-    ) -> dict[str, Any]:
-        self._ensure_ready()
-        conn = self._connect(database=self._schema_name())
-        try:
-            with conn.cursor() as cur:
-                seq_id = self._next_task_seq(cur, task_id)
-                cur.execute(
-                    """
-                    INSERT INTO da_agent_chunk (
-                        topic_id, task_id, seq_id, request_id, chunk_id, content,
-                        delta_status, finish_reason, delta_extra_json,
-                        correlation_id, parent_correlation_id, model_id, content_type, metadata_extra_json
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
-                    (
-                        topic_id,
-                        task_id,
-                        seq_id,
-                        request_id,
-                        int(chunk_id),
-                        content,
-                        str(delta.get("status") or ""),
-                        str(delta.get("finish_reason") or "") or None,
-                        json.dumps(delta.get("extra_fields"), ensure_ascii=False, default=_json_default)
-                        if delta.get("extra_fields")
-                        else None,
-                        str(metadata.get("correlation_id") or "") or None,
-                        str(metadata.get("parent_correlation_id") or "") or None,
-                        str(metadata.get("model_id") or "") or None,
-                        str(metadata.get("content_type") or "") or None,
-                        json.dumps(metadata.get("extra_data"), ensure_ascii=False, default=_json_default)
-                        if metadata.get("extra_data")
-                        else None,
-                    ),
-                )
-            conn.commit()
-        finally:
-            conn.close()
-        return {
-            "record_type": "chunk",
-            "seq_id": seq_id,
-            "created_at": _to_iso(datetime.utcnow()),
-            "request_id": request_id,
-            "chunk_id": int(chunk_id),
-            "content": content,
-            "delta": delta,
-            "metadata": metadata,
-        }
-
-    def list_task_events(
-        self,
-        *,
-        task_id: str,
-        after_seq: int = 0,
-        limit: int = 200,
-        context: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        self._ensure_ready()
-        task = self.get_task(task_id, context=context)
-        if not task:
-            return {
-                "task_id": task_id,
-                "task_status": "missing",
-                "after_seq": max(0, after_seq),
-                "next_after_seq": max(0, after_seq),
-                "has_more": False,
-                "events": [],
-            }
-        conn = self._connect(database=self._schema_name())
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT seq_id, event, correlation_id, parent_correlation_id, content_type,
-                           content, steps_json, tool_json, usage_json, error_json, status, created_at
-                    FROM da_agent_message
-                    WHERE task_id = %s
-                      AND show_in_ui = 0
-                      AND seq_id > %s
-                    ORDER BY seq_id ASC
-                    LIMIT %s
-                    """,
-                    (task_id, max(0, after_seq), max(1, limit) + 1),
-                )
-                event_rows = cur.fetchall() or []
-                cur.execute(
-                    """
-                    SELECT seq_id, request_id, chunk_id, content, delta_status, finish_reason,
-                           delta_extra_json, correlation_id, parent_correlation_id, model_id,
-                           content_type, metadata_extra_json, created_at
-                    FROM da_agent_chunk
-                    WHERE task_id = %s
-                      AND seq_id > %s
-                    ORDER BY seq_id ASC
-                    LIMIT %s
-                    """,
-                    (task_id, max(0, after_seq), max(1, limit) + 1),
-                )
-                chunk_rows = cur.fetchall() or []
-        finally:
-            conn.close()
-
-        merged: list[dict[str, Any]] = []
-        for row in event_rows:
-            merged.append(self._normalize_task_event_record(row))
-        for row in chunk_rows:
-            merged.append(self._normalize_task_chunk_record(row))
-        merged.sort(key=lambda item: int(item.get("seq_id") or 0))
-        has_more = len(merged) > max(1, limit)
-        page = merged[: max(1, limit)]
-        next_after_seq = int(page[-1]["seq_id"]) if page else max(0, after_seq)
-        return {
-            "task_id": task_id,
-            "task_status": str(task.get("task_status") or "waiting"),
-            "after_seq": max(0, after_seq),
-            "next_after_seq": next_after_seq,
-            "has_more": has_more,
-            "events": page,
         }
 
     def append_sdk_record(
@@ -2458,58 +2221,6 @@ class TopicTaskStore:
             task_ids.append(task_id)
         return task_ids
 
-    def _normalize_task_event_record(self, row: dict[str, Any]) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        if row.get("content"):
-            payload["content"] = str(row.get("content") or "")
-        steps = _safe_json_load(row.get("steps_json"))
-        if steps is not None:
-            payload["steps"] = steps
-        tool = _safe_json_load(row.get("tool_json"))
-        if tool is not None:
-            payload["tool"] = tool
-        usage = _safe_json_load(row.get("usage_json"))
-        if usage is not None:
-            payload["token_usage"] = usage
-        error = _safe_json_load(row.get("error_json"))
-        if error is not None:
-            payload["error"] = error
-        payload["status"] = str(row.get("status") or "running")
-        return {
-            "record_type": "event",
-            "seq_id": int(row.get("seq_id") or 0),
-            "created_at": _to_iso(row.get("created_at")),
-            "event_type": str(row.get("event") or ""),
-            "correlation_id": str(row.get("correlation_id") or "") or None,
-            "parent_correlation_id": str(row.get("parent_correlation_id") or "") or None,
-            "content_type": str(row.get("content_type") or "") or None,
-            "data": payload,
-        }
-
-    def _normalize_task_chunk_record(self, row: dict[str, Any]) -> dict[str, Any]:
-        delta_extra = _safe_json_load(row.get("delta_extra_json"))
-        meta_extra = _safe_json_load(row.get("metadata_extra_json"))
-        return {
-            "record_type": "chunk",
-            "seq_id": int(row.get("seq_id") or 0),
-            "created_at": _to_iso(row.get("created_at")),
-            "request_id": str(row.get("request_id") or ""),
-            "chunk_id": int(row.get("chunk_id") or 0),
-            "content": row.get("content"),
-            "delta": {
-                "status": str(row.get("delta_status") or ""),
-                "finish_reason": str(row.get("finish_reason") or "") or None,
-                "extra_fields": delta_extra if isinstance(delta_extra, dict) else None,
-            },
-            "metadata": {
-                "correlation_id": str(row.get("correlation_id") or "") or None,
-                "parent_correlation_id": str(row.get("parent_correlation_id") or "") or None,
-                "model_id": str(row.get("model_id") or "") or None,
-                "content_type": str(row.get("content_type") or "") or None,
-                "extra_data": meta_extra if isinstance(meta_extra, dict) else None,
-            },
-        }
-
     def _load_task_history_views(self, conn, task_ids: list[str]) -> dict[str, dict[str, Any]]:
         task_ids = [str(task_id or "").strip() for task_id in task_ids if str(task_id or "").strip()]
         if not task_ids:
@@ -2517,25 +2228,9 @@ class TopicTaskStore:
 
         placeholders = ", ".join(["%s"] * len(task_ids))
         history_by_task_id: dict[str, dict[str, Any]] = {}
-        event_records: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in task_ids}
-        last_seq_by_task_id: dict[str, int] = {task_id: 0 for task_id in task_ids}
-
         sdk_records: dict[str, list[dict[str, Any]]] = {task_id: [] for task_id in task_ids}
 
         with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT task_id, last_event_seq
-                FROM da_agent_task
-                WHERE task_id IN ({placeholders})
-                """,
-                task_ids,
-            )
-            for row in cur.fetchall() or []:
-                task_id = str(row.get("task_id") or "").strip()
-                if task_id:
-                    last_seq_by_task_id[task_id] = int(row.get("last_event_seq") or 0)
-
             cur.execute(
                 f"""
                 SELECT task_id, id, turn_index, record_type, event_type, data
@@ -2563,46 +2258,11 @@ class TopicTaskStore:
                     "data": raw_data or {},
                 })
 
-            cur.execute(
-                f"""
-                SELECT task_id, seq_id, event, correlation_id, parent_correlation_id, content_type,
-                       content, steps_json, tool_json, usage_json, error_json, status, created_at
-                FROM da_agent_message
-                WHERE task_id IN ({placeholders})
-                  AND show_in_ui = 0
-                ORDER BY task_id ASC, seq_id ASC
-                """,
-                task_ids,
-            )
-            for row in cur.fetchall() or []:
-                task_id = str(row.get("task_id") or "").strip()
-                if task_id:
-                    event_records.setdefault(task_id, []).append(self._normalize_task_event_record(row))
-
-            cur.execute(
-                f"""
-                SELECT task_id, seq_id, request_id, chunk_id, content, delta_status, finish_reason,
-                       delta_extra_json, correlation_id, parent_correlation_id, model_id,
-                       content_type, metadata_extra_json, created_at
-                FROM da_agent_chunk
-                WHERE task_id IN ({placeholders})
-                ORDER BY task_id ASC, seq_id ASC
-                """,
-                task_ids,
-            )
-            for row in cur.fetchall() or []:
-                task_id = str(row.get("task_id") or "").strip()
-                if task_id:
-                    event_records.setdefault(task_id, []).append(self._normalize_task_chunk_record(row))
-
         for task_id in task_ids:
             if sdk_records.get(task_id):
                 history_by_task_id[task_id] = _project_sdk_records(sdk_records[task_id])
             else:
-                history_by_task_id[task_id] = _project_task_history(
-                    event_records.get(task_id, []),
-                    fallback_resume_after_seq=last_seq_by_task_id.get(task_id, 0),
-                )
+                history_by_task_id[task_id] = {"blocks": [], "resume_after_seq": 0}
         return history_by_task_id
 
     def _normalize_message_row(self, row: dict[str, Any], *, history: dict[str, Any] | None = None) -> dict[str, Any]:

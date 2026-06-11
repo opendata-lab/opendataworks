@@ -296,6 +296,24 @@ def test_deepeval_runner_opts_out_of_cloud_telemetry(monkeypatch):
     assert os.environ.get("DEEPEVAL_UPDATE_WARNING_OPT_OUT") == "YES"
 
 
+def test_deepeval_runner_forces_opt_out_over_falsy_environment(monkeypatch):
+    # DeepEval treats any falsy/empty value as telemetry ON, which reopens the
+    # cloud connection and hangs the run on an intranet after every case. A stray
+    # value already present in the environment must not survive import.
+    _install_fake_deepeval(monkeypatch)
+
+    import os
+
+    for falsy in ("", "0", "false", "no"):
+        monkeypatch.setenv("DEEPEVAL_TELEMETRY_OPT_OUT", falsy)
+        monkeypatch.setenv("DEEPEVAL_UPDATE_WARNING_OPT_OUT", falsy)
+
+        _load_runner()
+
+        assert os.environ.get("DEEPEVAL_TELEMETRY_OPT_OUT") == "YES"
+        assert os.environ.get("DEEPEVAL_UPDATE_WARNING_OPT_OUT") == "YES"
+
+
 def test_deepeval_judge_request_embeds_system_prompt_in_user_content(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
@@ -326,32 +344,71 @@ def test_deepeval_judge_request_embeds_system_prompt_in_user_content(monkeypatch
     assert "你是 DataAgent 在线问数评测裁判" in body["messages"][0]["content"]
 
 
-def test_deepeval_poll_task_retries_transient_event_error(monkeypatch):
+def test_deepeval_poll_task_tolerates_transient_status_error(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
-    calls = {"task": 0, "events": 0}
+    calls = {"task": 0}
 
     def fake_http_json(method, url, **kwargs):
-        if "/events" in url:
-            calls["events"] += 1
-            if calls["events"] == 1:
-                raise runner.EvalRunnerError("request failed events timeout")
-            return {
-                "task_id": "task_1",
-                "task_status": "finished",
-                "next_after_seq": 1,
-                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
-            }
         calls["task"] += 1
-        return {"task_id": "task_1", "task_status": "running" if calls["task"] == 1 else "finished"}
+        if calls["task"] == 1:
+            raise runner.EvalRunnerError("request failed transient status")
+        return {"task_id": "task_1", "task_status": "finished"}
 
     monkeypatch.setattr(runner, "http_json", fake_http_json)
+    monkeypatch.setattr(runner.time, "sleep", lambda *_: None)
 
-    task, events, errors = runner._poll_task("http://dataagent", "task_1", 5)
+    task, errors = runner._poll_task("http://dataagent", "task_1", 5)
 
     assert task["task_status"] == "finished"
-    assert events == [{"seq_id": 1, "data": {"tool_name": "run_sql"}}]
     assert errors == []
+    assert calls["task"] == 2
+
+
+def test_deepeval_extracts_evidence_from_bash_script_text_outputs(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    actual_sql = "select count(1) from public.dim_tech_public_env_cmp_df"
+    chart_spec = {
+        "kind": "chart_spec",
+        "chart_type": "bar",
+        "dataset": [{"env_name": "PROD", "cmp_cnt": 301}],
+        "series": [{"name": "组件数", "field": "cmp_cnt"}],
+    }
+    blocks = [
+        {
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "input": {
+                "command": (
+                    '"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" '
+                    f'--database public --engine mysql --sql "{actual_sql}"'
+                )
+            },
+            "output": [
+                {
+                    "type": "text",
+                    "text": json.dumps(
+                        {
+                            "kind": "sql_execution",
+                            "sql": actual_sql,
+                            "rows": [{"cmp_cnt": 301}],
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            ],
+        },
+        {
+            "type": "tool_use",
+            "tool_name": "Bash",
+            "input": {"command": "build_chart_spec.py --chart-type bar"},
+            "output": json.dumps(chart_spec, ensure_ascii=False),
+        },
+    ]
+
+    assert runner._extract_sql_outputs(blocks, "") == [actual_sql]
+    assert runner._extract_chart_outputs(blocks) == [chart_spec]
 
 
 def test_deepeval_run_case_uses_recovered_task_answer(monkeypatch):
@@ -370,24 +427,20 @@ def test_deepeval_run_case_uses_recovered_task_answer(monkeypatch):
                 "task_status": "suspended",
                 "error": {"code": "task_recovered", "message": "任务租约已过期，已转移到 task_2"},
             }
-        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_1/events"):
-            return {"task_id": "task_1", "task_status": "suspended", "next_after_seq": 0, "events": []}
         if url == "http://dataagent/api/v1/nl2sql/topics/topic_1":
             return {"topic_id": "topic_1", "current_task_id": "task_2", "current_task_status": "finished"}
         if url == "http://dataagent/api/v1/nl2sql/tasks/task_2":
             return {"task_id": "task_2", "topic_id": "topic_1", "task_status": "finished"}
-        if url.startswith("http://dataagent/api/v1/nl2sql/tasks/task_2/events"):
-            return {
-                "task_id": "task_2",
-                "task_status": "finished",
-                "next_after_seq": 1,
-                "events": [{"seq_id": 1, "data": {"tool_name": "run_sql"}}],
-            }
         if url.startswith("http://dataagent/api/v1/nl2sql/topics/topic_1/messages"):
             return {
                 "items": [
                     {"sender_type": "assistant", "task_id": "task_1", "content": ""},
-                    {"sender_type": "assistant", "task_id": "task_2", "content": "recovered answer"},
+                    {
+                        "sender_type": "assistant",
+                        "task_id": "task_2",
+                        "content": "recovered answer",
+                        "blocks": [{"type": "tool_use", "tool_id": "toolu_1", "tool_name": "run_sql", "input": {"sql": "select 1"}, "output": "ok", "is_error": False}],
+                    },
                 ]
             }
         raise AssertionError(f"unexpected request: {method} {url}")
@@ -413,7 +466,7 @@ def test_deepeval_auto_rule_check_adds_generic_failure_attribution(monkeypatch):
     result = runner.auto_rule_check(
         _sample_case(),
         final_answer="当前 OpenDataWorks 平台元数据未找到目标。请在目标数据库中执行 SQL：SELECT ... WHERE ds = '{target_date}'",
-        events=[{"data": {"output": {"row_count": 0}}}],
+        blocks=[{"type": "tool_use", "tool_name": "run_sql", "output": {"row_count": 0}}],
         sql_outputs=["SELECT count(1) FROM opendataworks.workflow_publish_record WHERE ds = '{target_date}'"],
         tool_names=[],
     )
@@ -553,12 +606,25 @@ def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monk
                 self._json({"status": "ok"})
             elif self.path == "/api/v1/nl2sql-admin/settings":
                 self._json({"provider_id": "fake", "model": "fake-model"})
-            elif self.path.startswith("/api/v1/nl2sql/tasks/task_1/events"):
-                self._json({"task_id": "task_1", "task_status": "finished", "next_after_seq": 1, "events": [{"data": {"tool_name": "run_sql"}}]})
             elif self.path == "/api/v1/nl2sql/tasks/task_1":
                 self._json({"task_id": "task_1", "task_status": "finished"})
             elif self.path.startswith("/api/v1/nl2sql/topics/topic_1/messages"):
-                self._json({"items": [{"sender_type": "assistant", "task_id": "task_1", "content": "最近 30 天工作流发布次数按日期聚合如下。"}]})
+                self._json(
+                    {
+                        "items": [
+                            {
+                                "sender_type": "assistant",
+                                "task_id": "task_1",
+                                "content": "最近 30 天工作流发布次数按日期聚合如下。",
+                                "usage": {"input_tokens": 1, "output_tokens": 2},
+                                "blocks": [
+                                    {"type": "tool_use", "tool_id": "toolu_1", "tool_name": "run_sql", "input": {"sql": "select 1"}, "output": "ok", "is_error": False},
+                                    {"type": "main_text", "text": "最近 30 天工作流发布次数按日期聚合如下。"},
+                                ],
+                            }
+                        ]
+                    }
+                )
             else:
                 self._json({"error": self.path}, code=404)
 
@@ -607,6 +673,21 @@ def test_deepeval_runner_drives_dataagent_and_writes_case_outputs(tmp_path, monk
     assert result["task_status"] == "finished"
     assert result["judge"]["score"] == 9.0
     assert result["case_passed"] is True
+
+    # Assert conversations directory and files
+    conversations_dir = output_dir / "conversations"
+    assert conversations_dir.is_dir()
+    case_file = conversations_dir / "ODW_SAMPLE_001.json"
+    assert case_file.exists()
+    case_data = json.loads(case_file.read_text(encoding="utf-8"))
+    assert case_data["case_id"] == "ODW_SAMPLE_001"
+    assert case_data["case_passed"] is True
+    assert isinstance(case_data["conversation"], list)
+    assert len(case_data["conversation"]) == 1
+    assert case_data["conversation"][0]["role"] == "assistant"
+    assert case_data["conversation"][0]["content"] == "最近 30 天工作流发布次数按日期聚合如下。"
+    assert case_data["conversation"][0]["blocks"][0]["type"] == "tool_use"
+
     # Offline runner drives the judge metric locally; DeepEval's cloud-coupled
     # evaluate() is never invoked.
     assert calls["test_cases"] == []

@@ -46,7 +46,7 @@ services:
 
   # 后端服务
   backend:
-    image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.2.0}
+    image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.3.0}
     container_name: opendataworks-backend
     restart: always
     env_file:
@@ -73,7 +73,7 @@ services:
 
   # 前端服务
   frontend:
-    image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:1.2.0}
+    image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:1.3.0}
     container_name: opendataworks-frontend
     restart: always
     env_file:
@@ -83,6 +83,23 @@ services:
     depends_on:
       backend:
         condition: service_started
+      dataagent-frontend:
+        condition: service_healthy
+    networks:
+      - opendataworks-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  dataagent-frontend:
+    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/opendataworks-dataagent-frontend:1.3.0}
+    container_name: opendataworks-dataagent-frontend
+    restart: always
+    ports:
+      - "8901:80"
+    depends_on:
       dataagent-backend:
         condition: service_healthy
     networks:
@@ -93,9 +110,28 @@ services:
       timeout: 10s
       retries: 3
 
+  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /dataagent_runtime 报 permission denied）
+  dataagent-home-init:
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.3.0}
+    container_name: opendataworks-dataagent-home-init
+    user: "0:0"
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        mkdir -p /dataagent_runtime
+        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /dataagent_runtime
+        chmod -R u+rwX /dataagent_runtime
+    networks:
+      - opendataworks-network
+    volumes:
+      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
+
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.2.0}
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.3.0}
     container_name: opendataworks-dataagent-backend
     restart: always
     user: "${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}"
@@ -103,8 +139,7 @@ services:
       - ./.env
     environment:
       PYTHONUNBUFFERED: "1"
-      HOME: /tmp/dataagent-home
-      DATAAGENT_RUNTIME_PROJECT_CWD: ${DATAAGENT_RUNTIME_PROJECT_CWD:-/tmp/dataagent-home/.dataagent/runtime/enabled-skills}
+      HOME: /dataagent_runtime
       HOST: 0.0.0.0
       PORT: 8900
       MYSQL_HOST: mysql
@@ -130,14 +165,24 @@ services:
       ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
       DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
       DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
-      DATAAGENT_PORTAL_MCP_TOKEN: ${DATAAGENT_PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      SKILLS_ROOT_DIR: /app/.claude/skills
+      DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
+      DATAAGENT_SANDBOX_RUNNER_URL: http://dataagent-sandbox-runner:8910
+      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
+      DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
+      DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
     ports:
       - "8900:8900"
     depends_on:
+      dataagent-home-init:
+        condition: service_completed_successfully
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      dataagent-sandbox-runner:
         condition: service_healthy
     networks:
       - opendataworks-network
@@ -148,11 +193,63 @@ services:
       retries: 5
       start_period: 60s
     volumes:
-      - dataagent-home:/tmp/dataagent-home
+      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
       - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
 
+  # DataAgent 沙箱 Runner（内部服务）
+  dataagent-sandbox-runner:
+    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
+    container_name: opendataworks-dataagent-sandbox-runner
+    restart: always
+    user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
+    env_file:
+      - ./.env
+    environment:
+      PYTHONUNBUFFERED: "1"
+      HOME: /dataagent_runtime
+      DATAAGENT_HOST_ROOT: ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}
+      DATAAGENT_SANDBOX_MODE: ""
+      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.3.0}
+      DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
+      DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
+      DATAAGENT_SANDBOX_REUSE_ENABLED: ${DATAAGENT_SANDBOX_REUSE_ENABLED:-true}
+      DATAAGENT_SANDBOX_IDLE_TTL_SECONDS: ${DATAAGENT_SANDBOX_IDLE_TTL_SECONDS:-600}
+      DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS: ${DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS:-32}
+      DATAAGENT_SANDBOX_REAPER_INTERVAL_SECONDS: ${DATAAGENT_SANDBOX_REAPER_INTERVAL_SECONDS:-30}
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
+      MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
+      MYSQL_DATABASE: ${DATAAGENT_MYSQL_DATABASE:-opendataworks}
+      SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
+      ODW_BACKEND_BASE_URL: ${ODW_BACKEND_BASE_URL:-http://backend:8080/api/v1/ai}
+      ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+      ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
+      DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
+      DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
+      DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      SKILLS_ROOT_DIR: /app/.claude/skills
+    depends_on:
+      dataagent-home-init:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+    networks:
+      - opendataworks-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8910/').read()"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    volumes:
+      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
+      - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
+      - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
+
   portal-mcp:
-    image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:1.2.0}
+    image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:1.3.0}
     container_name: opendataworks-portal-mcp
     restart: always
     env_file:
@@ -164,8 +261,8 @@ services:
       PORTAL_MCP_BACKEND_BASE_URL: ${PORTAL_MCP_BACKEND_BASE_URL:-http://backend:8080/api}
       PORTAL_MCP_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
       PORTAL_MCP_BACKEND_TIMEOUT_SECONDS: ${PORTAL_MCP_BACKEND_TIMEOUT_SECONDS:-30}
-      PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_FRONTDOOR_TOKEN:-odw-portal-mcp-token}
-      PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+      PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
     ports:
       - "8801:8801"
     depends_on:
@@ -193,6 +290,4 @@ volumes:
   mysql-data:
     driver: local
   backend-logs:
-    driver: local
-  dataagent-home:
     driver: local

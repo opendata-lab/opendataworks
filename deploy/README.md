@@ -8,7 +8,8 @@ This guide covers both Online (source code) and Offline (deployment package) dep
 
 - 主前端内嵌的“智能问数”
   - 跟随根 `deploy/` 一起部署
-  - 运行时依赖 `dataagent-backend`
+  - 主门户只通过远程 widget JS 嵌入问答入口
+  - UI 运行时由 `dataagent-frontend` 提供，API 运行时依赖 `dataagent-backend`
   - 当前仍是生产可用主链
 - 独立的 `opendataagent`
   - 使用 [opendataagent/deploy/docker-compose.yml](/Users/guoruping/.codex/worktrees/92ff/opendataworks/opendataagent/deploy/docker-compose.yml) 单独部署
@@ -58,6 +59,7 @@ Use this method if you have internet access and are deploying directly from the 
    主链路默认地址：
    - 门户首页: `http://localhost:8081/`
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
+   - DataAgent Frontend: `http://localhost:8901/`
    - DataAgent Backend: `http://localhost:8900`
    - Portal MCP Health: `http://localhost:8801/health`
    - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`
@@ -71,7 +73,7 @@ Use this method if you have internet access and are deploying directly from the 
    - OpenDataWorks 内部部署默认 MCP-first：DataAgent runtime 会向当前 run 动态注入 `portal-mcp`，优先直接调用 `portal_search_tables` / `portal_get_lineage` / `portal_resolve_datasource` / `portal_export_metadata` / `portal_get_table_ddl` / `portal_query_readonly`
    - 非 MCP 智能体或 MCP 未注入时，DataAgent 才回退到 platform tools skill 自带的 `opendataworks-platform-tools/bin/odw-cli` 调 backend `/api/v1/ai/*` 只读入口获取 metadata / lineage / datasource 解析，并通过 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" -> odw-cli -> /api/v1/ai/query/read` 执行只读 SQL；需保证 `AGENT_API_SERVICE_TOKEN` 在 backend 与 DataAgent 容器中一致
    - `ODW_BACKEND_BASE_URL` 的推荐值为 `http://backend:8080/api/v1/ai`；CLI 兼容旧值 `/api/v1/ai/metadata`，但部署默认值已切到 AI 根路径
-   - DataAgent 的 MCP client 配置由 `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL`、`DATAAGENT_PORTAL_MCP_TOKEN`、`DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME` 控制；默认值已在 compose 中接到 `portal-mcp`
+   - DataAgent 的 MCP client 开关与目标地址由 `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL` 控制；认证统一由 `PORTAL_MCP_TOKEN`、`PORTAL_MCP_TOKEN_HEADER_NAME` 配置，compose 会同时注入 `portal-mcp` frontdoor 和 DataAgent client
    - skill/runtime 不再需要外部数据源的 host / port / user / password；datasource 解析结果只保留定位摘要
    - 若对应 skill 目录下缺少 `opendataworks-platform-tools/bin/odw-cli`，需由用户先自行安装到该固定路径，再启动 DataAgent
    - `scripts/start.sh` 会在启动前对挂载的 `odw-cli` 执行一次宿主机侧 `chmod +x`；即使 bind mount 丢了执行位，DataAgent runtime 也会回退为 `sh /app/.claude/skills/opendataworks-platform-tools/bin/odw-cli ...`
@@ -79,9 +81,14 @@ Use this method if you have internet access and are deploying directly from the 
    - `portal-mcp` 继续随根部署提供，但它不是 `opendataagent` 共享平台 skill 的主链入口
    - `opendataagent` 不随这里的 compose 自动启动，需要单独进入 `opendataagent/deploy/` 部署
    - `skills/` 根目录中的共享 skill 主要服务 `opendataagent`；当前生产智能问数主链使用 DataAgent system prompt、`opendataworks-business-knowledge` 与 `opendataworks-platform-tools`
-   - 主前端默认通过同源 `/api` 代理访问 DataAgent 后端，无需额外配置前端地址
-   - DataAgent 额外持久化一个名为 `dataagent-home` 的 Docker volume，用于保存 Claude Agent SDK 写入 `HOME` 下的本地 session 文件，以及启用 skill 过滤后的运行时 cwd。当前镜像内 `HOME=/tmp/dataagent-home`，`DATAAGENT_RUNTIME_PROJECT_CWD=/tmp/dataagent-home/.dataagent/runtime/enabled-skills`，SDK 会将会话落到 `~/.claude/projects/<sanitized-cwd>/`，因此该 volume 可覆盖历史智能问数话题的 `resume` 所需文件
-   - 若执行 `docker compose down -v` 或手动删除 `dataagent-home` volume，Claude SDK 本地 session 文件和运行时 cwd 都会被清空；此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
+   - 主前端默认通过同源 `/dataagent/widget/opendataworks-widget.bundle.js` 加载 DataAgent widget，并通过 `/api/v1/nl2sql/*` 代理访问 DataAgent 后端；若需要改成独立域名，源码构建主前端时设置 `VITE_DATAAGENT_WIDGET_JS_URL`
+   - DataAgent backend/runner 额外持久化宿主目录 `DATAAGENT_HOST_ROOT`（默认 `/dataagent_runtime`），compose 挂载到容器内固定运行时根 `/dataagent_runtime`。topic 根目录默认位于 `/dataagent_runtime/<topic_id>/`，agent cwd 位于 `workspace/`，Claude SDK session 文件位于同一 topic 下的 `home/.claude/projects/<sanitized-cwd>/`；同一 topic 多轮复用该目录，不同 topic 不共享 `.claude` 状态
+   - `DATAAGENT_HOST_ROOT` 可在 `.env` 中改成任意自定义宿主机目录：绝对路径直接生效；相对路径按 `deploy/` 解析，`scripts/start.sh` 会在启动 compose 前统一展开成宿主机绝对路径并 `export`，保证 backend 卷挂载与 sandbox runner 反查的 child bind 源指向同一目录。若不经 `start.sh` 直接运行 `docker compose`，请填写绝对路径，否则 runner 会把相对路径误解析成容器内 `/app/<rel>` 导致 child bind 源错位
+   - `dataagent-home-init` 是一次性 init 服务（以 root 运行），在 backend/runner 启动前确保 `DATAAGENT_HOST_ROOT` 对应的 `/dataagent_runtime` bind mount 存在，并把属主改成 `DATAAGENT_RUNTIME_UID/GID`。这避免了 Docker 把缺失的 bind mount 宿主目录默认建成 `root:root 755`、导致非 root 的 `dataagent-backend` 写 `/dataagent_runtime` 时报 `permission denied` 的问题；属主修好后，每个 topic 的具体 skill 目录仍由运行时按需在各自 topic 工作区下创建，init 不预设任何按 skill 划分的目录；若改了 `DATAAGENT_RUNTIME_UID/GID`，该 init 服务会自动按新值修正属主
+   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `opendataworks-dataagent-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/mnt/workspace`
+   - task child 内部路径与 backend/runner 服务路径分离：`/mnt/workspace` 是当前 task workspace 和 project skills 目录，`/mnt/home` 是 Claude HOME，`/tmp` 只用于临时 scratch；child 不注入 `DATAAGENT_WORKSPACE_DIR`、`DATAAGENT_WORKSPACE_PREPARED`，也不暴露共享运行时根
+   - 每个 task child 容器都是一次性容器，runner 使用 `--rm` 启动；正常结束自动删除，取消或异常时 runner 会 kill child，并在启动时清理带 `dataagent.sandbox.managed_by=dataagent-sandbox-runner` 标签的遗留 child 容器
+   - `DATAAGENT_DOCKER_SOCKET` 只挂到 `dataagent-sandbox-runner`，不会挂到 task child 容器；runner 默认用 `DATAAGENT_RUNNER_UID/GID=0:0` 访问 Docker socket，child task 仍用 `DATAAGENT_RUNTIME_UID/GID` 运行；若手动删除 `DATAAGENT_HOST_ROOT`，Claude SDK 本地 session 文件和 topic 工作区都会被清空，此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
 
    > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
    >
@@ -93,21 +100,25 @@ Use this method if you have internet access and are deploying directly from the 
 
 ## 2. Offline Deployment (Using Package)
 
-Use this method for isolated environments without internet access. You will use the `opendataworks-deployment-*.tar.gz` package.
+Use this method for isolated environments without internet access. You will use the `opendataworks-deployment-*.tar.xz` package.
 
 ### Prerequisites
 - Docker or Podman installed on the target machine.
-- The offline deployment package (`opendataworks-deployment-*.tar.gz`).
+- `xz`/`xz-utils` installed on the target machine (used to decompress the package).
+- The offline deployment package (`opendataworks-deployment-*.tar.xz`).
 
 ### Steps
 1. **Extract Package**:
    ```bash
-   tar -xzf opendataworks-deployment-*.tar.gz
+   # 新版离线包为 xz 压缩
+   tar -xJf opendataworks-deployment-*.tar.xz
+   # 若某些精简系统的 tar 未链接 xz，可改用管道：
+   #   xz -dc opendataworks-deployment-*.tar.xz | tar -xf -
    cd opendataworks-deployment
    ```
 
 2. **Load Images**:
-   This loads all required Docker images from the local archive.
+   This loads all required Docker images from the local archive. 新版离线包将全部镜像去重保存为单个 `deploy/docker-images/all-images.tar`，加载脚本会自动识别（旧版逐镜像 `*.tar` 也兼容）。
    ```bash
    scripts/load-images.sh
    ```
@@ -127,6 +138,7 @@ Use this method for isolated environments without internet access. You will use 
    离线包中的主链地址：
    - 门户首页: `http://localhost:8081/`
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
+   - DataAgent Frontend: `http://localhost:8901/`
    - DataAgent Backend: `http://localhost:8900`
    - Portal MCP Health: `http://localhost:8801/health`
    - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`
@@ -140,14 +152,19 @@ Use this method for isolated environments without internet access. You will use 
    - OpenDataWorks 内部部署默认 MCP-first：DataAgent runtime 会向当前 run 动态注入 `portal-mcp`，优先直接调用 `portal_search_tables` / `portal_get_lineage` / `portal_resolve_datasource` / `portal_export_metadata` / `portal_get_table_ddl` / `portal_query_readonly`
    - 非 MCP 智能体或 MCP 未注入时，DataAgent 才回退到 platform tools skill 自带的 `opendataworks-platform-tools/bin/odw-cli` 调 backend `/api/v1/ai/*` 只读入口获取 metadata / lineage / datasource 解析，并通过 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" -> odw-cli -> /api/v1/ai/query/read` 执行只读 SQL；需保证 `AGENT_API_SERVICE_TOKEN` 在 backend 与 DataAgent 容器中一致
    - `ODW_BACKEND_BASE_URL` 的推荐值为 `http://backend:8080/api/v1/ai`；CLI 兼容旧值 `/api/v1/ai/metadata`，但部署默认值已切到 AI 根路径
-   - DataAgent 的 MCP client 配置由 `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL`、`DATAAGENT_PORTAL_MCP_TOKEN`、`DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME` 控制；默认值已在 compose 中接到 `portal-mcp`
+   - DataAgent 的 MCP client 开关与目标地址由 `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL` 控制；认证统一由 `PORTAL_MCP_TOKEN`、`PORTAL_MCP_TOKEN_HEADER_NAME` 配置，compose 会同时注入 `portal-mcp` frontdoor 和 DataAgent client
    - skill/runtime 不再需要外部数据源的 host / port / user / password；datasource 解析结果只保留定位摘要
    - 若对应 skill 目录下缺少 `opendataworks-platform-tools/bin/odw-cli`，需由用户先自行安装到该固定路径，再启动 DataAgent
    - `scripts/start.sh` 会在启动前对挂载的 `odw-cli` 执行一次宿主机侧 `chmod +x`；即使 bind mount 丢了执行位，DataAgent runtime 也会回退为 `sh /app/.claude/skills/opendataworks-platform-tools/bin/odw-cli ...`
    - `portal-mcp` 作为独立远程 MCP 服务一并部署，客户端需带 `X-Portal-MCP-Token`
    - `opendataagent` 需要用它自己的部署包或 compose 单独部署，不包含在这里的离线包主链描述中
-   - DataAgent 额外持久化一个名为 `dataagent-home` 的 Docker volume，用于保存 Claude Agent SDK 写入 `HOME` 下的本地 session 文件，以及启用 skill 过滤后的运行时 cwd。当前镜像内 `HOME=/tmp/dataagent-home`，`DATAAGENT_RUNTIME_PROJECT_CWD=/tmp/dataagent-home/.dataagent/runtime/enabled-skills`，SDK 会将会话落到 `~/.claude/projects/<sanitized-cwd>/`，因此该 volume 可覆盖历史智能问数话题的 `resume` 所需文件
-   - 若执行 `docker compose down -v` 或手动删除 `dataagent-home` volume，Claude SDK 本地 session 文件和运行时 cwd 都会被清空；此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
+   - DataAgent backend/runner 额外持久化宿主目录 `DATAAGENT_HOST_ROOT`（默认 `/dataagent_runtime`），compose 挂载到容器内固定运行时根 `/dataagent_runtime`。topic 根目录默认位于 `/dataagent_runtime/<topic_id>/`，agent cwd 位于 `workspace/`，Claude SDK session 文件位于同一 topic 下的 `home/.claude/projects/<sanitized-cwd>/`；同一 topic 多轮复用该目录，不同 topic 不共享 `.claude` 状态
+   - `DATAAGENT_HOST_ROOT` 可在 `.env` 中改成任意自定义宿主机目录：绝对路径直接生效；相对路径按 `deploy/` 解析，`scripts/start.sh` 会在启动 compose 前统一展开成宿主机绝对路径并 `export`，保证 backend 卷挂载与 sandbox runner 反查的 child bind 源指向同一目录。若不经 `start.sh` 直接运行 `docker compose`，请填写绝对路径，否则 runner 会把相对路径误解析成容器内 `/app/<rel>` 导致 child bind 源错位
+   - `dataagent-home-init` 是一次性 init 服务（以 root 运行），在 backend/runner 启动前确保 `DATAAGENT_HOST_ROOT` 对应的 `/dataagent_runtime` bind mount 存在，并把属主改成 `DATAAGENT_RUNTIME_UID/GID`。这避免了 Docker 把缺失的 bind mount 宿主目录默认建成 `root:root 755`、导致非 root 的 `dataagent-backend` 写 `/dataagent_runtime` 时报 `permission denied` 的问题；属主修好后，每个 topic 的具体 skill 目录仍由运行时按需在各自 topic 工作区下创建，init 不预设任何按 skill 划分的目录；若改了 `DATAAGENT_RUNTIME_UID/GID`，该 init 服务会自动按新值修正属主
+   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `opendataworks-dataagent-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/mnt/workspace`
+   - task child 内部路径与 backend/runner 服务路径分离：`/mnt/workspace` 是当前 task workspace 和 project skills 目录，`/mnt/home` 是 Claude HOME，`/tmp` 只用于临时 scratch；child 不注入 `DATAAGENT_WORKSPACE_DIR`、`DATAAGENT_WORKSPACE_PREPARED`，也不暴露共享运行时根
+   - 每个 task child 容器都是一次性容器，runner 使用 `--rm` 启动；正常结束自动删除，取消或异常时 runner 会 kill child，并在启动时清理带 `dataagent.sandbox.managed_by=dataagent-sandbox-runner` 标签的遗留 child 容器
+   - `DATAAGENT_DOCKER_SOCKET` 只挂到 `dataagent-sandbox-runner`，不会挂到 task child 容器；runner 默认用 `DATAAGENT_RUNNER_UID/GID=0:0` 访问 Docker socket，child task 仍用 `DATAAGENT_RUNTIME_UID/GID` 运行；若手动删除 `DATAAGENT_HOST_ROOT`，Claude SDK 本地 session 文件和 topic 工作区都会被清空，此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
 
    > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
    >
@@ -159,7 +176,15 @@ Use this method for isolated environments without internet access. You will use 
 
 ## 3. DataAgent Online Evaluation
 
-离线包内置 DataAgent 通用问数评测工具，部署完成并配置可用模型后，可手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于离线包根目录 `tools/dataagent-evals/`，且均独立于 DataAgent runtime。私有评测集不随 GitHub 或离线包内置，运行时必须通过 `--dataset` 或 `DATAAGENT_EVAL_DATASET` 指定。
+DataAgent 通用问数评测工具用于部署完成并配置可用模型后手动运行在线评测。builtin 与 DeepEval 是两个并列评测引擎，均位于 `tools/dataagent-evals/`，且均独立于 DataAgent runtime。私有评测集不随 GitHub 或离线包内置，运行时必须通过 `--dataset` 或 `DATAAGENT_EVAL_DATASET` 指定。
+
+> **📦 评测镜像改由独立附加包提供**：评测镜像默认不随服务启动，且 `deepeval` 依赖较重，已从主离线包拆出，单独发布为 `opendataworks-evals-offline-*.tar.xz`。需要在线评测时单独下载该附加包并加载：
+> ```bash
+> tar -xJf opendataworks-evals-offline-*.tar.xz
+> cd opendataworks-evals-offline
+> scripts/load-evals-images.sh
+> ```
+> 主离线包仍保留 `scripts/run-dataagent-evals.sh` / `run-dataagent-deepeval-evals.sh` 与 `tools/dataagent-evals/`，加载附加包镜像后即可直接运行。
 
 ```bash
 DATAAGENT_EVAL_JUDGE_BASE_URL=https://api.example.com \
@@ -213,6 +238,16 @@ bash scripts/run-dataagent-deepeval-evals.sh --base-url http://127.0.0.1:8900 --
 DeepEval 评测同样要求通过 `--dataset` 指定私有 JSONL，输出包含 `cases.jsonl`、`summary.json`、`report.md` 和 `raw/<case_id>.json`。
 
 ---
+
+## DataX Sync Prerequisites
+
+DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `docs/design/2026-06-10-datax-data-integration-design.md`），平台本身不内置 DataX 运行时。启用 DataX 同步前需确保：
+
+- DolphinScheduler 的 worker 节点已安装 DataX 运行时。
+- 源 / 目标数据源已在 DolphinScheduler 数据源中心登记（平台按名称解析其 id 与类型）。
+- 如所用 DolphinScheduler 版本要求 DATAX 节点绑定 environment，请在其中配置好 DataX 环境；当前平台下发的任务定义使用默认 `environmentCode=-1`，必要时在 DolphinScheduler 侧为 DATAX 任务补充环境。
+
+列映射（`column_mapping`）支持三种形式：留空（全列同步）、列清单（逗号分隔或 JSON 数组 / 源到目标的 JSON 对象映射）、完整 DataX 作业 JSON（含 `job` 键，按自定义模式 `customConfig=1` 下发）。
 
 ## Common Operations
 

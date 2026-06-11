@@ -27,6 +27,21 @@
             <span>{{ item.label }}</span>
           </el-menu-item>
         </el-menu>
+        <div v-if="!isDemoMode && authStore.currentUser" class="user-area">
+          <el-dropdown trigger="click" @command="handleUserCommand">
+            <span class="user-trigger">
+              <el-icon><User /></el-icon>
+              <span class="user-name">{{ authStore.currentUser.nickname || authStore.currentUser.username }}</span>
+              <el-icon><ArrowDown /></el-icon>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </div>
     </el-header>
 
@@ -34,19 +49,109 @@
       <router-view />
     </el-main>
 
+    <el-dialog v-model="passwordDialogVisible" title="修改密码" width="420px">
+      <el-form
+        ref="passwordFormRef"
+        :model="passwordForm"
+        :rules="passwordRules"
+        label-width="80px"
+      >
+        <el-form-item label="原密码" prop="oldPassword">
+          <el-input v-model="passwordForm.oldPassword" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="新密码" prop="newPassword">
+          <el-input v-model="passwordForm.newPassword" type="password" show-password />
+        </el-form-item>
+        <el-form-item label="确认密码" prop="confirmPassword">
+          <el-input v-model="passwordForm.confirmPassword" type="password" show-password />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="passwordSubmitting" @click="submitChangePassword">确定</el-button>
+      </template>
+    </el-dialog>
+
   </el-container>
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
+import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound, User, ArrowDown } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
-import { installWidget } from '@/widget/entry'
+import { loadDataAgentWidgetScript } from '@/utils/dataagentWidgetLoader'
+import { useAuthStore } from '@/stores/auth'
+import { authApi } from '@/api/auth'
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+
+const passwordDialogVisible = ref(false)
+const passwordSubmitting = ref(false)
+const passwordFormRef = ref(null)
+const passwordForm = reactive({
+  oldPassword: '',
+  newPassword: '',
+  confirmPassword: ''
+})
+const passwordRules = {
+  oldPassword: [{ required: true, message: '请输入原密码', trigger: 'blur' }],
+  newPassword: [
+    { required: true, message: '请输入新密码', trigger: 'blur' },
+    { min: 8, message: '新密码长度不能少于8位', trigger: 'blur' }
+  ],
+  confirmPassword: [
+    { required: true, message: '请再次输入新密码', trigger: 'blur' },
+    {
+      validator: (rule, value, callback) => {
+        if (value !== passwordForm.newPassword) {
+          callback(new Error('两次输入的密码不一致'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'blur'
+    }
+  ]
+}
+
+const handleUserCommand = async (command) => {
+  if (command === 'logout') {
+    await authStore.logout()
+    router.replace('/login')
+    return
+  }
+  if (command === 'changePassword') {
+    passwordForm.oldPassword = ''
+    passwordForm.newPassword = ''
+    passwordForm.confirmPassword = ''
+    passwordDialogVisible.value = true
+  }
+}
+
+const submitChangePassword = async () => {
+  if (!passwordFormRef.value) return
+  const valid = await passwordFormRef.value.validate().catch(() => false)
+  if (!valid) return
+
+  passwordSubmitting.value = true
+  try {
+    await authApi.changePassword({
+      oldPassword: passwordForm.oldPassword,
+      newPassword: passwordForm.newPassword
+    })
+    passwordDialogVisible.value = false
+    ElMessage.success('密码修改成功')
+  } catch (error) {
+    // 失败提示由 request.js 响应拦截器统一弹出
+  } finally {
+    passwordSubmitting.value = false
+  }
+}
 const menuItems = computed(() => {
   const items = [
     { index: '/dashboard', label: '控制台', icon: DataBoard },
@@ -104,6 +209,25 @@ const preloadMenuRoute = (path) => {
 }
 
 let _widgetCtrl = null
+let _layoutUnmounted = false
+
+const installFloatingWidget = async () => {
+  try {
+    const widget = await loadDataAgentWidgetScript()
+    if (_layoutUnmounted) return
+    _widgetCtrl = widget.installWidget({
+      displayMode: 'floating',
+      position: 'bottom-right',
+      projectName: '智能助手',
+      projectColor: '#2c5282',
+      agentId: 'agent_opendataworks',
+      apiBaseUrl: '',
+    })
+  } catch (error) {
+    console.warn('[OpenDataWorks] failed to install DataAgent widget:', error)
+  }
+}
+
 onMounted(() => {
   scheduleRouteWarmup(
     router,
@@ -111,16 +235,10 @@ onMounted(() => {
       .map((item) => item.index)
       .filter((path) => path !== activeMenu.value)
   )
-  _widgetCtrl = installWidget({
-    displayMode: 'floating',
-    position: 'bottom-right',
-    projectName: '智能助手',
-    projectColor: '#2c5282',
-    agentId: 'agent_opendataworks',
-    apiBaseUrl: '',
-  })
+  void installFloatingWidget()
 })
 onBeforeUnmount(() => {
+  _layoutUnmounted = true
   _widgetCtrl?.destroy()
 })
 </script>
@@ -208,6 +326,31 @@ onBeforeUnmount(() => {
 
 .menu :deep(.el-menu-item) {
   flex: 0 0 auto;
+}
+
+.user-area {
+  flex: 0 0 auto;
+  padding: 0 16px;
+}
+
+.user-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--odw-text-on-dark-secondary);
+  cursor: pointer;
+  outline: none;
+  white-space: nowrap;
+}
+
+.user-trigger:hover {
+  color: var(--odw-text-on-dark);
+}
+
+.user-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .el-menu--horizontal {

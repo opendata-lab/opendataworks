@@ -20,8 +20,17 @@ from typing import Any
 # before importing deepeval so the import never triggers telemetry, update
 # checks, or Confident AI cloud coupling. The runner drives the judge metric
 # itself and does not depend on any deepeval.com / Confident AI service.
-os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
-os.environ.setdefault("DEEPEVAL_UPDATE_WARNING_OPT_OUT", "YES")
+#
+# The telemetry opt-out is FORCED rather than set via setdefault: DeepEval keeps
+# telemetry ON for any falsy/empty value ("", "0", "false", "no"), so a stray
+# value already present in the container / CI / compose environment would
+# silently reopen the Sentry, PostHog and anonymous-IP cloud connections. On an
+# intranet those outbound requests are dropped and block until socket timeout,
+# which is exactly the "hangs after every case has finished" symptom. This tool
+# is offline by contract, so it must not be re-enabled by the ambient
+# environment. The progress bar is cosmetic and stays overridable.
+os.environ["DEEPEVAL_TELEMETRY_OPT_OUT"] = "YES"
+os.environ["DEEPEVAL_UPDATE_WARNING_OPT_OUT"] = "YES"
 os.environ.setdefault("DEEPEVAL_DISABLE_PROGRESS_BAR", "YES")
 
 try:
@@ -270,59 +279,151 @@ def _flatten_strings(value: Any) -> list[str]:
     return []
 
 
-def _collect_tool_names(events: list[dict[str, Any]]) -> list[str]:
+def _collect_tool_names(blocks: list[dict[str, Any]]) -> list[str]:
     names: list[str] = []
-    for event in events:
-        data = event.get("data") if isinstance(event, dict) else {}
-        candidates = []
-        if isinstance(event, dict):
-            candidates.extend([event.get("tool_name"), event.get("name"), event.get("tool")])
-        if isinstance(data, dict):
-            candidates.extend([data.get("tool_name"), data.get("name"), data.get("tool")])
-        for candidate in candidates:
-            if isinstance(candidate, dict):
-                candidate = candidate.get("name")
-            text = str(candidate or "").strip()
-            if text and text not in names:
-                names.append(text)
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        text = str(block.get("tool_name") or "").strip()
+        if text and text not in names:
+            names.append(text)
     return names
 
 
-def _extract_sql_outputs(events: list[dict[str, Any]], final_answer: str) -> list[str]:
-    combined = "\n".join(_flatten_strings(events) + [final_answer])
+def _looks_like_sql(text: str) -> bool:
+    return bool(re.match(r"(?is)^\s*(?:select|with)\b", str(text or "")))
+
+
+def _normalise_sql(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text or "").strip()).rstrip(";")
+
+
+def _parse_json_text(value: str) -> Any | None:
+    text = str(value or "").strip()
+    if not text or text[0] not in "[{":
+        return None
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _iter_structured_evidence(value: Any) -> list[Any]:
+    values = [value]
+    if isinstance(value, str):
+        parsed = _parse_json_text(value)
+        if parsed is not None:
+            values.extend(_iter_structured_evidence(parsed))
+        return values
+    if isinstance(value, list):
+        for item in value:
+            values.extend(_iter_structured_evidence(item))
+        return values
+    if isinstance(value, dict):
+        for item in value.values():
+            values.extend(_iter_structured_evidence(item))
+    return values
+
+
+def _collect_structured_sql(value: Any) -> list[str]:
     sqls: list[str] = []
-    fenced = re.findall(r"```sql\s*(.*?)```", combined, flags=re.IGNORECASE | re.DOTALL)
-    sqls.extend(item.strip() for item in fenced if item.strip())
-    for match in re.findall(r"(?is)\b(?:select|with)\b.+?(?:;|\n\n|$)", combined):
-        text = re.sub(r"\s+", " ", match).strip().rstrip(";")
-        if text and text not in sqls:
-            sqls.append(text)
+    for item in _iter_structured_evidence(value):
+        if not isinstance(item, dict):
+            continue
+        for key, field in item.items():
+            key_text = str(key or "").lower()
+            if key_text in {"sql", "query"} and isinstance(field, str) and _looks_like_sql(field):
+                sqls.append(_normalise_sql(field))
     return sqls
 
 
-def _extract_chart_outputs(events: list[dict[str, Any]]) -> list[Any]:
+def _truncate_for_judge(value: Any, *, max_text: int = 2000, max_rows: int = 20) -> Any:
+    if value is None or isinstance(value, (int, float, bool)):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if len(text) <= max_text:
+            return text
+        return text[:max_text] + f"...[truncated {len(text) - max_text} chars]"
+    if isinstance(value, list):
+        return [_truncate_for_judge(item, max_text=max_text, max_rows=max_rows) for item in value[:max_rows]]
+    if isinstance(value, dict):
+        return {str(key): _truncate_for_judge(item, max_text=max_text, max_rows=max_rows) for key, item in value.items()}
+    return str(value)
+
+
+def _extract_sql_outputs(blocks: list[dict[str, Any]], final_answer: str) -> list[str]:
+    sqls: list[str] = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        sqls.extend(_collect_structured_sql(block.get("input")))
+        sqls.extend(_collect_structured_sql(block.get("output")))
+    fenced = re.findall(r"```sql\s*(.*?)```", str(final_answer or ""), flags=re.IGNORECASE | re.DOTALL)
+    sqls.extend(_normalise_sql(item) for item in fenced if _looks_like_sql(item))
+    result: list[str] = []
+    for text in sqls:
+        if text and text not in result:
+            result.append(text)
+    return result
+
+
+def _extract_chart_outputs(blocks: list[dict[str, Any]]) -> list[Any]:
     charts: list[Any] = []
-    for event in events:
-        for key in ("chart", "chart_spec", "echarts", "spec"):
-            value = event.get(key) if isinstance(event, dict) else None
-            if value is None and isinstance(event.get("data") if isinstance(event, dict) else None, dict):
-                value = event["data"].get(key)
-            if value is not None:
-                charts.append(value)
+    seen: set[str] = set()
+
+    def add_chart(value: Any) -> None:
+        try:
+            key = json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+        except TypeError:
+            key = repr(value)
+        if key not in seen:
+            seen.add(key)
+            charts.append(value)
+
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        for source in (block.get("input"), block.get("output")):
+            for item in _iter_structured_evidence(source):
+                if not isinstance(item, dict):
+                    continue
+                if item.get("kind") == "chart_spec":
+                    add_chart(item)
+                for key in ("chart", "chart_spec", "echarts", "spec"):
+                    value = item.get(key)
+                    if value is not None:
+                        add_chart(value)
     return charts
 
 
-def _collect_usage(task: dict[str, Any], messages: dict[str, Any], events: list[dict[str, Any]]) -> dict[str, Any]:
+def _summarize_tool_events(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    summarized: list[dict[str, Any]] = []
+    seq = 0
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_use":
+            continue
+        seq += 1
+        item: dict[str, Any] = {
+            "seq_id": seq,
+            "tool_name": str(block.get("tool_name") or ""),
+        }
+        if block.get("input") not in (None, ""):
+            item["input"] = _truncate_for_judge(block.get("input"))
+        if block.get("output") not in (None, ""):
+            item["output"] = _truncate_for_judge(block.get("output"))
+        if block.get("is_error"):
+            item["is_error"] = True
+        summarized.append({key: value for key, value in item.items() if value not in (None, "")})
+    return summarized
+
+
+def _collect_usage(task: dict[str, Any], message: dict[str, Any]) -> dict[str, Any]:
     usage: dict[str, Any] = {}
     if isinstance(task.get("usage"), dict):
         usage.update(task["usage"])
-    for message in messages.get("items") or []:
-        if isinstance(message, dict) and isinstance(message.get("usage"), dict):
-            usage.update(message["usage"])
-    for event in events:
-        data = event.get("data") if isinstance(event, dict) else None
-        if isinstance(data, dict) and isinstance(data.get("usage"), dict):
-            usage.update(data["usage"])
+    if isinstance(message.get("usage"), dict):
+        usage.update(message["usage"])
     return usage
 
 
@@ -364,8 +465,8 @@ def _auto_failure_attribution(
     return _dedupe(failures)
 
 
-def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
-    combined = "\n".join(_flatten_strings(events) + sql_outputs + [final_answer])
+def auto_rule_check(case: dict[str, Any], *, final_answer: str, blocks: list[dict[str, Any]], sql_outputs: list[str], tool_names: list[str]) -> dict[str, Any]:
+    combined = "\n".join(_flatten_strings(blocks) + sql_outputs + [final_answer])
     missing_sql_fragments = [
         fragment
         for fragment in case.get("required_sql_fragments") or []
@@ -403,7 +504,29 @@ def auto_rule_check(case: dict[str, Any], *, final_answer: str, events: list[dic
     }
 
 
-def _final_assistant_answer(messages: dict[str, Any], task_id: str) -> str:
+def _build_conversation_log(messages_response: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build a structured conversation log from topic messages for post-eval analysis."""
+    log: list[dict[str, Any]] = []
+    for msg in messages_response.get("items") or []:
+        if not isinstance(msg, dict):
+            continue
+        entry: dict[str, Any] = {
+            "role": str(msg.get("sender_type") or "unknown"),
+            "content": str(msg.get("content") or ""),
+        }
+        if msg.get("task_id"):
+            entry["task_id"] = str(msg["task_id"])
+        blocks = msg.get("blocks")
+        if isinstance(blocks, list) and blocks:
+            entry["blocks"] = blocks
+        if msg.get("created_at"):
+            entry["created_at"] = str(msg["created_at"])
+        log.append(entry)
+    return log
+
+
+def _final_assistant_message(messages: dict[str, Any], task_id: str) -> dict[str, Any]:
+    """Pick the last assistant message for ``task_id`` (Chat V2 projected blocks)."""
     candidates = []
     for message in messages.get("items") or []:
         if not isinstance(message, dict):
@@ -417,7 +540,7 @@ def _final_assistant_answer(messages: dict[str, Any], task_id: str) -> str:
         for message in messages.get("items") or []:
             if isinstance(message, dict) and str(message.get("sender_type") or "") == "assistant":
                 candidates.append(message)
-    return str((candidates[-1] if candidates else {}).get("content") or "").strip()
+    return candidates[-1] if candidates else {}
 
 
 def _create_topic(base_url: str, case: dict[str, Any], agent_id: str) -> str:
@@ -484,12 +607,15 @@ def _poll_task(
     timeout_seconds: int,
     *,
     topic_id: str = "",
-) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Poll task status until terminal, following recovered/replacement tasks.
+
+    Run evidence is read afterwards from the Chat V2 server-projected ``blocks``
+    in ``GET /topics/{id}/messages`` (the same projection the Chat V2 history uses).
+    """
     deadline = time.time() + max(1, timeout_seconds)
     current_task_id = task_id
     seen_task_ids = {task_id}
-    after_seq = 0
-    all_events: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
     last_task: dict[str, Any] = {}
     last_poll_error = ""
@@ -502,35 +628,21 @@ def _poll_task(
             continue
 
         status = str(last_task.get("task_status") or "").lower()
-        try:
-            page = http_json(
-                "GET",
-                f"{base_url}/api/v1/nl2sql/tasks/{urllib.parse.quote(current_task_id)}/events?after_seq={after_seq}&limit=1000",
-                timeout=60,
-            )
-            events = [item for item in page.get("events") or [] if isinstance(item, dict)]
-            all_events.extend(events)
-            after_seq = max(after_seq, int(page.get("next_after_seq") or after_seq))
-            status = str(last_task.get("task_status") or page.get("task_status") or "").lower()
-        except EvalRunnerError as exc:
-            last_poll_error = str(exc)
-
         if status in TERMINAL_STATUSES:
             if _is_recovered_task(last_task):
                 recovered_task_id = _resolve_recovered_task_id(base_url, topic_id, last_task)
                 if recovered_task_id and recovered_task_id not in seen_task_ids:
                     current_task_id = recovered_task_id
                     seen_task_ids.add(recovered_task_id)
-                    after_seq = 0
                     continue
-            return last_task, all_events, errors
+            return last_task, errors
         time.sleep(0.2)
     errors.append({"code": "timeout", "message": f"task did not finish within {timeout_seconds}s"})
     if last_poll_error:
         errors.append({"code": "poll_error", "message": last_poll_error})
     last_task = dict(last_task or {"task_id": current_task_id})
     last_task["task_status"] = str(last_task.get("task_status") or "timeout")
-    return last_task, all_events, errors
+    return last_task, errors
 
 
 def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
@@ -539,14 +651,14 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
     topic_id = ""
     task_id = ""
     task: dict[str, Any] = {}
-    events: list[dict[str, Any]] = []
-    messages: dict[str, Any] = {}
+    message: dict[str, Any] = {}
     final_answer = ""
+    conversation: list[dict[str, Any]] = []
     try:
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
         task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, events, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
+        task, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
         errors.extend(poll_errors)
         final_task_id = str(task.get("task_id") or task_id).strip() or task_id
         messages = http_json(
@@ -554,18 +666,21 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
             f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
             timeout=30,
         )
-        final_answer = _final_assistant_answer(messages, final_task_id)
+        message = _final_assistant_message(messages, final_task_id)
+        conversation = _build_conversation_log(messages)
+        final_answer = str(message.get("content") or "").strip()
         status = str(task.get("task_status") or "").lower()
         if status and status not in SUCCESS_STATUSES:
             errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
     except EvalRunnerError as exc:
         errors.append({"code": "runner_error", "message": str(exc)})
 
-    tool_names = _collect_tool_names(events)
-    sql_outputs = _extract_sql_outputs(events, final_answer)
-    chart_outputs = _extract_chart_outputs(events)
-    usage = _collect_usage(task, messages, events)
-    rule_check = auto_rule_check(case, final_answer=final_answer, events=events, sql_outputs=sql_outputs, tool_names=tool_names)
+    blocks = message.get("blocks") if isinstance(message.get("blocks"), list) else []
+    tool_names = _collect_tool_names(blocks)
+    sql_outputs = _extract_sql_outputs(blocks, final_answer)
+    chart_outputs = _extract_chart_outputs(blocks)
+    usage = _collect_usage(task, message)
+    rule_check = auto_rule_check(case, final_answer=final_answer, blocks=blocks, sql_outputs=sql_outputs, tool_names=tool_names)
     return {
         "case_id": case.get("case_id"),
         "category": case.get("category"),
@@ -578,6 +693,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         "tool_names": tool_names,
         "sql_outputs": sql_outputs,
         "chart_outputs": chart_outputs,
+        "tool_events": _summarize_tool_events(blocks),
         "usage": usage,
         "duration_seconds": round(time.time() - started, 3),
         "auto_rule_check": rule_check,
@@ -585,6 +701,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace) -> d
         "veto_rules_triggered": list(rule_check.get("triggered_veto_rules") or []),
         "case_passed": False,
         "errors": errors,
+        "conversation": conversation,
     }
 
 
@@ -1099,6 +1216,26 @@ def write_outputs(output_dir: Path, results: list[dict[str, Any]], summary: dict
                     json.dumps(item, ensure_ascii=False, indent=2, sort_keys=True),
                     encoding="utf-8",
                 )
+    if results:
+        conversations_dir = output_dir / "conversations"
+        conversations_dir.mkdir(parents=True, exist_ok=True)
+        for item in results:
+            case_id = str(item.get("case_id") or "unknown")
+            conversation_entry = {
+                "case_id": case_id,
+                "category": item.get("category"),
+                "question": item.get("question"),
+                "topic_id": item.get("topic_id"),
+                "task_id": item.get("task_id"),
+                "task_status": item.get("task_status"),
+                "score": float((item.get("judge") or {}).get("score") or 0),
+                "case_passed": bool(item.get("case_passed")),
+                "conversation": item.get("conversation") or [],
+            }
+            (conversations_dir / f"{case_id}.json").write_text(
+                json.dumps(conversation_entry, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
     (output_dir / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     (output_dir / "report.md").write_text(render_report(summary, results), encoding="utf-8")
 

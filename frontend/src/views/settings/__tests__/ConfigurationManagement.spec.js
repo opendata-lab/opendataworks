@@ -58,14 +58,14 @@ describe('ConfigurationManagement', () => {
     mountView({ tab: 'skills' })
     expect(routerReplace).toHaveBeenCalledWith({
       path: '/intelligent-query',
-      query: { tab: 'skills' }
+      query: {}
     })
 
     routerReplace.mockReset()
     mountView({ tab: 'dataagent' })
     expect(routerReplace).toHaveBeenCalledWith({
       path: '/intelligent-query',
-      query: { tab: 'models' }
+      query: {}
     })
   })
 })

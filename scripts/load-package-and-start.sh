@@ -7,8 +7,8 @@ usage() {
 Usage: scripts/load-package-and-start.sh [options] --package <path>
 
 Options:
-  --package <path>     Path to deployment tar.gz (from create-offline-package script) or extracted directory
-  --target-dir <path>  Target directory for extraction when --package is a tar.gz (default: ./opendataworks-deployment)
+  --package <path>     Path to deployment tar.xz/tar.gz (from create-offline-package script) or extracted directory
+  --target-dir <path>  Target directory for extraction when --package is an archive (default: ./opendataworks-deployment)
   --no-start           Load images only; skip compose up
   --no-env-copy        Do not auto-copy .env.example to .env when missing
   -h, --help           Show this help
@@ -74,11 +74,17 @@ if [[ ! -e "$PACKAGE_PATH" ]]; then
 fi
 
 if [[ -f "$PACKAGE_PATH" ]]; then
+    tar_decompress_flag=""
     case "$PACKAGE_PATH" in
+        *.tar.xz|*.txz)
+            command -v xz >/dev/null 2>&1 || die "xz is required to extract $PACKAGE_PATH (install xz-utils)"
+            tar_decompress_flag="-J"
+            ;;
         *.tar.gz|*.tgz)
+            tar_decompress_flag="-z"
             ;;
         *)
-            die "unsupported archive format: $PACKAGE_PATH (expected .tar.gz)"
+            die "unsupported archive format: $PACKAGE_PATH (expected .tar.xz or .tar.gz)"
             ;;
     esac
     mkdir -p "$TARGET_DIR"
@@ -86,7 +92,7 @@ if [[ -f "$PACKAGE_PATH" ]]; then
         die "target directory not empty: $TARGET_DIR"
     fi
     log "Extracting $PACKAGE_PATH to $TARGET_DIR"
-    tar -xzf "$PACKAGE_PATH" --strip-components=1 -C "$TARGET_DIR"
+    tar "$tar_decompress_flag" -xf "$PACKAGE_PATH" --strip-components=1 -C "$TARGET_DIR"
     PACKAGE_DIR="$TARGET_DIR"
 elif [[ -d "$PACKAGE_PATH" ]]; then
     PACKAGE_DIR="$PACKAGE_PATH"

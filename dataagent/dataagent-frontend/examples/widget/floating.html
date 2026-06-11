@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenDataWorks Widget - 悬浮模式示例</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
+      color: #334155;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* Info Banner */
+    .info-banner {
+      background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+      border-bottom: 1px solid #c7d2fe;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #4338ca;
+    }
+
+    .info-banner svg {
+      flex-shrink: 0;
+    }
+
+    .info-banner strong {
+      font-weight: 600;
+    }
+
+    /* Header */
+    .header {
+      background: #1e293b;
+      color: #fff;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #6366f1, #818cf8);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .header-nav {
+      display: flex;
+      gap: 4px;
+    }
+
+    .header-nav a {
+      color: #94a3b8;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .header-nav a:hover {
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .header-nav a.active {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #f472b6, #a78bfa);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    /* Main Content */
+    .main {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 28px 24px 80px;
+    }
+
+    .page-header {
+      margin-bottom: 28px;
+    }
+
+    .page-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+      letter-spacing: -0.02em;
+    }
+
+    .page-header p {
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    /* Metric Cards */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .metric-card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 20px 22px;
+      border: 1px solid #e2e8f0;
+      transition: box-shadow 0.2s;
+    }
+
+    .metric-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    }
+
+    .metric-label {
+      font-size: 13px;
+      font-weight: 500;
+      color: #64748b;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .metric-icon {
+      width: 18px;
+      height: 18px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+    }
+
+    .metric-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .metric-change {
+      margin-top: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .metric-change.up { color: #16a34a; }
+    .metric-change.down { color: #dc2626; }
+
+    /* Content Grid */
+    .content-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    @media (max-width: 768px) {
+      .content-grid {
+        grid-template-columns: 1fr;
+      }
+      .header-nav { display: none; }
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      overflow: hidden;
+    }
+
+    .card-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-header h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .card-badge {
+      font-size: 11px;
+      font-weight: 500;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .card-body {
+      padding: 16px 20px;
+    }
+
+    /* Table */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .data-table th {
+      text-align: left;
+      font-weight: 600;
+      color: #64748b;
+      padding: 8px 12px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .data-table td {
+      padding: 10px 12px;
+      color: #334155;
+      border-bottom: 1px solid #f8fafc;
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background: #fafbfd;
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .status-dot.success { background: #22c55e; }
+    .status-dot.warning { background: #f59e0b; }
+    .status-dot.error { background: #ef4444; }
+    .status-dot.running { background: #3b82f6; }
+
+    /* Activity List */
+    .activity-list {
+      list-style: none;
+    }
+
+    .activity-item {
+      padding: 10px 0;
+      border-bottom: 1px solid #f8fafc;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .activity-item:last-child {
+      border-bottom: none;
+    }
+
+    .activity-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #6366f1;
+      margin-top: 6px;
+      flex-shrink: 0;
+    }
+
+    .activity-content {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .activity-text {
+      font-size: 13px;
+      color: #334155;
+      line-height: 1.5;
+    }
+
+    .activity-time {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 2px;
+    }
+
+    /* Full-width table card */
+    .full-width-card {
+      grid-column: 1 / -1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Info Banner -->
+  <div class="info-banner">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="7" stroke="#6366f1" stroke-width="1.5"/>
+      <path d="M8 7v4M8 5h.01" stroke="#6366f1" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span>
+      <strong>演示页面</strong> — 这是 OpenDataWorks Widget 悬浮模式的示例。Widget 以悬浮按钮形式出现在页面右下角，点击可展开对话面板。需配置有效的 <code>data-agent-id</code> 和 <code>data-api-base-url</code> 才能实际发送消息。
+    </span>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">OD</div>
+      <span class="header-title">DataStudio</span>
+    </div>
+    <nav class="header-nav">
+      <a href="#" class="active">数据总览</a>
+      <a href="#">数据资产</a>
+      <a href="#">工作流</a>
+      <a href="#">数据血缘</a>
+      <a href="#">系统设置</a>
+    </nav>
+    <div class="header-right">
+      <div class="header-avatar">管</div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main">
+    <div class="page-header">
+      <h1>数据资产概览</h1>
+      <p>最近 30 天平台数据资产与工作流运行情况汇总</p>
+    </div>
+
+    <!-- Metric Cards -->
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">
+          <span class="metric-icon" style="background:#eef2ff;color:#6366f1;">📊</span>
+          数据资产总量
+        </div>
+        <div class="metric-value">1,284</div>
+        <div class="metric-change up">↑ 12.5% 较上月</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">
+          <span class="metric-icon" style="background:#f0fdf4;color:#16a34a;">⚡</span>
+          工作流执行次数
+        </div>
+        <div class="metric-value">3,762</div>
+        <div class="metric-change up">↑ 8.3% 较上月</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">
+          <span class="metric-icon" style="background:#fef3c7;color:#d97706;">🔗</span>
+          血缘关系数
+        </div>
+        <div class="metric-value">5,439</div>
+        <div class="metric-change up">↑ 3.1% 较上月</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">
+          <span class="metric-icon" style="background:#fee2e2;color:#dc2626;">❌</span>
+          失败任务数
+        </div>
+        <div class="metric-value">23</div>
+        <div class="metric-change down">↑ 4.5% 较上月</div>
+      </div>
+    </div>
+
+    <!-- Content Grid -->
+    <div class="content-grid">
+      <!-- Recent Workflows -->
+      <div class="card">
+        <div class="card-header">
+          <h3>最近工作流执行</h3>
+          <span class="card-badge">今日 18 次</span>
+        </div>
+        <div class="card-body">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>工作流名称</th>
+                <th>状态</th>
+                <th>耗时</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>用户行为日报 ETL</td>
+                <td><span class="status-dot success"></span>成功</td>
+                <td>2m 34s</td>
+              </tr>
+              <tr>
+                <td>订单数据同步</td>
+                <td><span class="status-dot success"></span>成功</td>
+                <td>1m 12s</td>
+              </tr>
+              <tr>
+                <td>商品标签计算</td>
+                <td><span class="status-dot running"></span>运行中</td>
+                <td>4m 01s</td>
+              </tr>
+              <tr>
+                <td>数据质量巡检</td>
+                <td><span class="status-dot warning"></span>部分成功</td>
+                <td>6m 48s</td>
+              </tr>
+              <tr>
+                <td>库存预警计算</td>
+                <td><span class="status-dot error"></span>失败</td>
+                <td>0m 08s</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Recent Activities -->
+      <div class="card">
+        <div class="card-header">
+          <h3>最近动态</h3>
+          <span class="card-badge">最近 24 小时</span>
+        </div>
+        <div class="card-body">
+          <ul class="activity-list">
+            <li class="activity-item">
+              <div class="activity-dot"></div>
+              <div class="activity-content">
+                <div class="activity-text">张明 发布了工作流「用户行为日报 ETL」v2.1</div>
+                <div class="activity-time">10 分钟前</div>
+              </div>
+            </li>
+            <li class="activity-item">
+              <div class="activity-dot" style="background:#22c55e;"></div>
+              <div class="activity-content">
+                <div class="activity-text">系统 完成了数据质量检查，发现 3 条异常记录</div>
+                <div class="activity-time">35 分钟前</div>
+              </div>
+            </li>
+            <li class="activity-item">
+              <div class="activity-dot" style="background:#f59e0b;"></div>
+              <div class="activity-content">
+                <div class="activity-text">李华 修改了数据资产「dim_user_profile」的元数据描述</div>
+                <div class="activity-time">1 小时前</div>
+              </div>
+            </li>
+            <li class="activity-item">
+              <div class="activity-dot"></div>
+              <div class="activity-content">
+                <div class="activity-text">王芳 创建了新的数据血缘关系链路</div>
+                <div class="activity-time">2 小时前</div>
+              </div>
+            </li>
+            <li class="activity-item">
+              <div class="activity-dot" style="background:#ef4444;"></div>
+              <div class="activity-content">
+                <div class="activity-text">告警 工作流「库存预警计算」连续失败 3 次</div>
+                <div class="activity-time">3 小时前</div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Data Assets Table -->
+    <div class="card full-width-card">
+      <div class="card-header">
+        <h3>热门数据资产 Top 10</h3>
+        <span class="card-badge">按查询次数排序</span>
+      </div>
+      <div class="card-body">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>资产名称</th>
+              <th>所属库</th>
+              <th>类型</th>
+              <th>30天查询次数</th>
+              <th>负责人</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>dwd_order_detail</td>
+              <td>data_warehouse</td>
+              <td>表</td>
+              <td>12,847</td>
+              <td>张明</td>
+            </tr>
+            <tr>
+              <td>dim_user_profile</td>
+              <td>data_warehouse</td>
+              <td>表</td>
+              <td>9,234</td>
+              <td>李华</td>
+            </tr>
+            <tr>
+              <td>ads_daily_revenue</td>
+              <td>data_mart</td>
+              <td>视图</td>
+              <td>7,651</td>
+              <td>王芳</td>
+            </tr>
+            <tr>
+              <td>ods_user_behavior_log</td>
+              <td>ods_layer</td>
+              <td>表</td>
+              <td>6,102</td>
+              <td>赵强</td>
+            </tr>
+            <tr>
+              <td>dim_product_category</td>
+              <td>data_warehouse</td>
+              <td>表</td>
+              <td>5,478</td>
+              <td>陈丽</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- OpenDataWorks Widget (Floating Mode) -->
+  <script
+    src="http://localhost:3001/widget/opendataworks-widget.bundle.js?v=2"
+    data-display-mode="floating"
+    data-position="bottom-right"
+    data-project-name="智能助手"
+    data-project-color="#6366f1"
+    data-website-id="demo-floating"
+    data-agent-id="demo"
+    data-api-base-url=""
+    defer
+  ></script>
+
+</body>
+</html>

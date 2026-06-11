@@ -14,7 +14,7 @@
 
     <groupId>com.onedata</groupId>
     <artifactId>opendataworks-backend</artifactId>
-    <version>1.2.0</version>
+    <version>1.3.0</version>
     <name>OpenDataWorks Backend</name>
     <description>统一数据中台门户系统</description>
     <licenses>
@@ -36,6 +36,12 @@
         <dependency>
             <groupId>com.onedata</groupId>
             <artifactId>opendataworks-backend-agent-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.onedata</groupId>
+            <artifactId>odw-auth</artifactId>
             <version>${project.version}</version>
         </dependency>
 

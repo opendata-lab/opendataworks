@@ -1016,7 +1016,7 @@ public class DataQueryService {
     }
 
     private String resolveUserId() {
-        String userId = com.onedata.portal.context.UserContextHolder.getCurrentUserId();
+        String userId = com.onedata.auth.context.UserContextHolder.getCurrentUserId();
         return userId == null ? "" : userId;
     }
 
@@ -1031,7 +1031,7 @@ public class DataQueryService {
         history.setHasMore(hasMore ? 1 : 0);
         history.setResultPreview(buildPreviewJson(columns, rows));
         history.setExecutedAt(LocalDateTime.now());
-        history.setExecutedBy(com.onedata.portal.context.UserContextHolder.getCurrentUserId());
+        history.setExecutedBy(com.onedata.auth.context.UserContextHolder.getCurrentUserId());
         historyMapper.insert(history);
         return history;
     }

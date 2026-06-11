@@ -22,6 +22,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -992,7 +994,7 @@ public class DolphinSchedulerService {
             Integer taskGroupPriority) {
         return buildTaskDefinition(taskCode, taskVersion, taskName, description, rawScript,
                 taskPriority, retryTimes, retryInterval, timeoutSeconds, nodeType,
-                datasourceId, datasourceType, null, null, null, null, null, taskGroupId, taskGroupPriority);
+                datasourceId, datasourceType, null, null, null, null, null, null, taskGroupId, taskGroupPriority);
     }
 
     public Map<String, Object> buildTaskDefinition(long taskCode,
@@ -1012,7 +1014,7 @@ public class DolphinSchedulerService {
             Integer taskGroupPriority) {
         return buildTaskDefinition(taskCode, taskVersion, taskName, description, rawScript,
                 taskPriority, retryTimes, retryInterval, timeoutSeconds, nodeType,
-                datasourceId, datasourceType, null, null, null, null, dolphinFlag, taskGroupId, taskGroupPriority);
+                datasourceId, datasourceType, null, null, null, null, null, dolphinFlag, taskGroupId, taskGroupPriority);
     }
 
     /**
@@ -1038,7 +1040,7 @@ public class DolphinSchedulerService {
             Integer taskGroupPriority) {
         return buildTaskDefinition(taskCode, taskVersion, taskName, description, rawScript,
                 taskPriority, retryTimes, retryInterval, timeoutSeconds, nodeType,
-                datasourceId, datasourceType, targetDatasourceId, sourceTable, targetTable, customJson,
+                datasourceId, datasourceType, targetDatasourceId, null, sourceTable, targetTable, customJson,
                 null, taskGroupId, taskGroupPriority);
     }
 
@@ -1058,6 +1060,7 @@ public class DolphinSchedulerService {
             Long datasourceId,
             String datasourceType,
             Long targetDatasourceId,
+            String targetDatasourceType,
             String sourceTable,
             String targetTable,
             String customJson,
@@ -1094,8 +1097,8 @@ public class DolphinSchedulerService {
             if ("SQL".equalsIgnoreCase(nodeType)) {
                 payload.put("taskParams", TaskParams.sql(rawScript, datasourceId, datasourceType));
             } else if ("DATAX".equalsIgnoreCase(nodeType)) {
-                payload.put("taskParams", TaskParams.datax(datasourceId, targetDatasourceId,
-                        sourceTable, targetTable, customJson));
+                payload.put("taskParams", buildDataxParams(datasourceId, datasourceType,
+                        targetDatasourceId, targetDatasourceType, sourceTable, targetTable, customJson));
             } else {
                 payload.put("taskParams", TaskParams.shell(rawScript));
             }
@@ -1103,6 +1106,126 @@ public class DolphinSchedulerService {
             throw new IllegalStateException("Unable to construct task parameters", e);
         }
         return payload;
+    }
+
+    /**
+     * Build DolphinScheduler DataX task params.
+     *
+     * <p>{@code columnMapping} 语义：
+     * <ul>
+     *   <li>空 -> 向导模式，{@code SELECT * FROM sourceTable} 全列同步</li>
+     *   <li>完整 DataX 作业 JSON（含 {@code job} 键）-> 自定义模式（{@code customConfig=1}，原样放入 {@code json}）</li>
+     *   <li>列清单（JSON 数组 / JSON 对象映射 / 逗号分隔）-> 向导模式，生成 {@code SELECT <cols> FROM sourceTable}</li>
+     * </ul>
+     */
+    Map<String, Object> buildDataxParams(Long sourceDatasourceId, String sourceDatasourceType,
+            Long targetDatasourceId, String targetDatasourceType,
+            String sourceTable, String targetTable, String columnMapping) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("localParams", new ArrayList<>());
+        params.put("resourceList", new ArrayList<>());
+
+        String mapping = columnMapping == null ? "" : columnMapping.trim();
+        // JSON-shaped mapping must be well-formed; reject loudly instead of silently degrading.
+        JsonNode mappingNode = parseMappingJsonOrThrow(mapping);
+        boolean customJson = mappingNode != null && mappingNode.isObject() && mappingNode.has("job");
+        if (customJson) {
+            params.put("customConfig", 1);
+            params.put("json", columnMapping);
+        } else {
+            params.put("customConfig", 0);
+            params.put("dsType", normalizeDataxDatasourceType(sourceDatasourceType));
+            params.put("dataSource", sourceDatasourceId);
+            params.put("dtType", normalizeDataxDatasourceType(targetDatasourceType));
+            params.put("dataTarget", targetDatasourceId);
+            params.put("sql", buildDataxExtractSql(sourceTable, mapping, mappingNode));
+            params.put("targetTable", targetTable);
+            params.put("preStatements", new ArrayList<>());
+            params.put("postStatements", new ArrayList<>());
+        }
+        params.put("jobSpeedByte", 0);
+        params.put("jobSpeedRecord", 1000);
+        params.put("xms", 1);
+        params.put("xmx", 1);
+        return params;
+    }
+
+    /**
+     * Parse a JSON-shaped column mapping. Returns {@code null} when the mapping is blank or a
+     * plain comma-separated column list. Throws when it looks like JSON ({@code {}/[]}) but is malformed.
+     */
+    private JsonNode parseMappingJsonOrThrow(String mapping) {
+        if (!StringUtils.hasText(mapping) || (!mapping.startsWith("{") && !mapping.startsWith("["))) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(mapping);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("DataX 列映射不是合法 JSON: " + e.getOriginalMessage(), e);
+        }
+    }
+
+    private String buildDataxExtractSql(String sourceTable, String mapping, JsonNode mappingNode) {
+        String columns = "*";
+        if (StringUtils.hasText(mapping)) {
+            List<String> cols = parseColumnList(mapping, mappingNode);
+            if (!cols.isEmpty()) {
+                columns = String.join(", ", cols);
+            }
+        }
+        return "SELECT " + columns + " FROM " + sourceTable;
+    }
+
+    private List<String> parseColumnList(String mapping, JsonNode mappingNode) {
+        List<String> columns = new ArrayList<>();
+        if (mappingNode != null && mappingNode.isArray()) {
+            for (JsonNode item : mappingNode) {
+                if (item.isTextual()) {
+                    addColumn(columns, item.asText());
+                } else if (item.isObject()) {
+                    String src = firstNonEmpty(item.path("source").asText(""), item.path("from").asText(""));
+                    String tgt = firstNonEmpty(item.path("target").asText(""), item.path("to").asText(""));
+                    if (StringUtils.hasText(src) && StringUtils.hasText(tgt) && !src.equals(tgt)) {
+                        addColumn(columns, src + " AS " + tgt);
+                    } else {
+                        addColumn(columns, firstNonEmpty(src, tgt));
+                    }
+                }
+            }
+            return columns;
+        }
+        if (mappingNode != null && mappingNode.isObject()) {
+            Iterator<Map.Entry<String, JsonNode>> fields = mappingNode.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                String src = entry.getKey();
+                String tgt = entry.getValue().asText("");
+                if (StringUtils.hasText(tgt) && !tgt.equals(src)) {
+                    addColumn(columns, src + " AS " + tgt);
+                } else {
+                    addColumn(columns, src);
+                }
+            }
+            return columns;
+        }
+        for (String part : mapping.split(",")) {
+            addColumn(columns, part);
+        }
+        return columns;
+    }
+
+    private void addColumn(List<String> columns, String col) {
+        if (col != null && StringUtils.hasText(col.trim())) {
+            columns.add(col.trim());
+        }
+    }
+
+    private String firstNonEmpty(String a, String b) {
+        return StringUtils.hasText(a) ? a : b;
+    }
+
+    private String normalizeDataxDatasourceType(String type) {
+        return StringUtils.hasText(type) ? type.trim().toUpperCase(Locale.ROOT) : "MYSQL";
     }
 
     private String normalizeDolphinFlag(String dolphinFlag) {
@@ -1404,7 +1527,8 @@ public class DolphinSchedulerService {
     }
 
     /**
-     * Parameters for shell task.
+     * Parameters for shell and SQL tasks. DataX params are built separately by
+     * {@link #buildDataxParams} to match DolphinScheduler's native DataX schema.
      */
     @Getter
     public static class TaskParams {
@@ -1419,29 +1543,15 @@ public class DolphinSchedulerService {
         private final List<String> preStatements = new ArrayList<>();
         private final List<String> postStatements = new ArrayList<>();
 
-        // DataX-specific fields
-        private final Long targetDatasource;
-        private final String sourceTable;
-        private final String targetTable;
-        private final String customJson;
-
         public static TaskParams shell(String script) {
-            return new TaskParams(script, null, null, null, null, null, null, null);
+            return new TaskParams(script, null, null, null);
         }
 
         public static TaskParams sql(String sql, Long datasourceId, String datasourceType) {
-            return new TaskParams(null, datasourceId, datasourceType, sql, null, null, null, null);
+            return new TaskParams(null, datasourceId, datasourceType, sql);
         }
 
-        public static TaskParams datax(Long sourceDatasourceId, Long targetDatasourceId,
-                String sourceTable, String targetTable,
-                String customJson) {
-            return new TaskParams(null, sourceDatasourceId, null, null,
-                    targetDatasourceId, sourceTable, targetTable, customJson);
-        }
-
-        private TaskParams(String rawScript, Long datasourceId, String datasourceType, String sql,
-                Long targetDatasourceId, String sourceTable, String targetTable, String customJson) {
+        private TaskParams(String rawScript, Long datasourceId, String datasourceType, String sql) {
             this.rawScript = rawScript;
             this.datasource = datasourceId;
             this.sql = sql;
@@ -1450,12 +1560,6 @@ public class DolphinSchedulerService {
             this.displayRows = 10;
             // Don't default to MYSQL - let DolphinScheduler infer type from datasource name
             this.type = datasourceType;
-
-            // DataX fields
-            this.targetDatasource = targetDatasourceId;
-            this.sourceTable = sourceTable;
-            this.targetTable = targetTable;
-            this.customJson = customJson;
         }
     }
 }

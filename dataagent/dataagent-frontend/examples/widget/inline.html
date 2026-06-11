@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenDataWorks Widget - 内嵌模式示例</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #cbd5e1;
+      line-height: 1.6;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Info Banner */
+    .info-banner {
+      background: linear-gradient(135deg, #1e1b4b, #311042);
+      border-bottom: 1px solid #4338ca;
+      padding: 8px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #c7d2fe;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+
+    .info-banner strong {
+      font-weight: 600;
+      color: #a5b4fc;
+    }
+
+    /* Header */
+    .header {
+      background: #1e293b;
+      color: #fff;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #334155;
+      flex-shrink: 0;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #0ea5e9, #2563eb);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .header-nav {
+      display: flex;
+      gap: 4px;
+    }
+
+    .header-nav a {
+      color: #94a3b8;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .header-nav a:hover {
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .header-nav a.active {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #0ea5e9, #38bdf8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    /* Main Container */
+    .app-container {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+
+    /* Left Workspace */
+    .workspace {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #0b0f19;
+      border-right: 1px solid #1e293b;
+    }
+
+    /* SQL Editor Area */
+    .editor-section {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .section-header {
+      height: 40px;
+      background: #131b2e;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .section-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: 1px solid transparent;
+    }
+
+    .btn-primary {
+      background: #2563eb;
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background: #1d4ed8;
+    }
+
+    .btn-secondary {
+      background: #1e293b;
+      color: #cbd5e1;
+      border-color: #334155;
+    }
+    .btn-secondary:hover {
+      background: #334155;
+      color: #fff;
+    }
+
+    .btn-icon {
+      padding: 4px 8px;
+    }
+
+    .sql-editor {
+      flex: 1;
+      padding: 16px;
+      font-family: 'Fira Code', monospace;
+      font-size: 14px;
+      background: #070a13;
+      color: #e2e8f0;
+      border: none;
+      resize: none;
+      outline: none;
+      line-height: 1.5;
+    }
+
+    /* Result Preview Area */
+    .result-section {
+      height: 240px;
+      border-top: 1px solid #1e293b;
+      background: #0b0f19;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      flex-shrink: 0;
+    }
+
+    .table-container {
+      flex: 1;
+      overflow: auto;
+      padding: 0 16px 16px;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: left;
+    }
+
+    .data-table th {
+      position: sticky;
+      top: 0;
+      background: #0b0f19;
+      padding: 10px 12px;
+      color: #64748b;
+      font-weight: 600;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .data-table td {
+      padding: 10px 12px;
+      color: #94a3b8;
+      border-bottom: 1px solid #1e293b;
+    }
+
+    .data-table tr:hover td {
+      background: #131b2e;
+      color: #fff;
+    }
+
+    /* Right Sidebar Panel */
+    .sidebar {
+      width: 400px;
+      display: flex;
+      flex-direction: column;
+      background: #0f172a;
+      flex-shrink: 0;
+      position: relative;
+    }
+
+    .sidebar-header {
+      height: 40px;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      flex-shrink: 0;
+    }
+
+    .sidebar-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: #cbd5e1;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .sidebar-indicator {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #10b981;
+    }
+
+    /* Inline Widget Container */
+    #inline-widget-container {
+      flex: 1;
+      min-height: 0;
+      background: #0f172a;
+      position: relative;
+    }
+
+    /* Helper Banner for quick API actions */
+    .copilot-helper {
+      padding: 12px 16px;
+      background: #131b2e;
+      border-bottom: 1px solid #1e293b;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .helper-tag {
+      font-size: 11px;
+      background: #1e293b;
+      color: #38bdf8;
+      border: 1px solid #334155;
+      border-radius: 4px;
+      padding: 2px 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .helper-tag:hover {
+      background: #38bdf8;
+      color: #0f172a;
+      border-color: #38bdf8;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Info Banner -->
+  <div class="info-banner">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="7" stroke="#38bdf8" stroke-width="1.5"/>
+      <path d="M8 7v4M8 5h.01" stroke="#38bdf8" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span>
+      <strong>内嵌模式 (Inline) 演示</strong> — Widget 已经直接嵌入到右侧的侧边栏容器中，成为工作台界面的一部分。你可以通过点击左侧工作台的快捷查询，直接向智能助手发送指令。
+    </span>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">OD</div>
+      <span class="header-title">DataStudio 分析工作台</span>
+    </div>
+    <nav class="header-nav">
+      <a href="./floating.html">悬浮模式示例</a>
+      <a href="#" class="active">内嵌模式示例</a>
+      <a href="./api-demo.html">JS API 交互演示</a>
+    </nav>
+    <div class="header-right">
+      <div class="header-avatar">分析</div>
+    </div>
+  </header>
+
+  <!-- Main App Layout -->
+  <div class="app-container">
+    <!-- Left Analysis Workspace -->
+    <div class="workspace">
+      <!-- SQL Query Area -->
+      <div class="editor-section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+              <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            SQL 查询编辑器 (ad_hoc_query.sql)
+          </div>
+          <div class="section-actions">
+            <button class="btn btn-secondary" onclick="clearEditor()">清空</button>
+            <button class="btn btn-primary" onclick="runQuery()">运行查询</button>
+          </div>
+        </div>
+        <textarea id="editor" class="sql-editor" spellcheck="false">-- 编写你的 SQL 或者在右侧向 AI 提问
+SELECT 
+  date_format(create_time, '%Y-%m-%d') as execute_date,
+  count(1) as total_exec_count,
+  sum(case when status = 'SUCCESS' then 1 else 0 end) as success_count,
+  sum(case when status = 'FAILED' then 1 else 0 end) as failed_count
+FROM opendataworks.workflow_task_instance
+WHERE create_time >= date_sub(now(), interval 30 day)
+GROUP BY 1
+ORDER BY 1 DESC;</textarea>
+      </div>
+
+      <!-- SQL Query Results Area -->
+      <div class="result-section">
+        <div class="section-header">
+          <div class="section-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+              <line x1="15" y1="3" x2="15" y2="21"/>
+              <line x1="3" y1="9" x2="21" y2="9"/>
+              <line x1="3" y1="15" x2="21" y2="15"/>
+            </svg>
+            执行结果预览
+          </div>
+        </div>
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>execute_date</th>
+                <th>total_exec_count</th>
+                <th>success_count</th>
+                <th>failed_count</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>2026-05-23</td>
+                <td>124</td>
+                <td>122</td>
+                <td>2</td>
+              </tr>
+              <tr>
+                <td>2026-05-22</td>
+                <td>145</td>
+                <td>140</td>
+                <td>5</td>
+              </tr>
+              <tr>
+                <td>2026-05-21</td>
+                <td>138</td>
+                <td>135</td>
+                <td>3</td>
+              </tr>
+              <tr>
+                <td>2026-05-20</td>
+                <td>119</td>
+                <td>118</td>
+                <td>1</td>
+              </tr>
+              <tr>
+                <td>2026-05-19</td>
+                <td>152</td>
+                <td>148</td>
+                <td>4</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Sidebar for Inline AI Widget -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <div class="sidebar-title">
+          <span class="sidebar-indicator"></span>
+          AI COPILOT 侧边栏
+        </div>
+      </div>
+
+      <!-- Quick Analysis Prompts -->
+      <div class="copilot-helper">
+        <span class="helper-tag" onclick="askCopilot('解释这个 SQL 的作用')">💡 解释 SQL</span>
+        <span class="helper-tag" onclick="askCopilot('帮我优化一下这个 SQL 的性能')">⚡ 优化 SQL</span>
+        <span class="helper-tag" onclick="askCopilot('帮我写一个统计每个项目失败任务数的 SQL')">📝 统计失败任务</span>
+      </div>
+
+      <!-- Inline Widget Target -->
+      <div id="inline-widget-container"></div>
+    </div>
+  </div>
+
+  <script>
+    function clearEditor() {
+      document.getElementById('editor').value = '';
+    }
+
+    function runQuery() {
+      alert('已提交查询任务，当前为静态演示。');
+    }
+
+    function askCopilot(promptText) {
+      if (window.OpenDataWorksWidget) {
+        window.OpenDataWorksWidget.sendMessage(promptText);
+      } else {
+        alert('AI 助手小组件尚未完全加载，无法发送消息：' + promptText);
+      }
+    }
+  </script>
+
+  <!-- OpenDataWorks Widget (Inline Mode) -->
+  <script
+    src="http://localhost:3001/widget/opendataworks-widget.bundle.js?v=2"
+    data-display-mode="inline"
+    data-container-id="inline-widget-container"
+    data-project-name="AI 智能助教"
+    data-project-color="#0ea5e9"
+    data-website-id="demo-inline"
+    data-agent-id="demo"
+    data-api-base-url=""
+    defer
+  ></script>
+
+</body>
+</html>

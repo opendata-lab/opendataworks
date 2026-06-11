@@ -26,7 +26,7 @@ services:
     build:
       context: ../server
       dockerfile: Dockerfile
-    image: opendataagent-server:${OPENDATAAGENT_VERSION:-1.2.0}
+    image: opendataagent-server:${OPENDATAAGENT_VERSION:-1.3.0}
     restart: always
     environment:
       ODA_ADDR: :18900
@@ -60,7 +60,7 @@ services:
     build:
       context: ../web
       dockerfile: Dockerfile
-    image: opendataagent-web:${OPENDATAAGENT_VERSION:-1.2.0}
+    image: opendataagent-web:${OPENDATAAGENT_VERSION:-1.3.0}
     restart: always
     environment:
       OPENDATAAGENT_API_UPSTREAM: http://opendataagent-server:18900

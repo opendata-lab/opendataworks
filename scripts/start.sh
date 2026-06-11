@@ -30,6 +30,38 @@ read_env_value() {
     printf '%s' "${line#*=}"
 }
 
+set_env_value() {
+    local key="$1"
+    local value="$2"
+    local env_file="$3"
+    local tmp_file="${env_file}.tmp.$$"
+
+    if grep -q -E "^${key}=" "$env_file" 2>/dev/null; then
+        awk -v target_key="$key" -v target_value="$value" '
+            BEGIN { written = 0 }
+            $0 ~ "^" target_key "=" {
+                print target_key "=" target_value
+                written = 1
+                next
+            }
+            { print }
+            END {
+                if (!written) {
+                    print target_key "=" target_value
+                }
+            }
+        ' "$env_file" > "$tmp_file"
+    else
+        cp "$env_file" "$tmp_file"
+        {
+            echo ""
+            echo "${key}=${value}"
+        } >> "$tmp_file"
+    fi
+
+    mv "$tmp_file" "$env_file"
+}
+
 normalize_path() {
     local path="$1"
     local is_absolute=false
@@ -99,6 +131,29 @@ resolve_dataagent_skills_dir() {
     local absolute_path
     absolute_path="$(normalize_path "$DEPLOY_DIR/$configured")"
     printf '%s\n' "$absolute_path"
+}
+
+resolve_dataagent_host_root() {
+    # 解析 DataAgent 持久化运行时根目录的宿主机绝对路径。
+    #
+    # compose 卷挂载会把相对路径按项目目录（deploy/）解析，但 sandbox runner 是用
+    # 转发进容器的 DATAAGENT_HOST_ROOT 在自己的容器内（/app）重新解析，再让宿主
+    # Docker 守护进程按该路径为每个 task child 绑定挂载 topic 目录。若用户填的是
+    # 相对路径，runner 解析出的就是 /app/<rel> 这种容器内路径，child bind 源会错位。
+    # 因此这里统一把相对路径按 deploy/ 解析成宿主机绝对路径，并在启动 compose 前
+    # export，使卷挂载与 runner 转发的 DATAAGENT_HOST_ROOT 始终指向同一宿主机目录。
+    local configured
+    configured="$(read_env_value "DATAAGENT_HOST_ROOT" "$ENV_FILE")"
+    if [ -z "$configured" ]; then
+        configured="/dataagent_runtime"
+    fi
+
+    if [[ "$configured" = /* ]]; then
+        normalize_path "$configured"
+        return 0
+    fi
+
+    normalize_path "$DEPLOY_DIR/$configured"
 }
 
 ensure_dataagent_cli_executable() {
@@ -193,6 +248,12 @@ echo ""
 
 ensure_dataagent_cli_executable
 
+# 统一 DataAgent 运行时根目录为宿主机绝对路径，保证 backend 卷挂载与 runner 反查的
+# child bind 源指向同一目录，支持用户在 .env 中自定义（含相对于 deploy/ 的相对路径）。
+DATAAGENT_HOST_ROOT="$(resolve_dataagent_host_root)"
+export DATAAGENT_HOST_ROOT
+echo "📁 DataAgent 运行时根目录(宿主机): $DATAAGENT_HOST_ROOT"
+
 # 启动服务
 pushd "$DEPLOY_DIR" >/dev/null
 if [ "$COMPOSE_SUPPORTS_ENV_FILE" = true ]; then
@@ -232,6 +293,7 @@ echo ""
 echo "📝 服务访问地址："
 echo "  前端: http://localhost:8081"
 echo "  智能问数: http://localhost:8081/intelligent-query"
+echo "  DataAgent 前端: http://localhost:8901"
 echo "  后端: http://localhost:8080"
 echo "  DataAgent 后端: http://localhost:8900"
 echo "  Portal MCP: http://localhost:8801/mcp"

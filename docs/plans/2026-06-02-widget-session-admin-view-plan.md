@@ -3,6 +3,7 @@
 - 日期：2026-06-02
 - 关联设计：`docs/design/2026-06-02-widget-session-admin-view-design.md`
 - 受影响栈：`dataagent/dataagent-backend`、`frontend`
+- 状态：任务 1-4（store/schema/路由/前端 API）已合并并保留；任务 5-6（独立页 + `widget-sessions` Tab）已被 `2026-06-02-chat-v2-session-filter-plan.md` 取代。
 
 ## 任务与触达文件
 

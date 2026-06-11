@@ -13,7 +13,6 @@ import redis.asyncio as redis
 from config import get_settings
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
 from core.task_executor import TaskExecutionInput, execute_task_stream
-from core.task_persistence import TaskPersistenceWriter
 from core.topic_task_store import TopicTaskStore, get_topic_task_store
 
 logger = logging.getLogger(__name__)
@@ -99,28 +98,38 @@ class TaskCoordinator:
             worker.add_done_callback(lambda done, current_task_id=task_id: self._active_tasks.pop(current_task_id, None))
 
     async def _run_task(self, task_id: str) -> None:
-        async with self._semaphore:
-            task = self.store.get_task(task_id)
-            if not task:
-                await self._release_lease(task_id)
-                return
-            if str(task.get("task_status") or "") not in {"waiting", "running"}:
-                await self._release_lease(task_id)
-                return
+        topic_id = ""
+        stop_heartbeat = asyncio.Event()
+        lease_lost = asyncio.Event()
+        running = asyncio.Event()
+        # Keep the Redis lease renewed from the moment the task is queued, not only
+        # once it starts executing. A task that waits behind the concurrency
+        # semaphore longer than the lease TTL would otherwise lose its lease while
+        # still queued and be wrongly treated as cancelled/expired the instant it
+        # starts. While queued (running not set) the loop only renews the lease;
+        # the DB heartbeat is written once the task is actually running.
+        heartbeat_task = asyncio.create_task(
+            self._heartbeat_loop(task_id, stop_event=stop_heartbeat, lease_lost=lease_lost, running=running),
+            name=f"dataagent-task-heartbeat-{task_id}",
+        )
+        try:
+            async with self._semaphore:
+                task = self.store.get_task(task_id)
+                if not task:
+                    return
+                if str(task.get("task_status") or "") not in {"waiting", "running"}:
+                    return
+                if lease_lost.is_set():
+                    # Lease was lost while queued; let the recovery loop re-pick the
+                    # task up instead of running without a valid lease.
+                    return
 
-            topic_id = str(task.get("topic_id") or "")
-            resume_session_id = self.store.get_resumable_conversation_id(topic_id)
-            self.store.mark_task_running(task_id)
-            self.store.ensure_assistant_message(topic_id=topic_id, task_id=task_id, status="running")
-            writer = TaskPersistenceWriter(store=self.store, topic_id=topic_id, task_id=task_id)
-            stop_heartbeat = asyncio.Event()
-            lease_lost = asyncio.Event()
-            heartbeat_task = asyncio.create_task(
-                self._heartbeat_loop(task_id, stop_event=stop_heartbeat, lease_lost=lease_lost),
-                name=f"dataagent-task-heartbeat-{task_id}",
-            )
+                topic_id = str(task.get("topic_id") or "")
+                resume_session_id = self.store.get_resumable_conversation_id(topic_id)
+                self.store.mark_task_running(task_id)
+                running.set()
+                self.store.ensure_assistant_message(topic_id=topic_id, task_id=task_id, status="running")
 
-            try:
                 history = self._build_history(topic_id=topic_id, task_id=task_id)
                 result = await execute_task_stream(
                     TaskExecutionInput(
@@ -138,11 +147,17 @@ class TaskCoordinator:
                         sql_write_timeout_seconds=int(task.get("sql_write_timeout_seconds") or 0),
                         agent_snapshot=task.get("agent_snapshot"),
                     ),
-                    emit=writer.persist,
+                    emit=lambda record: self._persist_emitted_sdk_record(
+                        topic_id=topic_id,
+                        task_id=task_id,
+                        record=record,
+                    ),
                     is_cancel_requested=lambda: self._should_stop_task(task_id, lease_lost),
                 )
-                writer.finalize(
-                    task_status=result.task_status,
+                self.store.update_assistant_message(
+                    topic_id=topic_id,
+                    task_id=task_id,
+                    status=result.task_status,
                     content=result.content,
                     usage=result.usage,
                     error=result.error,
@@ -150,31 +165,76 @@ class TaskCoordinator:
                 if result.session_id:
                     self.store.update_topic_conversation_id(topic_id, conversation_id=result.session_id)
                 self.store.finish_task(task_id=task_id, task_status=result.task_status, error=result.error)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("Task execution crashed task_id=%s", task_id)
-                error = {"code": "task_execution_failed", "message": str(exc)}
-                writer.finalize(task_status="error", content=str(exc), usage=writer.usage, error=error)
-                self.store.finish_task(task_id=task_id, task_status="error", error=error)
-            finally:
-                stop_heartbeat.set()
-                heartbeat_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await heartbeat_task
-                await self._release_lease(task_id)
-                if self._redis is not None:
-                    await self._redis.delete(self._cancel_key(task_id))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception("Task execution crashed task_id=%s", task_id)
+            error = {"code": "task_execution_failed", "message": str(exc)}
+            if topic_id:
+                self.store.update_assistant_message(
+                    topic_id=topic_id,
+                    task_id=task_id,
+                    status="error",
+                    content=str(exc),
+                    usage=None,
+                    error=error,
+                )
+            self.store.finish_task(task_id=task_id, task_status="error", error=error)
+        finally:
+            stop_heartbeat.set()
+            heartbeat_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat_task
+            await self._release_lease(task_id)
+            if self._redis is not None:
+                await self._redis.delete(self._cancel_key(task_id))
 
-    async def _heartbeat_loop(self, task_id: str, *, stop_event: asyncio.Event, lease_lost: asyncio.Event) -> None:
+    def _persist_emitted_sdk_record(self, *, topic_id: str, task_id: str, record: dict[str, Any]) -> None:
+        if not isinstance(record, dict):
+            return
+        record_type = str(record.get("record_type") or "").strip()
+        if record_type not in {"stream", "tool_result", "done", "error"}:
+            return
+        try:
+            turn_index = int(record.get("turn_index") or 0)
+        except (TypeError, ValueError):
+            turn_index = 0
+        raw_event_type = record.get("event_type")
+        event_type = str(raw_event_type) if raw_event_type is not None else None
+        data = record.get("data")
+        if not isinstance(data, dict):
+            data = {"value": data}
+        self.store.append_sdk_record(
+            task_id=task_id,
+            topic_id=topic_id,
+            turn_index=turn_index,
+            record_type=record_type,
+            event_type=event_type,
+            data=data,
+        )
+
+    async def _heartbeat_loop(
+        self,
+        task_id: str,
+        *,
+        stop_event: asyncio.Event,
+        lease_lost: asyncio.Event,
+        running: asyncio.Event,
+    ) -> None:
         interval = max(1, int(self.settings.task_heartbeat_seconds or 5))
         while not stop_event.is_set():
             await asyncio.sleep(interval)
-            self.store.heartbeat_task(task_id)
-            renewed = await self._renew_lease(task_id)
-            if not renewed:
+            if not await self._heartbeat_tick(task_id, running=running):
                 lease_lost.set()
                 return
+
+    async def _heartbeat_tick(self, task_id: str, *, running: asyncio.Event) -> bool:
+        # Persist a DB heartbeat only once the task is actually executing. While it
+        # is still queued behind the concurrency limit we only keep the Redis lease
+        # alive so the task is not mistaken for an expired/abandoned run.
+        if running.is_set():
+            self.store.heartbeat_task(task_id)
+        return await self._renew_lease(task_id)
 
     async def _should_stop_task(self, task_id: str, lease_lost: asyncio.Event) -> bool:
         if lease_lost.is_set():

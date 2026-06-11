@@ -35,7 +35,7 @@ const manualChunks = (id) => {
     return 'vendor-vue-flow'
   }
 
-  if (id.includes('/node_modules/dayjs/') || id.includes('/node_modules/axios/') || id.includes('/node_modules/marked/')) {
+  if (id.includes('/node_modules/dayjs/') || id.includes('/node_modules/axios/')) {
     return 'vendor-utils'
   }
 
@@ -80,6 +80,11 @@ export default defineConfig(() => {
     server: {
       port: 3000,
       proxy: {
+        '/dataagent': {
+          target: 'http://localhost:3001',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/dataagent/, '') || '/'
+        },
         '/api/v1/dataagent': {
           target: 'http://localhost:8900',
           changeOrigin: true

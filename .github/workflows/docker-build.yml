@@ -30,6 +30,11 @@ jobs:
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
             build_args: ""
+          - name: dataagent-frontend
+            image: opendataworks-dataagent-frontend
+            context: .
+            dockerfile: ./dataagent/dataagent-frontend/Dockerfile
+            build_args: ""
           - name: backend
             image: opendataworks-backend
             context: .
@@ -39,6 +44,11 @@ jobs:
             image: opendataworks-dataagent-backend
             context: .
             dockerfile: ./dataagent/dataagent-backend/Dockerfile
+            build_args: ""
+          - name: dataagent-runner
+            image: opendataworks-dataagent-runner
+            context: .
+            dockerfile: ./dataagent/dataagent-backend/Dockerfile.runner
             build_args: ""
           - name: portal-mcp
             image: opendataworks-portal-mcp
@@ -149,9 +159,16 @@ jobs:
           scripts/create-offline-package.sh \
             --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "$VERSION" \
-            --output "opendataworks-deployment-${VERSION}.tar.gz" \
+            --output "opendataworks-deployment-${VERSION}.tar.xz" \
             --platform linux/amd64
-          echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.gz" >> $GITHUB_ENV
+          echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.xz" >> $GITHUB_ENV
+          chmod +x scripts/create-evals-offline-package.sh
+          scripts/create-evals-offline-package.sh \
+            --namespace "${{ secrets.DOCKER_USERNAME }}" \
+            --tag "$VERSION" \
+            --output "opendataworks-evals-offline-${VERSION}.tar.xz" \
+            --platform linux/amd64
+          echo "EVALS_PACKAGE_PATH=opendataworks-evals-offline-${VERSION}.tar.xz" >> $GITHUB_ENV
           chmod +x opendataagent/scripts/create-offline-package.sh
           opendataagent/scripts/create-offline-package.sh \
             --tag "$VERSION" \
@@ -163,6 +180,8 @@ jobs:
         run: |
           sha256sum "$PACKAGE_PATH" > "${PACKAGE_PATH}.sha256"
           echo "PACKAGE_SHA=${PACKAGE_PATH}.sha256" >> $GITHUB_ENV
+          sha256sum "$EVALS_PACKAGE_PATH" > "${EVALS_PACKAGE_PATH}.sha256"
+          echo "EVALS_PACKAGE_SHA=${EVALS_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
           sha256sum "$ODA_PACKAGE_PATH" > "${ODA_PACKAGE_PATH}.sha256"
           echo "ODA_PACKAGE_SHA=${ODA_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
 
@@ -178,15 +197,19 @@ jobs:
             echo "## 📦 下载 / Downloads"
             echo ""
             echo "### 离线部署包 (Offline Deployment Package)"
-            echo "- **[opendataworks-deployment-${VERSION}.tar.gz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-deployment-${VERSION}.tar.gz)** - 适用于无外网环境"
-            echo "- 校验和: \`opendataworks-deployment-${VERSION}.tar.gz.sha256\`"
+            echo "- **[opendataworks-deployment-${VERSION}.tar.xz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-deployment-${VERSION}.tar.xz)** - 适用于无外网环境（需 xz 解压：tar -xJf）"
+            echo "- 校验和: \`opendataworks-deployment-${VERSION}.tar.xz.sha256\`"
+            echo "- **[opendataworks-evals-offline-${VERSION}.tar.xz](https://github.com/${REPO}/releases/download/${TAG}/opendataworks-evals-offline-${VERSION}.tar.xz)** - 可选评测附加包（仅在需要在线评测时下载）"
+            echo "- 校验和: \`opendataworks-evals-offline-${VERSION}.tar.xz.sha256\`"
             echo "- **[opendataagent-deployment-${VERSION}.tar.gz](https://github.com/${REPO}/releases/download/${TAG}/opendataagent-deployment-${VERSION}.tar.gz)** - 独立 `opendataagent` 离线部署包"
             echo "- 校验和: \`opendataagent-deployment-${VERSION}.tar.gz.sha256\`"
             echo ""
             echo "### Docker 镜像 (Docker Images)"
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${VERSION})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${VERSION})"
+            echo "- [DataAgent Frontend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-frontend/tags?name=${VERSION})"
             echo "- [DataAgent Backend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-backend/tags?name=${VERSION})"
+            echo "- [DataAgent Runner](https://hub.docker.com/r/${NS}/opendataworks-dataagent-runner/tags?name=${VERSION})"
             echo "- [Portal MCP](https://hub.docker.com/r/${NS}/opendataworks-portal-mcp/tags?name=${VERSION})"
             echo "- [DataAgent Evals Builtin](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-builtin/tags?name=${VERSION})"
             echo "- [DataAgent Evals DeepEval](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-deepeval/tags?name=${VERSION})"
@@ -196,7 +219,9 @@ jobs:
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-backend:${VERSION}"
+            echo "docker pull ${NS}/opendataworks-dataagent-frontend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-dataagent-backend:${VERSION}"
+            echo "docker pull ${NS}/opendataworks-dataagent-runner:${VERSION}"
             echo "docker pull ${NS}/opendataworks-portal-mcp:${VERSION}"
             echo "docker pull ${NS}/opendataworks-dataagent-evals-builtin:${VERSION}"
             echo "docker pull ${NS}/opendataworks-dataagent-evals-deepeval:${VERSION}"
@@ -214,6 +239,8 @@ jobs:
           files: |
             ${{ env.PACKAGE_PATH }}
             ${{ env.PACKAGE_SHA }}
+            ${{ env.EVALS_PACKAGE_PATH }}
+            ${{ env.EVALS_PACKAGE_SHA }}
             ${{ env.ODA_PACKAGE_PATH }}
             ${{ env.ODA_PACKAGE_SHA }}
 
@@ -238,9 +265,16 @@ jobs:
           scripts/create-offline-package.sh \
             --namespace "${{ secrets.DOCKER_USERNAME }}" \
             --tag "${IMAGE_TAG}" \
-            --output "opendataworks-deployment-${RELEASE_TAG}.tar.gz" \
+            --output "opendataworks-deployment-${RELEASE_TAG}.tar.xz" \
             --platform linux/amd64
-          echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.gz" >> $GITHUB_ENV
+          echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.xz" >> $GITHUB_ENV
+          chmod +x scripts/create-evals-offline-package.sh
+          scripts/create-evals-offline-package.sh \
+            --namespace "${{ secrets.DOCKER_USERNAME }}" \
+            --tag "${IMAGE_TAG}" \
+            --output "opendataworks-evals-offline-${RELEASE_TAG}.tar.xz" \
+            --platform linux/amd64
+          echo "EVALS_PACKAGE_PATH=opendataworks-evals-offline-${RELEASE_TAG}.tar.xz" >> $GITHUB_ENV
           chmod +x opendataagent/scripts/create-offline-package.sh
           opendataagent/scripts/create-offline-package.sh \
             --tag "${IMAGE_TAG}" \
@@ -251,6 +285,8 @@ jobs:
         run: |
           sha256sum "$PACKAGE_PATH" > "${PACKAGE_PATH}.sha256"
           echo "PACKAGE_SHA=${PACKAGE_PATH}.sha256" >> $GITHUB_ENV
+          sha256sum "$EVALS_PACKAGE_PATH" > "${EVALS_PACKAGE_PATH}.sha256"
+          echo "EVALS_PACKAGE_SHA=${EVALS_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
           sha256sum "$ODA_PACKAGE_PATH" > "${ODA_PACKAGE_PATH}.sha256"
           echo "ODA_PACKAGE_SHA=${ODA_PACKAGE_PATH}.sha256" >> $GITHUB_ENV
 
@@ -267,15 +303,19 @@ jobs:
             echo "## 📦 下载 / Downloads"
             echo ""
             echo "### 离线部署包 (Offline Deployment Package)"
-            echo "- **[${PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${PACKAGE_PATH})**"
+            echo "- **[${PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${PACKAGE_PATH})**（需 xz 解压：tar -xJf）"
             echo "- 校验和: \`${PACKAGE_PATH}.sha256\`"
+            echo "- **[${EVALS_PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${EVALS_PACKAGE_PATH})** - 可选评测附加包"
+            echo "- 校验和: \`${EVALS_PACKAGE_PATH}.sha256\`"
             echo "- **[${ODA_PACKAGE_PATH}](https://github.com/${REPO}/releases/download/${TAG}/${ODA_PACKAGE_PATH})**"
             echo "- 校验和: \`${ODA_PACKAGE_PATH}.sha256\`"
             echo ""
             echo "### Docker 镜像 (Docker Images)"
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${IMAGE_TAG})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${IMAGE_TAG})"
+            echo "- [DataAgent Frontend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-frontend/tags?name=${IMAGE_TAG})"
             echo "- [DataAgent Backend](https://hub.docker.com/r/${NS}/opendataworks-dataagent-backend/tags?name=${IMAGE_TAG})"
+            echo "- [DataAgent Runner](https://hub.docker.com/r/${NS}/opendataworks-dataagent-runner/tags?name=${IMAGE_TAG})"
             echo "- [Portal MCP](https://hub.docker.com/r/${NS}/opendataworks-portal-mcp/tags?name=${IMAGE_TAG})"
             echo "- [DataAgent Evals Builtin](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-builtin/tags?name=${IMAGE_TAG})"
             echo "- [DataAgent Evals DeepEval](https://hub.docker.com/r/${NS}/opendataworks-dataagent-evals-deepeval/tags?name=${IMAGE_TAG})"
@@ -285,7 +325,9 @@ jobs:
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-backend:${IMAGE_TAG}"
+            echo "docker pull ${NS}/opendataworks-dataagent-frontend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-dataagent-backend:${IMAGE_TAG}"
+            echo "docker pull ${NS}/opendataworks-dataagent-runner:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-portal-mcp:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-dataagent-evals-builtin:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-dataagent-evals-deepeval:${IMAGE_TAG}"
@@ -318,6 +360,8 @@ jobs:
           files: |
             ${{ env.PACKAGE_PATH }}
             ${{ env.PACKAGE_SHA }}
+            ${{ env.EVALS_PACKAGE_PATH }}
+            ${{ env.EVALS_PACKAGE_SHA }}
             ${{ env.ODA_PACKAGE_PATH }}
             ${{ env.ODA_PACKAGE_SHA }}
 
@@ -333,7 +377,9 @@ jobs:
           echo "### Images pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-backend\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-frontend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-backend\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-runner\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-portal-mcp\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-builtin\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-deepeval\`" >> $GITHUB_STEP_SUMMARY
@@ -349,7 +395,9 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-backend:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-frontend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-backend:latest" >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-runner:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-portal-mcp:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-builtin:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-dataagent-evals-deepeval:latest" >> $GITHUB_STEP_SUMMARY

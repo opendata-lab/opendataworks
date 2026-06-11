@@ -193,6 +193,69 @@ Data model — `da_agent_sdk_record` (Alembic `20260529_000012`):
 (`stream`/`tool_result`/`done`/`error`), `event_type` (`message_start`, …, nullable),
 `data` (JSON, raw SDK event/metadata), `created_at`; index `(task_id, id)`.
 
+### SDK-record V2 partial behavior
+
+`ClaudeAgentOptions.include_partial_messages` is derived from provider
+configuration (`supports_partial_messages`). Chat V2 treats this as an SDK input
+shape difference only. The durable `da_agent_sdk_record` model and the frontend /
+backend projection contract must be the same for both modes.
+
+When `supports_partial_messages=true`:
+
+- The SDK yields `StreamEvent` messages for Anthropic partial events.
+- `sdk_block_writer` persists each `StreamEvent.event` directly as
+  `record_type='stream'`.
+- Typical event flow is:
+  `message_start -> content_block_start -> content_block_delta* ->
+  content_block_stop -> message_delta? -> message_stop`.
+- Tool results still arrive as `UserMessage(ToolResultBlock...)` and are
+  persisted separately as `record_type='tool_result'`.
+- `ResultMessage` is persisted as `record_type='done'` or, if terminal error
+  metadata is present, accompanied by `record_type='error'`.
+
+When `supports_partial_messages=false`:
+
+- The SDK may not emit partial `StreamEvent` records for assistant content.
+  Instead it yields whole `AssistantMessage` objects containing SDK content
+  dataclasses such as `TextBlock`, `ThinkingBlock`, `ToolUseBlock`, and
+  `ServerToolUseBlock`.
+- `sdk_block_writer` normalizes those whole-message blocks into the same
+  `record_type='stream'` protocol used by the partial path:
+  - one synthetic `message_start`;
+  - for each text block: `content_block_start(type='text')`,
+    `content_block_delta(type='text_delta')`, `content_block_stop`;
+  - for each thinking block: `content_block_start(type='thinking')`,
+    `content_block_delta(type='thinking_delta')`, `content_block_stop`;
+  - for each tool-use block: `content_block_start(type='tool_use', id, name)`,
+    optional `content_block_delta(type='input_json_delta', partial_json=...)`,
+    `content_block_stop`;
+  - one synthetic `message_stop`.
+- `UserMessage(ToolResultBlock...)` and `ResultMessage` keep the same persistence
+  behavior as the partial path.
+
+This means consumers never need to branch on `supports_partial_messages`.
+`v2StreamParser.processV2Record` and
+`topic_task_store._project_sdk_records` replay one durable SDK-record protocol:
+
+| SDK source | Persisted record | Projection effect |
+| --- | --- | --- |
+| `StreamEvent.event` (`partial=true`) | `stream` with raw event `data` | Creates or updates `thinking`, `text`, or `tool_use` blocks |
+| `AssistantMessage(TextBlock/ThinkingBlock/ToolUseBlock)` (`partial=false`) | synthetic `stream` events | Same block output as the partial path |
+| `UserMessage(ToolResultBlock)` | `tool_result` with `tool_use_id`, `content`, `is_error` | Attaches output/error to the matching `tool_use` block |
+| `ResultMessage` | `done` | Marks stream terminal |
+| Writer/runtime exception | `error` | Marks stream error and exposes `errorText` |
+
+Projection has one defensive compatibility rule for old or malformed records:
+if a `tool_result` row has a `tool_use_id` but no preceding `tool_use` block, the
+backend and frontend projections synthesize a `tool_use` block so historical UI
+does not hide the process. `Launching skill: <name>` outputs are rendered as
+`tool_name='Skill'` with `input={skill:<name>}`; other orphan results render as a
+generic `Tool`.
+
+Do not use `supports_partial_messages=true` as a workaround for missing tool
+process records. It only switches the SDK input path. The persisted V2 record
+model must remain complete for both `partial=true` and `partial=false` providers.
+
 ## Risks / Alternatives
 
 - **Native SDK-event stream vs magic-event stream.** V2 streams the native SDK
@@ -213,12 +276,12 @@ Data model — `da_agent_sdk_record` (Alembic `20260529_000012`):
 ## Verification
 
 - Frontend unit (run after `nvm use`): `IntelligentQueryView.spec.js`,
-  `NL2SqlChat.spec.js`, and the widget `WidgetChat.spec.js` (which mocks
-  `deliverMessage`/`streamSdkEvents` and exercises the shared render path). A
-  dedicated `NL2SqlChatV2.spec.js` / `v2StreamParser.spec.js` does not yet exist
-  and is a recommended follow-up.
-- DataAgent: focused coverage for `sdk_block_writer` ingest and
-  `topic_task_store._project_sdk_records` projection.
+  `NL2SqlChatV2.spec.js`, `v2StreamParser.spec.js`,
+  `sdkBlockProjection.contract.spec.js`, and widget `WidgetChat.spec.js`.
+- DataAgent: focused coverage for `sdk_block_writer` ingest, including
+  `partial=false` whole `AssistantMessage` tool-use normalization, plus
+  `topic_task_store._project_sdk_records` projection and the shared
+  SDK-block projection contract.
 - End-to-end smoke (per AGENTS.md intelligent-query smoke method): on the
   `chat-v2` tab, submit a real NL2SQL question; verify `deliver-message` returns
   a `task_id`, SDK records stream and render incrementally, the run reaches a

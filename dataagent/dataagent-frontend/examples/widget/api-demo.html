@@ -1,0 +1,725 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenDataWorks Widget - JS API 交互演示</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f8fafc;
+      color: #334155;
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Info Banner */
+    .info-banner {
+      background: linear-gradient(135deg, #e0f2fe, #bae6fd);
+      border-bottom: 1px solid #7dd3fc;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #0369a1;
+    }
+
+    .info-banner strong {
+      font-weight: 600;
+    }
+
+    /* Header */
+    .header {
+      background: #1e293b;
+      color: #fff;
+      padding: 0 24px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .header-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, #6366f1, #818cf8);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 14px;
+      color: #fff;
+    }
+
+    .header-title {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .header-nav {
+      display: flex;
+      gap: 4px;
+    }
+
+    .header-nav a {
+      color: #94a3b8;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.15s;
+    }
+
+    .header-nav a:hover {
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .header-nav a.active {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366f1, #4f46e5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    /* Main Content */
+    .main {
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 28px 24px 80px;
+      display: grid;
+      grid-template-columns: 7fr 5fr;
+      gap: 24px;
+    }
+
+    @media (max-width: 900px) {
+      .main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .page-header {
+      grid-column: 1 / -1;
+      margin-bottom: 8px;
+    }
+
+    .page-header h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+      letter-spacing: -0.02em;
+    }
+
+    .page-header p {
+      font-size: 14px;
+      color: #64748b;
+    }
+
+    /* Cards */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      padding: 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #0f172a;
+      border-bottom: 1px solid #f1f5f9;
+      padding-bottom: 12px;
+      margin-bottom: 4px;
+    }
+
+    /* Forms & Controls */
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .control-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .btn-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #334155;
+    }
+
+    .btn:hover {
+      background: #f8fafc;
+      border-color: #94a3b8;
+      color: #0f172a;
+    }
+
+    .btn-primary {
+      background: #6366f1;
+      border-color: #6366f1;
+      color: #fff;
+    }
+
+    .btn-primary:hover {
+      background: #4f46e5;
+      border-color: #4f46e5;
+      color: #fff;
+    }
+
+    .btn-danger {
+      background: #ef4444;
+      border-color: #ef4444;
+      color: #fff;
+    }
+
+    .btn-danger:hover {
+      background: #dc2626;
+      border-color: #dc2626;
+      color: #fff;
+    }
+
+    .input-field-group {
+      display: flex;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .input-text {
+      flex: 1;
+      font-family: inherit;
+      font-size: 13px;
+      padding: 8px 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .input-text:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.1);
+    }
+
+    /* Console Logger */
+    .console-container {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 480px;
+      background: #0f172a;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #1e293b;
+    }
+
+    .console-header {
+      background: #1e293b;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #334155;
+    }
+
+    .console-title {
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      font-weight: 500;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .console-clear {
+      font-size: 11px;
+      color: #94a3b8;
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+
+    .console-clear:hover {
+      color: #fff;
+    }
+
+    .console-logs {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      font-family: 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      color: #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .log-item {
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 6px;
+    }
+
+    .log-item:last-child {
+      border-bottom: none;
+    }
+
+    .log-meta {
+      display: flex;
+      gap: 12px;
+      font-size: 11px;
+      margin-bottom: 2px;
+    }
+
+    .log-time {
+      color: #64748b;
+    }
+
+    .log-event {
+      color: #f43f5e;
+      font-weight: 600;
+    }
+
+    .log-payload {
+      color: #10b981;
+      white-space: pre-wrap;
+      word-break: break-all;
+      background: #1e293b50;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 4px;
+    }
+
+    .log-system {
+      color: #94a3b8;
+      font-style: italic;
+    }
+
+    /* Status indicator */
+    .status-panel {
+      background: #f1f5f9;
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-size: 13px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .status-value {
+      font-weight: 600;
+      color: #0f172a;
+    }
+
+    .status-value.open { color: #10b981; }
+    .status-value.closed { color: #f43f5e; }
+  </style>
+</head>
+<body>
+
+  <!-- Info Banner -->
+  <div class="info-banner">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="7" stroke="#0284c7" stroke-width="1.5"/>
+      <path d="M8 7v4M8 5h.01" stroke="#0284c7" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <span>
+      <strong>JS API 交互演示</strong> — 通过此页面控制右下角悬浮小组件的开合、数据传输及状态监控，配合左侧操作面板，可以直观调试所有的 API 和事件。
+    </span>
+  </div>
+
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="header-logo">OD</div>
+      <span class="header-title">Widget JS API 调试台</span>
+    </div>
+    <nav class="header-nav">
+      <a href="./floating.html">悬浮模式示例</a>
+      <a href="./inline.html">内嵌模式示例</a>
+      <a href="#" class="active">JS API 交互演示</a>
+    </nav>
+    <div class="header-right">
+      <div class="header-avatar">API</div>
+    </div>
+  </header>
+
+  <!-- Main Grid -->
+  <main class="main">
+    <div class="page-header">
+      <h1>Widget JS API 交互调试</h1>
+      <p>通过暴露的全局控制器 <code>window.OpenDataWorksWidget</code> 进行编程控制与事件订阅</p>
+    </div>
+
+    <!-- Left: API Controller Card -->
+    <div class="card">
+      <div class="card-title">API 方法控制器</div>
+
+      <!-- Panel Control -->
+      <div class="control-group">
+        <span class="control-label">面板开关</span>
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="callApi('open')">open()</button>
+          <button class="btn" onclick="callApi('close')">close()</button>
+          <button class="btn" onclick="callApi('toggle')">toggle()</button>
+        </div>
+      </div>
+
+      <!-- Outbound Message -->
+      <div class="control-group">
+        <span class="control-label">发送消息 (sendMessage)</span>
+        <div class="input-field-group">
+          <input type="text" id="msg-input" class="input-text" placeholder="输入要发送给 AI 的文本" value="最近 30 天工作流运行趋势">
+          <button class="btn btn-primary" onclick="sendMessage()">sendMessage()</button>
+        </div>
+      </div>
+
+      <!-- Session Actions -->
+      <div class="control-group">
+        <span class="control-label">会话操作</span>
+        <div class="btn-row">
+          <button class="btn" onclick="callApi('newConversation')">newConversation()</button>
+          <button class="btn" onclick="callApi('openHistory')">openHistory()</button>
+          <button class="btn btn-danger" onclick="callApi('cancel')">cancel()</button>
+        </div>
+      </div>
+
+      <!-- Specific Conversation Select/Delete -->
+      <div class="control-group">
+        <span class="control-label">指定会话 (select / delete)</span>
+        <div class="input-field-group">
+          <input type="text" id="topic-id-input" class="input-text" placeholder="会话 ID (topicId)" value="topic-demo-123">
+          <button class="btn" onclick="selectConversation()">selectConversation()</button>
+          <button class="btn btn-danger" onclick="deleteConversation()">deleteConversation()</button>
+        </div>
+      </div>
+
+      <!-- Widget Status -->
+      <div class="control-group">
+        <span class="control-label">小组件状态查询</span>
+        <div class="status-panel">
+          <div class="status-row">
+            <span>isOpen():</span>
+            <span id="status-is-open" class="status-value closed">false</span>
+          </div>
+          <div class="status-row">
+            <span>Widget 实例状态:</span>
+            <span id="status-instance" class="status-value closed">未就绪</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lifecycle Actions -->
+      <div class="control-group">
+        <span class="control-label">小组件生命周期</span>
+        <div class="btn-row">
+          <button class="btn btn-danger" onclick="destroyWidget()">destroy() 销毁组件</button>
+          <button class="btn" onclick="reinstallWidget()">重新实例化组件</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right: Event Log Terminal -->
+    <div class="console-container">
+      <div class="console-header">
+        <div class="console-title">
+          <span>&gt;_</span>
+          <span>EVENT LISTENERS LOG (事件监听日志)</span>
+        </div>
+        <button class="console-clear" onclick="clearConsole()">Clear Logs</button>
+      </div>
+      <div id="console-logs" class="console-logs">
+        <div class="log-item">
+          <div class="log-meta">
+            <span class="log-time" id="init-time"></span>
+            <span class="log-system">SYSTEM</span>
+          </div>
+          <div>控制台初始化完成。等待事件触发...</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // Timestamp generator
+    function getTimestamp() {
+      const now = new Date();
+      return now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
+    }
+    
+    document.getElementById('init-time').textContent = getTimestamp();
+
+    // Logger utility
+    function logEvent(eventName, payload) {
+      const logs = document.getElementById('console-logs');
+      const item = document.createElement('div');
+      item.className = 'log-item';
+      
+      const meta = document.createElement('div');
+      meta.className = 'log-meta';
+      
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'log-time';
+      timeSpan.textContent = getTimestamp();
+      
+      const eventSpan = document.createElement('span');
+      eventSpan.className = 'log-event';
+      eventSpan.textContent = eventName;
+      
+      meta.appendChild(timeSpan);
+      meta.appendChild(eventSpan);
+      item.appendChild(meta);
+      
+      if (payload !== undefined) {
+        const payloadDiv = document.createElement('div');
+        payloadDiv.className = 'log-payload';
+        payloadDiv.textContent = typeof payload === 'object' ? JSON.stringify(payload, null, 2) : String(payload);
+        item.appendChild(payloadDiv);
+      }
+      
+      logs.appendChild(item);
+      logs.scrollTop = logs.scrollHeight;
+      
+      // Update status dashboard
+      updateStatusPanel();
+    }
+
+    function clearConsole() {
+      const logs = document.getElementById('console-logs');
+      logs.innerHTML = '';
+      logEvent('console:clear', '已清空日志');
+    }
+
+    function updateStatusPanel() {
+      const openStatus = document.getElementById('status-is-open');
+      const instanceStatus = document.getElementById('status-instance');
+      
+      if (window.OpenDataWorksWidget) {
+        const isOpen = window.OpenDataWorksWidget.isOpen();
+        openStatus.textContent = String(isOpen);
+        openStatus.className = isOpen ? 'status-value open' : 'status-value closed';
+        
+        instanceStatus.textContent = '已就绪 (Active)';
+        instanceStatus.className = 'status-value open';
+      } else {
+        openStatus.textContent = 'false';
+        openStatus.className = 'status-value closed';
+        instanceStatus.textContent = '未就绪 / 已销毁';
+        instanceStatus.className = 'status-value closed';
+      }
+    }
+
+    // Bind event listeners to controller
+    function bindWidgetEvents() {
+      const widget = window.OpenDataWorksWidget;
+      if (!widget) return;
+
+      logEvent('api:bind', '开始监听 widget 事件');
+
+      widget.on('ready', () => logEvent('ready', 'Widget DOM and Vue app ready'));
+      widget.on('open', () => logEvent('open', '对话小窗被打开'));
+      widget.on('close', () => logEvent('close', '对话小窗被关闭'));
+      widget.on('cancel', () => logEvent('cancel', '已发送取消任务请求'));
+      widget.on('history:open', () => logEvent('history:open', '历史会话面板展开'));
+      
+      widget.on('conversation:new', () => logEvent('conversation:new', '触发了新建会话'));
+      widget.on('conversation:select', (data) => logEvent('conversation:select', data));
+      widget.on('conversation:delete', (data) => logEvent('conversation:delete', data));
+      
+      widget.on('message', (data) => logEvent('message', data));
+      widget.on('error', (err) => logEvent('error', err));
+      
+      updateStatusPanel();
+    }
+
+    // Call API Helper
+    function callApi(method) {
+      if (!window.OpenDataWorksWidget) {
+        alert('Widget 未就绪或已销毁，请先重新实例化组件。');
+        return;
+      }
+      try {
+        window.OpenDataWorksWidget[method]();
+        logEvent('api:call', `${method}()`);
+      } catch (err) {
+        logEvent('api:error', `调用 ${method}() 失败: ${err.message}`);
+      }
+    }
+
+    function sendMessage() {
+      const text = document.getElementById('msg-input').value;
+      if (!window.OpenDataWorksWidget) {
+        alert('Widget 未就绪或已销毁，请先重新实例化组件。');
+        return;
+      }
+      window.OpenDataWorksWidget.sendMessage(text);
+      logEvent('api:call', `sendMessage("${text}")`);
+    }
+
+    function selectConversation() {
+      const topicId = document.getElementById('topic-id-input').value;
+      if (!window.OpenDataWorksWidget) {
+        alert('Widget 未就绪或已销毁，请先重新实例化组件。');
+        return;
+      }
+      window.OpenDataWorksWidget.selectConversation(topicId);
+      logEvent('api:call', `selectConversation("${topicId}")`);
+    }
+
+    function deleteConversation() {
+      const topicId = document.getElementById('topic-id-input').value;
+      if (!window.OpenDataWorksWidget) {
+        alert('Widget 未就绪或已销毁，请先重新实例化组件。');
+        return;
+      }
+      window.OpenDataWorksWidget.deleteConversation(topicId);
+      logEvent('api:call', `deleteConversation("${topicId}")`);
+    }
+
+    function destroyWidget() {
+      if (!window.OpenDataWorksWidget) {
+        alert('Widget 已经处于销毁状态。');
+        return;
+      }
+      window.OpenDataWorksWidget.destroy();
+      logEvent('api:destroy', '调用 destroy() 完成，DOM 及 controller 已移除。');
+      updateStatusPanel();
+    }
+
+    function reinstallWidget() {
+      if (window.OpenDataWorksWidget) {
+        window.OpenDataWorksWidget.destroy();
+      }
+      
+      // Dynamic injection of the script
+      const oldScript = document.getElementById('odw-widget-script');
+      if (oldScript) {
+        oldScript.remove();
+      }
+      
+      const script = document.createElement('script');
+      script.id = 'odw-widget-script';
+      script.src = 'http://localhost:3001/widget/opendataworks-widget.bundle.js?v=2';
+      script.setAttribute('data-display-mode', 'floating');
+      script.setAttribute('data-position', 'bottom-right');
+      script.setAttribute('data-project-name', '智能调试助手');
+      script.setAttribute('data-project-color', '#6366f1');
+      script.setAttribute('data-website-id', 'demo-api-test');
+      script.setAttribute('data-agent-id', 'demo');
+      script.setAttribute('data-api-base-url', '');
+      
+      script.onload = () => {
+        logEvent('script:load', 'opendataworks-widget.bundle.js 脚本文件加载成功');
+        // Wait a tick for the auto-installer
+        setTimeout(() => {
+          bindWidgetEvents();
+        }, 100);
+      };
+      
+      script.onerror = () => {
+        logEvent('script:error', '脚本加载失败，请确保前端 npm run dev 服务已启动！');
+      };
+      
+      document.body.appendChild(script);
+    }
+
+    // Auto-bind on load
+    window.addEventListener('load', () => {
+      // The auto-installed widget script is at the bottom of the body. Let's bind it.
+      setTimeout(() => {
+        if (window.OpenDataWorksWidget) {
+          bindWidgetEvents();
+        } else {
+          logEvent('init:warning', '未检测到 window.OpenDataWorksWidget。如果 bundle 服务未启动，请点击「重新实例化组件」。');
+        }
+      }, 500);
+    });
+  </script>
+
+  <!-- OpenDataWorks Widget (Floating Mode for API Test) -->
+  <script
+    id="odw-widget-script"
+    src="http://localhost:3001/widget/opendataworks-widget.bundle.js?v=2"
+    data-display-mode="floating"
+    data-position="bottom-right"
+    data-project-name="智能调试助手"
+    data-project-color="#6366f1"
+    data-website-id="demo-api-test"
+    data-agent-id="demo"
+    data-api-base-url=""
+    defer
+  ></script>
+
+</body>
+</html>

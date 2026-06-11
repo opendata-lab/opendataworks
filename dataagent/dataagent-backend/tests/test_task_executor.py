@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
+from config import get_settings, update_settings
 from core import task_executor
 
 
@@ -83,6 +87,18 @@ class ToolResultBlock:
         self.content = content
 
 
+@pytest.fixture(autouse=True)
+def _configured_skills_root(tmp_path: Path):
+    original = getattr(get_settings(), "skills_root_dir", "")
+    skills_root = tmp_path / ".claude" / "skills"
+    skills_root.mkdir(parents=True, exist_ok=True)
+    update_settings({"skills_root_dir": str(skills_root)})
+    try:
+        yield
+    finally:
+        update_settings({"skills_root_dir": original})
+
+
 def _install_fake_sdk(monkeypatch, messages, *, final_exception=None):
     async def fake_query(*, prompt, options):
         QueryCapture.last_prompt = prompt
@@ -131,15 +147,17 @@ def _patch_skill_runtime(monkeypatch, tmp_path: Path) -> dict[str, list[str]]:
         },
     )
 
-    def fake_prepare_enabled_skills_project_cwd(folders):
+    def fake_prepare_topic_workspace(topic_id, folders, **kwargs):
+        captured["topic_id"] = topic_id
         captured["folders"] = list(folders)
+        captured["kwargs"] = dict(kwargs)
         return tmp_path
 
-    monkeypatch.setattr(task_executor, "prepare_enabled_skills_project_cwd", fake_prepare_enabled_skills_project_cwd)
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
     return captured
 
 
-def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_persists_sdk_records_without_magic_records(monkeypatch, tmp_path: Path):
     monkeypatch.setenv("DATAAGENT_CLAUDE_CLI_PATH", "/tmp/claude-cli")
     _install_fake_sdk(
         monkeypatch,
@@ -207,30 +225,11 @@ def test_execute_task_stream_converts_claude_events_to_magic_records(monkeypatch
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is True
     assert ClaudeAgentOptions.last_kwargs["cwd"] == str(tmp_path)
     assert ClaudeAgentOptions.last_kwargs["cli_path"] == "/tmp/claude-cli"
+    assert ClaudeAgentOptions.last_kwargs["skills"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert runtime["folders"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
 
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[-1]["content"] == "最终回答"
+    assert emitted == []
 
 
 def test_execute_task_stream_logs_safe_runtime_base_url_and_preserves_env(monkeypatch, tmp_path: Path, caplog):
@@ -290,16 +289,16 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
         },
     )
     _patch_skill_runtime(monkeypatch, tmp_path)
-    agent_cwd = tmp_path / "workspaces" / "agent_1"
+    topic_workspace = tmp_path / "topics" / "topic-1"
     captured: dict[str, object] = {}
 
-    def fake_prepare_enabled_skills_project_cwd(folders, **kwargs):
+    def fake_prepare_topic_workspace(topic_id, folders, **kwargs):
+        captured["topic_id"] = topic_id
         captured["folders"] = list(folders)
         captured["kwargs"] = dict(kwargs)
-        return agent_cwd
+        return topic_workspace
 
-    monkeypatch.setattr(task_executor, "prepare_enabled_skills_project_cwd", fake_prepare_enabled_skills_project_cwd)
-    monkeypatch.setattr(task_executor, "resolved_agent_workdir", lambda agent_id, is_default=False: str(agent_cwd))
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
 
     async def _run():
         return await task_executor.execute_task_stream(
@@ -325,10 +324,11 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
 
     assert result.task_status == "finished"
     assert result.content == "custom-agent-ok"
+    assert captured["topic_id"] == "topic-1"
     assert captured["folders"] == []
-    assert captured["kwargs"]["runtime_project_cwd"] == str(agent_cwd)
     assert captured["kwargs"]["allow_empty"] is True
-    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(agent_cwd)
+    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["skills"] == []
     assert ClaudeAgentOptions.last_kwargs["allowed_tools"] == ["Read"]
     assert ClaudeAgentOptions.last_kwargs["mcp_servers"] == {}
     assert ClaudeAgentOptions.last_kwargs["max_turns"] == 7
@@ -348,7 +348,174 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     assert blocked["hookSpecificOutput"]["permissionDecision"] == "deny"
 
 
-def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_keeps_home_distinct(monkeypatch, tmp_path: Path):
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            AssistantMessage([TextBlock("topic-workspace-ok")]),
+            ResultMessage("success", session_id="sdk-session-topic"),
+        ],
+    )
+    monkeypatch.setattr(
+        task_executor,
+        "resolve_runtime_provider_selection",
+        lambda provider_id, model: {
+            "provider_id": provider_id,
+            "model": model,
+            "api_key": "",
+            "auth_token": "",
+            "base_url": "https://example.invalid",
+            "supports_partial_messages": False,
+        },
+    )
+    _patch_skill_runtime(monkeypatch, tmp_path)
+    monkeypatch.setenv("HOME", "/stable/claude-home")
+    monkeypatch.setenv("DATAAGENT_WORKSPACE_DIR", "/stale/env-workspace")
+    monkeypatch.setenv("DATAAGENT_WORKSPACE_PREPARED", "1")
+    topic_workspace = tmp_path / "topics" / "topic-1"
+    captured: dict[str, object] = {}
+
+    def fake_prepare_topic_workspace(topic_id, folders, **kwargs):
+        captured["topic_id"] = topic_id
+        captured["folders"] = list(folders)
+        captured["kwargs"] = dict(kwargs)
+        return topic_workspace
+
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
+
+    async def _run():
+        return await task_executor.execute_task_stream(
+            _build_input(
+                agent_snapshot={
+                    "agent_id": "agent_1",
+                    "name": "自定义智能体",
+                    "permission_mode": "default",
+                    "allowed_tools": ["Read"],
+                    "mcp_server_ids": [],
+                    "skill_folders": [],
+                    "max_turns": 0,
+                    "env_vars": {},
+                    "is_default": False,
+                }
+            ),
+            emit=lambda record: None,
+        )
+
+    result = asyncio.run(_run())
+
+    assert result.content == "topic-workspace-ok"
+    assert captured["topic_id"] == "topic-1"
+    assert captured["folders"] == []
+    assert captured["kwargs"]["allow_empty"] is True
+    assert captured["kwargs"]["workspace_dir"] is None
+    assert ClaudeAgentOptions.last_kwargs["cwd"] == str(topic_workspace)
+    assert ClaudeAgentOptions.last_kwargs["env"]["HOME"] == "/stable/claude-home"
+    assert ClaudeAgentOptions.last_kwargs["env"]["HOME"] != str(topic_workspace)
+    assert "DATAAGENT_WORKSPACE_DIR" not in ClaudeAgentOptions.last_kwargs["env"]
+    assert "DATAAGENT_WORKSPACE_PREPARED" not in ClaudeAgentOptions.last_kwargs["env"]
+
+
+def test_execute_task_stream_delegates_to_sandbox_runner_when_enabled(monkeypatch):
+    from config import get_settings, update_settings
+
+    original_mode = get_settings().dataagent_sandbox_mode
+    update_settings({"dataagent_sandbox_mode": "container"})
+    captured: dict[str, object] = {}
+
+    async def fake_runner(params, *, emit, is_cancel_requested=None):
+        captured["task_id"] = params.task_id
+        captured["topic_id"] = params.topic_id
+        return task_executor.TaskExecutionResult(
+            task_status="finished",
+            content="runner-ok",
+            provider_id="openrouter",
+            model="anthropic/claude-sonnet-4.5",
+            session_id="sdk-session-runner",
+        )
+
+    monkeypatch.setattr(task_executor, "_execute_task_stream_via_runner", fake_runner)
+    emitted: list[dict] = []
+    try:
+        result = asyncio.run(task_executor.execute_task_stream(_build_input(), emit=lambda record: emitted.append(record)))
+    finally:
+        update_settings({"dataagent_sandbox_mode": original_mode})
+
+    assert captured == {"task_id": "task-1", "topic_id": "topic-1"}
+    assert result.content == "runner-ok"
+    assert result.session_id == "sdk-session-runner"
+    assert emitted == []
+
+
+def test_sandbox_runner_client_streams_records_and_returns_result(monkeypatch):
+    from config import get_settings, update_settings
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        async def aiter_lines(self):
+            yield json.dumps(
+                {
+                    "type": "result",
+                    "result": {
+                        "task_status": "finished",
+                        "content": "runner-stream-ok",
+                        "usage": {"input_tokens": 1},
+                        "provider_id": "openrouter",
+                        "model": "anthropic/claude-sonnet-4.5",
+                        "session_id": "sdk-session-stream",
+                    },
+                }
+            )
+
+    class FakeStreamContext:
+        async def __aenter__(self):
+            return FakeResponse()
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class FakeClient:
+        last_payload = None
+
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def stream(self, method, url, *, json):
+            FakeClient.last_payload = {"method": method, "url": url, "json": json}
+            return FakeStreamContext()
+
+    original_url = get_settings().dataagent_sandbox_runner_url
+    update_settings({"dataagent_sandbox_runner_url": "http://runner.local"})
+    monkeypatch.setattr(task_executor.httpx, "AsyncClient", FakeClient)
+    emitted: list[dict] = []
+    try:
+        result = asyncio.run(
+            task_executor._execute_task_stream_via_runner(
+                _build_input(),
+                emit=lambda record: emitted.append(record),
+            )
+        )
+    finally:
+        update_settings({"dataagent_sandbox_runner_url": original_url})
+
+    assert FakeClient.last_payload["method"] == "POST"
+    assert FakeClient.last_payload["url"] == "http://runner.local/internal/sandbox/runs"
+    assert FakeClient.last_payload["json"]["topic_id"] == "topic-1"
+    assert FakeClient.last_payload["json"]["task_id"] == "task-1"
+    assert emitted == []
+    assert result.content == "runner-stream-ok"
+    assert result.usage == {"input_tokens": 1}
+    assert result.session_id == "sdk-session-stream"
+
+
+def test_execute_task_stream_preserves_native_partial_text_blocks_without_magic_records(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -415,21 +582,12 @@ def test_execute_task_stream_buffers_partial_text_until_turn_end(monkeypatch, tm
     result = asyncio.run(_run())
 
     assert result.task_status == "finished"
-    assert result.content == "最近 30 天累计发布 4 次。"
+    assert result.content == "我来帮你查询最近 30 天工作流发布次数的趋势。\n\n最近 30 天累计发布 4 次。"
     assert result.session_id == "sdk-session-2"
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "我来帮你查询最近 30 天工作流发布次数的趋势。"
-    assert chunks[-1]["content"] == "最近 30 天累计发布 4 次。"
+    assert emitted == []
 
 
-def test_execute_task_stream_uses_message_level_magic_events_when_partial_disabled(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_uses_message_level_sdk_text_when_partial_disabled(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -462,25 +620,7 @@ def test_execute_task_stream_uses_message_level_magic_events_when_partial_disabl
     assert result.content == "最终回答"
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is False
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == "1"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[-1]["content"] == "最终回答"
+    assert emitted == []
 
 
 def test_execute_task_stream_keeps_one_shot_answer_out_of_reasoning_when_thinking_arrives_later(monkeypatch, tmp_path: Path):
@@ -514,16 +654,7 @@ def test_execute_task_stream_keeps_one_shot_answer_out_of_reasoning_when_thinkin
 
     assert result.task_status == "finished"
     assert result.content == "smoke-ok"
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "这是一个简单的冒烟测试,不需要工具。"
-    assert chunks[-1]["content"] == "smoke-ok"
+    assert emitted == []
 
 
 def test_execute_task_stream_keeps_tool_loop_in_compatibility_mode(monkeypatch, tmp_path: Path):
@@ -559,28 +690,10 @@ def test_execute_task_stream_keeps_tool_loop_in_compatibility_mode(monkeypatch, 
 
     assert result.task_status == "finished"
     assert result.content == "smoke-ok"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    tool_events = [record for record in emitted if record.get("event_type") == "AFTER_TOOL_CALL"]
-    assert tool_events[0]["data"]["tool"]["output"] == "smoke-ok"
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[-1]["content"] == "smoke-ok"
+    assert emitted == []
 
 
-def test_execute_task_stream_treats_pre_tool_text_as_reasoning_in_compatibility_mode(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_preserves_pre_tool_text_in_compatibility_mode(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -617,33 +730,11 @@ def test_execute_task_stream_treats_pre_tool_text_as_reasoning_in_compatibility_
     result = asyncio.run(_run())
 
     assert result.task_status == "finished"
-    assert result.content == "最近 30 天累计发布 4 次。"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "我来帮你查询最近 30 天工作流发布次数的趋势。"
-    assert chunks[-1]["content"] == "最近 30 天累计发布 4 次。"
+    assert result.content == "我来帮你查询最近 30 天工作流发布次数的趋势。\n\n最近 30 天累计发布 4 次。"
+    assert emitted == []
 
 
-def test_execute_task_stream_treats_text_before_later_tool_as_reasoning_in_compatibility_mode(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_preserves_text_before_later_tool_in_compatibility_mode(monkeypatch, tmp_path: Path):
     _install_fake_sdk(
         monkeypatch,
         [
@@ -679,38 +770,12 @@ def test_execute_task_stream_treats_text_before_later_tool_as_reasoning_in_compa
     result = asyncio.run(_run())
 
     assert result.task_status == "finished"
-    assert result.content == "最近 30 天内共发布 4 次。"
-
-    lifecycle = [record["event_type"] for record in emitted if record.get("record_type") == "event"]
-    assert lifecycle == [
-        "BEFORE_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-        "PENDING_TOOL_CALL",
-        "BEFORE_TOOL_CALL",
-        "AFTER_TOOL_CALL",
-        "AFTER_AGENT_THINK",
-        "BEFORE_AGENT_REPLY",
-        "AFTER_AGENT_REPLY",
-    ]
-
-    chunks = [record for record in emitted if record.get("record_type") == "chunk"]
-    assert [(item["metadata"]["content_type"], item["delta"]["status"]) for item in chunks] == [
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("reasoning", "START"),
-        ("reasoning", "END"),
-        ("content", "START"),
-        ("content", "END"),
-    ]
-    assert chunks[0]["content"] == "我来帮你查询最近 30 天工作流发布次数的趋势数据。"
-    assert chunks[2]["content"] == "根据参考文档，这是一个趋势分析问题。现在执行 SQL 查询。"
-    assert chunks[-1]["content"] == "最近 30 天内共发布 4 次。"
+    assert result.content == (
+        "我来帮你查询最近 30 天工作流发布次数的趋势数据。\n\n"
+        "根据参考文档，这是一个趋势分析问题。现在执行 SQL 查询。\n\n"
+        "最近 30 天内共发布 4 次。"
+    )
+    assert emitted == []
 
 
 def test_execute_task_stream_surfaces_provider_error_instead_of_exit_code(monkeypatch, tmp_path: Path):
@@ -752,13 +817,7 @@ def test_execute_task_stream_surfaces_provider_error_instead_of_exit_code(monkey
         "exception_type": "RuntimeError",
     }
 
-    error_events = [
-        record for record in emitted
-        if record.get("record_type") == "event" and record.get("event_type") == "ERROR"
-    ]
-    assert error_events[-1]["data"]["error"]["message"] == provider_error
-    assert error_events[-1]["data"]["error"]["code"] == "error_api"
-    assert [record for record in emitted if record.get("record_type") == "chunk"] == []
+    assert emitted == []
 
 
 def test_execute_task_stream_resumes_sdk_session_without_replaying_history(monkeypatch, tmp_path: Path):
@@ -816,9 +875,10 @@ def test_execute_task_stream_injects_portal_mcp_servers(monkeypatch, tmp_path: P
         lambda: SimpleNamespace(
             claude_model="",
             agent_timeout_seconds=60,
-            agent_background_max_turns=40,
-            agent_max_turns=20,
-            query_result_limit=100,
+                agent_background_max_turns=40,
+                agent_max_turns=20,
+                agent_max_buffer_size_bytes=10 * 1024 * 1024,
+                query_result_limit=100,
             dataagent_portal_mcp_enabled=True,
             dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp",
             dataagent_portal_mcp_token="portal-token",

@@ -1,0 +1,44 @@
+/* ============================================
+   OpenDataWorks 全局 CSS 变量
+   ============================================ */
+
+:root {
+  /* ---- 主色调（商务蓝） ---- */
+  --odw-primary:          #2c5282;   /* 稳重商务蓝 */
+  --odw-primary-dark:     #2b4c7e;   /* 渐变深色端 */
+  --odw-primary-light:    #3a6baa;   /* 悬浮/激活底色 */
+
+  /* ---- 强调色（清爽蓝） ---- */
+  --odw-accent:           #63b3ed;   /* 浅蓝高亮，与浅色页面协调 */
+  --odw-accent-hover:     #4299e1;
+
+  /* ---- 文字 ---- */
+  --odw-text-on-dark:     rgba(255, 255, 255, 0.95);
+  --odw-text-on-dark-secondary: rgba(255, 255, 255, 0.72);
+  --odw-text-primary:     #1a202c;
+  --odw-text-secondary:   #718096;
+
+  /* ---- 背景 ---- */
+  --odw-bg-page:          #f7fafc;   /* 浅灰蓝，与导航色系衔接 */
+  --odw-bg-card:          #ffffff;
+
+  /* ---- 边框 / 阴影 ---- */
+  --odw-border:           #e2e8f0;
+  --odw-shadow-nav:       0 1px 4px rgba(44, 82, 130, 0.15);
+
+  /* ---- 导航栏 ---- */
+  --odw-nav-height:       60px;
+  --odw-nav-bg:           linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
+  --odw-nav-logo-bg:      rgba(0, 0, 0, 0.08);
+  --odw-nav-item-hover:   rgba(255, 255, 255, 0.1);
+  --odw-nav-item-active:  rgba(255, 255, 255, 0.15);
+  --odw-nav-active-border: var(--odw-accent);
+
+  /* ---- 圆角 ---- */
+  --odw-radius-sm:        4px;
+  --odw-radius-md:        8px;
+  --odw-radius-lg:        12px;
+
+  /* ---- 过渡 ---- */
+  --odw-transition:       0.25s ease;
+}

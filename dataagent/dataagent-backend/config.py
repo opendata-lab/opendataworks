@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     agent_interactive_sql_read_timeout_seconds: int = 300
     agent_background_sql_read_timeout_seconds: int = 900
     agent_sql_write_timeout_seconds: int = 60
+    # Max bytes when buffering a single CLI stdout JSON message before decoding.
+    # The SDK default is 1MB; large NL2SQL tool results / partial messages can
+    # exceed it and trigger "JSON message exceeded maximum buffer size".
+    agent_max_buffer_size_bytes: int = 10 * 1024 * 1024
     followup_suggestions_timeout_seconds: int = 20
     run_events_stream_poll_interval_seconds: int = 1
     run_events_stream_ping_seconds: int = 10
@@ -72,12 +76,41 @@ class Settings(BaseSettings):
     doris_database: str = ""
 
     # ---- Skills ----
+    skills_root_dir: str = ""
     skills_output_dir: str = "../.claude/skills/opendataworks-business-knowledge"
-    dataagent_runtime_project_cwd: str = ""
+    dataagent_upload_max_bytes: int = 20 * 1024 * 1024
     dataagent_portal_mcp_enabled: bool = True
     dataagent_portal_mcp_base_url: str = ""
     dataagent_portal_mcp_token: str = ""
     dataagent_portal_mcp_token_header_name: str = "X-Portal-MCP-Token"
+
+    # ---- Topic runtime root / sandbox ----
+    # Host-visible persistent root used by the sandbox runner when asking the
+    # host Docker/Podman daemon to bind-mount topic subdirectories into child
+    # containers.
+    dataagent_host_root: str = "/dataagent_runtime"
+    dataagent_sandbox_mode: str = ""
+    dataagent_sandbox_runner_url: str = ""
+    dataagent_sandbox_image: str = ""
+    dataagent_sandbox_backend: str = "docker"
+    dataagent_sandbox_network: str = ""
+    # Per-task sandbox logs are written under <runtime_root>/<topic>/logs so they
+    # sit next to the topic's workspace/ and home/ subdirs; no separate root.
+    # Runtime isolation hardening for the child task container. The workspace
+    # bind-mount is always the only writable host path; these tighten the rest.
+    # read_only_rootfs locks the container root filesystem read-only so the
+    # agent's Bash/Python cannot persist anything outside the bind-mounted
+    # workspace; a writable tmpfs is mounted at /tmp for transient scratch.
+    dataagent_sandbox_read_only_rootfs: bool = False
+    dataagent_sandbox_tmpfs_size: str = "512m"
+    # Warm child container reuse. When the container backend is active, keep a
+    # finished child alive for an idle window so same-conversation follow-ups
+    # reuse it instead of paying full container/SDK cold-start each turn.
+    # Set reuse_enabled to false to restore one-shot-per-task containers.
+    dataagent_sandbox_reuse_enabled: bool = True
+    dataagent_sandbox_idle_ttl_seconds: int = 600
+    dataagent_sandbox_max_warm_containers: int = 32
+    dataagent_sandbox_reaper_interval_seconds: int = 30
 
     # ---- 运行策略 ----
     max_few_shot_examples: int = 5

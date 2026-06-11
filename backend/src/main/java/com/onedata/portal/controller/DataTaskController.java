@@ -1,8 +1,8 @@
 package com.onedata.portal.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.onedata.portal.annotation.RequireAuth;
-import com.onedata.portal.context.UserContextHolder;
+import com.onedata.auth.annotation.RequireAuth;
+import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.PageResult;
 import com.onedata.portal.dto.Result;
 import com.onedata.portal.dto.TaskExecutionStatus;
@@ -38,13 +38,14 @@ public class DataTaskController {
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(required = false) String taskType,
+            @RequestParam(required = false) String dolphinNodeType,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String taskName,
             @RequestParam(required = false) Long workflowId,
             @RequestParam(required = false) Long upstreamTaskId,
             @RequestParam(required = false) Long downstreamTaskId) {
         // 不强制过滤 owner，允许查看所有任务
-        Page<DataTask> page = dataTaskService.list(pageNum, pageSize, taskType, status, taskName,
+        Page<DataTask> page = dataTaskService.list(pageNum, pageSize, taskType, dolphinNodeType, status, taskName,
                 workflowId, upstreamTaskId, downstreamTaskId);
         return Result.success(PageResult.of(page.getTotal(), page.getRecords()));
     }
