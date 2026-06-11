@@ -18,6 +18,12 @@
       "prompt": "这个本体里的客户状态应该映射到哪张表哪个字段？不确定时怎么处理？",
       "expected_output": "说明术语到表字段映射应使用 object_relations 和 relation_kind=semantic_mapping，不确定时标记 TODO 和 needs_confirmation。",
       "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "我们手上有十几份业务文档和几十张表，怎么判断该划成几个域、哪些概念该建成本体对象和关系？",
+      "expected_output": "按域划分、典型问题收敛、实体判定清单、关系来源四步给出建模范围，输出域分级、候选对象清单、候选关系清单、排除项和待确认项。",
+      "files": []
     }
   ]
 }

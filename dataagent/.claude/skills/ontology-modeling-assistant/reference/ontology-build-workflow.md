@@ -21,9 +21,15 @@
 
 本体 JSON 不保存来源索引或旧版来源字段。术语映射、文档提及、字段支撑和口径规则都建模为 `object_relations`，通过 `relation_kind` 区分。
 
-## 3. 生成本体草案
+## 3. 划分域与识别建模对象
 
-先建核心对象，再补关系：
+按 [`ontology-scoping-method.md`](ontology-scoping-method.md) 执行四步：划分业务域、用典型问题收敛范围、识别本体对象、识别本体关系。产出域划分结论、典型问题清单、候选对象清单和候选关系清单。
+
+候选清单未产出前不要进入草案生成。支撑不了任何典型问题的候选对象和关系直接登记为排除项。
+
+## 4. 生成本体草案
+
+以第 3 步的候选清单为准，先建核心对象，再补关系：
 
 1. `business_domain`
 2. `source_document`
@@ -37,7 +43,7 @@
 
 不要直接从表名生成实体名。先看文档定义和字段注释，再用表字段支撑实体属性。
 
-## 4. 生成领域 Skill
+## 5. 生成领域 Skill
 
 领域 skill 目录应包含：
 
@@ -52,7 +58,7 @@
 - `tests/test_validate_ontology.py`: 确认本体 JSON 结构、关系端点和字段枚举有效。
 - `tests/evals/evals.json`: 2-3 个真实用户提示词，用于验证 skill 是否能触发并交付正确语义。
 
-## 5. 验证和迭代
+## 6. 验证和迭代
 
 采用收窄版 Skill Creator 闭环：
 
@@ -62,6 +68,7 @@
 - 每次修改 `scripts/ontology_schema.py` 中的 `FIELD_DICTIONARY` 后运行 `validate_ontology.py --schema > assets/ontology.schema.json`，确认 schema 的 `x-field-dictionary` 同步。
 - 新增枚举值时先更新 `scripts/ontology_schema.py` 中的字段字典，再更新本体 JSON。
 - 再写 eval prompts：覆盖术语解释、关系查询、真实问数语义交接。
+- 每轮迭代后对照典型问题清单做反向验收，不能表达的问题登记 TODO。
 - 对照用户反馈迭代 `description`、本体索引和输出示例。
 - 每轮迭代后重新运行 lookup 测试。
 
