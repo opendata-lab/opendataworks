@@ -2685,6 +2685,11 @@ export const demoAdapter = async (config) => {
     return createResponse(config, { skill_id: 'demo-imported-skill' })
   }
 
+  if (method === 'get' && pathname.match(/^\/v1\/dataagent\/skills\/[^/]+\/export$/)) {
+    const folder = decodeURIComponent(pathname.split('/')[4])
+    return createResponse(config, new Blob([`demo skill ${folder}`], { type: 'application/zip' }))
+  }
+
   if (method === 'delete' && pathname.match(/^\/v1\/dataagent\/skills\/[^/]+$/)) {
     return createResponse(config, { status: 'ok' })
   }

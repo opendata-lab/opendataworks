@@ -5,6 +5,7 @@ const apiMocks = vi.hoisted(() => ({
   listSkillDocuments: vi.fn(),
   updateSkillRuntime: vi.fn(),
   importSkill: vi.fn(),
+  exportSkill: vi.fn(),
   uninstallSkill: vi.fn()
 }))
 
@@ -115,6 +116,7 @@ describe('SkillStudio', () => {
     apiMocks.listSkillDocuments.mockReset()
     apiMocks.updateSkillRuntime.mockReset()
     apiMocks.importSkill.mockReset()
+    apiMocks.exportSkill.mockReset()
     apiMocks.uninstallSkill.mockReset()
     messageMocks.success.mockReset()
     messageMocks.warning.mockReset()
@@ -135,6 +137,7 @@ describe('SkillStudio', () => {
       imported_documents: [],
       document_count: 3
     })
+    apiMocks.exportSkill.mockResolvedValue(new Blob(['zip'], { type: 'application/zip' }))
     apiMocks.uninstallSkill.mockResolvedValue({
       skill_id: 'marketing-insights',
       removed_documents: [],
@@ -242,6 +245,29 @@ describe('SkillStudio', () => {
     await flushPromises()
 
     expect(messageMocks.success).toHaveBeenCalledWith('Skill「marketing-insights」已更新（版本 2.0.0）')
+  })
+
+  it('downloads a skill as a zip through the export api', async () => {
+    const createObjectURL = vi.fn(() => 'blob:demo')
+    const revokeObjectURL = vi.fn()
+    window.URL.createObjectURL = createObjectURL
+    window.URL.revokeObjectURL = revokeObjectURL
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const targetSkill = wrapper.vm.filteredSkills.find((item) => item.folder === 'marketing-insights')
+    await wrapper.vm.downloadSkill(targetSkill)
+    await flushPromises()
+
+    expect(apiMocks.exportSkill).toHaveBeenCalledWith('marketing-insights')
+    expect(createObjectURL).toHaveBeenCalledTimes(1)
+    expect(clickSpy).toHaveBeenCalledTimes(1)
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:demo')
+    expect(messageMocks.success).toHaveBeenCalledWith('Skill「marketing-insights」已下载')
+
+    clickSpy.mockRestore()
   })
 
   it('uninstalls managed skills only after folder confirmation', async () => {

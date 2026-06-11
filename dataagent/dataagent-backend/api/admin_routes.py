@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi.responses import Response
 
 from core.agent_profile_service import (
     agent_capabilities,
@@ -16,6 +17,7 @@ from core.skill_admin_service import (
     compare_document_versions,
     current_settings_payload,
     detect_model_availability,
+    export_skill_as_zip,
     get_document_detail,
     import_skill_from_zip,
     list_documents,
@@ -290,6 +292,21 @@ async def import_skill(file: UploadFile = File(...)):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return SkillImportResponse.model_validate(result)
+
+
+@skills_router.get("/skills/{folder}/export")
+async def export_skill(folder: str):
+    try:
+        file_name, content = export_skill_as_zip(folder)
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if "not found" in message else 400
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    return Response(
+        content=content,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{file_name}"'},
+    )
 
 
 @skills_router.delete("/skills/{folder}", response_model=SkillUninstallResponse)

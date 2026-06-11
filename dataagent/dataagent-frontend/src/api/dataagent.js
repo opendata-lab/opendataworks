@@ -62,6 +62,12 @@ export const dataagentApi = {
     })
   },
 
+  exportSkill(folder) {
+    return dataagentRequest.get(`/v1/dataagent/skills/${encodeURIComponent(folder)}/export`, {
+      responseType: 'blob'
+    })
+  },
+
   uninstallSkill(folder) {
     return dataagentRequest.delete(`/v1/dataagent/skills/${encodeURIComponent(folder)}`)
   },
