@@ -2,7 +2,7 @@
 
 ## 当前状态
 
-DataAgent 已支持内置助手 profile。助手通过 `skill_folders` 选择可用 skill，运行时只把选中的 skill 链接到隔离工作目录。现有 `arch-governance-assistant` 是仓库根目录下的领域本体示例，包含 `assets/ontology.json`、本体引用说明、查找脚本和脚本测试。Anthropic `skill-creator` 提供了从意图访谈、skill 草稿、测试提示词到 eval 迭代的通用创建闭环。DataAgent 内置业务 skill 位于 `dataagent/.claude/skills/`，这是助手运行时的默认发现根。
+DataAgent 已支持内置助手 profile。助手通过 `skill_folders` 选择可用 skill，运行时只把选中的 skill 链接到隔离工作目录。已有的领域本体示例 skill 提供了参考结构，包含 `assets/ontology.json`、本体引用说明、查找脚本和脚本测试。Anthropic `skill-creator` 提供了从意图访谈、skill 草稿、测试提示词到 eval 迭代的通用创建闭环。DataAgent 内置业务 skill 位于 `dataagent/.claude/skills/`，这是助手运行时的默认发现根。
 
 ## 问题
 
@@ -27,7 +27,7 @@ DataAgent 已支持内置助手 profile。助手通过 `skill_folders` 选择可
 
 ## 方案
 
-新增 `dataagent/.claude/skills/ontology-modeling-assistant/`，采用和 `arch-governance-assistant` 相近的目录结构，并吸收 `skill-creator` 的创建闭环，但定位收窄为“领域本体 skill 创建器”：
+新增 `dataagent/.claude/skills/ontology-modeling-assistant/`，采用和已有领域本体示例 skill 相近的目录结构，并吸收 `skill-creator` 的创建闭环，但定位收窄为“领域本体 skill 创建器”：
 
 - `SKILL.md` 约束助手先收集业务目标、上传文档和候选物理表，再输出可交付的领域本体 skill。
 - `assets/ontology.json` 保存本体建模元模型，描述业务域、实体、属性、指标、关系、关系类型和查询函数等对象类型。
