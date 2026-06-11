@@ -330,7 +330,7 @@ class DataTaskServiceWorkflowMetadataTest {
         verify(dolphinSchedulerService).buildTaskDefinition(
                 anyLong(), anyInt(), anyString(), isNull(), anyString(),
                 anyString(), anyInt(), anyInt(), anyInt(), eq("SQL"), eq(901L), datasourceTypeCaptor.capture(),
-                any(), any(), any(), any(), anyString(), any(), any());
+                any(), any(), any(), any(), any(), anyString(), any(), any());
         assertEquals("OCEANBASE", datasourceTypeCaptor.getValue());
 
         ArgumentCaptor<DataTask> updateCaptor = ArgumentCaptor.forClass(DataTask.class);

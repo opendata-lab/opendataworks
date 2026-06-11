@@ -239,6 +239,16 @@ DeepEval 评测同样要求通过 `--dataset` 指定私有 JSONL，输出包含 
 
 ---
 
+## DataX Sync Prerequisites
+
+DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `docs/design/2026-06-10-datax-data-integration-design.md`），平台本身不内置 DataX 运行时。启用 DataX 同步前需确保：
+
+- DolphinScheduler 的 worker 节点已安装 DataX 运行时。
+- 源 / 目标数据源已在 DolphinScheduler 数据源中心登记（平台按名称解析其 id 与类型）。
+- 如所用 DolphinScheduler 版本要求 DATAX 节点绑定 environment，请在其中配置好 DataX 环境；当前平台下发的任务定义使用默认 `environmentCode=-1`，必要时在 DolphinScheduler 侧为 DATAX 任务补充环境。
+
+列映射（`column_mapping`）支持三种形式：留空（全列同步）、列清单（逗号分隔或 JSON 数组 / 源到目标的 JSON 对象映射）、完整 DataX 作业 JSON（含 `job` 键，按自定义模式 `customConfig=1` 下发）。
+
 ## Common Operations
 
 ### Stop Services

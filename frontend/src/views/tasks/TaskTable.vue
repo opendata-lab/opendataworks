@@ -192,6 +192,10 @@ const props = defineProps({
     type: Number,
     default: null
   },
+  nodeType: {
+    type: String,
+    default: null
+  },
   showToolbar: {
     type: Boolean,
     default: true
@@ -330,6 +334,9 @@ const buildListFilters = () => {
   const downstreamId = parseNumericFilter(filters.downstreamTaskId)
   if (downstreamId) {
     params.downstreamTaskId = downstreamId
+  }
+  if (props.nodeType) {
+    params.dolphinNodeType = props.nodeType
   }
   return params
 }
@@ -535,6 +542,10 @@ onMounted(async () => {
 })
 
 watch(() => props.workflowId, () => {
+  loadData()
+})
+
+watch(() => props.nodeType, () => {
   loadData()
 })
 

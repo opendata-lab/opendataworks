@@ -38,13 +38,14 @@ public class DataTaskController {
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "20") int pageSize,
             @RequestParam(required = false) String taskType,
+            @RequestParam(required = false) String dolphinNodeType,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String taskName,
             @RequestParam(required = false) Long workflowId,
             @RequestParam(required = false) Long upstreamTaskId,
             @RequestParam(required = false) Long downstreamTaskId) {
         // 不强制过滤 owner，允许查看所有任务
-        Page<DataTask> page = dataTaskService.list(pageNum, pageSize, taskType, status, taskName,
+        Page<DataTask> page = dataTaskService.list(pageNum, pageSize, taskType, dolphinNodeType, status, taskName,
                 workflowId, upstreamTaskId, downstreamTaskId);
         return Result.success(PageResult.of(page.getTotal(), page.getRecords()));
     }
