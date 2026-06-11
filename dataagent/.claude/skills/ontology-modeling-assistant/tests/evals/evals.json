@@ -1,0 +1,23 @@
+{
+  "skill_name": "ontology-modeling-assistant",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我想基于上传的会员运营规则文档和 ads_member_order 表创建会员运营本体 skill。",
+      "expected_output": "确认业务域、上传文档、候选表字段，并给出领域本体 skill 的对象、关系类型和待确认项。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "帮我把风控事件、风险等级、处置流程和相关数据表建成本体，后续要能查关系和口径。",
+      "expected_output": "输出本体建模范围、核心实体、属性、指标、object_relations、relation_kind 和 lookup 脚本交付结构。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "这个本体里的客户状态应该映射到哪张表哪个字段？不确定时怎么处理？",
+      "expected_output": "说明术语到表字段映射应使用 object_relations 和 relation_kind=semantic_mapping，不确定时标记 TODO 和 needs_confirmation。",
+      "files": []
+    }
+  ]
+}

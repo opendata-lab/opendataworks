@@ -1,0 +1,548 @@
+{
+  "metadata": {
+    "id": "ontology_modeling_meta_ontology",
+    "name_zh": "本体建模元模型",
+    "name_en": "Ontology Modeling Meta Ontology",
+    "owner": "ontology-modeling-assistant",
+    "version": "1.0.0",
+    "description": "用于根据用户需求、上传文档和数据库表字段创建特定业务域本体语义 Skill 的元模型。"
+  },
+  "object_types": [
+    {
+      "id": "domain_ontology_skill",
+      "name_zh": "领域本体 Skill",
+      "name_en": "Domain Ontology Skill",
+      "kind": "skill",
+      "description": "为某个特定业务域创建的可复用语义 skill，包含本体 JSON、索引、查找脚本、输出示例和验证用例。",
+      "synonyms": [
+        "领域本体skill",
+        "语义skill",
+        "本体语义包",
+        "业务域skill"
+      ],
+      "properties": [
+        {
+          "name_zh": "Skill 目录",
+          "name_en": "skill_folder",
+          "description": "目标领域 skill 的目录名，建议使用 <domain>-ontology。"
+        },
+        {
+          "name_zh": "本体 JSON 路径",
+          "name_en": "ontology_json_path",
+          "description": "目标领域本体 JSON 文件路径，固定为 assets/ontology.json。"
+        },
+        {
+          "name_zh": "查找脚本路径",
+          "name_en": "lookup_script_path",
+          "description": "目标领域本体查找脚本路径，固定为 scripts/lookup_ontology.py。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "scaffold_domain_ontology_skill",
+          "intent": "创建一个包含领域本体 JSON、对象关系、关系类型、索引、lookup 脚本和验证用例的领域本体 skill。",
+          "grain": "one_skill_per_business_domain",
+          "params": [
+            "business_domain",
+            "skill_folder",
+            "source_document_ids",
+            "candidate_table_ids",
+            "confirmed_terms"
+          ],
+          "output_fields": [
+            "skill_folder",
+            "ontology_json_path",
+            "lookup_script_path",
+            "object_type_count",
+            "relation_count",
+            "todo_items"
+          ],
+          "notes": "只生成语义资产和查找工具，不执行 SQL，不输出真实业务数据结果。"
+        }
+      ]
+    },
+    {
+      "id": "business_domain",
+      "name_zh": "业务域",
+      "name_en": "Business Domain",
+      "kind": "domain",
+      "description": "本体覆盖的业务边界，例如风控、营销、供应链、客户经营或指标治理。",
+      "synonyms": [
+        "领域",
+        "业务范围",
+        "主题域",
+        "domain"
+      ],
+      "properties": [
+        {
+          "name_zh": "领域名称",
+          "name_en": "domain_name",
+          "description": "业务域的稳定中文名称。"
+        },
+        {
+          "name_zh": "边界说明",
+          "name_en": "scope_boundary",
+          "description": "领域包含和不包含的对象、流程、指标和数据范围。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "summarize_business_domain_scope",
+          "intent": "说明领域本体覆盖范围、对象边界和待确认缺口。",
+          "grain": "business_domain",
+          "params": [
+            "domain_id"
+          ],
+          "output_fields": [
+            "domain_name",
+            "scope_boundary",
+            "included_objects",
+            "excluded_objects",
+            "open_questions"
+          ],
+          "notes": "用于建模阶段范围确认。"
+        }
+      ]
+    },
+    {
+      "id": "source_document",
+      "name_zh": "上传文档",
+      "name_en": "Source Document",
+      "kind": "document",
+      "description": "用户上传或指定的业务需求、术语定义、流程规则、指标口径和数据说明文档。",
+      "synonyms": [
+        "文档",
+        "需求文档",
+        "口径文档",
+        "说明书",
+        "上传资料"
+      ],
+      "properties": [
+        {
+          "name_zh": "文档标识",
+          "name_en": "document_id",
+          "description": "文档在会话、文件系统或平台中的唯一标识。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "extract_ontology_candidates_from_documents",
+          "intent": "从上传文档中提取候选术语、对象、关系、指标和口径规则。",
+          "grain": "document_set",
+          "params": [
+            "document_ids",
+            "business_domain"
+          ],
+          "output_fields": [
+            "candidate_terms",
+            "candidate_entities",
+            "candidate_relations",
+            "candidate_metrics",
+            "source_spans"
+          ],
+          "notes": "引用文档片段时只保留短摘要，避免整段复制。"
+        }
+      ]
+    },
+    {
+      "id": "physical_table",
+      "name_zh": "数据库表",
+      "name_en": "Physical Table",
+      "kind": "physical_source",
+      "description": "用于支撑领域本体的候选物理表、字段、字段注释、主键、分区和血缘。",
+      "synonyms": [
+        "表",
+        "数据表",
+        "物理表",
+        "字段",
+        "schema",
+        "DDL"
+      ],
+      "properties": [
+        {
+          "name_zh": "表名",
+          "name_en": "table_name",
+          "description": "包含库名或 schema 的物理表名。"
+        },
+        {
+          "name_zh": "字段清单",
+          "name_en": "columns",
+          "description": "字段名、类型、注释、主键、分区和可用性。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "inspect_candidate_physical_tables_for_ontology",
+          "intent": "获取候选物理表字段、注释、DDL 和血缘，用于支撑本体对象和属性建模。",
+          "grain": "table",
+          "params": [
+            "cluster_id",
+            "database",
+            "table_name"
+          ],
+          "output_fields": [
+            "table_name",
+            "columns",
+            "primary_keys",
+            "partition_columns",
+            "lineage_summary",
+            "semantic_candidates"
+          ],
+          "notes": "只作为建模输入契约；具体表发现和元数据访问交给平台工具。"
+        }
+      ]
+    },
+    {
+      "id": "domain_entity",
+      "name_zh": "业务实体",
+      "name_en": "Domain Entity",
+      "kind": "entity",
+      "description": "业务域内稳定存在、可被查询或解释的核心对象，例如客户、订单、商品、活动、风险事件。",
+      "synonyms": [
+        "实体",
+        "业务对象",
+        "对象",
+        "主体",
+        "ontology class"
+      ],
+      "properties": [
+        {
+          "name_zh": "实体标识",
+          "name_en": "entity_id",
+          "description": "实体在本体 JSON 中的 snake_case id。"
+        },
+        {
+          "name_zh": "实体名称",
+          "name_en": "entity_name",
+          "description": "实体中文名和英文名。"
+        },
+        {
+          "name_zh": "默认口径",
+          "name_en": "default_caliber",
+          "description": "解释或查询该实体时默认采用的边界、过滤和时间口径。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "list_domain_entities_by_intent",
+          "intent": "根据用户问题和建模上下文列出候选业务实体及待确认项。",
+          "grain": "business_domain",
+          "params": [
+            "business_domain",
+            "user_intent",
+            "context_ids"
+          ],
+          "output_fields": [
+            "entity_id",
+            "name_zh",
+            "description",
+            "needs_confirmation"
+          ],
+          "notes": "优先用文档定义确认实体；表名只能作为辅助上下文。"
+        }
+      ]
+    },
+    {
+      "id": "domain_attribute",
+      "name_zh": "业务属性",
+      "name_en": "Domain Attribute",
+      "kind": "attribute",
+      "description": "业务实体的属性、状态、分类、时间字段、标识字段或描述字段。",
+      "synonyms": [
+        "属性",
+        "字段语义",
+        "状态",
+        "分类",
+        "时间字段"
+      ],
+      "properties": [
+        {
+          "name_zh": "属性名",
+          "name_en": "attribute_name",
+          "description": "属性中文名、英文名和同义词。"
+        },
+        {
+          "name_zh": "候选字段",
+          "name_en": "candidate_columns",
+          "description": "支撑该属性的候选物理字段。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "map_domain_attribute_to_columns",
+          "intent": "把业务属性映射到候选物理字段，并输出候选映射和待办项。",
+          "grain": "domain_attribute",
+          "params": [
+            "entity_id",
+            "attribute_name",
+            "candidate_tables"
+          ],
+          "output_fields": [
+            "attribute_id",
+            "candidate_columns",
+            "mapping_notes",
+            "todo_items"
+          ],
+          "notes": "同名字段不能直接确认为属性映射，必须结合注释、文档或人工确认。"
+        }
+      ]
+    },
+    {
+      "id": "domain_metric",
+      "name_zh": "业务指标",
+      "name_en": "Domain Metric",
+      "kind": "metric",
+      "description": "领域内需要稳定解释和查询的指标、口径、聚合方式和时间粒度。",
+      "synonyms": [
+        "指标",
+        "口径",
+        "统计指标",
+        "度量"
+      ],
+      "properties": [
+        {
+          "name_zh": "指标公式",
+          "name_en": "formula",
+          "description": "指标的业务公式、聚合方法和排除规则。"
+        },
+        {
+          "name_zh": "时间字段",
+          "name_en": "time_field",
+          "description": "指标默认时间字段或快照字段。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "define_metric_caliber_from_context",
+          "intent": "根据文档、字段和人工确认沉淀业务指标口径。",
+          "grain": "domain_metric",
+          "params": [
+            "metric_name",
+            "entity_id",
+            "context_ids"
+          ],
+          "output_fields": [
+            "metric_id",
+            "formula",
+            "time_field",
+            "default_filters",
+            "open_questions"
+          ],
+          "notes": "没有明确公式或聚合方法时必须标记 TODO。"
+        }
+      ]
+    },
+    {
+      "id": "semantic_relation",
+      "name_zh": "业务关系",
+      "name_en": "Semantic Relation",
+      "kind": "relation",
+      "description": "业务实体之间的结构化关系，例如归属、依赖、包含、流转、产生、消费。",
+      "synonyms": [
+        "关系",
+        "实体关系",
+        "关系边",
+        "语义关系"
+      ],
+      "properties": [
+        {
+          "name_zh": "关系类型",
+          "name_en": "relation_kind",
+          "description": "owns、contains、depends_on、produces、consumes、derived_from 等关系类型。"
+        },
+        {
+          "name_zh": "基数",
+          "name_en": "cardinality",
+          "description": "one_to_one、one_to_many、many_to_one、many_to_many。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "derive_entity_relations_from_documents_and_schema",
+          "intent": "从文档流程、字段外键、血缘和用户确认中推导实体关系。",
+          "grain": "entity_pair",
+          "params": [
+            "from_entity",
+            "to_entity",
+            "context_ids"
+          ],
+          "output_fields": [
+            "relation_id",
+            "relation_kind",
+            "cardinality",
+            "relation_notes"
+          ],
+          "notes": "关系方向不确定时必须保留 needs_confirmation。"
+        }
+      ]
+    },
+    {
+      "id": "domain_query_function",
+      "name_zh": "领域查询函数",
+      "name_en": "Domain Query Function",
+      "kind": "query_function",
+      "description": "挂在领域对象上的查询语义交接函数，用于把用户意图传给后续问数链路。",
+      "synonyms": [
+        "query function",
+        "查询函数",
+        "语义交接",
+        "问数契约"
+      ],
+      "properties": [
+        {
+          "name_zh": "函数名",
+          "name_en": "function_name",
+          "description": "snake_case 的函数名，体现动作、对象和时间粒度。"
+        },
+        {
+          "name_zh": "输出字段",
+          "name_en": "output_fields",
+          "description": "后续问数结果需要返回的语义字段。"
+        }
+      ],
+      "query_functions": [
+        {
+          "function_name": "create_query_functions_for_domain_ontology",
+          "intent": "为核心实体、指标和关系生成查询语义交接函数。",
+          "grain": "ontology_object",
+          "params": [
+            "object_id",
+            "supported_intents"
+          ],
+          "output_fields": [
+            "function_name",
+            "intent",
+            "grain",
+            "params",
+            "output_fields",
+            "notes"
+          ],
+          "notes": "函数只描述语义口径，不包含 SQL 执行入口。"
+        }
+      ]
+    }
+  ],
+  "object_relations": [
+    {
+      "id": "skill_covers_business_domain",
+      "from_object": "domain_ontology_skill",
+      "to_object": "business_domain",
+      "relation_kind": "covers",
+      "cardinality": "many_to_one",
+      "description": "一个领域本体 skill 覆盖一个主要业务域。",
+      "modeling_guidance": [
+        "先确认业务域边界，再创建 skill 目录和触发描述。"
+      ]
+    },
+    {
+      "id": "document_supports_business_domain",
+      "from_object": "source_document",
+      "to_object": "business_domain",
+      "relation_kind": "supports_scope",
+      "cardinality": "many_to_one",
+      "description": "上传文档支撑业务域范围、术语和规则定义。",
+      "modeling_guidance": [
+        "文档内容只作为建模上下文，不写入单独的来源索引。"
+      ]
+    },
+    {
+      "id": "table_supports_entity",
+      "from_object": "physical_table",
+      "to_object": "domain_entity",
+      "relation_kind": "supports",
+      "cardinality": "many_to_many",
+      "description": "数据库表字段支撑业务实体建模。",
+      "modeling_guidance": [
+        "表名不能直接等同实体，必须结合字段注释、文档或人工确认。"
+      ]
+    },
+    {
+      "id": "entity_has_attribute",
+      "from_object": "domain_entity",
+      "to_object": "domain_attribute",
+      "relation_kind": "has_attribute",
+      "cardinality": "one_to_many",
+      "description": "业务实体拥有业务属性。",
+      "modeling_guidance": [
+        "属性应说明候选物理字段、字段含义和默认口径。"
+      ]
+    },
+    {
+      "id": "metric_measures_entity",
+      "from_object": "domain_metric",
+      "to_object": "domain_entity",
+      "relation_kind": "measures",
+      "cardinality": "many_to_one",
+      "description": "业务指标度量某个业务实体或实体集合。",
+      "modeling_guidance": [
+        "指标必须声明公式、时间字段、默认过滤和排除规则。"
+      ]
+    },
+    {
+      "id": "relation_connects_entities",
+      "from_object": "semantic_relation",
+      "to_object": "domain_entity",
+      "relation_kind": "connects",
+      "cardinality": "many_to_many",
+      "description": "业务关系连接两个或多个业务实体。",
+      "modeling_guidance": [
+        "关系方向和基数不确定时，不要假装确认。"
+      ]
+    },
+    {
+      "id": "term_maps_to_table_column",
+      "from_object": "domain_attribute",
+      "to_object": "physical_table",
+      "relation_kind": "semantic_mapping",
+      "cardinality": "many_to_many",
+      "description": "业务术语或属性映射到候选物理字段。",
+      "modeling_guidance": [
+        "把术语、属性和字段映射放在 object_relations 中，用 relation_kind=semantic_mapping 表达。"
+      ]
+    },
+    {
+      "id": "document_mentions_domain_entity",
+      "from_object": "source_document",
+      "to_object": "domain_entity",
+      "relation_kind": "supports",
+      "cardinality": "many_to_many",
+      "description": "上传文档提及并定义某个业务实体。",
+      "modeling_guidance": [
+        "文档和业务实体的支撑关系放在 object_relations 中，用 relation_kind=supports 表达。"
+      ]
+    },
+    {
+      "id": "table_column_supports_attribute",
+      "from_object": "physical_table",
+      "to_object": "domain_attribute",
+      "relation_kind": "semantic_mapping",
+      "cardinality": "many_to_many",
+      "description": "数据库字段支撑某个业务属性。",
+      "modeling_guidance": [
+        "字段到属性的映射放在 object_relations 中，用 relation_kind=semantic_mapping 表达。"
+      ]
+    },
+    {
+      "id": "metric_formula_uses_table_columns",
+      "from_object": "domain_metric",
+      "to_object": "physical_table",
+      "relation_kind": "caliber_rule",
+      "cardinality": "many_to_many",
+      "description": "指标公式依赖一组表字段、过滤条件和时间字段。",
+      "modeling_guidance": [
+        "指标口径和字段依赖作为 relation_kind=caliber_rule 的关系表达。"
+      ]
+    },
+    {
+      "id": "query_function_handoffs_semantic_caliber",
+      "from_object": "domain_query_function",
+      "to_object": "domain_ontology_skill",
+      "relation_kind": "caliber_rule",
+      "cardinality": "many_to_one",
+      "description": "领域查询函数把本体口径交给后续问数链路。",
+      "modeling_guidance": [
+        "查询函数是语义交接契约，关系类型使用 relation_kind=caliber_rule。"
+      ]
+    }
+  ]
+}

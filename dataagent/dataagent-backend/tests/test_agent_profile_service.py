@@ -38,6 +38,19 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     assert payload["is_builtin"] is True
 
 
+def test_ontology_modeling_agent_payload_is_builtin_with_modeling_skill():
+    payload = agent_profile_service.ontology_modeling_agent_payload()
+
+    assert payload["agent_id"] == "agent_ontology_modeling"
+    assert payload["name"] == "本体建模助手"
+    assert payload["allowed_tools"] == ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
+    assert payload["mcp_server_ids"] == ["portal"]
+    assert payload["skill_folders"] == ["ontology-modeling-assistant"]
+    assert "本体" in payload["description"]
+    assert payload["is_default"] is False
+    assert payload["is_builtin"] is True
+
+
 def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
     payload = agent_profile_service.normalize_agent_profile_payload(
         {

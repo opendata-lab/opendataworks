@@ -24,6 +24,7 @@ from core.skill_admin_service import (
 
 BUSINESS_SKILL = "opendataworks-business-knowledge"
 PLATFORM_TOOLS_SKILL = "opendataworks-platform-tools"
+ONTOLOGY_MODELING_SKILL = "ontology-modeling-assistant"
 LEGACY_SQL_SKILL = "dataagent-nl2sql"
 
 
@@ -903,6 +904,9 @@ def test_uninstall_skill_rejects_builtin(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
         skill_admin_service.uninstall_skill(PLATFORM_TOOLS_SKILL)
+
+    with pytest.raises(ValueError, match="内置 Skill 不支持卸载"):
+        skill_admin_service.uninstall_skill(ONTOLOGY_MODELING_SKILL)
 
 
 def test_uninstall_skill_rejects_last_enabled(monkeypatch, tmp_path):

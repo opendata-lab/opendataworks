@@ -16,6 +16,8 @@ DEFAULT_AGENT_ID = "agent_default"
 DEFAULT_AGENT_NAME = "默认助手"
 OPENDATAWORKS_AGENT_ID = "agent_opendataworks"
 OPENDATAWORKS_AGENT_NAME = "OpenDataWorks平台助手"
+ONTOLOGY_MODELING_AGENT_ID = "agent_ontology_modeling"
+ONTOLOGY_MODELING_AGENT_NAME = "本体建模助手"
 PERMISSION_MODES = {"inherit", "default", "bypassPermissions"}
 SAFE_AGENT_TOOLS = ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
 GENERAL_AGENT_TOOLS = ["Read", "LS", "Glob", "Grep"]
@@ -310,6 +312,29 @@ def opendataworks_agent_payload() -> dict[str, Any]:
     }
 
 
+def ontology_modeling_agent_payload() -> dict[str, Any]:
+    return {
+        "agent_id": ONTOLOGY_MODELING_AGENT_ID,
+        "name": ONTOLOGY_MODELING_AGENT_NAME,
+        "description": "根据业务需求、上传文档和数据库表字段创建特定业务域本体语义 Skill。",
+        "system_prompt": "你是 OpenDataWorks 本体建模助手，专注把用户需求、上传文档和数据库表字段整理成可复用的领域本体语义 Skill。",
+        "permission_mode": "inherit",
+        "allowed_tools": list(SAFE_AGENT_TOOLS),
+        "mcp_server_ids": [PORTAL_MCP_SERVER_ID],
+        "skill_folders": ["ontology-modeling-assistant"],
+        "max_turns": 0,
+        "env_vars": {},
+        "data_scope": {"allowed_scopes": []},
+        "preset_questions": [
+            "帮我根据上传文档和候选表创建一个业务域本体 Skill",
+            "把这些业务术语、表字段和指标口径整理成本体 JSON",
+            "检查这个领域本体的对象、关系和 semantic_edges 是否完整",
+        ],
+        "is_default": False,
+        "is_builtin": True,
+    }
+
+
 def _new_agent_id() -> str:
     return f"agent_{uuid.uuid4().hex[:24]}"
 
@@ -548,6 +573,9 @@ def bootstrap_default_agent_profile() -> dict[str, Any]:
     opendataworks_profile = store.get_profile(OPENDATAWORKS_AGENT_ID)
     if not opendataworks_profile:
         store.save_profile(opendataworks_agent_payload())
+    ontology_modeling_profile = store.get_profile(ONTOLOGY_MODELING_AGENT_ID)
+    if not ontology_modeling_profile:
+        store.save_profile(ontology_modeling_agent_payload())
     store.backfill_default_bindings(default_profile)
     return default_profile
 
