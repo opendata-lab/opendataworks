@@ -476,6 +476,86 @@ def test_deepeval_auto_rule_check_adds_generic_failure_attribution(monkeypatch):
     )
 
 
+def test_deepeval_auto_rule_check_ignores_tool_doc_text_for_user_visible_regexes(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    case = {
+        **_sample_case(),
+        "required_sql_fragments": ["public.dim_tech_public_env_cmp_df"],
+        "forbidden_sql_patterns": [r"(?i)select\s+\*"],
+    }
+    blocks = [
+        {
+            "type": "tool_use",
+            "tool_name": "Read",
+            "output": "参考文档：TODO {target_date} 未找到匹配对象。不要使用 OpenDataWorks 平台元数据或 SELECT *。",
+        }
+    ]
+
+    result = runner.auto_rule_check(
+        case,
+        final_answer="当前 PROD 环境共有 301 个分级保障组件。",
+        blocks=blocks,
+        sql_outputs=["SELECT count(1) FROM public.dim_tech_public_env_cmp_df WHERE env_name = 'PROD'"],
+        tool_names=["Read"],
+    )
+
+    assert result["passed"] is True
+    assert result["missing_sql_fragments"] == []
+    assert result["forbidden_sql_patterns"] == []
+    assert "wrong_domain" not in result["failure_attribution"]
+    assert "placeholder_leak" not in result["failure_attribution"]
+    assert "empty_result" not in result["failure_attribution"]
+    assert "forbidden_sql" not in result["failure_attribution"]
+
+
+def test_deepeval_run_case_submits_turns_in_order(monkeypatch):
+    _install_fake_deepeval(monkeypatch)
+    runner = _load_runner()
+    case = {
+        **_sample_case(),
+        "case_id": "ARCH_EDGE_010",
+        "question": "mmj-proc-bcp 慢接口影响的上游系统多轮分析",
+        "turns": ["mmj-proc-bcp 有哪些慢接口？", "这些接口影响哪些上游系统？"],
+    }
+    submitted_contents = []
+
+    def fake_http_json(method, url, payload=None, **kwargs):
+        if url.endswith("/api/v1/nl2sql/topics") and method == "POST":
+            return {"topic_id": "topic_1"}
+        if url.endswith("/api/v1/nl2sql/tasks/deliver-message"):
+            submitted_contents.append(payload["content"])
+            return {"task_id": f"task_{len(submitted_contents)}", "accepted": True}
+        if url == "http://dataagent/api/v1/nl2sql/tasks/task_1":
+            return {"task_id": "task_1", "topic_id": "topic_1", "task_status": "finished"}
+        if url == "http://dataagent/api/v1/nl2sql/tasks/task_2":
+            return {"task_id": "task_2", "topic_id": "topic_1", "task_status": "finished"}
+        if url.startswith("http://dataagent/api/v1/nl2sql/topics/topic_1/messages"):
+            return {
+                "items": [
+                    {"sender_type": "user", "content": submitted_contents[0]},
+                    {"sender_type": "assistant", "task_id": "task_1", "content": "第一轮答案"},
+                    {"sender_type": "user", "content": submitted_contents[1]},
+                    {"sender_type": "assistant", "task_id": "task_2", "content": "第二轮答案", "blocks": []},
+                ]
+            }
+        raise AssertionError(f"unexpected request: {method} {url}")
+
+    monkeypatch.setattr(runner, "http_json", fake_http_json)
+
+    result = runner.run_case(
+        "http://dataagent",
+        case,
+        types.SimpleNamespace(agent_id="agent_eval", provider_id="", model="", timeout_seconds=5),
+    )
+
+    assert submitted_contents == case["turns"]
+    assert result["task_id"] == "task_2"
+    assert result["final_answer"] == "第二轮答案"
+    assert result["turns"] == case["turns"]
+    assert result["errors"] == []
+
+
 def test_deepeval_run_cases_parallel_preserves_dataset_order_and_records_crashes(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()

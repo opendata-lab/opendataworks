@@ -8,6 +8,8 @@ It is intentionally separate from the DataAgent backend runtime. DataAgent is on
 
 Datasets are private deployment assets and are not committed with this tool. Pass the JSONL file explicitly with `--dataset` or set `DATAAGENT_EVAL_DATASET`. The JSONL schema matches the builtin runner dataset so both engines can be compared case by case.
 
+Each case must include either `question` or `turns`. `question` is submitted as a single-turn case. `turns` is a list of user messages submitted sequentially in one topic, and `question` may be kept as a short report title for that multi-turn case.
+
 Non-dry-run evaluation must also choose the DataAgent profile to execute with. Pass `--agent-id` or set `DATAAGENT_EVAL_AGENT_ID`. The selected agent's `data_scope` is snapshotted on each eval topic and enforces metadata/query access.
 
 ## Run With Docker

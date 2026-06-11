@@ -19,7 +19,6 @@ from typing import Any
 REQUIRED_CASE_FIELDS = {
     "case_id",
     "category",
-    "question",
     "expected_intent",
     "expected_ontology_objects",
     "expected_relations",
@@ -180,6 +179,33 @@ def _scoring_total(case: dict[str, Any]) -> float:
     return total
 
 
+def _case_turns(case: dict[str, Any]) -> list[str]:
+    raw_turns = case.get("turns")
+    turns: list[str] = []
+    if isinstance(raw_turns, list):
+        for turn in raw_turns:
+            if isinstance(turn, str):
+                text = turn.strip()
+            elif isinstance(turn, dict):
+                text = str(turn.get("content") or turn.get("question") or turn.get("message") or "").strip()
+            else:
+                text = ""
+            if text:
+                turns.append(text)
+    if turns:
+        return turns
+
+    question = str(case.get("question") or "").strip()
+    return [question] if question else []
+
+
+def _case_question(case: dict[str, Any]) -> str:
+    question = str(case.get("question") or "").strip()
+    if question:
+        return question
+    return "\n".join(f"第{index}轮：{turn}" for index, turn in enumerate(_case_turns(case), start=1))
+
+
 def load_dataset(path: Path, case_ids: list[str] | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     cases = _load_jsonl(path)
     seen: set[str] = set()
@@ -195,6 +221,8 @@ def load_dataset(path: Path, case_ids: list[str] | None = None) -> tuple[list[di
         missing = sorted(field for field in REQUIRED_CASE_FIELDS if field not in item)
         if missing:
             missing_fields.append({"case_id": case_id, "missing": missing})
+        if not _case_turns(item):
+            missing_fields.append({"case_id": case_id, "missing": ["question_or_turns"]})
         if abs(_scoring_total(item) - 10.0) > 0.001:
             invalid_scoring.append(case_id)
 
@@ -573,10 +601,10 @@ def _create_topic(base_url: str, case: dict[str, Any], agent_id: str) -> str:
     return topic_id
 
 
-def _submit_task(base_url: str, topic_id: str, case: dict[str, Any], args: argparse.Namespace) -> str:
+def _submit_task(base_url: str, topic_id: str, case: dict[str, Any], args: argparse.Namespace, content: str | None = None) -> str:
     payload: dict[str, Any] = {
         "topic_id": topic_id,
-        "content": str(case.get("question") or ""),
+        "content": str(content if content is not None else _case_question(case)),
         "agent_id": str(args.agent_id or "").strip(),
         "execution_mode": "background",
     }
@@ -894,11 +922,17 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     conversation: list[dict[str, Any]] = []
     try:
         topic_id = _create_topic(base_url, case, str(args.agent_id or "").strip())
-        task_id = _submit_task(base_url, topic_id, case, args)
         case_timeout = min(max(1, args.timeout_seconds), int(case.get("max_wait_seconds") or args.timeout_seconds or 900))
-        task, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
-        errors.extend(poll_errors)
-        final_task_id = str(task.get("task_id") or task_id).strip() or task_id
+        final_task_id = ""
+        for turn in _case_turns(case):
+            task_id = _submit_task(base_url, topic_id, case, args, turn)
+            task, poll_errors = _poll_task(base_url, task_id, case_timeout, topic_id=topic_id)
+            errors.extend(poll_errors)
+            final_task_id = str(task.get("task_id") or task_id).strip() or task_id
+            status = str(task.get("task_status") or "").lower()
+            if status and status not in SUCCESS_STATUSES:
+                errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
+                break
         messages = http_json(
             "GET",
             f"{base_url}/api/v1/nl2sql/topics/{urllib.parse.quote(topic_id)}/messages?page=1&page_size=200&order=asc",
@@ -907,9 +941,6 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
         message = _final_assistant_message(messages, final_task_id)
         conversation = _build_conversation_log(messages)
         final_answer = str(message.get("content") or "").strip()
-        status = str(task.get("task_status") or "").lower()
-        if status and status not in SUCCESS_STATUSES:
-            errors.append({"code": status, "message": json.dumps(task.get("error") or {}, ensure_ascii=False)})
     except EvalRunnerError as exc:
         errors.append({"code": "runner_error", "message": str(exc)})
 
@@ -921,7 +952,7 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     rule_check = auto_rule_check(case, final_answer=final_answer, blocks=blocks, sql_outputs=sql_outputs, tool_names=tool_names)
     judge_payload = {
         "case": _case_for_judge(case),
-        "user_question": str(case.get("question") or ""),
+        "user_question": _case_question(case),
         "final_answer": final_answer,
         "task_status": str(task.get("task_status") or ""),
         "task_error": task.get("error") if isinstance(task.get("error"), dict) else None,
@@ -952,7 +983,8 @@ def run_case(base_url: str, case: dict[str, Any], args: argparse.Namespace, judg
     return {
         "case_id": case.get("case_id"),
         "category": case.get("category"),
-        "question": case.get("question"),
+        "question": _case_question(case),
+        "turns": _case_turns(case),
         "agent_id": str(args.agent_id or "").strip(),
         "topic_id": topic_id,
         "task_id": str(task.get("task_id") or task_id),
@@ -988,7 +1020,8 @@ def _run_cases(base_url: str, cases: list[dict[str, Any]], args: argparse.Namesp
                 results[index] = {
                     "case_id": case.get("case_id"),
                     "category": case.get("category"),
-                    "question": case.get("question"),
+                    "question": _case_question(case),
+                    "turns": _case_turns(case),
                     "agent_id": str(getattr(args, "agent_id", "") or "").strip(),
                     "task_status": "runner_error",
                     "final_answer": "",
