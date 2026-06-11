@@ -533,12 +533,50 @@ def _block_has_tool_output(block: dict[str, Any]) -> bool:
     return False
 
 
+# Pseudo tool-call tag fragments the model sometimes leaks as plain text instead
+# of emitting a real tool_use block. When these appear the model turn ends
+# "normally" but no tool was actually invoked, so the run drifts to a dead-end
+# answer. Matched case-insensitively as substrings.
+_PSEUDO_TOOL_CALL_MARKERS: tuple[str, ...] = (
+    "<tool_call",
+    "</tool_call>",
+    "<function",
+    "</function>",
+    "<parameter",
+    "</parameter>",
+    "<invoke",
+    "</invoke>",
+    "</antml",
+)
+
+_PSEUDO_TOOL_CALL_TAG_RE = re.compile(
+    r"</?(?:tool_call|function|parameter|invoke|antml[^>\s]*)[^>]*>",
+    re.IGNORECASE,
+)
+
+
+def _contains_pseudo_tool_call(text: str) -> bool:
+    lowered = str(text or "").lower()
+    if not lowered:
+        return False
+    return any(marker in lowered for marker in _PSEUDO_TOOL_CALL_MARKERS)
+
+
+def _strip_pseudo_tool_call_tags(text: str) -> str:
+    raw = str(text or "")
+    if not raw:
+        return ""
+    return _PSEUDO_TOOL_CALL_TAG_RE.sub("", raw)
+
+
 def _partial_completion_note(reason: str) -> str:
     text = str(reason or "").strip()
     if "最大轮次" in text:
         return "注：本次推理达到轮次上限，已返回当前可用结果。"
     if "超时" in text:
         return "注：本次执行耗时较长，已返回当前可用结果。"
+    if "工具调用格式" in text:
+        return "注：模型本次工具调用格式异常，已返回当前可用结果。"
     return "注：本次执行未完整结束，已返回当前可用结果。"
 
 

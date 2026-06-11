@@ -23,6 +23,7 @@ from core.agent_runtime import (
     _build_system_prompt,
     _build_workspace_boundary_hooks,
     _clip_text,
+    _contains_pseudo_tool_call,
     _default_model_for_provider,
     _extract_block,
     _format_exception_reason,
@@ -34,6 +35,7 @@ from core.agent_runtime import (
     _result_subtype_to_reason,
     _safe_base_url,
     _safe_stringify,
+    _strip_pseudo_tool_call_tags,
     resolve_agent_skill_runtime,
     resolve_enabled_skill_runtime,
     resolve_runtime_provider_selection,
@@ -94,10 +96,16 @@ class SdkResultAccumulator:
         self.result_is_error = False
         self.provider_error_message = ""
         self._saw_stream_event = False
+        self._saw_pseudo_tool_call = False
+        self._saw_tool_use = False
         self._text_order: list[int] = []
         self._text_by_index: dict[int, str] = {}
         self._block_context: dict[int, dict[str, Any]] = {}
         self._next_message_block_index = 10_000
+
+    def _note_pseudo_tool_call(self, text: str) -> None:
+        if not self._saw_pseudo_tool_call and _contains_pseudo_tool_call(text):
+            self._saw_pseudo_tool_call = True
 
     def _remember_provider_error(self, message: Any) -> None:
         text = str(message or "").strip()
@@ -181,8 +189,12 @@ class SdkResultAccumulator:
         for block in content:
             block_type, block_text, _payload = _extract_block(block)
             lower_type = block_type.lower()
-            if block_text and ("text" in lower_type or lower_type in {"textblock", "text"}):
-                self._append_message_text(block_text)
+            if "tool_use" in lower_type:
+                self._saw_tool_use = True
+            if block_text:
+                self._note_pseudo_tool_call(block_text)
+                if "text" in lower_type or lower_type in {"textblock", "text"}:
+                    self._append_message_text(block_text)
 
     def _ingest_stream_event(self, raw_event: dict[str, Any]) -> None:
         event_type = str(raw_event.get("type") or "").strip()
@@ -208,6 +220,8 @@ class SdkResultAccumulator:
             block_payload = raw_event.get("content_block") if isinstance(raw_event.get("content_block"), dict) else {}
             block_type = str(block_payload.get("type") or "").strip().lower()
             self._block_context[block_index] = {"type": block_type}
+            if "tool_use" in block_type:
+                self._saw_tool_use = True
             if block_type == "text" and block_payload.get("text"):
                 self._append_text(block_index, str(block_payload.get("text") or ""))
             return
@@ -215,10 +229,19 @@ class SdkResultAccumulator:
         if event_type == "content_block_delta":
             block_index = int(raw_event.get("index") or 0)
             block_payload = self._block_context.get(block_index) or {}
+            delta_payload = raw_event.get("delta") if isinstance(raw_event.get("delta"), dict) else {}
+            delta_type = str(delta_payload.get("type") or "")
+            # Detect leaked pseudo tool-call tags in any block, including thinking,
+            # so a drifted run is not silently reported as a clean answer. Thinking
+            # deltas carry text under "thinking"; text deltas under "text". Thinking
+            # text is still kept out of the visible answer below.
+            if delta_type == "thinking_delta":
+                self._note_pseudo_tool_call(str(delta_payload.get("thinking") or ""))
+            elif delta_type == "text_delta":
+                self._note_pseudo_tool_call(str(delta_payload.get("text") or ""))
             if str(block_payload.get("type") or "") != "text":
                 return
-            delta_payload = raw_event.get("delta") if isinstance(raw_event.get("delta"), dict) else {}
-            if str(delta_payload.get("type") or "") == "text_delta":
+            if delta_type == "text_delta":
                 self._append_text(block_index, str(delta_payload.get("text") or ""))
 
     def build_result(self) -> TaskExecutionResult:
@@ -262,10 +285,52 @@ class SdkResultAccumulator:
                 session_id=self.session_id,
             )
 
+        if self._saw_pseudo_tool_call:
+            return self._build_format_drift_result(content)
+
         return TaskExecutionResult(
             task_status="finished",
             content=content or "已完成。",
             usage=self.usage or None,
+            provider_id=self.provider_id,
+            model=self.model,
+            session_id=self.session_id,
+        )
+
+    def _build_format_drift_result(self, content: str) -> TaskExecutionResult:
+        """Recover a run that leaked pseudo tool-call tags instead of a real call.
+
+        The model turn ended without an error, but it emitted XML-style tool-call
+        markup as text and never produced a trustworthy final answer. Salvage any
+        clean visible text / point at the gathered tool output; if nothing is
+        usable, surface a distinct error instead of a silent "已完成。".
+        """
+        reason = "模型工具调用格式异常未正常收口"
+        cleaned = _strip_pseudo_tool_call_tags(content).strip()
+        synthetic_blocks: dict[str, dict[str, Any]] = (
+            {"tool": {"type": "tool_result", "output": "1"}} if self._saw_tool_use else {}
+        )
+        recovered = _recover_partial_content(
+            question=self.params.question,
+            main_text=cleaned,
+            blocks=synthetic_blocks,
+            reason=reason,
+        )
+        if recovered:
+            return TaskExecutionResult(
+                task_status="finished",
+                content=recovered,
+                usage=self.usage or None,
+                provider_id=self.provider_id,
+                model=self.model,
+                session_id=self.session_id,
+            )
+        message = "模型输出伪工具调用标签，未生成最终回答"
+        return TaskExecutionResult(
+            task_status="error",
+            content="模型本次回答因工具调用格式异常未能正常生成，请重试。",
+            usage=self.usage or None,
+            error={"code": "tool_call_format_drift", "message": message, "detail": reason},
             provider_id=self.provider_id,
             model=self.model,
             session_id=self.session_id,
