@@ -470,3 +470,25 @@ def test_build_system_prompt_omits_generic_model_known_methodology():
 
 def test_legacy_lf_system_prompt_template_is_removed():
     assert not (BACKEND_ROOT / "prompts" / "system_prompt.py").exists()
+
+
+def test_contains_pseudo_tool_call_detects_leaked_tags():
+    assert agent_runtime._contains_pseudo_tool_call("Now let me check </parameter></function></tool_call>")
+    assert agent_runtime._contains_pseudo_tool_call("<tool_call>{...}")
+    assert agent_runtime._contains_pseudo_tool_call("</invoke>")
+    assert not agent_runtime._contains_pseudo_tool_call("最近 30 天工作流发布次数为 3 次。")
+    assert not agent_runtime._contains_pseudo_tool_call("使用 a < b 与 c > d 的比较条件")
+
+
+def test_strip_pseudo_tool_call_tags_removes_only_tags():
+    raw = "结论：发布 174 次 </parameter></function></tool_call>"
+    cleaned = agent_runtime._strip_pseudo_tool_call_tags(raw)
+    assert "结论：发布 174 次" in cleaned
+    assert "</tool_call>" not in cleaned
+    assert "</parameter>" not in cleaned
+    assert "</function>" not in cleaned
+
+
+def test_partial_completion_note_for_tool_call_format_drift():
+    note = agent_runtime._partial_completion_note("模型工具调用格式异常未正常收口")
+    assert "工具调用格式异常" in note
