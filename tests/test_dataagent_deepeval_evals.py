@@ -514,9 +514,9 @@ def test_deepeval_run_case_submits_turns_in_order(monkeypatch):
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "case_id": "ARCH_EDGE_010",
-        "question": "mmj-proc-bcp 慢接口影响的上游系统多轮分析",
-        "turns": ["mmj-proc-bcp 有哪些慢接口？", "这些接口影响哪些上游系统？"],
+        "case_id": "ODW_SAMPLE_MULTITURN_001",
+        "question": "工作流发布趋势多轮分析",
+        "turns": ["最近 30 天工作流发布次数趋势如何？", "其中发布次数最多的是哪一天？"],
     }
     submitted_contents = []
 

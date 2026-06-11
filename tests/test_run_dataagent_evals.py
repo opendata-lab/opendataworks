@@ -416,9 +416,9 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
 def test_run_case_submits_turns_in_order(monkeypatch):
     runner = _load_runner()
     case = {
-        **_sample_case("ARCH_EDGE_010"),
-        "question": "mmj-proc-bcp 慢接口影响的上游系统多轮分析",
-        "turns": ["mmj-proc-bcp 有哪些慢接口？", "这些接口影响哪些上游系统？"],
+        **_sample_case("ODW_SAMPLE_MULTITURN_001"),
+        "question": "工作流发布趋势多轮分析",
+        "turns": ["最近 30 天工作流发布次数趋势如何？", "其中发布次数最多的是哪一天？"],
     }
     submitted_contents = []
 
@@ -444,7 +444,7 @@ def test_run_case_submits_turns_in_order(monkeypatch):
         raise AssertionError(f"unexpected request: {method} {url}")
 
     def fake_judge_case(judge_config, case, payload):
-        assert payload["user_question"] == "mmj-proc-bcp 慢接口影响的上游系统多轮分析"
+        assert payload["user_question"] == "工作流发布趋势多轮分析"
         assert payload["final_answer"] == "第二轮答案"
         return {
             "score": 9,
