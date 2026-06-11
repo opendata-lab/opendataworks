@@ -97,9 +97,11 @@ are logged and never fail the run.
   name, size, and a direct `?download=1` link built from the existing
   `topicApi.fileUrl`.
 - `renderMarkdown(text, { resolveFileHref })` post-processes rendered anchors:
-  hrefs matching the curated `output/` / `uploads/` prefixes are rewritten to
-  topic file download URLs; all other links are untouched. Each surface passes
-  a resolver bound to its active topic.
+  any workspace-relative href (no scheme, not root-absolute, not a fragment)
+  is rewritten to a topic file download URL — `output/` is the prompt
+  convention, not a requirement, and relative links have no other meaning in a
+  chat answer. Absolute/external links are untouched. Each surface passes a
+  resolver bound to its active topic.
 
 ### Prompt contract (secondary path)
 

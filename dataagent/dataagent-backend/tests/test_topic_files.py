@@ -171,6 +171,21 @@ def test_diff_generated_files_returns_new_and_changed_outputs(sandbox_root: Path
     assert rels == {"output/sales.xlsx", "output/old_report.html"}
 
 
+def test_diff_generated_files_is_not_limited_to_the_output_dir(sandbox_root: Path):
+    root = sandbox_root / "topic_1" / "workspace"
+    root.mkdir(parents=True)
+    before = snapshot_workspace_state("topic_1")
+
+    # The agent is told to use output/, but files written anywhere visible in
+    # the workspace are still this run's deliverables.
+    (root / "summary.html").write_text("<p>root-level</p>", encoding="utf-8")
+    (root / "exports").mkdir()
+    (root / "exports" / "legacy.csv").write_text("x\n", encoding="utf-8")
+
+    rels = {item["rel_path"] for item in diff_generated_files("topic_1", before)}
+    assert rels == {"summary.html", "exports/legacy.csv"}
+
+
 def test_diff_generated_files_ignores_uploads_and_unchanged(sandbox_root: Path):
     root = sandbox_root / "topic_1" / "workspace"
     (root / "output").mkdir(parents=True)

@@ -29,11 +29,24 @@ describe('chatMessage helpers', () => {
     expect(html).toContain('href="/api/v1/nl2sql/topics/t1/files/uploads/raw.csv?download=1"')
   })
 
+  it('rewrites workspace files outside the output/ convention too', () => {
+    const resolveFileHref = (relPath) => `/files/${relPath}`
+    const html = renderMarkdown(
+      '[导出](exports/legacy.csv) 和 [汇总](summary.html)',
+      { resolveFileHref },
+    )
+    expect(html).toContain('href="/files/exports/legacy.csv"')
+    expect(html).toContain('href="/files/summary.html"')
+  })
+
   it('leaves non-workspace links and resolver-less rendering untouched', () => {
-    const md = '[外部](https://example.com/output/x) 与 [报告](output/r.html)'
+    const md = '[外部](https://example.com/output/x) [邮件](mailto:a@b.c) [锚点](#sec) [站内](/datastudio) [报告](output/r.html)'
     expect(renderMarkdown(md)).toContain('href="output/r.html"')
     const html = renderMarkdown(md, { resolveFileHref: () => '/resolved' })
     expect(html).toContain('href="https://example.com/output/x"')
+    expect(html).toContain('href="mailto:a@b.c"')
+    expect(html).toContain('href="#sec"')
+    expect(html).toContain('href="/datastudio"')
     expect(html).toContain('href="/resolved"')
   })
 

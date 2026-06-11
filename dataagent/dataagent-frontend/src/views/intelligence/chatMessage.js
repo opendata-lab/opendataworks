@@ -14,9 +14,16 @@ const escapeHtml = (text) => String(text || '')
   .replace(/</g, '&lt;')
   .replace(/>/g, '&gt;')
 
-// Anchors whose target follows the workspace-relative file convention
-// (`output/...` deliverables, `uploads/...` inputs, optional `./` prefix).
-const WORKSPACE_FILE_HREF = /(<a href=")((?:\.\/)?(?:output|uploads)\/[^"]+)(")/g
+// A workspace file reference is any relative href: no scheme (http:, mailto:,
+// data:, ...), not host/root-absolute, not a fragment. The agent usually writes
+// deliverables under `output/` by convention, but it may emit links to files
+// anywhere in the workspace; a relative link has no other meaning in a chat
+// answer, so rewriting is always an improvement (a missing path just 404s on
+// the confined download endpoint).
+const isWorkspaceFileHref = (href) => Boolean(href)
+  && !/^[a-z][a-z0-9+.-]*:/i.test(href)
+  && !href.startsWith('/')
+  && !href.startsWith('#')
 
 export function renderMarkdown(text, options = {}) {
   let html
@@ -31,7 +38,8 @@ export function renderMarkdown(text, options = {}) {
   // Rewrite workspace-relative file links the agent emits (e.g.
   // `[报告](output/report.xlsx)`) into real topic file download URLs; every
   // other link is left untouched.
-  return html.replace(WORKSPACE_FILE_HREF, (match, open, rawHref, close) => {
+  return html.replace(/(<a href=")([^"]+)(")/g, (match, open, rawHref, close) => {
+    if (!isWorkspaceFileHref(rawHref)) return match
     let relPath = rawHref.replace(/^\.\//, '')
     try { relPath = decodeURI(relPath) } catch { /* keep the raw path */ }
     const resolved = resolveFileHref(relPath)
