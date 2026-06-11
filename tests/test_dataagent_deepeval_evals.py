@@ -368,12 +368,12 @@ def test_deepeval_poll_task_tolerates_transient_status_error(monkeypatch):
 def test_deepeval_extracts_evidence_from_bash_script_text_outputs(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
-    actual_sql = "select count(1) from public.dim_tech_public_env_cmp_df"
+    actual_sql = "select count(1) from public.dim_tech_env_workflow_df"
     chart_spec = {
         "kind": "chart_spec",
         "chart_type": "bar",
-        "dataset": [{"env_name": "PROD", "cmp_cnt": 301}],
-        "series": [{"name": "组件数", "field": "cmp_cnt"}],
+        "dataset": [{"env_name": "DEV", "node_cnt": 10}],
+        "series": [{"name": "工作流数", "field": "node_cnt"}],
     }
     blocks = [
         {
@@ -392,7 +392,7 @@ def test_deepeval_extracts_evidence_from_bash_script_text_outputs(monkeypatch):
                         {
                             "kind": "sql_execution",
                             "sql": actual_sql,
-                            "rows": [{"cmp_cnt": 301}],
+                            "rows": [{"node_cnt": 10}],
                         },
                         ensure_ascii=False,
                     ),
@@ -481,7 +481,7 @@ def test_deepeval_auto_rule_check_ignores_tool_doc_text_for_user_visible_regexes
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "required_sql_fragments": ["public.dim_tech_public_env_cmp_df"],
+        "required_sql_fragments": ["public.dim_tech_env_workflow_df"],
         "forbidden_sql_patterns": [r"(?i)select\s+\*"],
     }
     blocks = [
@@ -494,9 +494,9 @@ def test_deepeval_auto_rule_check_ignores_tool_doc_text_for_user_visible_regexes
 
     result = runner.auto_rule_check(
         case,
-        final_answer="当前 PROD 环境共有 301 个分级保障组件。",
+        final_answer="当前 DEV 环境共有 10 个工作流。",
         blocks=blocks,
-        sql_outputs=["SELECT count(1) FROM public.dim_tech_public_env_cmp_df WHERE env_name = 'PROD'"],
+        sql_outputs=["SELECT count(1) FROM public.dim_tech_env_workflow_df WHERE env_name = 'DEV'"],
         tool_names=["Read"],
     )
 

@@ -158,18 +158,18 @@ describe('ToolOutputRenderer', () => {
       _callComplete: true,
       _runtimeStarted: true,
       input: {
-        command: 'python3 .claude/skills/arch-governance-assistant/scripts/lookup_ontology.py --query 工作流',
-        description: 'Lookup ontology for "工作流" workflow'
+        command: 'python3 .claude/skills/opendataworks-business-knowledge/scripts/lookup_ontology.py --query 数据层',
+        description: 'Lookup ontology for "数据层" data layer'
       },
       output: 'done'
     })
 
-    expect(wrapper.find('.shell-trace-summary-text').text()).toBe('执行命令：Lookup ontology for "工作流" workflow')
+    expect(wrapper.find('.shell-trace-summary-text').text()).toBe('执行命令：Lookup ontology for "数据层" data layer')
     expect(wrapper.find('.shell-trace-summary-text').text()).not.toContain('lookup_ontology.py')
 
     await wrapper.find('.shell-trace-summary').trigger('click')
 
-    expect(wrapper.text()).toContain('$ python3 .claude/skills/arch-governance-assistant/scripts/lookup_ontology.py --query 工作流')
+    expect(wrapper.text()).toContain('$ python3 .claude/skills/opendataworks-business-knowledge/scripts/lookup_ontology.py --query 数据层')
   })
 
   it('renders read tools with an expandable output panel once content is available', async () => {
