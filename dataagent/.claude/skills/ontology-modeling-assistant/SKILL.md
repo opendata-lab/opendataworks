@@ -24,10 +24,12 @@ tools: [Read, Bash, Glob, Grep, LS]
   scripts/ontology_schema.py
   scripts/lookup_ontology.py
   scripts/validate_ontology.py
-  tests/test_lookup_ontology.py
-  tests/test_validate_ontology.py
+  tests/test_<domain>_lookup_ontology.py
+  tests/test_<domain>_validate_ontology.py
   tests/evals/evals.json
 ```
+
+测试文件名必须带领域前缀：多个 skill 的同名测试模块会在同一次 pytest 运行中产生导入冲突。
 
 `assets/ontology.json` 顶层只包含 `metadata`、`object_types`、`object_relations`，其中：
 
@@ -38,7 +40,7 @@ tools: [Read, Bash, Glob, Grep, LS]
 
 ## 工作流
 
-1. 读 [`reference/ontology-build-workflow.md`](reference/ontology-build-workflow.md)，按意图访谈、建模输入收集、建模、skill 交付和验证推进。
+1. 读 [`reference/ontology-build-workflow.md`](reference/ontology-build-workflow.md)，按意图访谈、建模输入收集、域划分与本体识别、建模、skill 交付和验证推进。划分业务域、判断哪些概念该建成本体对象和关系时，按 [`reference/ontology-scoping-method.md`](reference/ontology-scoping-method.md) 执行。
 2. 用 [`scripts/lookup_ontology.py`](scripts/lookup_ontology.py) 查询本技能的建模元模型，确认应该创建哪些对象、关系和 `relation_kind`：
 
 ```bash
@@ -55,6 +57,8 @@ python3 dataagent/.claude/skills/ontology-modeling-assistant/scripts/validate_on
 
 ## 建模规则
 
+- 先划分业务域并分级（核心/支撑/通用），再识别对象；一个领域 skill 只覆盖一个主业务域。
+- 用 5~15 个典型问题收敛建模范围；每个本体对象和关系必须能支撑至少一个典型问题，支撑不了的候选登记为排除项。
 - 文档和表字段是建模输入，不等同于本体。需要把自然语言术语、物理字段和业务对象分层表达。
 - 不确定时标记 `TODO` 和 `needs_confirmation`，不要伪造口径。
 - 所有边都放在 `object_relations`；术语到字段、文档到对象、字段到属性的关系也用 `relation_kind` 表达，不再单独建 `semantic_edges`。
