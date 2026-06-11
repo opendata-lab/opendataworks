@@ -93,6 +93,7 @@ class SdkResultAccumulator:
         self.result_error = ""
         self.result_is_error = False
         self.provider_error_message = ""
+        self._saw_stream_event = False
         self._text_order: list[int] = []
         self._text_by_index: dict[int, str] = {}
         self._block_context: dict[int, dict[str, Any]] = {}
@@ -151,6 +152,7 @@ class SdkResultAccumulator:
             return
 
         if msg_type == "StreamEvent":
+            self._saw_stream_event = True
             raw_event = getattr(msg, "event", None)
             if isinstance(raw_event, dict):
                 self._ingest_stream_event(raw_event)
@@ -161,6 +163,13 @@ class SdkResultAccumulator:
             assistant_error = str(getattr(msg, "error", "") or "").strip()
             if assistant_error:
                 self._remember_provider_error(assistant_error)
+            # In partial-streaming mode the SDK already accumulated every text
+            # block from StreamEvent deltas. The trailing AssistantMessage repeats
+            # the same content, so projecting it again would duplicate the final
+            # answer text. Only ingest whole-message content when no partial
+            # StreamEvent was observed (supports_partial_messages=false providers).
+            if self._saw_stream_event:
+                return
             self._ingest_assistant_content(content)
 
     def _ingest_assistant_content(self, content: Any) -> None:
