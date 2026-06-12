@@ -15,6 +15,7 @@
           :header-height="HEADER_HEIGHT"
           :row-key="RESULT_GRID_ROW_KEY"
           :scrollbar-always-on="true"
+          :fixed="true"
           class="result-grid__table"
         />
       </template>
@@ -180,6 +181,21 @@ defineExpose({
 .result-grid :deep(.result-grid__resizer:active) {
   background: var(--el-color-primary, #409eff);
   opacity: 0.5;
+}
+
+/* el-table-v2 draws its own thin overlay scrollbars; make them easier to
+   notice and grab, especially the horizontal one under wide result sets. */
+.result-grid :deep(.el-vl__horizontal) {
+  height: 10px !important;
+  bottom: 0 !important;
+}
+
+.result-grid :deep(.el-virtual-scrollbar .el-scrollbar__thumb) {
+  opacity: 0.45;
+}
+
+.result-grid :deep(.el-virtual-scrollbar .el-scrollbar__thumb:hover) {
+  opacity: 0.75;
 }
 
 .result-grid :deep(.result-grid__cell-text) {
