@@ -317,6 +317,53 @@ describe('NL2SqlChatV2 URL location', () => {
     const errorCard = wrapper.find('.v2-error-card')
     expect(errorCard.exists()).toBe(true)
     expect(errorCard.text()).toContain('模型会话异常结束')
+    expect(errorCard.find('.v2-error-retry').exists()).toBe(true)
+  })
+
+  it('retries the failed question from the error card and continues the conversation', async () => {
+    routeState.query = {
+      tab: 'chat-v2',
+      topic_id: 'topic-3'
+    }
+    apiMocks.taskApi.deliverMessage.mockResolvedValue({ task_id: 'task-retry' })
+    apiMocks.taskApi.streamSdkEvents.mockImplementation(async (_taskId, opts) => {
+      opts.onRecord({ record_type: 'stream', data: { type: 'message_start' } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '重试后的回答' } } })
+      opts.onRecord({ record_type: 'stream', data: { type: 'content_block_stop', index: 0 } })
+      opts.onRecord({ record_type: 'done', data: {} })
+    })
+    apiMocks.taskApi.getTask.mockResolvedValue({ task_status: 'finished' })
+    // deliver-message persists the retried turn server-side; the portal reloads
+    // messages after each run settles, so the mock must reflect that.
+    apiMocks.topicApi.getTopicMessages.mockImplementation(async (topicId) => {
+      const items = [...(topicMessages[topicId] || [])]
+      if (topicId === 'topic-3' && apiMocks.taskApi.deliverMessage.mock.calls.length) {
+        items.push(
+          { message_id: 'u3r', topic_id: 'topic-3', sender_type: 'user', content: 'failing question', created_at: '2026-05-30T04:02:00Z' },
+          { message_id: 'a3r', topic_id: 'topic-3', sender_type: 'assistant', content: '重试后的回答', created_at: '2026-05-30T04:03:00Z' }
+        )
+      }
+      return { topic_id: topicId, page: 1, page_size: 500, order: 'asc', total: items.length, items }
+    })
+
+    const wrapper = mountChat()
+
+    await flushPromises()
+    await nextTick()
+
+    await wrapper.find('.v2-error-card .v2-error-retry').trigger('click')
+    await flushPromises()
+    await nextTick()
+
+    expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledTimes(1)
+    expect(apiMocks.taskApi.deliverMessage.mock.calls[0][0]).toMatchObject({
+      topic_id: 'topic-3',
+      content: 'failing question'
+    })
+    // The failed reply's error card stays; the retried answer renders after it.
+    expect(wrapper.find('.v2-error-card').exists()).toBe(true)
+    expect(wrapper.text()).toContain('重试后的回答')
   })
 
   it('renders inline chart specs from assistant text without showing raw spec markup', async () => {
