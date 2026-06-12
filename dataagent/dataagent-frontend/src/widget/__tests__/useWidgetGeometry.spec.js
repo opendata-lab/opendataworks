@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { reactive, ref } from 'vue'
 
 import {
   clampPosition,
   clampSize,
   geometryStorageKey,
+  launcherStorageKey,
   loadGeometry,
   saveGeometry,
-  clearGeometry
+  clearGeometry,
+  useWidgetGeometry
 } from '../useWidgetGeometry'
 
 describe('clampPosition', () => {
@@ -99,5 +102,82 @@ describe('localStorage persistence', () => {
     saveGeometry('site_1', { left: 1, top: 1, width: 400, height: 500 })
     clearGeometry('site_1')
     expect(loadGeometry('site_1')).toBeNull()
+  })
+})
+
+describe('useWidgetGeometry drag activation', () => {
+  const makeRect = (left, top, width, height) => ({ left, top, width, height })
+
+  const setup = ({ isOpen = false } = {}) => {
+    const rootEl = ref({ getBoundingClientRect: () => makeRect(100, 100, 56, 56) })
+    const panelEl = ref({ getBoundingClientRect: () => makeRect(100, 50, 440, 600) })
+    const config = { displayMode: 'floating', websiteId: 'site_drag' }
+    const state = reactive({ isOpen })
+    return { api: useWidgetGeometry({ rootEl, panelEl, config, state }), state }
+  }
+
+  const pointerDown = (clientX, clientY) => ({
+    clientX,
+    clientY,
+    target: null,
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn()
+  })
+
+  const fire = (type, clientX = 0, clientY = 0) => {
+    window.dispatchEvent(new MouseEvent(type, { clientX, clientY }))
+  }
+
+  afterEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('keeps the launcher anchored on a plain click (pointerdown + pointerup, no move)', () => {
+    const { api } = setup()
+    api.startLauncherDrag(pointerDown(110, 110))
+    expect(api.isDragged.value).toBe(false)
+    expect(api.rootStyle.value).toEqual({})
+    fire('pointerup')
+    expect(api.isDragged.value).toBe(false)
+    expect(api.isLauncherDragMoved()).toBe(false)
+    expect(window.localStorage.getItem(launcherStorageKey('site_drag'))).toBeNull()
+  })
+
+  it('ignores launcher movement below the drag threshold', () => {
+    const { api } = setup()
+    api.startLauncherDrag(pointerDown(110, 110))
+    fire('pointermove', 112, 111)
+    expect(api.isDragged.value).toBe(false)
+    expect(api.rootStyle.value).toEqual({})
+    fire('pointerup')
+  })
+
+  it('marks the launcher dragged with coordinates once the threshold is crossed', () => {
+    const { api } = setup()
+    api.startLauncherDrag(pointerDown(110, 110))
+    fire('pointermove', 150, 140)
+    expect(api.isDragged.value).toBe(true)
+    expect(api.rootStyle.value).toEqual({ left: '140px', top: '130px' })
+    fire('pointerup')
+    expect(api.isLauncherDragMoved()).toBe(true)
+    expect(JSON.parse(window.localStorage.getItem(launcherStorageKey('site_drag')))).toEqual({ left: 140, top: 130 })
+  })
+
+  it('keeps the panel anchored on a plain header click', () => {
+    const { api } = setup({ isOpen: true })
+    api.startDrag(pointerDown(120, 60))
+    expect(api.isDragged.value).toBe(false)
+    expect(api.rootStyle.value).toEqual({})
+    fire('pointerup')
+    expect(api.isDragged.value).toBe(false)
+  })
+
+  it('marks the panel dragged with coordinates once it moves', () => {
+    const { api } = setup({ isOpen: true })
+    api.startDrag(pointerDown(120, 60))
+    fire('pointermove', 160, 90)
+    expect(api.isDragged.value).toBe(true)
+    expect(api.rootStyle.value).toEqual({ left: '140px', top: '80px' })
+    fire('pointerup')
   })
 })
