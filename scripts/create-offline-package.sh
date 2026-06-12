@@ -151,7 +151,7 @@ fi
 
 if [[ -d "$REPO_ROOT/dataagent/.claude/skills" ]]; then
     log "Copying DataAgent editable skills"
-    tar -C "$REPO_ROOT/dataagent/.claude/skills" --exclude='*-assistant' -cf - . | tar -C "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills" -xf -
+    tar -C "$REPO_ROOT/dataagent/.claude/skills" -cf - . | tar -C "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills" -xf -
 fi
 
 # 离线部署包必须保证 skills 目录树对容器内非 root 用户（uid 1000）可访问：
@@ -159,8 +159,8 @@ fi
 # - 所有文件至少可读（a+r）
 # - odw-cli 需要执行权限
 chmod -R a+rX "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills"
-if [[ -f "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills/dataagent-nl2sql/bin/odw-cli" ]]; then
-    chmod +x "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills/dataagent-nl2sql/bin/odw-cli"
+if [[ -f "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills/opendataworks-platform-tools/bin/odw-cli" ]]; then
+    chmod +x "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills/opendataworks-platform-tools/bin/odw-cli"
     log "Ensured skills directory permissions and odw-cli execute bit for offline package"
 fi
 
