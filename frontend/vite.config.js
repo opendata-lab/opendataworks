@@ -46,6 +46,11 @@ export default defineConfig(() => {
   const isTest = process.env.VITEST === 'true'
 
   return {
+    define: {
+      // Build identity used to version the fixed-name DataAgent widget bundle URL,
+      // so every portal build busts browser/proxy caches of the old bundle.
+      __ODW_DATAAGENT_WIDGET_BUNDLE_VERSION__: JSON.stringify(Date.now().toString(36))
+    },
     plugins: [
       vue(),
       Components({

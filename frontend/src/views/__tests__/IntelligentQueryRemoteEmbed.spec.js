@@ -21,7 +21,9 @@ describe('IntelligentQueryRemoteEmbed', () => {
 
     const script = document.querySelector('script[data-odw-dataagent-widget-script]')
     expect(script).toBeTruthy()
-    expect(script.src).toBe('http://localhost:3000/dataagent/widget/opendataworks-widget.bundle.js')
+    // The bundle URL is versioned with the portal build id to bust caches of the
+    // fixed-name bundle file.
+    expect(script.src).toMatch(/^http:\/\/localhost:3000\/dataagent\/widget\/opendataworks-widget\.bundle\.js\?v=[0-9a-z]+$/)
 
     window.OpenDataWorksWidget = { installWidget }
     script.dispatchEvent(new Event('load'))
