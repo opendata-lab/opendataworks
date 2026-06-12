@@ -152,6 +152,7 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     )
     geom.left = next.left
     geom.top = next.top
+    geom.dragged = true
   }
 
   const endDrag = () => {
@@ -168,7 +169,9 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     const rect = panelEl.value?.getBoundingClientRect?.()
     if (!rect) return
     dragStart = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top, width: rect.width, height: rect.height }
-    geom.dragged = true
+    // `dragged` flips the CSS anchor (bottom/right -> left/top); it must only be
+    // set together with real left/top values in the move handlers, otherwise a
+    // plain pointerdown makes the widget jump before any coordinates exist.
     geom.interacting = true
     window.addEventListener('pointermove', onDragMove)
     window.addEventListener('pointerup', endDrag)
@@ -185,6 +188,7 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     const dy = event.clientY - launcherDragStart.y
     if (!launcherDragMoved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return
     launcherDragMoved = true
+    launcherGeom.dragged = true
     const { vw, vh } = viewport()
     const nextLeft = Math.min(Math.max(0, launcherDragStart.left + dx), vw - LAUNCHER_SIZE)
     const nextTop = Math.min(Math.max(0, launcherDragStart.top + dy), vh - LAUNCHER_SIZE)
@@ -209,7 +213,8 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
     const rect = el.getBoundingClientRect()
     launcherDragStart = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }
     launcherDragMoved = false
-    launcherGeom.dragged = true
+    // Same constraint as panel drag: `dragged` only flips once the move handler
+    // has populated left/top, so a plain click never unanchors the launcher.
     launcherGeom.interacting = true
     window.addEventListener('pointermove', onLauncherDragMove)
     window.addEventListener('pointerup', endLauncherDrag)
