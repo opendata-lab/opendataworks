@@ -67,6 +67,7 @@
 - 每次修改 Pydantic 模型后运行 `validate_ontology.py --schema > assets/ontology.schema.json`，并确认 schema 文件同步。
 - 每次修改 `scripts/ontology_schema.py` 中的 `FIELD_DICTIONARY` 后运行 `validate_ontology.py --schema > assets/ontology.schema.json`，确认 schema 的 `x-field-dictionary` 同步。
 - 新增枚举值时先更新 `scripts/ontology_schema.py` 中的字段字典，再更新本体 JSON。
+- 交付领域 skill 前运行 `python -m pytest <skill>/tests -q`。DataAgent 后端和 sandbox runner 镜像预装 `pytest`，可直接用于生成后验证。
 - 再写 eval prompts：覆盖术语解释、关系查询、真实问数语义交接。
 - 每轮迭代后对照典型问题清单做反向验收，不能表达的问题登记 TODO。
 - 对照用户反馈迭代 `description`、本体索引和输出示例。
