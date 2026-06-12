@@ -53,6 +53,41 @@ python3 -m pytest tests/test_task_executor.py tests/test_agent_runtime.py -q
 端到端说明：漂移是非确定性模型行为，无法通过一次真实请求稳定触发，故合成流契约测试是
 收口路径的权威覆盖；真实 NL2SQL 烟测仅用于确认正常 finish 路径无回归。
 
+## 2026-06-12 迭代任务（漂移一律标错 + 前端重试）
+
+### 影响栈
+
+- DataAgent 后端（`dataagent/dataagent-backend`）：漂移收口结果语义。
+- DataAgent 前端（`dataagent/dataagent-frontend`）：共享会话引擎、门户聊天组件、单测。
+
+### 任务与改动文件
+
+1. `core/task_executor.py`
+   - `_build_format_drift_result`：删除「兜底成 finished」分支，漂移一律
+     `error: tool_call_format_drift`，兜底文本保留在 `content`，
+     `error.message` 为面向用户的可重试提示。
+2. `tests/test_task_executor.py`
+   - 原 (a)(b) 两个兜底用例改为断言 `error` + `tool_call_format_drift`，
+     兜底文本仍在 `content`；(c) 不变。
+3. `src/views/intelligence/useNl2SqlChat.js`
+   - 新增并导出 `retryMessage(failedMessage)`：忙碌时 no-op；向上找最近一条用户
+     提问，找不到则 `notifyError`；否则按正常新轮次重新 `send()`。
+4. `src/views/intelligence/NL2SqlChatV2.vue`
+   - 错误卡片增加「重试」按钮（`v2-error-retry`，流式中禁用、Widget 模式隐藏）、
+     `handleRetry` 与样式。
+5. 前端单测
+   - `__tests__/useNl2SqlChat.spec.js`：漂移错误后 `retryMessage` 重发同一提问并
+     成功续聊；忙碌/无前置提问时 no-op。
+   - `__tests__/NL2SqlChatV2.spec.js`：历史错误消息渲染重试按钮；点击后以原提问
+     重新投递并渲染新回答，错误卡片保留。
+
+### 验证（2026-06-12）
+
+- 后端：`python3 -m pytest tests/test_task_executor.py tests/test_agent_runtime.py -q`
+- 前端：`npm --prefix dataagent/dataagent-frontend run test`（vitest）
+- 漂移为非确定性模型行为，仍以合成流/桩测试为权威覆盖；真实端到端烟测在远程容器
+  （无本地 MySQL/Redis/模型凭据）不可执行，按验证规则在交付说明中明确未覆盖层。
+
 ## 回滚
 
 逐文件回退上述改动即可，无 schema / 部署 / 迁移变更；新增错误码

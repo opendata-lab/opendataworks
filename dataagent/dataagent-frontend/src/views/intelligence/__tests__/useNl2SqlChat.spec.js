@@ -205,6 +205,75 @@ describe('useNl2SqlChat engine', () => {
     expect(chat.topics.value.map((t) => t.topic_id)).toEqual(['topic-b', 'topic-a'])
   })
 
+  it('retryMessage re-asks the failed question as a new turn and continues the conversation', async () => {
+    const api = makeApi()
+    let streamCall = 0
+    api.taskApi.deliverMessage
+      .mockResolvedValueOnce({ task_id: 'task-1' })
+      .mockResolvedValueOnce({ task_id: 'task-2' })
+    api.taskApi.streamSdkEvents.mockImplementation(async (_taskId, opts) => {
+      streamCall += 1
+      if (streamCall === 1) {
+        // First run drifts: the backend appends a terminal error record
+        // (tool_call_format_drift) after the SDK's clean done record.
+        opts.onRecord({ record_type: 'done', data: { is_error: false } })
+        opts.onRecord({ record_type: 'error', data: { message: '模型输出了伪工具调用标签，本次回答未正常完成，请重试' } })
+      } else {
+        opts.onRecord({ record_type: 'done', data: {} })
+      }
+    })
+    const chat = await ready(api)
+
+    chat.inputText.value = '最近 30 天工作流发布次数趋势'
+    await chat.send()
+    await flushPromises()
+
+    const failed = chat.messages.value.find((m) => m.role === 'assistant')
+    expect(failed._v2state.status).toBe('error')
+    expect(failed._v2state.errorText).toContain('请重试')
+    expect(failed.status).toBe('failed')
+
+    await chat.retryMessage(failed)
+    await flushPromises()
+
+    expect(api.taskApi.deliverMessage).toHaveBeenCalledTimes(2)
+    expect(api.taskApi.deliverMessage.mock.calls[1][0].content).toBe('最近 30 天工作流发布次数趋势')
+    const userMessages = chat.messages.value.filter((m) => m.role === 'user')
+    expect(userMessages).toHaveLength(2)
+    const assistants = chat.messages.value.filter((m) => m.role === 'assistant')
+    expect(assistants).toHaveLength(2)
+    // The failed reply stays visible as the record of what went wrong.
+    expect(assistants[0]._v2state.status).toBe('error')
+    expect(assistants[1].status).toBe('success')
+    expect(chat.isBusy.value).toBe(false)
+  })
+
+  it('retryMessage is a no-op while a run is active or without a preceding question', async () => {
+    const api = makeApi()
+    let resolveStream
+    api.taskApi.streamSdkEvents.mockImplementation(() => new Promise((resolve) => { resolveStream = resolve }))
+    const notifyError = vi.fn()
+    const chat = await ready(api, { notifyError })
+
+    // No preceding user question: surfaces the failure instead of sending.
+    const orphan = chat.appendAssistantMessage('task-x')
+    await chat.retryMessage(orphan)
+    expect(api.taskApi.deliverMessage).not.toHaveBeenCalled()
+    expect(notifyError).toHaveBeenCalledWith('未找到可重试的提问')
+
+    chat.inputText.value = '你好'
+    const sendPromise = chat.send()
+    await flushPromises()
+    expect(chat.isBusy.value).toBe(true)
+
+    const assistant = chat.messages.value.find((m) => m.role === 'assistant')
+    await chat.retryMessage(assistant)
+    expect(api.taskApi.deliverMessage).toHaveBeenCalledTimes(1)
+
+    resolveStream()
+    await sendPromise
+  })
+
   it('cancel aborts locally and cancels the backend task (suspended)', async () => {
     const api = makeApi()
     // Honor the abort signal so the in-flight send unwinds like a real fetch.

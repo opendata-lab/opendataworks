@@ -990,11 +990,11 @@ def _patch_default_provider(monkeypatch):
     )
 
 
-def test_execute_task_stream_recovers_pseudo_tool_call_drift_with_partial_text(monkeypatch, tmp_path: Path):
+def test_execute_task_stream_marks_pseudo_tool_call_drift_as_error_with_partial_text(monkeypatch, tmp_path: Path):
     # The model leaks pseudo tool-call tags in a thinking block instead of making
-    # a real tool call, then ends the turn. There is partial visible text and a
-    # real tool_use earlier, so the run should be salvaged as finished with an
-    # explicit "incomplete" note rather than a clean answer.
+    # a real tool call, then ends the turn. The run must terminate as a task
+    # error so the stream carries a terminal error record the chat UI can render
+    # (error card + retry); the salvaged partial text stays in the content.
     _install_fake_sdk(
         monkeypatch,
         [
@@ -1030,7 +1030,10 @@ def test_execute_task_stream_recovers_pseudo_tool_call_drift_with_partial_text(m
 
     result = asyncio.run(_run())
 
-    assert result.task_status == "finished"
+    assert result.task_status == "error"
+    assert result.error is not None
+    assert result.error["code"] == "tool_call_format_drift"
+    assert "请重试" in result.error["message"]
     assert "正在检查 issue_status" in result.content
     assert "工具调用格式异常" in result.content
     assert result.content != "已完成。"
@@ -1039,9 +1042,10 @@ def test_execute_task_stream_recovers_pseudo_tool_call_drift_with_partial_text(m
     assert "</parameter>" not in result.content
 
 
-def test_execute_task_stream_recovers_pseudo_tool_call_drift_with_tool_output_only(monkeypatch, tmp_path: Path):
-    # Drift with no usable visible text but a real tool_use earlier: the run is
-    # salvaged by pointing at the gathered tool output instead of "已完成。".
+def test_execute_task_stream_marks_pseudo_tool_call_drift_as_error_with_tool_output_only(monkeypatch, tmp_path: Path):
+    # Drift with no usable visible text but a real tool_use earlier: the run
+    # still terminates as a task error, while the content points at the gathered
+    # tool output instead of "已完成。".
     _install_fake_sdk(
         monkeypatch,
         [
@@ -1074,7 +1078,9 @@ def test_execute_task_stream_recovers_pseudo_tool_call_drift_with_tool_output_on
 
     result = asyncio.run(_run())
 
-    assert result.task_status == "finished"
+    assert result.task_status == "error"
+    assert result.error is not None
+    assert result.error["code"] == "tool_call_format_drift"
     assert "工具调用格式异常" in result.content
     assert "工具输出" in result.content
     assert result.content != "已完成。"

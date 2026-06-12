@@ -230,7 +230,17 @@
                   <!-- Error from stream -->
                   <div v-if="msg._v2state.status === 'error'" class="v2-error-card">
                     <span class="v2-error-label">错误</span>
-                    {{ msg._v2state.errorText || '流式处理出错' }}
+                    <span class="v2-error-text">{{ msg._v2state.errorText || '流式处理出错' }}</span>
+                    <button
+                      v-if="!isWidgetMode"
+                      type="button"
+                      class="v2-error-retry"
+                      :disabled="isStreaming"
+                      @click="handleRetry(msg)"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" /></svg>
+                      重试
+                    </button>
                   </div>
                 </template>
 
@@ -522,7 +532,7 @@ const {
   providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
   availableModels, canSend, isBusy: isStreaming, activeTaskId,
   thinkingExpanded, toggleThinking,
-  send: engineSend, cancel: engineCancel, detach,
+  send: engineSend, retryMessage, cancel: engineCancel, detach,
   resumeActiveTopicTask,
   loadConfig,
 } = chat
@@ -1031,6 +1041,13 @@ function onEnterKey(event) {
 // Explicit stop: cancel the backend task (engine marks the topic suspended).
 function handleCancel() {
   void engineCancel()
+}
+
+// Retry from a failed reply's error card: the engine re-asks the question that
+// produced it as a new turn, so the conversation can continue.
+function handleRetry(msg) {
+  if (isWidgetMode.value || isStreaming.value) return
+  void retryMessage(msg)
 }
 
 // ── Conversation files: composer upload + right-side artifact panel ──────────
@@ -1924,6 +1941,38 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   font-weight: 600;
   color: #b91c1c;
+}
+
+.v2-error-text {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.v2-error-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid rgba(252, 165, 165, 0.8);
+  border-radius: 7px;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--odw-transition), border-color var(--odw-transition);
+}
+
+.v2-error-retry:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #f87171;
+}
+
+.v2-error-retry:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── Cursor ──────────────────────────────────────────────────────────────── */

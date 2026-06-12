@@ -298,12 +298,15 @@ class SdkResultAccumulator:
         )
 
     def _build_format_drift_result(self, content: str) -> TaskExecutionResult:
-        """Recover a run that leaked pseudo tool-call tags instead of a real call.
+        """Close out a run that leaked pseudo tool-call tags instead of a real call.
 
-        The model turn ended without an error, but it emitted XML-style tool-call
-        markup as text and never produced a trustworthy final answer. Salvage any
-        clean visible text / point at the gathered tool output; if nothing is
-        usable, surface a distinct error instead of a silent "已完成。".
+        The model turn ended without an SDK error, but it emitted XML-style
+        tool-call markup as text and never produced a trustworthy final answer.
+        A drifted run must always terminate as a task error: the live stream only
+        carries the raw blocks (leaked tags included), so without a terminal
+        error record the chat UI ends the conversation silently with no way to
+        notice the failure or retry. Salvaged clean text is kept in the content
+        for history; the error itself carries the user-facing retry message.
         """
         reason = "模型工具调用格式异常未正常收口"
         cleaned = _strip_pseudo_tool_call_tags(content).strip()
@@ -316,19 +319,10 @@ class SdkResultAccumulator:
             blocks=synthetic_blocks,
             reason=reason,
         )
-        if recovered:
-            return TaskExecutionResult(
-                task_status="finished",
-                content=recovered,
-                usage=self.usage or None,
-                provider_id=self.provider_id,
-                model=self.model,
-                session_id=self.session_id,
-            )
-        message = "模型输出伪工具调用标签，未生成最终回答"
+        message = "模型输出了伪工具调用标签，本次回答未正常完成，请重试"
         return TaskExecutionResult(
             task_status="error",
-            content="模型本次回答因工具调用格式异常未能正常生成，请重试。",
+            content=recovered or "模型本次回答因工具调用格式异常未能正常生成，请重试。",
             usage=self.usage or None,
             error={"code": "tool_call_format_drift", "message": message, "detail": reason},
             provider_id=self.provider_id,

@@ -431,6 +431,29 @@ export function useNl2SqlChat(options) {
     }
   }
 
+  // Recover from a failed assistant reply (e.g. tool_call_format_drift): re-ask
+  // the question that produced it as a normal new turn. deliver-message persists
+  // every delivery as a user message, so re-sending keeps the live view and the
+  // reloaded history identical; the failed reply stays visible as the record of
+  // what went wrong.
+  const retryMessage = async (failedMessage) => {
+    if (isBusy.value) return
+    const index = messages.value.findIndex((m) => m.id === failedMessage?.id)
+    let question = ''
+    for (let i = (index === -1 ? messages.value.length : index) - 1; i >= 0; i -= 1) {
+      if (messages.value[i].role === 'user') {
+        question = String(messages.value[i].content || '').trim()
+        break
+      }
+    }
+    if (!question) {
+      notifyError('未找到可重试的提问')
+      return
+    }
+    inputText.value = question
+    await send()
+  }
+
   // Explicit stop: abort locally AND cancel the backend task (marks suspended).
   const cancel = async () => {
     const taskId = activeTaskId.value
@@ -499,7 +522,7 @@ export function useNl2SqlChat(options) {
     // actions
     loadConfig, loadTopics, refreshTopics, loadTopicMessages, ensureTopic, updateActiveTopicAfterSend,
     resumeActiveTopicTask,
-    subscribe, send, detach, cancel,
+    subscribe, send, retryMessage, detach, cancel,
     selectTopic, newConversation, deleteConversation,
   }
 }
