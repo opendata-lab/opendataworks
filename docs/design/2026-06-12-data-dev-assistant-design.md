@@ -2,7 +2,7 @@
 
 - 日期:2026-06-12
 - 主题:data-dev-assistant
-- 影响范围:dataagent-backend(权限模式模型 / 任务执行 / API)、portal-mcp(新增写工具)、backend-agent-api 与 backend(agent 专用工作流写接口)、dataagent 技能包(新增 skill)、dataagent-frontend(会话权限模式与确认卡片)、数据库 schema(`dataagent` 会话库)
+- 影响范围:dataagent-backend(权限模式模型 / 任务执行 / API / Chat V2 块投影)、portal-mcp(新增写工具)、backend-agent-api 与 backend(agent 专用工作流写接口)、dataagent 技能包(新增 skill)、Chat V2 共享聊天引擎(门户聊天页 + widget:权限确认通用块、会话权限模式)、数据库 schema(`dataagent` 会话库)
 - 配套计划:`docs/plans/2026-06-12-data-dev-assistant-plan.md`
 
 ## 1. 现状与问题
@@ -20,11 +20,11 @@
 ### In scope
 
 - 平台助手 `agent_opendataworks` 合并获得数据开发能力:生成 SQL、润色 SQL、创建任务、组装工作流、发布(deploy)、上线/下线(online/offline)、调度配置。
-- 权限模式改为**会话(topic)级**,取值与 Claude Agent SDK 对齐:`default` / `acceptEdits` / `plan` / `bypassPermissions`;删除 `da_agent_profile.permission_mode`。
-- 新增对话内权限确认流:`default` / `acceptEdits` 模式下,高危工具调用通过 SDK `can_use_tool` 回调暂停执行,等待用户在聊天界面允许/拒绝。
+- 权限模式改为**会话(topic)级**,取值与 Claude Agent SDK 对齐:`default` / `acceptEdits` / `plan` / `bypassPermissions`;删除 `da_agent_profile.permission_mode`。topic 只保留最新一次选择(可中途切换),用于界面展示与下一次任务执行。
+- 新增**通用**对话内权限确认能力:作为 Chat V2 通用交互块下沉到共享聊天协议,任何挂载高危工具的智能体都可复用。`default` / `acceptEdits` 模式下,高危工具调用通过 SDK `can_use_tool` 回调暂停执行,等待用户在聊天界面允许/拒绝。
 - `backend-agent-api` 新增 agent 专用工作流/任务写接口;`portal-mcp` 新增对应 MCP 写工具。
 - 新增技能包 `dataagent/.claude/skills/opendataworks-data-dev`,承载数据开发方法论与工具调用契约。
-- widget 前端(`dataagent/dataagent-frontend`)支持会话权限模式选择与权限确认卡片。
+- Chat V2 共享聊天引擎(门户聊天页 `NL2SqlChatV2.vue` 与 widget `WidgetChat.vue` 共用 `useNl2SqlChat()`)新增权限确认通用块与会话权限模式切换,两个界面自动同时生效。
 - 全链路审计:写操作落现有 `workflow_publish_record` 等审计表,operator 标记 agent 来源。
 
 ### Out of scope
@@ -32,19 +32,18 @@
 - 不新建独立"数据开发智能体"(已决策合并进平台助手)。
 - 不改造 DolphinScheduler 本身;发布/上线仍依赖工作流已绑定 `dolphin_config_id` 的现有约束。
 - 不做用户/角色级权限映射(普通用户/开发者/管理员差异化),列为后续演进。
-- 不支持会话中途切换权限模式(与"topic 不支持中途换 agent"的既有约束一致)。
 - DataX / Dinky 等非 SQL 任务类型的开发流,本期只保证 SQL 任务(`dolphinNodeType=SQL`)路径完整,其余类型接口可用但不写入技能 playbook。
 
 ## 3. 总体架构
 
 ```
-widget(dataagent-frontend)
-  会话创建时选择 permission_mode + 渲染 permission_request 确认卡片
+Chat V2 共享引擎(门户聊天页 NL2SqlChatV2.vue + widget WidgetChat.vue,共用 useNl2SqlChat())
+  composer 工具栏切换 permission_mode + 渲染 permission_request 通用块卡片
     │
     ▼
 dataagent-backend(FastAPI)
-  topic.permission_mode → ClaudeAgentOptions.permission_mode
-  can_use_tool 回调:高危工具 → permission_request 事件 + 等待决策(Redis)
+  topic.permission_mode(最新选择)→ ClaudeAgentOptions.permission_mode
+  can_use_tool 回调:高危工具 → permission_request SDK record + 等待决策(Redis)
     │
     ▼
 claude_agent_sdk(agent_opendataworks profile)
@@ -93,7 +92,7 @@ DolphinScheduler(发布与调度执行)
 
 ### 4.2 存储迁移:profile 级 → topic 级
 
-- `da_agent_topic` 新增列 `permission_mode VARCHAR(32) NOT NULL DEFAULT 'default'`;任务沿用现有 snapshot 机制,`agent_snapshot_json` 之外在 `da_agent_task` 不新增列——任务执行时从所属 topic 读取(topic 在会话生命周期内模式不变,无需逐任务快照)。
+- `da_agent_topic` 新增列 `permission_mode VARCHAR(32) NOT NULL DEFAULT 'default'`,**只存最新一次选择**,可在会话中途切换(用于界面展示与下一次任务执行)。`da_agent_task` 不新增列、不做模式快照——任务在创建时刻读取所属 topic 的当前模式作为本次执行的取值;运行中的任务不受后续切换影响(切换在下一条消息/任务生效)。与 agent profile 快照不同,模式不属于"会话可复现性"范畴,因此不冻结。
 - `da_agent_profile.permission_mode` 删除:
   - alembic 迁移:`da_agent_topic` 加列;`da_agent_profile` 删列(downgrade 恢复,默认 `inherit`)。
   - `core/agent_profile_service.py`:移除 `_validate_permission_mode`、`PERMISSION_MODES`、内置 profile 快照中的 `permission_mode` 字段及 upsert SQL 列。
@@ -105,53 +104,63 @@ DolphinScheduler(发布与调度执行)
 ### 4.3 API 变更
 
 - `POST /api/v1/nl2sql/topics`:请求体新增可选 `permission_mode`(缺省 `default`);响应体回带。
-- `POST /api/v1/nl2sql/tasks/deliver-message`:新增可选 `permission_mode`,仅在隐式建 topic 时生效;topic 已存在时忽略并以 topic 值为准(模式会话内不可变)。
+- `PUT /api/v1/nl2sql/topics/{topic_id}`:支持更新 `permission_mode`(界面切换器调用),写入 topic 最新值,下一次任务生效。
+- `POST /api/v1/nl2sql/tasks/deliver-message`:携带 `permission_mode` 时直接更新所属 topic 的最新值(无论 topic 是否新建),再以该值启动本次任务。
 - topic 详情 / 列表响应增加 `permission_mode` 字段(`models/schemas.py`)。
 
 ### 4.4 执行链变更
 
-- `core/task_executor.py`:`permission_mode` 来源从 `agent_snapshot` 改为 `TaskExecutionInput` 携带的 topic 值;继续传给 `ClaudeAgentOptions.permission_mode`。
+- `core/task_executor.py`:`permission_mode` 来源从 `agent_snapshot` 改为 `TaskExecutionInput` 携带的值,即**任务创建时刻 topic 的当前模式**;继续传给 `ClaudeAgentOptions.permission_mode`。
 - `core/agent_runtime.py`:
   - `_resolve_sdk_permission_mode` 改为只接受 SDK 合法值(`default|acceptEdits|plan|bypassPermissions`),`inherit` 与未知值归一化为 `default`。
   - `_build_allowed_tools` 增加按 permission_mode 的工具裁剪:`plan` 模式不挂载写 MCP 工具(写工具名单来自 4.1 的配置常量);其余模式全量挂载,确认职责交给 `can_use_tool`。
 - 防御纵深:即使模型在 `plan` 模式尝试调用写工具,SDK 层因不在 allowed_tools 而拒绝;`bypassPermissions` 下 API 层仍要求 preview 凭证(见 6 节)。
 
-## 5. 对话内权限确认流(新机制)
+## 5. 权限确认:Chat V2 通用交互块(新机制)
 
-### 5.1 流程
+权限确认**不是数据开发助手专属**,而是下沉为 Chat V2 聊天协议的通用交互块。任何挂载了高危工具的智能体(平台助手、本体建模助手、未来新智能体)都自动具备该能力。设计分为通用层与数据开发特定层。
+
+### 5.1 通用层:`permission_request` / `permission_decision` 块类型
+
+Chat V2 的持久化与投影管线是统一的:SDK 事件 → `core/sdk_block_writer.py` ingest → `da_agent_sdk_record`(record_type:`stream|tool_result|done|error`)→ 后端 `topic_task_store._project_sdk_records()` 与前端 `v2StreamParser.js processV2Record()` **双侧确定性投影** → 块类型(`thinking|text|tool_use`)→ 渲染。权限确认作为**新块类型**接入,与现有块同级,因此天然具备持久化、历史回放重建、门户/widget 双界面共享。
+
+- **新增两个 record_type**:`permission_request` 与 `permission_decision`,与 `tool_result` 走同一 ingest 路径落 `da_agent_sdk_record`。
+  - `permission_request.data`:`request_id`、`tool_name`、`risk_level`(`high`/`critical`)、`title`、`summary`(展示文案)、`payload_preview`(参数摘要,通用 JSON);这些字段对通用层透明,不含任何工作流语义。
+  - `permission_decision.data`:`request_id`(回链)、`decision`(`allowed`/`denied`/`timeout`)、`note`、`decided_at`。
+- **投影**:`_project_sdk_records()` 与 `processV2Record()` 各新增一个分支,产出块 `{type: 'permission_request', request_id, tool_name, risk_level, title, summary, payload_preview, decision, decided_at}`,`decision` 初始 `pending`,被对应 `permission_decision` record 合并后更新为终态。历史回放时确认请求与最终决策完整重建。
+- **契约**:`dataagent/contracts/sdk-block-projection/cases.json` 新增四态用例(请求 pending / 已允许 / 已拒绝 / 超时),后端契约测试 `tests/test_sdk_block_projection_contract.py` 与前端契约测试 `__tests__/sdkBlockProjection.contract.spec.js` 双侧校验同一组用例。
+
+### 5.2 执行流程
 
 ```
 模型调用高危工具(如 portal_publish_workflow)
   → can_use_tool 回调命中高危清单且当前模式要求确认
-  → 生成 request_id,落一条 permission_request chunk 事件
-     (含工具名、参数摘要、若有则附带最近一次 preview 结果引用)
+  → 生成 request_id,写一条 permission_request SDK record(投影为通用块)
   → task 状态置为 waiting_permission(新增非终态)
   → 回调 await Redis 决策键,期间任务心跳照常续租
-用户在 widget 确认卡片点击 允许 / 拒绝
+用户在确认卡片(门户或 widget,同一组件)点击 允许 / 拒绝
   → POST /api/v1/nl2sql/tasks/{task_id}/permission-decision
      {request_id, decision: allow|deny, note?}
-  → 写 Redis key da:task:permission:{task_id}:{request_id} = allow|deny(带 TTL)
+  → 端点双写:① Redis key da:task:permission:{task_id}:{request_id}(执行侧放行)
+              ② permission_decision SDK record(历史与投影)
   → 回调读到决策:allow → 返回允许,工具继续执行;deny → 返回拒绝,
      模型收到拒绝结果后继续对话(说明原因/调整方案)
-  → task 状态恢复 running,落 permission_decision chunk 事件(审计)
+  → task 状态恢复 running
 ```
 
-### 5.2 关键决策与约束
+### 5.3 关键决策与约束
 
-- **决策传递用 Redis 键**,复用现有取消标志模式(`da:task:cancel:{task_id}`),进程内执行与 sandbox runner(`_should_use_sandbox_runner`,`core/task_executor.py`)两条路径都可达,无需为 runner 增加反向 HTTP 通道。
+- **决策传递用 Redis 键 + SDK record 双写**:Redis 键复用现有取消标志模式(`da:task:cancel:{task_id}`),进程内执行与 sandbox runner(`_should_use_sandbox_runner`,`core/task_executor.py`)两条路径都可达,无需为 runner 增加反向 HTTP 通道;同时落 `permission_decision` record 保证历史可重建。
 - **`waiting_permission` 是非终态**,与现有终态 `suspended`(取消)严格区分;`TERMINAL_TASK_STATUSES` 不变。topic 的 `current_task_status` 同步该状态,供前端轮询/流式展示。
-- **超时**:等待确认有独立超时(默认 600s,可配置 `task_permission_wait_seconds`),超时视为 deny 并继续执行(模型收到"用户未确认"的拒绝结果);等待期间豁免 idle/progress 超时判定,但**不豁免**总运行超时——总超时上限相应评估(等待确认时间计入总时长是可接受的,因为确认型会话本身是交互式的)。
+- **超时**:等待确认有独立超时(默认 600s,可配置 `task_permission_wait_seconds`),超时视为 deny 并继续执行(模型收到"用户未确认"的拒绝结果),写入 `decision='timeout'` 的 decision record;等待期间豁免 idle/progress 超时判定,但**不豁免**总运行超时。
 - **decision 端点幂等**:重复提交同一 `request_id` 返回首次决策结果;`request_id` 不匹配当前等待中的请求时返回 409。
-- **事件契约**:`permission_request` / `permission_decision` 两类 chunk 事件结构写入 `dataagent/contracts`(与现有 sdk-block-projection 契约同级),widget 与 eval 工具按契约消费。
 
-### 5.3 确认卡片内容
+### 5.4 数据开发特定层
 
-widget 渲染 `permission_request` 事件为卡片,展示:
+通用层不感知工作流语义。数据开发只贡献两类内容:
 
-- 操作名称与目标(如"发布工作流 #123(deploy)");
-- 参数摘要(workflow 名称、operation、版本号);
-- 若助手在请求确认前已调用 `portal_preview_publish`,卡片附带 diff/告警摘要(技能 playbook 强制要求先 preview 再请求确认,见 8 节);
-- 允许 / 拒绝按钮与可选备注输入。
+- **高危工具清单条目**:在通用高危清单(§4.1 配置常量)登记 `portal_publish_workflow`、`portal_workflow_schedule_online`。
+- **卡片展示内容**:`title` / `summary` / `payload_preview` 由技能在请求确认前组织。技能 playbook 强制要求先调用 `portal_preview_publish` 得到 diff/告警摘要,再把摘要作为工具参数带入高危调用,通用层原样透出。卡片由通用组件 `PermissionConfirmationCard.vue` 渲染,展示:操作名称与目标(如"发布工作流 #123(deploy)")、参数摘要、preview diff/告警摘要、允许/拒绝按钮与可选备注。
 
 ## 6. backend-agent-api 新增写接口
 
@@ -242,11 +251,15 @@ profile 更新:alembic 数据迁移将 `agent_opendataworks` 的 `skill_folders_
 
 技能边界(遵守仓库模块规约):路由规则、调用顺序、恢复策略只写在本 skill;`core/agent_runtime.py` 等共享模块只新增通用的"按模式裁剪工具 + 高危清单 + can_use_tool"机制,不感知任何具体业务流程。
 
-## 9. 前端改动(dataagent-frontend / widget)
+## 9. 前端改动(Chat V2 共享聊天引擎,门户 + widget)
 
-- 会话创建:新建会话面板增加权限模式选择(默认 `default`),四个模式配通俗文案(如"逐步确认 / 草稿自动、发布确认 / 仅规划 / 全自动");传入 `POST /topics`。
-- 确认卡片:消费 `permission_request` 事件渲染卡片(5.3),决策调用 `POST /tasks/{task_id}/permission-decision`;`waiting_permission` 状态下输入框置灰并提示"等待操作确认"。
-- 会话头部展示当前模式徽标。
+权限确认卡片与模式切换器实现在 Chat V2 共享层,门户聊天页(`NL2SqlChatV2.vue`)与 widget(`WidgetChat.vue`)经共享引擎 `useNl2SqlChat()` 自动同时获得,无需各自实现。
+
+- **权限模式切换器**:放在**输入框底部工具栏左侧**(`NL2SqlChatV2.vue` 的 `v2-composer-toolbar-left`,现有"Enter 发送"提示旁),做成模式 pill / 小下拉,显示 topic 当前模式,四模式配通俗文案(如"逐步确认 / 草稿自动、发布确认 / 仅规划 / 全自动")。
+  - 已有 topic:切换即 `PUT /topics/{id}` 更新最新值,下一条消息生效。
+  - 新会话(未建 topic):pill 当前值作为 `POST /topics` 的初始模式。
+  - **默认 `default`**。
+- **确认卡片**:Chat V2 通用块组件 `PermissionConfirmationCard.vue`(`dataagent-frontend/src/views/intelligence/`),在 `NL2SqlChatV2.vue` 块渲染分支注册 `v-else-if="block.type === 'permission_request'"`;`v2StreamParser.js processV2Record()` 与 `chatMessage.js buildV2StateFromStoredBlocks()` 增加该块类型处理;决策走 `api/nl2sql.js` 新增 `taskApi.submitPermissionDecision()`,交互参照消息反馈 `useChatMessageActions.js`(乐观更新 + 失败回滚)。`waiting_permission` 状态下输入框置灰并提示"等待操作确认"。
 - 智能体设置页:删除 permission_mode 配置项。
 - 主应用 `frontend/` 无路由级改动(入口复用现有内嵌页与浮窗,`agentId` 不变)。
 
@@ -267,9 +280,12 @@ profile 更新:alembic 数据迁移将 `agent_opendataworks` 的 `skill_folders_
 - **MCP 写通道三选一**:选择 backend-agent-api 新增写 API。直调 Web API 需给 dataagent 配用户级 JWT,扩大安全面;portal-mcp 直接代理 Web API 则绕过 agent 专用鉴权层、需在 portal-mcp 重复实现权限收敛。
 - **确认机制:can_use_tool vs 自定义 confirmToken 对话协议**:选择 SDK 原生 `can_use_tool`。自定义协议需要模型"自觉"走确认流程,可被提示词注入绕过;`can_use_tool` 是运行时强制拦截,模型无法跳过。
 - **决策传递:Redis 键 vs runner 反向 HTTP**:选择 Redis 键,复用 cancel-flag 既有模式,进程内与 sandbox 两条执行路径统一,不新增网络拓扑。
+- **确认卡片:Chat V2 通用块 vs 数据开发专属事件**:选择通用块。Chat V2 块管线双侧投影 + 共享引擎,做成通用块后门户与 widget 自动同时支持、历史可重建,且本体建模等其他高危智能体可直接复用;专属事件会把交互能力锁死在单一功能里,且需要 widget 单独实现。
+- **权限模式存储:topic 最新值(可变)vs 逐任务/逐消息快照**:选择只存 topic 最新值。模式是用户当下意图,不属于"会话可复现性"(与 agent profile 快照不同),无需每消息冻结;任务在创建时刻读取当前值即可,简化存储与切换语义。
 
 ## 12. 风险
 
 - `can_use_tool` 与 sandbox runner 的组合是新路径,需验证回调在 runner 子进程中等待 Redis 决策时心跳/租约不中断(任务租约续期 5s 周期照常运行)。
 - 等待确认期间任务占用并发槽位(`task_max_concurrency` 默认 4),长时间未确认会挤占吞吐;通过确认超时(默认 600s → deny)兜底,后续可演进为挂起释放槽位。
 - 内置 profile 的 system prompt 增补与 skill 追加通过 alembic 数据迁移下发,已被管理员自定义过的 profile 需要迁移时做"仅内置且未改名"判定,避免覆盖用户修改。
+- `permission_request` / `permission_decision` 是 Chat V2 新块类型,后端 `_project_sdk_records()` 与前端 `processV2Record()` 必须双侧同步实现,否则历史回放不一致;以 `cases.json` 契约测试在两侧同时把关,防止投影漂移。

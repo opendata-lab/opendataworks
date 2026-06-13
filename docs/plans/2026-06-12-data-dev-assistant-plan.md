@@ -18,10 +18,10 @@
 
 任务:
 
-1. alembic 迁移:`da_agent_topic` 新增 `permission_mode VARCHAR(32) NOT NULL DEFAULT 'default'`;`da_agent_profile` 删除 `permission_mode` 列;downgrade 对称恢复(profile 列默认 `inherit`)。存量 topic 回填 `default`。
-2. `models/schemas.py`:topic 创建/详情/列表模型增加 `permission_mode`;`deliver-message` 请求模型增加可选 `permission_mode`(仅隐式建 topic 生效);admin profile 模型移除 `permission_mode` 与 `permission_modes` 枚举。
-3. `api/routes.py`:`POST /topics`、`POST /tasks/deliver-message` 接收并校验模式取值(`default|acceptEdits|plan|bypassPermissions`)。
-4. `core/topic_task_store.py`:topic 读写链路携带 `permission_mode`;`TaskExecutionInput` 组装时带上 topic 模式。
+1. alembic 迁移:`da_agent_topic` 新增 `permission_mode VARCHAR(32) NOT NULL DEFAULT 'default'`(只存最新选择,可变);`da_agent_profile` 删除 `permission_mode` 列;downgrade 对称恢复(profile 列默认 `inherit`)。存量 topic 回填 `default`。
+2. `models/schemas.py`:topic 创建/更新/详情/列表模型增加 `permission_mode`;`deliver-message` 请求模型增加可选 `permission_mode`(携带时更新所属 topic 最新值);admin profile 模型移除 `permission_mode` 与 `permission_modes` 枚举。
+3. `api/routes.py`:`POST /topics`、`PUT /topics/{id}`(支持改模式)、`POST /tasks/deliver-message` 接收并校验模式取值(`default|acceptEdits|plan|bypassPermissions`)。
+4. `core/topic_task_store.py`:topic 读写链路携带 `permission_mode`;`PUT /topics` 更新最新值;`TaskExecutionInput` 组装时读取 topic 当前模式(任务创建时刻快照该值,不新增 task 列)。
 5. `core/agent_runtime.py`:`_resolve_sdk_permission_mode` 改为校验 SDK 合法值,`inherit`/未知值归一化 `default`;新增高危/写工具清单常量;`_build_allowed_tools` 按模式裁剪(`plan` 不挂写工具)。
 6. `core/task_executor.py`:`permission_mode` 来源改为 TaskExecutionInput(不再读 agent_snapshot)。
 7. `core/agent_profile_service.py` / `api/admin_routes.py`:删除 permission_mode 字段、校验、upsert 列与枚举接口。
@@ -30,7 +30,7 @@
 
 验证:
 
-- 更新并通过 `tests/test_agent_profile_service.py`、`tests/test_task_executor.py`(断言 `ClaudeAgentOptions.permission_mode` 来自 topic)、`tests/test_routes_contract.py`、`tests/test_admin_routes.py`。
+- 更新并通过 `tests/test_agent_profile_service.py`、`tests/test_task_executor.py`(断言 `ClaudeAgentOptions.permission_mode` 来自 topic)、`tests/test_routes_contract.py`(含中途 `PUT /topics` 切换后下一任务用新模式的用例)、`tests/test_admin_routes.py`。
 - `alembic upgrade head` + `downgrade -1` 在本地 `dataagent` 库往返成功。
 
 回退:revert 代码 + `alembic downgrade`;存量数据无损(删列在 downgrade 恢复为默认值)。
@@ -67,26 +67,29 @@
 
 回退:revert,工具未注册即不可见。
 
-## 阶段 4:can_use_tool 对话内确认流
+## 阶段 4:权限确认 Chat V2 通用块 + can_use_tool 确认流
 
 任务:
 
-1. `core/task_executor.py`:构造 `can_use_tool` 回调传入 `ClaudeAgentOptions`;命中高危清单且模式要求确认时:生成 `request_id` → 落 `permission_request` chunk → task 状态置 `waiting_permission` → 轮询 Redis 决策键(间隔 1s,总等待 `task_permission_wait_seconds` 默认 600s)→ 超时/deny 返回拒绝,allow 放行 → 状态恢复 `running`,落 `permission_decision` chunk。
-2. `core/topic_task_store.py`:`waiting_permission` 状态读写(非终态,`TERMINAL_TASK_STATUSES` 不变);topic `current_task_status` 同步。
-3. `api/routes.py`:新增 `POST /tasks/{task_id}/permission-decision`(request_id 幂等、不匹配 409),写 Redis `da:task:permission:{task_id}:{request_id}`(TTL ≈ 等待超时 + 60s)。
-4. sandbox 路径:`sandbox_runner_main.py` / `sandbox_task_main.py` 中执行 SDK 的进程同样注册回调并可访问 Redis(确认 runner 容器具备 Redis 连接配置;若 runner 无 Redis,则该阶段开始前先补通配置)。
-5. 超时模型:等待确认期间豁免 idle/progress 判定;`config.py` 新增 `task_permission_wait_seconds`。
-6. 事件契约:`dataagent/contracts/` 新增 permission 事件结构说明(与 sdk-block-projection 同级)。
+1. `core/sdk_block_writer.py`(或同路径 ingest 辅助):新增 `permission_request` / `permission_decision` 两个 record_type 的写入,与 `tool_result` 走同一持久化路径落 `da_agent_sdk_record`。
+2. `core/topic_task_store.py _project_sdk_records()`:新增两类 record 的投影分支,产出通用块 `{type: 'permission_request', request_id, tool_name, risk_level, title, summary, payload_preview, decision, decided_at}`,decision record 合并更新终态。
+3. `core/task_executor.py`:构造 `can_use_tool` 回调传入 `ClaudeAgentOptions`;命中高危清单且模式要求确认时:生成 `request_id` → 写 `permission_request` SDK record → task 状态置 `waiting_permission` → 轮询 Redis 决策键(间隔 1s,总等待 `task_permission_wait_seconds` 默认 600s)→ 超时/deny 返回拒绝,allow 放行 → 状态恢复 `running`。
+4. `core/topic_task_store.py`:`waiting_permission` 状态读写(非终态,`TERMINAL_TASK_STATUSES` 不变);topic `current_task_status` 同步。
+5. `api/routes.py`:新增 `POST /tasks/{task_id}/permission-decision`(request_id 幂等、不匹配 409),**双写** Redis `da:task:permission:{task_id}:{request_id}`(TTL ≈ 等待超时 + 60s)与 `permission_decision` SDK record。
+6. sandbox 路径:`sandbox_runner_main.py` / `sandbox_task_main.py` 中执行 SDK 的进程同样注册回调并可访问 Redis(确认 runner 容器具备 Redis 连接配置;若 runner 无 Redis,则该阶段开始前先补通配置)。
+7. 超时模型:等待确认期间豁免 idle/progress 判定;`config.py` 新增 `task_permission_wait_seconds`。
+8. 契约:`dataagent/contracts/sdk-block-projection/cases.json` 新增四态用例(pending / allowed / denied / timeout)。
 
-触达文件:`core/task_executor.py`、`core/topic_task_store.py`、`core/task_coordinator.py`(状态/租约交互确认)、`api/routes.py`、`config.py`、`sandbox_runner_main.py`、`sandbox_task_main.py`、`dataagent/contracts/`。
+触达文件:`core/sdk_block_writer.py`、`core/topic_task_store.py`、`core/task_executor.py`、`core/task_coordinator.py`(状态/租约交互确认)、`api/routes.py`、`config.py`、`sandbox_runner_main.py`、`sandbox_task_main.py`、`dataagent/contracts/sdk-block-projection/cases.json`。
 
 验证:
 
 - 单测:回调在四种模式 × 高危/草稿/只读工具矩阵下的放行/确认/拒绝行为;decision 端点幂等与 409;超时 deny。
+- 块投影契约测试:后端 `tests/test_sdk_block_projection_contract.py` 与前端 `__tests__/sdkBlockProjection.contract.spec.js` 共用 `cases.json` 四态用例双侧校验(前端见阶段 6)。
 - 契约测试:`tests/test_routes_contract.py` 增加 `waiting_permission` 状态与 decision 端点用例。
 - 租约回归:等待确认 60s+ 场景下任务租约不被回收(`tests` 中模拟心跳)。
 
-回退:`can_use_tool` 不注册即回到无确认行为;新端点/状态向后兼容。
+回退:`can_use_tool` 不注册即回到无确认行为;新块类型/端点/状态向后兼容(旧记录无该 record_type,投影不产出块)。
 
 ## 阶段 5:技能包 + profile 更新
 
@@ -100,15 +103,19 @@
 
 回退:迁移 downgrade 移除 skill 引用;技能目录删除即不可被挂载。
 
-## 阶段 6:widget 前端(dataagent-frontend)
+## 阶段 6:Chat V2 前端(门户 + widget 共享)
+
+实现在 Chat V2 共享层,门户聊天页 `NL2SqlChatV2.vue` 与 widget `WidgetChat.vue` 经 `useNl2SqlChat()` 自动同时生效。
 
 任务:
 
-1. 新建会话面板:权限模式选择(默认 `default`,四模式通俗文案),随 `POST /topics` 提交;会话头部模式徽标。
-2. `permission_request` 事件 → 确认卡片(操作/参数摘要/preview 摘要/允许/拒绝/备注);决策调用 decision 端点;`waiting_permission` 状态输入框置灰提示。
+1. 模式切换器:放在 composer 底部工具栏左侧(`NL2SqlChatV2.vue` 的 `v2-composer-toolbar-left`),模式 pill / 小下拉,默认 `default`,四模式通俗文案。已有 topic 切换调 `PUT /topics/{id}`;新会话用 pill 值作为 `POST /topics` 初始模式。
+2. 通用确认卡片块:新建 `PermissionConfirmationCard.vue`(`src/views/intelligence/`),在 `NL2SqlChatV2.vue` 注册 `v-else-if="block.type === 'permission_request'"`;`v2StreamParser.js processV2Record()` 与 `chatMessage.js buildV2StateFromStoredBlocks()` 增加块解析;决策走 `api/nl2sql.js` 新增 `taskApi.submitPermissionDecision()`,交互参照 `useChatMessageActions.js`(乐观更新 + 回滚);`waiting_permission` 状态输入框置灰提示。
 3. 智能体设置页移除 permission_mode 配置项。
 
-验证:`nvm use` 后 widget 构建通过 + 既有前端测试;事件渲染按 `dataagent/contracts` 契约写组件测试。
+触达文件:`v2StreamParser.js`、`chatMessage.js`、`NL2SqlChatV2.vue`、新建 `PermissionConfirmationCard.vue`、`api/nl2sql.js`、设置页组件。
+
+验证:`nvm use` 后前端构建通过 + 既有前端测试;`__tests__/sdkBlockProjection.contract.spec.js` 新增四态块解析用例(与后端共用 `cases.json`);`PermissionConfirmationCard.vue` 组件测试。
 
 回退:UI revert;后端缺省 `default` 模式行为与现状等价(高危工具确认,但本阶段前写工具尚未对模型开放使用场景)。
 
@@ -122,7 +129,7 @@
 全链路 smoke(按 AGENTS.md 智能问数验证规约):
 
 - 环境:本地 Docker MySQL `127.0.0.1:3316`(schema `opendataworks` + `dataagent`)、Redis `127.0.0.1:6379`、`.venv-py313`、`alembic upgrade head`、真实 provider 凭证。
-- 场景 A(default 模式主路径):创建 topic(`permission_mode=default`)→ 请求"为 XX 表写一个聚合 SQL 并创建任务加入工作流发布上线" → 验证:写工具触发 `permission_request` 事件 → decision 端点 allow → 任务/工作流创建成功 → preview → deploy → online,`workflow_publish_record` operator 含会话标识。
+- 场景 A(default 模式主路径):创建 topic(`permission_mode=default`)→ 请求"为 XX 表写一个聚合 SQL 并创建任务加入工作流发布上线" → 验证:写工具触发 `permission_request` 通用块 → decision 端点 allow → 任务/工作流创建成功 → preview → deploy → online,`workflow_publish_record` operator 含会话标识。门户聊天页与 widget 两个入口各跑一次确认卡片交互,确认共享块渲染一致。
 - 场景 B(plan 模式):同样请求 → 助手只产出 SQL 与方案,写工具不可用。
 - 场景 C(拒绝路径):permission_request 后 deny → 任务恢复 running,助手解释并停止发布。
 - 场景 D(超时路径):不操作确认卡片 → 超时 deny → 任务正常收尾。
