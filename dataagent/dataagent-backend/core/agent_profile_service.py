@@ -304,11 +304,20 @@ def opendataworks_agent_payload() -> dict[str, Any]:
     return {
         "agent_id": OPENDATAWORKS_AGENT_ID,
         "name": OPENDATAWORKS_AGENT_NAME,
-        "description": "面向 OpenDataWorks 数据门户、元数据、血缘、工作流和智能问数场景。",
-        "system_prompt": "你是 OpenDataWorks 数据门户助手，优先围绕平台元数据、工作流、血缘、数据质量和智能问数场景提供帮助。",
+        "description": "面向 OpenDataWorks 数据门户、元数据、血缘、工作流、智能问数与数据开发场景。",
+        "system_prompt": (
+            "你是 OpenDataWorks 数据门户助手，优先围绕平台元数据、工作流、血缘、数据质量和智能问数场景提供帮助。"
+            "你同时具备数据开发能力：可以生成与润色 SQL、创建数据任务、组装工作流、发布与上线、配置调度。"
+            "数据开发以问数为主、开发为辅；执行开发动作时严格遵循 opendataworks-data-dev 技能的 playbook，"
+            "发布与上线等高危操作必须先预览再经用户确认，绝不跳过。"
+        ),
         "allowed_tools": list(SAFE_AGENT_TOOLS),
         "mcp_server_ids": [PORTAL_MCP_SERVER_ID],
-        "skill_folders": ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
+        "skill_folders": [
+            "opendataworks-business-knowledge",
+            "opendataworks-platform-tools",
+            "opendataworks-data-dev",
+        ],
         "max_turns": 0,
         "env_vars": {},
         "data_scope": {"allowed_scopes": []},

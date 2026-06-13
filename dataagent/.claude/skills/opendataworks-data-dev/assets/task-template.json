@@ -1,0 +1,21 @@
+{
+  "description": "SQL 数据任务创建模板(portal_create_task 的 task 字段)。占位符用 <> 标注,填写前替换。",
+  "task": {
+    "taskName": "<dwd_layer_table_di>",
+    "taskType": "batch",
+    "engine": "dolphin",
+    "dolphinNodeType": "SQL",
+    "datasourceName": "<doris_prod>",
+    "datasourceType": "DORIS",
+    "taskSql": "INSERT INTO <db>.<output_table>\nSELECT ...\nFROM <db>.<input_table>\nWHERE dt = '${bizdate}'",
+    "taskDesc": "<任务用途一句话>",
+    "taskGroupName": "<可选>",
+    "priority": 5,
+    "timeoutSeconds": 3600,
+    "retryTimes": 3,
+    "retryInterval": 60,
+    "status": "draft"
+  },
+  "input_table_ids": [],
+  "output_table_ids": []
+}

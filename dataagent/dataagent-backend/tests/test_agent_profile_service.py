@@ -33,7 +33,11 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     assert payload["name"] == "OpenDataWorks平台助手"
     assert payload["allowed_tools"] == ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
     assert payload["mcp_server_ids"] == ["portal"]
-    assert payload["skill_folders"] == ["opendataworks-business-knowledge", "opendataworks-platform-tools"]
+    assert payload["skill_folders"] == [
+        "opendataworks-business-knowledge",
+        "opendataworks-platform-tools",
+        "opendataworks-data-dev",
+    ]
     assert payload["is_default"] is False
     assert payload["is_builtin"] is True
 

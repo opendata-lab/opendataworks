@@ -1,0 +1,23 @@
+{
+  "description": "数据开发命名与校验规则(供生成任务/工作流时遵循)。",
+  "naming": {
+    "task_name_pattern": "^[a-z][a-z0-9_]{2,63}$",
+    "layer_prefixes": ["ods", "dwd", "dws", "dim", "ads"],
+    "note": "任务名建议 <层>_<主题>_<刷新方式>,如 dwd_user_order_di(di=按日增量,df=按日全量)"
+  },
+  "required_task_fields": ["taskName", "taskType", "engine", "dolphinNodeType", "datasourceName", "status"],
+  "required_sql_task_fields": ["taskSql", "datasourceType"],
+  "forbidden": [
+    "通过只读查询工具试跑含写操作(INSERT/UPDATE/DELETE/OVERWRITE)的 SQL",
+    "绕过 portal_preview_publish 直接 deploy/online",
+    "对存在 error 级 preview issue 的工作流继续发布"
+  ],
+  "lineage": {
+    "require_input_output_ids": true,
+    "note": "inputTableIds/outputTableIds 从 portal_analyze_sql + portal_search_tables 推导"
+  },
+  "publish": {
+    "require_preview_token_for": ["deploy", "online", "schedule_online"],
+    "stop_on_preview_errors": true
+  }
+}

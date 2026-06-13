@@ -55,6 +55,8 @@ dolphinscheduler-service/*.egg-info/
 !/dataagent/.claude/skills/opendataworks-platform-tools/**
 !/dataagent/.claude/skills/ontology-modeling-assistant/
 !/dataagent/.claude/skills/ontology-modeling-assistant/**
+!/dataagent/.claude/skills/opendataworks-data-dev/
+!/dataagent/.claude/skills/opendataworks-data-dev/**
 *.swp
 *.swo
 *~
