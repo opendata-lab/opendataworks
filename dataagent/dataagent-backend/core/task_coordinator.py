@@ -148,6 +148,7 @@ class TaskCoordinator:
                         sql_read_timeout_seconds=int(task.get("sql_read_timeout_seconds") or 0),
                         sql_write_timeout_seconds=int(task.get("sql_write_timeout_seconds") or 0),
                         agent_snapshot=task.get("agent_snapshot"),
+                        permission_mode=self.store.get_topic_permission_mode(topic_id),
                     ),
                     emit=lambda record: self._persist_emitted_sdk_record(
                         topic_id=topic_id,

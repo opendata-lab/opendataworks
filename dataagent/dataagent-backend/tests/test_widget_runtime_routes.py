@@ -50,7 +50,7 @@ class FakeTopicStore:
     def init_schema(self):
         self.calls.append(("init_schema", None))
 
-    def create_topic(self, title="新话题", *, agent_snapshot=None, context=None):
+    def create_topic(self, title="新话题", *, agent_snapshot=None, permission_mode=None, context=None):
         self.calls.append(("create_topic", context, agent_snapshot))
         return topic_payload("topic-created", title)
 
@@ -64,9 +64,9 @@ class FakeTopicStore:
             return None
         return topic_payload(topic_id)
 
-    def update_topic(self, topic_id, *, title, context=None):
+    def update_topic(self, topic_id, *, title=None, permission_mode=None, context=None):
         self.calls.append(("update_topic", context))
-        return topic_payload(topic_id, title)
+        return topic_payload(topic_id, title or "新话题")
 
     def delete_topic(self, topic_id, *, context=None):
         self.calls.append(("delete_topic", context))

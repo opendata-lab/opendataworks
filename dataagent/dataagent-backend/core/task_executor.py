@@ -64,6 +64,7 @@ class TaskExecutionInput:
     sql_write_timeout_seconds: int | None = None
     execution_mode: str = "background"
     agent_snapshot: dict[str, Any] | None = None
+    permission_mode: str | None = None
 
 
 @dataclass
@@ -513,7 +514,12 @@ async def _execute_task_stream_local(
     runtime_env.update(workspace_env)
     for key, value in workspace_env.items():
         os.environ[key] = value
-    permission_mode = _resolve_sdk_permission_mode(str((agent_snapshot or {}).get("permission_mode") or "inherit"))
+    # Permission mode is a session-level choice carried on TaskExecutionInput.
+    # Older snapshots may still embed permission_mode; honor it only as a fallback.
+    requested_permission_mode = params.permission_mode
+    if requested_permission_mode is None:
+        requested_permission_mode = (agent_snapshot or {}).get("permission_mode")
+    permission_mode = _resolve_sdk_permission_mode(requested_permission_mode)
     max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
     setting_sources = ["project"]
     mcp_servers = _build_portal_mcp_servers(

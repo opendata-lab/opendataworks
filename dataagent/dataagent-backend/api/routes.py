@@ -251,6 +251,7 @@ async def api_create_topic(http_request: Request, request: CreateTopicRequest | 
     topic = store.create_topic(
         title=str(payload.title or "").strip() or "新话题",
         agent_snapshot=build_agent_snapshot(profile),
+        permission_mode=payload.permission_mode,
         context=context,
     )
     return TopicDetail.model_validate(topic)
@@ -272,11 +273,21 @@ async def api_get_topic(topic_id: str, request: Request):
 @topic_router.put("/{topic_id}", response_model=TopicDetail)
 async def api_update_topic(topic_id: str, payload: UpdateTopicRequest, request: Request):
     context = _request_context(request)
-    title = str(payload.title or "").strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title is required")
+    title: str | None = None
+    if payload.title is not None:
+        title = str(payload.title).strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title is required")
+    permission_mode = payload.permission_mode
+    if title is None and permission_mode is None:
+        raise HTTPException(status_code=400, detail="title or permission_mode is required")
     _require_topic(topic_id, context)
-    topic = _get_store().update_topic(topic_id, title=title, context=context)
+    topic = _get_store().update_topic(
+        topic_id,
+        title=title,
+        permission_mode=permission_mode,
+        context=context,
+    )
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
     return TopicDetail.model_validate(topic)
@@ -436,6 +447,14 @@ async def api_deliver_message(payload: DeliverMessageRequest, request: Request):
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
     _require_topic(topic_id, context)
+    # Permission mode is a session-level choice; applying it here updates the
+    # topic's latest selection so the next task runs under it.
+    if payload.permission_mode is not None:
+        _get_store().update_topic(
+            topic_id,
+            permission_mode=payload.permission_mode,
+            context=context,
+        )
     try:
         submitted = await submit_message_task(
             topic_id=topic_id,

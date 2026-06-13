@@ -16,6 +16,7 @@ from typing import Any
 from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import normalize_provider_id as _normalize_provider_id
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
+from core.agent_profile_service import normalize_permission_mode
 from core.data_scope import encode_scope_header, normalize_data_scope
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
@@ -409,15 +410,15 @@ def _is_running_as_root() -> bool:
 
 
 def _resolve_sdk_permission_mode(permission_mode: str | None = None) -> str:
-    requested = str(permission_mode or "inherit").strip() or "inherit"
-    if requested == "default":
-        return "default"
+    # Per-mode enforcement (plan strips write tools; default/acceptEdits route
+    # high-risk tools through can_use_tool) lands with the confirmation flow.
+    # Until then, allowed_tools remains the real capability boundary, so every
+    # mode runs effectively bypassPermissions, with the root fallback preserved.
+    normalize_permission_mode(permission_mode)
     if _is_running_as_root():
         # Claude Code rejects bypassPermissions under root/sudo. Fall back to the
         # standard mode and rely on allowed_tools for the read-only + script path.
         return "default"
-    if requested == "bypassPermissions":
-        return "bypassPermissions"
     return "bypassPermissions"
 
 

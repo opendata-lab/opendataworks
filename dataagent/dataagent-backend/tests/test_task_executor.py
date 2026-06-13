@@ -115,7 +115,7 @@ def _install_fake_sdk(monkeypatch, messages, *, final_exception=None):
     )
 
 
-def _build_input(*, history=None, resume_session_id=None, agent_snapshot=None):
+def _build_input(*, history=None, resume_session_id=None, agent_snapshot=None, permission_mode=None):
     return task_executor.TaskExecutionInput(
         task_id="task-1",
         topic_id="topic-1",
@@ -130,6 +130,7 @@ def _build_input(*, history=None, resume_session_id=None, agent_snapshot=None):
         sql_read_timeout_seconds=30,
         sql_write_timeout_seconds=30,
         agent_snapshot=agent_snapshot,
+        permission_mode=permission_mode,
     )
 
 
@@ -332,7 +333,9 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     assert ClaudeAgentOptions.last_kwargs["allowed_tools"] == ["Read"]
     assert ClaudeAgentOptions.last_kwargs["mcp_servers"] == {}
     assert ClaudeAgentOptions.last_kwargs["max_turns"] == 7
-    assert ClaudeAgentOptions.last_kwargs["permission_mode"] == "default"
+    # Permission mode resolves through the runtime helper (root vs non-root differ);
+    # assert against it rather than a hard-coded value.
+    assert ClaudeAgentOptions.last_kwargs["permission_mode"] == task_executor._resolve_sdk_permission_mode("default")
     assert ClaudeAgentOptions.last_kwargs["env"]["SAFE_FLAG"] == "1"
     assert "只返回自定义智能体结果。" in ClaudeAgentOptions.last_kwargs["system_prompt"]
     assert "PreToolUse" in ClaudeAgentOptions.last_kwargs["hooks"]
@@ -346,6 +349,61 @@ def test_execute_task_stream_applies_agent_snapshot_runtime_overrides(monkeypatc
     )
     assert blocked["decision"] == "block"
     assert blocked["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_execute_task_stream_prefers_session_permission_mode_over_snapshot(monkeypatch, tmp_path: Path):
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            AssistantMessage([TextBlock("mode-ok")]),
+            ResultMessage("success", session_id="sdk-session-mode"),
+        ],
+    )
+    monkeypatch.setattr(
+        task_executor,
+        "resolve_runtime_provider_selection",
+        lambda provider_id, model: {
+            "provider_id": provider_id,
+            "model": model,
+            "api_key": "",
+            "auth_token": "",
+            "base_url": "https://example.invalid",
+            "supports_partial_messages": False,
+        },
+    )
+    _patch_skill_runtime(monkeypatch, tmp_path)
+    monkeypatch.setattr(task_executor, "prepare_topic_workspace", lambda topic_id, folders, **kwargs: tmp_path / "ws")
+
+    requested: dict[str, object] = {}
+
+    def fake_resolve(permission_mode=None):
+        requested["mode"] = permission_mode
+        return "bypassPermissions"
+
+    monkeypatch.setattr(task_executor, "_resolve_sdk_permission_mode", fake_resolve)
+
+    asyncio.run(
+        task_executor.execute_task_stream(
+            _build_input(
+                agent_snapshot={
+                    "agent_id": "agent_1",
+                    "name": "自定义智能体",
+                    "permission_mode": "bypassPermissions",
+                    "allowed_tools": ["Read"],
+                    "mcp_server_ids": [],
+                    "skill_folders": [],
+                    "max_turns": 0,
+                    "env_vars": {},
+                    "is_default": False,
+                },
+                permission_mode="plan",
+            ),
+            emit=lambda record: None,
+        )
+    )
+
+    # Session-level mode on TaskExecutionInput wins over the legacy snapshot value.
+    assert requested["mode"] == "plan"
 
 
 def test_execute_task_stream_uses_topic_workspace_for_sdk_cwd_and_keeps_home_distinct(monkeypatch, tmp_path: Path):

@@ -50,10 +50,12 @@ class QAExample(BaseModel):
 class CreateTopicRequest(BaseModel):
     title: Optional[str] = None
     agent_id: Optional[str] = None
+    permission_mode: Optional[str] = None
 
 
 class UpdateTopicRequest(BaseModel):
-    title: str
+    title: Optional[str] = None
+    permission_mode: Optional[str] = None
 
 
 class DeliverMessageRequest(BaseModel):
@@ -65,6 +67,7 @@ class DeliverMessageRequest(BaseModel):
     debug: bool = False
     database: Optional[str] = None
     execution_mode: Optional[str] = None
+    permission_mode: Optional[str] = None
 
 
 class CreateTaskRequest(BaseModel):
@@ -386,7 +389,6 @@ class AgentProfileBase(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     system_prompt: Optional[str] = None
-    permission_mode: Optional[str] = None
     allowed_tools: Optional[List[str]] = None
     mcp_server_ids: Optional[List[str]] = None
     skill_folders: Optional[List[str]] = None
@@ -421,7 +423,6 @@ class AgentCapabilitiesResponse(BaseModel):
     tools: List[str] = Field(default_factory=list)
     mcp_servers: List[AgentMcpServerCapability] = Field(default_factory=list)
     skills: List[AgentSkillCapability] = Field(default_factory=list)
-    permission_modes: List[str] = Field(default_factory=list)
 
 
 class AgentDataScopeOption(BaseModel):
@@ -436,7 +437,6 @@ class AgentProfile(BaseModel):
     name: str
     description: str = ""
     system_prompt: str = ""
-    permission_mode: str = "inherit"
     allowed_tools: List[str] = Field(default_factory=list)
     mcp_server_ids: List[str] = Field(default_factory=list)
     skill_folders: List[str] = Field(default_factory=list)
@@ -498,6 +498,7 @@ class TopicSummary(BaseModel):
     chat_conversation_id: str
     agent_id: str = ""
     agent: Optional[AgentSummary] = None
+    permission_mode: str = "default"
     current_task_id: Optional[str] = None
     current_task_status: Optional[str] = None
     message_count: int = 0
@@ -513,6 +514,7 @@ class TopicDetail(BaseModel):
     chat_conversation_id: str
     agent_id: str = ""
     agent: Optional[AgentSummary] = None
+    permission_mode: str = "default"
     current_task_id: Optional[str] = None
     current_task_status: Optional[str] = None
     created_at: str = ""

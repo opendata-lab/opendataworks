@@ -76,7 +76,7 @@ def test_normalize_agent_profile_payload_accepts_scoped_runtime_config():
     )
 
     assert payload["name"] == "质量巡检助手"
-    assert payload["permission_mode"] == "bypassPermissions"
+    assert "permission_mode" not in payload
     assert payload["allowed_tools"] == ["Read", "Skill", "Grep"]
     assert payload["mcp_server_ids"] == ["portal"]
     assert payload["skill_folders"] == ["opendataworks-business-knowledge"]
@@ -142,7 +142,6 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
         "name": "质量巡检助手",
         "description": "只处理数据质量规则和巡检结果分析。",
         "system_prompt": "你是数据质量巡检场景的智能体。",
-        "permission_mode": "default",
         "allowed_tools": ["Skill", "Read"],
         "mcp_server_ids": ["portal"],
         "skill_folders": ["opendataworks-business-knowledge"],
