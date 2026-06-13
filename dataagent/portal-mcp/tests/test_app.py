@@ -171,14 +171,16 @@ async def test_mcp_tools_are_exposed_and_parameter_mapping_is_preserved():
         tool_name="portal_search_tables",
         arguments={"database": "opendataworks", "keyword": "发布", "table_limit": 2},
     )
-    assert set(tool_names) == {
+    # Read tools remain exposed (write tools from the data-dev surface are
+    # additionally registered and covered in test_write_tools.py).
+    assert {
         "portal_search_tables",
         "portal_get_lineage",
         "portal_resolve_datasource",
         "portal_export_metadata",
         "portal_get_table_ddl",
         "portal_query_readonly",
-    }
+    }.issubset(set(tool_names))
     assert backend.calls[-1] == (
         "inspect",
         {"database": "opendataworks", "keyword": "发布", "tableLimit": 2},
