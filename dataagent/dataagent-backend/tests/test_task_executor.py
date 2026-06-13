@@ -17,6 +17,86 @@ from config import get_settings, update_settings
 from core import task_executor
 
 
+class _RecordingWriter:
+    def __init__(self):
+        self.requests = []
+        self.decisions = []
+
+    def append_permission_request(self, **kwargs):
+        self.requests.append(kwargs)
+
+    def append_permission_decision(self, **kwargs):
+        self.decisions.append(kwargs)
+
+
+class _RecordingStore:
+    def __init__(self):
+        self.statuses = []
+
+    def set_task_status(self, task_id, status):
+        self.statuses.append(status)
+
+
+def _build_gate(monkeypatch, decision, *, mode="default"):
+    writer = _RecordingWriter()
+    store = _RecordingStore()
+
+    async def fake_wait(task_id, request_id, *, timeout_seconds, is_cancel_requested=None, **kw):
+        return decision
+
+    monkeypatch.setattr(task_executor, "wait_for_decision", fake_wait)
+    cb = task_executor._build_can_use_tool_callback(
+        sdk_writer=writer,
+        store=store,
+        task_id="task-1",
+        permission_mode=mode,
+        wait_seconds=5,
+        is_cancel_requested=None,
+    )
+    return cb, writer, store
+
+
+def test_can_use_tool_allows_read_tools_without_confirmation(monkeypatch):
+    cb, writer, store = _build_gate(monkeypatch, "deny")
+    result = asyncio.run(cb("mcp__portal__portal_search_tables", {}))
+    assert result["behavior"] == "allow"
+    assert writer.requests == []
+    assert store.statuses == []
+
+
+def test_can_use_tool_confirms_write_tool_allowed(monkeypatch):
+    cb, writer, store = _build_gate(monkeypatch, "allow")
+    result = asyncio.run(cb("mcp__portal__portal_create_task", {"summary": "建表任务"}))
+    assert result["behavior"] == "allow"
+    assert len(writer.requests) == 1
+    assert writer.requests[0]["tool_name"] == "mcp__portal__portal_create_task"
+    assert writer.decisions[0]["decision"] == "allowed"
+    assert store.statuses == ["waiting_permission", "running"]
+
+
+def test_can_use_tool_confirms_write_tool_denied(monkeypatch):
+    cb, writer, store = _build_gate(monkeypatch, "deny")
+    result = asyncio.run(cb("mcp__portal__portal_publish_workflow", {"summary": "发布", "operation": "deploy"}))
+    assert result["behavior"] == "deny"
+    assert writer.requests[0]["risk_level"] == "critical"
+    assert writer.decisions[0]["decision"] == "denied"
+    assert store.statuses == ["waiting_permission", "running"]
+
+
+def test_can_use_tool_timeout_denies(monkeypatch):
+    cb, writer, store = _build_gate(monkeypatch, "timeout")
+    result = asyncio.run(cb("mcp__portal__portal_create_task", {}))
+    assert result["behavior"] == "deny"
+    assert writer.decisions[0]["decision"] == "timeout"
+
+
+def test_can_use_tool_plan_denies_writes_without_request(monkeypatch):
+    cb, writer, store = _build_gate(monkeypatch, "allow", mode="plan")
+    result = asyncio.run(cb("mcp__portal__portal_create_task", {}))
+    assert result["behavior"] == "deny"
+    assert writer.requests == []
+
+
 class ClaudeAgentOptions:
     last_kwargs = None
 

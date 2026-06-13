@@ -40,6 +40,15 @@ DRAFT_WRITE_TOOL_NAMES: frozenset[str] = frozenset(
 WRITE_TOOL_NAMES: frozenset[str] = HIGH_RISK_TOOL_NAMES | DRAFT_WRITE_TOOL_NAMES
 
 
+def permission_decision_redis_key(task_id: str, request_id: str) -> str:
+    """Redis key carrying a user's permission decision for a waiting run.
+
+    Single source of truth shared by the coordinator (writer) and the executor's
+    confirmation wait (reader), mirroring the cancel-flag key pattern.
+    """
+    return f"da:task:permission:{task_id}:{request_id}"
+
+
 def _bare_tool_name(tool_name: str) -> str:
     """Reduce an SDK-qualified MCP tool name to its bare tool name.
 

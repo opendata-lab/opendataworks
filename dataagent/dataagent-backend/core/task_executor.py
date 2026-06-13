@@ -5,7 +5,9 @@ import inspect
 import json
 import logging
 import os
+import uuid
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -14,6 +16,8 @@ import httpx
 
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, normalize_permission_mode
+from core.permission_gate import is_high_risk_tool, plan_denies_tool, requires_confirmation
+from core.permission_wait import wait_for_decision
 from core.agent_runtime import (
     _build_allowed_tools,
     _build_portal_mcp_servers,
@@ -332,6 +336,112 @@ class SdkResultAccumulator:
         )
 
 
+def _permission_result_types():
+    """Return (Allow, Deny) result classes from the SDK, or (None, None).
+
+    Imported lazily because the package is optional in some environments; when
+    unavailable the callback falls back to the dict permission protocol.
+    """
+    try:
+        from claude_agent_sdk import PermissionResultAllow, PermissionResultDeny
+
+        return PermissionResultAllow, PermissionResultDeny
+    except Exception:
+        return None, None
+
+
+def _allow_result(tool_input: dict[str, Any]):
+    Allow, _ = _permission_result_types()
+    if Allow is not None:
+        try:
+            return Allow(updated_input=tool_input)
+        except Exception:
+            try:
+                return Allow()
+            except Exception:
+                pass
+    return {"behavior": "allow", "updatedInput": tool_input}
+
+
+def _deny_result(message: str):
+    _, Deny = _permission_result_types()
+    if Deny is not None:
+        try:
+            return Deny(message=message)
+        except Exception:
+            pass
+    return {"behavior": "deny", "message": message}
+
+
+def _build_can_use_tool_callback(
+    *,
+    sdk_writer: SdkBlockWriter,
+    store: Any,
+    task_id: str,
+    permission_mode: str,
+    wait_seconds: int,
+    is_cancel_requested: Callable[[], Awaitable[bool] | bool] | None,
+):
+    """Build the SDK can_use_tool callback enforcing session permission policy.
+
+    Read/analysis tools auto-allow. Write/high-risk tools (per session mode) pause
+    the run: a permission_request block is recorded, the task moves to
+    waiting_permission, and the run waits for the user's decision (Redis) before
+    recording the decision and resuming. Plan-denied tools are rejected outright.
+    """
+
+    async def can_use_tool(tool_name: str, tool_input: dict[str, Any] | None = None, context: Any = None):
+        tool_input = dict(tool_input or {})
+        if permission_mode == "plan" and plan_denies_tool(tool_name):
+            return _deny_result("当前为规划(plan)模式，不允许执行写操作。")
+        if not requires_confirmation(tool_name, permission_mode):
+            return _allow_result(tool_input)
+
+        request_id = uuid.uuid4().hex
+        bare = tool_name.split("__")[-1] if tool_name.startswith("mcp__") else tool_name
+        summary = str(tool_input.get("summary") or "").strip()
+        title = str(tool_input.get("title") or "").strip() or f"请确认操作:{bare}"
+        risk_level = "critical" if is_high_risk_tool(tool_name) else "high"
+        try:
+            sdk_writer.append_permission_request(
+                request_id=request_id,
+                tool_name=tool_name,
+                risk_level=risk_level,
+                title=title,
+                summary=summary,
+                payload_preview=tool_input,
+            )
+            store.set_task_status(task_id, "waiting_permission")
+        except Exception:
+            logger.exception("can_use_tool: failed to record permission request task_id=%s", task_id)
+            return _deny_result("无法发起确认请求。")
+
+        decision = await wait_for_decision(
+            task_id,
+            request_id,
+            timeout_seconds=wait_seconds,
+            is_cancel_requested=is_cancel_requested,
+        )
+        recorded = "allowed" if decision == "allow" else ("timeout" if decision == "timeout" else "denied")
+        try:
+            sdk_writer.append_permission_decision(
+                request_id=request_id,
+                decision=recorded,
+                decided_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            )
+            store.set_task_status(task_id, "running")
+        except Exception:
+            logger.exception("can_use_tool: failed to record permission decision task_id=%s", task_id)
+
+        if decision == "allow":
+            return _allow_result(tool_input)
+        if decision == "timeout":
+            return _deny_result("等待确认超时，已自动拒绝该操作。")
+        return _deny_result("用户拒绝了该操作。")
+
+    return can_use_tool
+
+
 async def execute_task_stream(
     params: TaskExecutionInput,
     *,
@@ -520,9 +630,8 @@ async def _execute_task_stream_local(
     if requested_permission_mode is None:
         requested_permission_mode = (agent_snapshot or {}).get("permission_mode")
     # logical_permission_mode is the session choice (plan/default/acceptEdits/
-    # bypassPermissions) used for tool gating; permission_mode is what the SDK runs.
+    # bypassPermissions); the SDK permission_mode is decided after tool mounting.
     logical_permission_mode = normalize_permission_mode(requested_permission_mode)
-    permission_mode = _resolve_sdk_permission_mode(requested_permission_mode)
     max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
     setting_sources = ["project"]
     mcp_servers = _build_portal_mcp_servers(
@@ -535,6 +644,24 @@ async def _execute_task_stream_local(
         (agent_snapshot or {}).get("allowed_tools") if agent_snapshot else None,
         permission_mode=logical_permission_mode,
     )
+    # Gating fires only when there are guardable write tools (portal MCP) and the
+    # session mode asks for confirmation. When gating, the SDK must run in
+    # "default" mode so can_use_tool is consulted; otherwise preserve the
+    # established bypassPermissions behavior (allowed_tools is the boundary).
+    needs_gating = bool(mcp_servers) and logical_permission_mode in {"default", "acceptEdits"}
+    can_use_tool = None
+    if needs_gating:
+        permission_mode = "default"
+        can_use_tool = _build_can_use_tool_callback(
+            sdk_writer=sdk_writer,
+            store=get_topic_task_store(),
+            task_id=params.task_id,
+            permission_mode=logical_permission_mode,
+            wait_seconds=int(getattr(cfg, "task_permission_wait_seconds", 600) or 600),
+            is_cancel_requested=is_cancel_requested,
+        )
+    else:
+        permission_mode = _resolve_sdk_permission_mode(requested_permission_mode)
     options_kwargs = dict(
         system_prompt=system_prompt,
         model=model,
@@ -560,6 +687,8 @@ async def _execute_task_stream_local(
         options_kwargs["resume"] = params.resume_session_id
     if permission_mode:
         options_kwargs["permission_mode"] = permission_mode
+    if can_use_tool is not None:
+        options_kwargs["can_use_tool"] = can_use_tool
     cli_path = resolve_claude_cli_path(cfg)
     if cli_path:
         options_kwargs["cli_path"] = cli_path

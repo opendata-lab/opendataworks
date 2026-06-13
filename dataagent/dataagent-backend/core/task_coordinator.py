@@ -11,6 +11,7 @@ from typing import Any
 import redis.asyncio as redis
 
 from config import get_settings
+from core.permission_gate import permission_decision_redis_key
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
 from core.task_executor import TaskExecutionInput, execute_task_stream
 from core.topic_files import diff_generated_files, snapshot_workspace_state
@@ -491,7 +492,7 @@ class TaskCoordinator:
         return f"da:task:cancel:{task_id}"
 
     def _permission_key(self, task_id: str, request_id: str) -> str:
-        return f"da:task:permission:{task_id}:{request_id}"
+        return permission_decision_redis_key(task_id, request_id)
 
     def _recovery_key(self) -> str:
         return "da:task:recovery:lock"
