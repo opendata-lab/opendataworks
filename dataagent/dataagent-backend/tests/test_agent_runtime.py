@@ -220,6 +220,32 @@ def test_build_allowed_tools_includes_portal_mcp_tools_once():
     assert len(allowed_tools) == len(set(allowed_tools))
 
 
+_PORTAL_MCP = {
+    "portal": {
+        "type": "http",
+        "url": "http://portal-mcp:8801/mcp/",
+        "headers": {"X-Portal-MCP-Token": "portal-token"},
+    }
+}
+
+
+def test_build_allowed_tools_mounts_write_tools_in_default_mode():
+    allowed = agent_runtime._build_allowed_tools(_PORTAL_MCP, permission_mode="default")
+    assert "mcp__portal__portal_create_task" in allowed
+    assert "mcp__portal__portal_publish_workflow" in allowed
+    assert "mcp__portal__portal_search_tables" in allowed
+
+
+def test_build_allowed_tools_plan_mode_strips_write_tools():
+    allowed = agent_runtime._build_allowed_tools(_PORTAL_MCP, permission_mode="plan")
+    # read tools remain mounted
+    assert "mcp__portal__portal_search_tables" in allowed
+    # write + high-risk tools are not mounted under plan
+    assert "mcp__portal__portal_create_task" not in allowed
+    assert "mcp__portal__portal_publish_workflow" not in allowed
+    assert "mcp__portal__portal_workflow_schedule_online" not in allowed
+
+
 def test_workspace_boundary_denies_parent_directory_file_lookup(tmp_path: Path):
     workspace = tmp_path / "runtime" / "workspaces" / "agent_default"
     workspace.mkdir(parents=True)

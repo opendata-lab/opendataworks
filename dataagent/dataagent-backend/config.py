@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     task_heartbeat_seconds: int = 5
     task_recovery_scan_interval_seconds: int = 2
     task_recovery_batch_size: int = 20
+    # Max time a run waits at a permission confirmation before timing out (deny).
+    task_permission_wait_seconds: int = 600
     schedule_scan_interval_seconds: int = 10
     schedule_scan_batch_size: int = 10
     schedule_lock_ttl_seconds: int = 60

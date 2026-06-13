@@ -179,6 +179,65 @@ class SdkBlockWriter:
             data=evt,
         )
 
+    def append_permission_request(
+        self,
+        *,
+        request_id: str,
+        tool_name: str,
+        risk_level: str = "high",
+        title: str = "",
+        summary: str = "",
+        payload_preview: Any = None,
+    ) -> None:
+        """Record a generic Chat V2 permission-request block.
+
+        Skill-agnostic: ``payload_preview`` is opaque JSON shown verbatim by the
+        confirmation card. Projected into a ``permission_request`` block that the
+        portal chat and widget render identically.
+        """
+        self._store.append_sdk_record(
+            task_id=self._task_id,
+            topic_id=self._topic_id,
+            turn_index=self._turn_index,
+            record_type="permission_request",
+            event_type=None,
+            data={
+                "request_id": str(request_id),
+                "tool_name": str(tool_name or ""),
+                "risk_level": str(risk_level or "high"),
+                "title": str(title or ""),
+                "summary": str(summary or ""),
+                "payload_preview": payload_preview,
+            },
+        )
+
+    def append_permission_decision(
+        self,
+        *,
+        request_id: str,
+        decision: str,
+        note: str = "",
+        decided_at: str = "",
+    ) -> None:
+        """Record the user's decision for a prior permission request.
+
+        ``decision`` is one of ``allowed`` / ``denied`` / ``timeout``; it merges
+        onto the matching ``permission_request`` block during projection.
+        """
+        self._store.append_sdk_record(
+            task_id=self._task_id,
+            topic_id=self._topic_id,
+            turn_index=self._turn_index,
+            record_type="permission_decision",
+            event_type=None,
+            data={
+                "request_id": str(request_id),
+                "decision": str(decision or "pending"),
+                "note": str(note or ""),
+                "decided_at": str(decided_at or ""),
+            },
+        )
+
     def append_done(self, *, is_error: bool, subtype: str = "") -> None:
         self._append_terminal_record(
             record_type="done",

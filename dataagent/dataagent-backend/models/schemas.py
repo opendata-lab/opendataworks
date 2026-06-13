@@ -70,6 +70,18 @@ class DeliverMessageRequest(BaseModel):
     permission_mode: Optional[str] = None
 
 
+class PermissionDecisionRequest(BaseModel):
+    request_id: str
+    decision: str  # "allow" | "deny"
+    note: Optional[str] = None
+
+
+class PermissionDecisionResponse(BaseModel):
+    task_id: str
+    request_id: str
+    decision: str
+
+
 class CreateTaskRequest(BaseModel):
     topic_id: str
     message_type: str

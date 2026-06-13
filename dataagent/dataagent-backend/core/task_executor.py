@@ -13,7 +13,7 @@ import anyio
 import httpx
 
 from config import get_settings
-from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot
+from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, normalize_permission_mode
 from core.agent_runtime import (
     _build_allowed_tools,
     _build_portal_mcp_servers,
@@ -519,6 +519,9 @@ async def _execute_task_stream_local(
     requested_permission_mode = params.permission_mode
     if requested_permission_mode is None:
         requested_permission_mode = (agent_snapshot or {}).get("permission_mode")
+    # logical_permission_mode is the session choice (plan/default/acceptEdits/
+    # bypassPermissions) used for tool gating; permission_mode is what the SDK runs.
+    logical_permission_mode = normalize_permission_mode(requested_permission_mode)
     permission_mode = _resolve_sdk_permission_mode(requested_permission_mode)
     max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
     setting_sources = ["project"]
@@ -527,7 +530,11 @@ async def _execute_task_stream_local(
         (agent_snapshot or {}).get("mcp_server_ids") if agent_snapshot else None,
         agent_snapshot=agent_snapshot,
     )
-    allowed_tools = _build_allowed_tools(mcp_servers, (agent_snapshot or {}).get("allowed_tools") if agent_snapshot else None)
+    allowed_tools = _build_allowed_tools(
+        mcp_servers,
+        (agent_snapshot or {}).get("allowed_tools") if agent_snapshot else None,
+        permission_mode=logical_permission_mode,
+    )
     options_kwargs = dict(
         system_prompt=system_prompt,
         model=model,

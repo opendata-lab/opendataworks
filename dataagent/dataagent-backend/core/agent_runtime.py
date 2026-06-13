@@ -17,6 +17,7 @@ from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import normalize_provider_id as _normalize_provider_id
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
 from core.agent_profile_service import normalize_permission_mode
+from core.permission_gate import WRITE_TOOL_NAMES, plan_denies_tool
 from core.data_scope import encode_scope_header, normalize_data_scope
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
@@ -463,13 +464,19 @@ def _build_portal_mcp_servers(
 def _build_allowed_tools(
     mcp_servers: dict[str, Any] | None = None,
     allowed_tools: list[str] | tuple[str, ...] | None = None,
+    permission_mode: str | None = None,
 ) -> list[str]:
     allowed = _dedupe_strings(allowed_tools) if allowed_tools is not None else list(SAFE_AUTO_ALLOWED_TOOLS)
+    mode = normalize_permission_mode(permission_mode)
     if mcp_servers and PORTAL_MCP_SERVER_NAME in mcp_servers:
-        allowed.extend(
-            f"mcp__{PORTAL_MCP_SERVER_NAME}__{tool_name}"
-            for tool_name in PORTAL_MCP_TOOL_NAMES
-        )
+        tool_names = list(PORTAL_MCP_TOOL_NAMES) + sorted(WRITE_TOOL_NAMES)
+        for tool_name in tool_names:
+            qualified = f"mcp__{PORTAL_MCP_SERVER_NAME}__{tool_name}"
+            # plan mode is read-only: never mount write tools (defense in depth
+            # alongside the can_use_tool denial).
+            if mode == "plan" and plan_denies_tool(qualified):
+                continue
+            allowed.append(qualified)
 
     deduped: list[str] = []
     seen: set[str] = set()

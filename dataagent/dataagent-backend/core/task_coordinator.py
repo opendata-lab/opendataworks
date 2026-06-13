@@ -88,6 +88,29 @@ class TaskCoordinator:
             return True
         return self.store.is_task_cancel_requested(task_id)
 
+    async def submit_permission_decision(self, task_id: str, request_id: str, decision: str) -> str:
+        """Publish a user permission decision for a waiting run (allow/deny).
+
+        Idempotent: the first decision for a ``request_id`` wins; later calls
+        return the recorded value. Mirrors the cancel-flag pattern so both the
+        in-process executor and the sandbox runner can observe it via Redis.
+        Returns the effective decision.
+        """
+        effective = str(decision or "denied")
+        if self._redis is None:
+            return effective
+        key = self._permission_key(task_id, request_id)
+        ttl = max(60, int(self.settings.task_permission_wait_seconds or 600) + 60)
+        await self._redis.set(key, effective, ex=ttl, nx=True)
+        current = await self._redis.get(key)
+        return str(current) if current is not None else effective
+
+    async def read_permission_decision(self, task_id: str, request_id: str) -> str | None:
+        if self._redis is None:
+            return None
+        value = await self._redis.get(self._permission_key(task_id, request_id))
+        return str(value) if value is not None else None
+
     async def _queue_loop(self) -> None:
         while not self._closing:
             task_id = await self._queue.get()
@@ -466,6 +489,9 @@ class TaskCoordinator:
 
     def _cancel_key(self, task_id: str) -> str:
         return f"da:task:cancel:{task_id}"
+
+    def _permission_key(self, task_id: str, request_id: str) -> str:
+        return f"da:task:permission:{task_id}:{request_id}"
 
     def _recovery_key(self) -> str:
         return "da:task:recovery:lock"

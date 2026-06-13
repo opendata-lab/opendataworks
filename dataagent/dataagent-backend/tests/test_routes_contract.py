@@ -495,6 +495,15 @@ class _FakeCoordinator:
     async def request_cancel(self, task_id: str):
         self.cancelled.append(task_id)
 
+    def __init_decisions(self):
+        if not hasattr(self, "decisions"):
+            self.decisions = {}
+
+    async def submit_permission_decision(self, task_id: str, request_id: str, decision: str) -> str:
+        self.__init_decisions()
+        # first decision wins (idempotent)
+        return self.decisions.setdefault((task_id, request_id), decision)
+
 
 def _submit_message_task_factory(store: _FakeStore, calls: list[dict]):
     async def _submit_message_task(**kwargs):
@@ -734,6 +743,44 @@ def test_topic_permission_mode_lifecycle(monkeypatch):
         # PUT with neither field is a 400.
         empty = client.put(f"/api/v1/nl2sql/topics/{topic_id}", json={})
         assert empty.status_code == 400
+
+
+def test_permission_decision_endpoint(monkeypatch):
+    client, store, coordinator, _submit_calls = _build_client(monkeypatch)
+    with client:
+        topic_id = client.post("/api/v1/nl2sql/topics", json={"title": "确认流"}).json()["topic_id"]
+        delivered = client.post(
+            "/api/v1/nl2sql/tasks/deliver-message",
+            json={"topic_id": topic_id, "content": "发布工作流"},
+        ).json()
+        task_id = delivered["task_id"]
+
+        base = f"/api/v1/nl2sql/tasks/{task_id}/permission-decision"
+        # Not awaiting a decision yet -> 409.
+        assert client.post(base, json={"request_id": "req-1", "decision": "allow"}).status_code == 409
+
+        # Move the run into the waiting state.
+        store.tasks[task_id]["task_status"] = "waiting_permission"
+
+        # Invalid decision value -> 400.
+        assert client.post(base, json={"request_id": "req-1", "decision": "maybe"}).status_code == 400
+        # Missing request_id -> 400.
+        assert client.post(base, json={"request_id": "", "decision": "allow"}).status_code == 400
+
+        # Valid allow.
+        ok = client.post(base, json={"request_id": "req-1", "decision": "allow"})
+        assert ok.status_code == 200
+        assert ok.json() == {"task_id": task_id, "request_id": "req-1", "decision": "allow"}
+
+        # Idempotent: a later deny for the same request_id returns the first decision.
+        again = client.post(base, json={"request_id": "req-1", "decision": "deny"})
+        assert again.json()["decision"] == "allow"
+
+        # Unknown task -> 404.
+        assert client.post(
+            "/api/v1/nl2sql/tasks/task_missing/permission-decision",
+            json={"request_id": "req-1", "decision": "allow"},
+        ).status_code == 404
 
 
 def test_followup_suggestions_route_generates_without_changing_message_contract(monkeypatch):

@@ -20,6 +20,8 @@ from core.topic_task_store import get_topic_task_store
 from models.schemas import (
     CancelTaskResponse,
     CreateTaskRequest,
+    PermissionDecisionRequest,
+    PermissionDecisionResponse,
     CreateTopicRequest,
     DeliverMessageRequest,
     FollowupSuggestionsResponse,
@@ -608,6 +610,30 @@ async def api_cancel_task(task_id: str, request: Request):
     await get_task_coordinator().request_cancel(task_id)
     task = store.get_task(task_id, context=context) or task
     return CancelTaskResponse.model_validate(task)
+
+
+@task_router.post("/{task_id}/permission-decision", response_model=PermissionDecisionResponse)
+async def api_submit_permission_decision(task_id: str, payload: PermissionDecisionRequest, request: Request):
+    store = _get_store()
+    context = _request_context(request)
+    task = store.get_task(task_id, context=context)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    request_id = str(payload.request_id or "").strip()
+    if not request_id:
+        raise HTTPException(status_code=400, detail="request_id is required")
+    decision = str(payload.decision or "").strip().lower()
+    if decision not in {"allow", "deny"}:
+        raise HTTPException(status_code=400, detail="decision must be allow or deny")
+    # Only a run paused at a confirmation can accept a decision.
+    if str(task.get("task_status") or "") != "waiting_permission":
+        raise HTTPException(status_code=409, detail="task is not awaiting a permission decision")
+    # Signal the waiting executor; first decision wins (idempotent). The executor
+    # writes the durable permission_decision record when it observes this.
+    effective = await get_task_coordinator().submit_permission_decision(task_id, request_id, decision)
+    return PermissionDecisionResponse.model_validate(
+        {"task_id": task_id, "request_id": request_id, "decision": effective}
+    )
 
 
 @queue_router.post("/queries", response_model=MessageQueuePageResponse)

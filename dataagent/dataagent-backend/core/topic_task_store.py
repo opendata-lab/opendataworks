@@ -100,6 +100,7 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     current_turn_blocks: list[dict[str, Any]] | None = None
     block_by_index: dict[int, dict[str, Any]] = {}
     blocks_by_tool_id: dict[str, dict[str, Any]] = {}
+    perm_blocks_by_request_id: dict[str, dict[str, Any]] = {}
     max_seq_id = 0
 
     for record in records:
@@ -175,6 +176,35 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                             block["input"] = json.loads(input_json)
                         except Exception:
                             block["input"] = input_json
+
+        elif record_type == "permission_request":
+            request_id = str(data.get("request_id") or "")
+            block = {
+                "type": "permission_request",
+                "request_id": request_id,
+                "tool_name": str(data.get("tool_name") or ""),
+                "risk_level": str(data.get("risk_level") or "high"),
+                "title": str(data.get("title") or ""),
+                "summary": str(data.get("summary") or ""),
+                "payload_preview": data.get("payload_preview"),
+                "decision": "pending",
+                "note": "",
+                "decided_at": "",
+                "_idx": len(ordered_blocks),
+            }
+            ordered_blocks.append(block)
+            if current_turn_blocks is not None:
+                current_turn_blocks.append(block)
+            if request_id:
+                perm_blocks_by_request_id[request_id] = block
+
+        elif record_type == "permission_decision":
+            request_id = str(data.get("request_id") or "")
+            block = perm_blocks_by_request_id.get(request_id)
+            if block is not None:
+                block["decision"] = str(data.get("decision") or "pending")
+                block["note"] = str(data.get("note") or "")
+                block["decided_at"] = str(data.get("decided_at") or "")
 
         elif record_type == "tool_result":
             tool_use_id = str(data.get("tool_use_id") or "")
@@ -1325,6 +1355,44 @@ class TopicTaskStore:
                       AND t.current_task_id = k.task_id
                     """,
                     (task_id,),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return self.get_task(task_id)
+
+    def set_task_status(self, task_id: str, status: str) -> dict[str, Any] | None:
+        """Set a non-terminal in-flight status (e.g. ``waiting_permission`` while
+        a run waits at a confirmation, then back to ``running``).
+
+        Terminal transitions go through the dedicated finalize paths; this is for
+        reversible in-flight states only.
+        """
+        self._ensure_ready()
+        safe_status = str(status or "running")
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE da_agent_task
+                    SET task_status = %s,
+                        heartbeat_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE task_id = %s
+                    """,
+                    (safe_status, task_id),
+                )
+                cur.execute(
+                    """
+                    UPDATE da_agent_topic t
+                    JOIN da_agent_task k ON k.topic_id = t.topic_id
+                    SET t.current_task_status = %s,
+                        t.updated_at = CURRENT_TIMESTAMP
+                    WHERE k.task_id = %s
+                      AND t.current_task_id = k.task_id
+                    """,
+                    (safe_status, task_id),
                 )
             conn.commit()
         finally:
