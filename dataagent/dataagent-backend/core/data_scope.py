@@ -70,6 +70,27 @@ def encode_scope_header(scope: Any) -> str:
     return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
 
 
+def runtime_data_scope_header() -> str:
+    """解析当前运行时的 data-scope 请求头值。
+
+    与 skill 运行时 `runtime_data_scope_header()` 同一契约：优先使用预计算的
+    `ODW_AGENT_DATA_SCOPE_HEADER` / `DATAAGENT_DATA_SCOPE_HEADER`，否则由
+    `DATAAGENT_DATA_SCOPE_JSON` 归一后 base64url 编码。
+    """
+    configured = str(
+        os.getenv("ODW_AGENT_DATA_SCOPE_HEADER")
+        or os.getenv("DATAAGENT_DATA_SCOPE_HEADER")
+        or ""
+    ).strip()
+    if configured:
+        return configured
+
+    raw_scope = str(os.getenv("DATAAGENT_DATA_SCOPE_JSON") or "").strip()
+    if not raw_scope:
+        return ""
+    return encode_scope_header(raw_scope)
+
+
 def _safe_json_load(value: Any) -> Any:
     if isinstance(value, dict):
         return value

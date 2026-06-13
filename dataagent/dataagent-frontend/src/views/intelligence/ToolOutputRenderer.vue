@@ -88,56 +88,64 @@
     <div v-if="errorText && showMainHeader" class="tool-output-error">{{ errorText }}</div>
 
     <!-- Chart rendered directly below the tool-call block (never raw JSON) -->
-    <template v-if="chartVisible">
-      <div v-if="chartRenderState === 'renderable' && chartRenderKind === 'table'" class="tool-table-wrap tool-chart-below">
-        <table class="tool-table">
-          <thead>
-            <tr>
-              <th v-for="column in chartColumns" :key="column">{{ column }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, rowIndex) in chartRows" :key="rowIndex">
-              <td v-for="column in chartColumns" :key="column">{{ row[column] }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div
-        v-else-if="chartRenderState === 'renderable' && chartOption"
-        ref="chartCanvasRef"
-        class="tool-chart tool-chart-below"
-      />
-      <div v-else-if="chartRenderState === 'empty'" class="tool-output-empty">图表暂无可渲染数据</div>
-      <div v-else class="tool-output-empty">{{ chartRenderError || '图表无法渲染' }}</div>
-    </template>
+    <ChartSpecView v-if="chartVisible" :spec="outputPayload" class="tool-chart-below" />
 
     <div v-if="mainPanelVisible" class="tool-output-panel">
       <div class="tool-output-body-scroll">
         <template v-if="kind === 'sql_execution'">
-          <pre v-if="sqlText" class="tool-code"><code>{{ sqlText }}</code></pre>
+          <SqlCodePanel
+            v-if="sqlText"
+            :sql="sqlText"
+            :database="payloadDatabase"
+            :engine="payloadEngine"
+            :title="summaryText"
+          />
 
-          <div v-if="columns.length && rows.length" class="tool-table-wrap">
-            <table class="tool-table">
-              <thead>
-                <tr>
-                  <th v-for="column in columns" :key="column">{{ column }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="(row, rowIndex) in rows" :key="rowIndex">
-                  <td v-for="column in columns" :key="column">{{ row[column] }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+          <ResultDataTable
+            v-if="columns.length && rows.length"
+            :columns="columns"
+            :rows="rows"
+            :title="summaryText || payloadDatabase"
+            :meta="resultTableMeta"
+          />
           <div v-else-if="!errorText" class="tool-output-empty">无数据</div>
         </template>
 
+        <template v-else-if="kind === 'sql_export'">
+          <SqlCodePanel
+            v-if="sqlText"
+            :sql="sqlText"
+            :database="payloadDatabase"
+            :engine="payloadEngine"
+            :title="summaryText"
+          />
+          <a
+            v-if="exportFileUrl"
+            class="tool-export-download"
+            :href="exportFileUrl"
+            download
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>
+            下载导出文件{{ exportFileName ? `（${exportFileName}）` : '' }}
+          </a>
+          <ResultDataTable
+            v-if="exportPreviewRows.length"
+            :columns="exportPreviewColumns"
+            :rows="exportPreviewRows"
+            :title="summaryText || payloadDatabase"
+            :meta="resultTableMeta"
+          />
+        </template>
+
         <template v-else-if="kind === 'python_execution'">
-          <pre v-if="stdoutText" class="tool-code"><code>{{ stdoutText }}</code></pre>
-          <pre v-if="resultText" class="tool-code tool-code-light"><code>{{ resultText }}</code></pre>
+          <div v-if="stdoutText" class="tool-code-block">
+            <button type="button" class="tool-code-copy" @click="copyBlock('stdout', stdoutText)">{{ copiedBlock === 'stdout' ? '已复制' : '复制' }}</button>
+            <pre class="tool-code"><code>{{ stdoutText }}</code></pre>
+          </div>
+          <div v-if="resultText" class="tool-code-block">
+            <button type="button" class="tool-code-copy" @click="copyBlock('result', resultText)">{{ copiedBlock === 'result' ? '已复制' : '复制' }}</button>
+            <pre class="tool-code tool-code-light"><code>{{ resultText }}</code></pre>
+          </div>
         </template>
 
         <template v-else-if="showRawPayload">
@@ -152,7 +160,10 @@
               {{ rawMarkdownExpanded ? '收起' : '展开...' }}
             </button>
           </div>
-          <pre v-else class="tool-code tool-code-light"><code>{{ normalizedRawText }}</code></pre>
+          <div v-else class="tool-code-block">
+            <button type="button" class="tool-code-copy" @click="copyBlock('raw', normalizedRawText)">{{ copiedBlock === 'raw' ? '已复制' : '复制' }}</button>
+            <pre class="tool-code tool-code-light"><code>{{ normalizedRawText }}</code></pre>
+          </div>
         </template>
       </div>
     </div>
@@ -160,40 +171,26 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
-import * as echarts from 'echarts/core'
-import { use } from 'echarts/core'
-import { BarChart, LineChart, PieChart } from 'echarts/charts'
-import {
-  GridComponent,
-  LegendComponent,
-  TitleComponent,
-  TooltipComponent
-} from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import { buildChartRenderModel, extractChartSpec, extractTextParts, parseMaybeJson } from './chartSpec'
+import { extractChartSpec, extractTextParts, parseMaybeJson } from './chartSpec'
 import { describeToolAction, formatSkillBootstrapLabel } from './toolPresentation'
-
-use([
-  CanvasRenderer,
-  LineChart,
-  BarChart,
-  PieChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent
-])
+import { copyText } from '@/utils/clipboard'
+import ChartSpecView from './ChartSpecView.vue'
+import ResultDataTable from './components/ResultDataTable.vue'
+import SqlCodePanel from './components/SqlCodePanel.vue'
 
 const props = defineProps({
   tool: {
     type: Object,
     default: () => ({})
+  },
+  fileUrlResolver: {
+    type: Function,
+    default: null
   }
 })
 
-const chartCanvasRef = ref(null)
 const panelOpen = ref(false)
 const panelTouched = ref(false)
 const nowTick = ref(Date.now())
@@ -555,51 +552,62 @@ const statusLabel = computed(() => {
   return '执行完成'
 })
 
-const chartRenderModel = computed(() => (kind.value === 'chart_spec' ? buildChartRenderModel(outputPayload.value) : null))
-const chartRenderState = computed(() => String(chartRenderModel.value?.state || 'empty'))
-const chartRenderKind = computed(() => String(chartRenderModel.value?.kind || ''))
-const chartRenderError = computed(() => String(chartRenderModel.value?.errorText || '').trim())
-const chartColumns = computed(() => Array.isArray(chartRenderModel.value?.columns) ? chartRenderModel.value.columns : [])
-const chartRows = computed(() => Array.isArray(chartRenderModel.value?.rows) ? chartRenderModel.value.rows : [])
-const chartOption = computed(() => {
-  if (kind.value !== 'chart_spec') return null
-  const baseOption = chartRenderModel.value?.kind === 'echarts' ? chartRenderModel.value.option : null
-  if (!baseOption) return null
-  
-  try {
-    const opt = JSON.parse(JSON.stringify(baseOption))
-    
-    // Clean up LLM-generated title artifacts
-    if (opt.title) {
-      const cleanTitle = (t) => {
-        if (t.text) {
-          t.text = t.text.replace(/[\(（]?，?共?返回\d+(行数据|条数据|条结果)的?[\)）]?/g, '')
-        }
-        if (t.subtext && (t.subtext.includes('基于') || t.subtext.includes('绘制'))) {
-          delete t.subtext
-        }
-      }
-      if (Array.isArray(opt.title)) opt.title.forEach(cleanTitle)
-      else cleanTitle(opt.title)
-    }
-    
-    // Ensure legend is visible at the bottom
-    if (!opt.legend) {
-      opt.legend = { show: true, bottom: 0 }
-    } else {
-      opt.legend.show = true
-      if (opt.legend.bottom === undefined) opt.legend.bottom = 0
-    }
-    
-    // Reduce bottom whitespace
-    if (!opt.grid) opt.grid = {}
-    if (opt.grid.bottom === undefined) opt.grid.bottom = 35
-    
-    return opt
-  } catch (e) {
-    return baseOption
+const payloadDatabase = computed(() => String(outputPayload.value.database || '').trim())
+const payloadEngine = computed(() => String(outputPayload.value.engine || '').trim())
+const resultTableMeta = computed(() => ({
+  rowCount: outputPayload.value.row_count,
+  durationMs: outputPayload.value.duration_ms,
+  hasMore: outputPayload.value.has_more,
+  truncatedBySize: outputPayload.value.truncated_by_size,
+  notice: outputPayload.value.notice
+}))
+
+// sql_export 的 file_path 是工作区绝对路径；文件服务接口只认相对路径，
+// 因此从 output/ 或 uploads/ 起截取。
+const exportFileRelPath = computed(() => {
+  if (kind.value !== 'sql_export') return ''
+  const filePath = String(outputPayload.value.file_path || '').trim()
+  if (!filePath) return ''
+  for (const root of ['output/', 'uploads/']) {
+    const index = filePath.lastIndexOf(`/${root}`)
+    if (index >= 0) return filePath.slice(index + 1)
+    if (filePath.startsWith(root)) return filePath
   }
+  return ''
 })
+const exportFileUrl = computed(() => {
+  if (!exportFileRelPath.value || typeof props.fileUrlResolver !== 'function') return ''
+  return String(props.fileUrlResolver(exportFileRelPath.value) || '')
+})
+const exportFileName = computed(() => exportFileRelPath.value.split('/').pop() || '')
+const exportPreviewRows = computed(() => (
+  Array.isArray(outputPayload.value.preview_rows) ? outputPayload.value.preview_rows : []
+))
+const exportPreviewColumns = computed(() => {
+  if (Array.isArray(outputPayload.value.columns) && outputPayload.value.columns.length) {
+    return outputPayload.value.columns
+  }
+  const firstRow = exportPreviewRows.value[0]
+  return isPlainObject(firstRow) ? Object.keys(firstRow) : []
+})
+
+const copiedBlock = ref('')
+let copiedBlockTimer = 0
+const copyBlock = async (key, text) => {
+  try {
+    await copyText(text)
+    copiedBlock.value = key
+    if (copiedBlockTimer && typeof window !== 'undefined') window.clearTimeout(copiedBlockTimer)
+    if (typeof window !== 'undefined') {
+      copiedBlockTimer = window.setTimeout(() => {
+        copiedBlock.value = ''
+      }, 1500)
+    }
+  } catch (_error) {
+    // 剪贴板不可用时静默失败
+  }
+}
+
 const showRawPayload = computed(() => Boolean(normalizedRawText.value) && !showTrace.value)
 
 const isFlat = computed(() => kind.value === 'sql_execution')
@@ -615,6 +623,7 @@ const mainPanelAvailable = computed(() => {
   if (kind.value === 'sql_execution') return Boolean(sqlText.value || (columns.value.length && rows.value.length) || !errorText.value)
   // chart_spec has no expandable main panel; the chart renders below the block.
   if (kind.value === 'chart_spec') return false
+  if (kind.value === 'sql_export') return Boolean(sqlText.value || exportPreviewRows.value.length || exportFileUrl.value)
   if (kind.value === 'python_execution') return Boolean(stdoutText.value || resultText.value)
   return Boolean(showRawPayload.value)
 })
@@ -667,64 +676,7 @@ const toolInstanceKey = computed(() => {
   ].filter(Boolean).join('|')
 })
 
-let chartRefreshFrame = 0
-let chartInstance = null
-let chartResizeObserver = null
 let statusTimer = 0
-
-const disposeChart = () => {
-  if (chartResizeObserver) {
-    chartResizeObserver.disconnect()
-    chartResizeObserver = null
-  }
-  if (chartInstance) {
-    chartInstance.dispose()
-    chartInstance = null
-  }
-}
-
-// Keep the chart in sync with its container so it always fits the conversation
-// width/height instead of overflowing with horizontal/vertical scrollbars.
-const observeChartResize = (container) => {
-  if (chartResizeObserver || typeof window === 'undefined' || typeof window.ResizeObserver === 'undefined') return
-  chartResizeObserver = new window.ResizeObserver(() => {
-    if (chartInstance) chartInstance.resize()
-  })
-  chartResizeObserver.observe(container)
-}
-
-const refreshChart = async () => {
-  if (typeof window === 'undefined') return
-  await nextTick()
-  if (chartRefreshFrame) window.cancelAnimationFrame(chartRefreshFrame)
-  chartRefreshFrame = window.requestAnimationFrame(() => {
-    const container = chartCanvasRef.value
-    if (!container || !chartOption.value) return
-    try {
-      if (!chartInstance) {
-        chartInstance = echarts.init(container, undefined, { renderer: 'canvas' })
-        observeChartResize(container)
-      }
-      chartInstance.clear()
-      chartInstance.setOption(chartOption.value, { notMerge: true, lazyUpdate: false })
-      chartInstance.resize()
-    } catch (_error) {
-      // Swallow redraw failures and let the empty/error state remain visible.
-    }
-  })
-}
-
-watch(
-  () => [chartRenderState.value, chartOption.value, props.tool?.id, chartVisible.value],
-  () => {
-    if (chartRenderState.value === 'renderable' && chartOption.value && chartVisible.value) {
-      refreshChart()
-      return
-    }
-    disposeChart()
-  },
-  { deep: true }
-)
 
 const shouldAutoOpenPanel = () => {
   if (!hasExpandablePanel.value) return false
@@ -743,9 +695,6 @@ const togglePanel = () => {
 
 onMounted(() => {
   panelOpen.value = shouldAutoOpenPanel()
-  if (chartRenderState.value === 'renderable' && chartOption.value && chartVisible.value) {
-    refreshChart()
-  }
 
   if (typeof window !== 'undefined') {
     statusTimer = window.setInterval(() => {
@@ -775,13 +724,12 @@ watch(
 )
 
 onBeforeUnmount(() => {
-  if (chartRefreshFrame && typeof window !== 'undefined') {
-    window.cancelAnimationFrame(chartRefreshFrame)
-  }
   if (statusTimer && typeof window !== 'undefined') {
     window.clearInterval(statusTimer)
   }
-  disposeChart()
+  if (copiedBlockTimer && typeof window !== 'undefined') {
+    window.clearTimeout(copiedBlockTimer)
+  }
 })
 </script>
 
@@ -1137,53 +1085,53 @@ onBeforeUnmount(() => {
   color: #233142;
 }
 
-.tool-table-wrap {
-  margin-top: 14px;
-  border: 1px solid #e1e8f0;
-  border-radius: 14px;
-  background: #fff;
-  overflow-x: auto;
-  overscroll-behavior: contain;
+.tool-code-block {
+  position: relative;
 }
 
-.tool-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 480px;
+.tool-code-copy {
+  position: absolute;
+  top: 20px;
+  right: 10px;
+  z-index: 2;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  background: rgba(22, 33, 49, 0.35);
+  color: #dbe7f5;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
-.tool-table th,
-.tool-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #edf2f7;
-  text-align: left;
+.tool-code-block:hover .tool-code-copy {
+  opacity: 1;
+}
+
+.tool-code-copy:hover {
+  background: rgba(22, 33, 49, 0.6);
+}
+
+.tool-export-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding: 6px 12px;
+  border: 1px solid #cfe2ff;
+  border-radius: 10px;
+  background: #eef6ff;
+  color: #31567a;
   font-size: 12px;
-  color: #233142;
-  white-space: pre-wrap;
-  word-break: break-word;
-  vertical-align: top;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.tool-table th {
-  background: #f8fbff;
-  color: #607185;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.tool-chart {
-  display: block;
-  margin-top: 8px;
-  box-sizing: border-box;
-  min-height: 340px;
-  height: 340px;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-  border-radius: 14px;
-  background: #F9FAFC;
-  border: 1px solid #EEF1F5;
-  padding: 8px;
+.tool-export-download:hover {
+  border-color: #4f81ff;
+  color: #1d3f5e;
 }
 
 .tool-output-empty {

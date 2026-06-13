@@ -12,6 +12,11 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
 from core.followup_suggestions import generate_followup_suggestions
+from core.readonly_query_proxy import (
+    QueryProxyConfigError,
+    QueryProxyUpstreamError,
+    execute_readonly_query,
+)
 from core.skill_admin_service import current_settings_payload, resolved_chat_settings_payload
 from core.task_coordinator import get_task_coordinator
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
@@ -22,6 +27,7 @@ from models.schemas import (
     CreateTaskRequest,
     CreateTopicRequest,
     DeliverMessageRequest,
+    ExecuteQueryRequest,
     FollowupSuggestionsResponse,
     MessageQueuePageResponse,
     MessageQueueQueryRequest,
@@ -61,6 +67,7 @@ topic_router = APIRouter(prefix="/topics")
 task_router = APIRouter(prefix="/tasks")
 queue_router = APIRouter(prefix="/message-queue")
 schedule_router = APIRouter(prefix="/message-schedule")
+query_router = APIRouter(prefix="/query")
 
 
 def _encode_sse(event: dict[str, Any]) -> str:
@@ -787,10 +794,36 @@ async def api_list_message_schedule_logs(schedule_id: str, payload: MessageSched
     )
 
 
+@query_router.post("/execute")
+async def api_execute_readonly_query(http_request: Request, request: ExecuteQueryRequest):
+    _request_context(http_request)
+
+    sql = str(request.sql or "").strip()
+    database = str(request.database or "").strip()
+    if not sql:
+        raise HTTPException(status_code=400, detail="sql 不能为空")
+    if not database:
+        raise HTTPException(status_code=400, detail="database 不能为空")
+
+    try:
+        return await execute_readonly_query(
+            sql,
+            database,
+            engine=request.engine,
+            limit=request.limit,
+            timeout_seconds=request.timeout_seconds,
+        )
+    except QueryProxyConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except QueryProxyUpstreamError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
 router.include_router(topic_router)
 router.include_router(task_router)
 router.include_router(queue_router)
 router.include_router(schedule_router)
+router.include_router(query_router)
 
 
 def _get_store():

@@ -138,4 +138,29 @@ describe('createNl2SqlApiClient', () => {
       {}
     )
   })
+
+  it('executes read-only sql through the runtime query API, omitting empty optionals', () => {
+    const client = createNl2SqlApiClient()
+
+    client.queryApi.executeSql({ sql: 'select 1', database: 'demo' })
+    expect(clients[0].post).toHaveBeenLastCalledWith('/query/execute', {
+      sql: 'select 1',
+      database: 'demo'
+    })
+
+    client.queryApi.executeSql({
+      sql: 'select 1',
+      database: 'demo',
+      engine: 'mysql',
+      limit: 500,
+      timeoutSeconds: 30
+    })
+    expect(clients[0].post).toHaveBeenLastCalledWith('/query/execute', {
+      sql: 'select 1',
+      database: 'demo',
+      engine: 'mysql',
+      limit: 500,
+      timeout_seconds: 30
+    })
+  })
 })
