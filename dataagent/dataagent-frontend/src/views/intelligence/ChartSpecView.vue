@@ -1,19 +1,50 @@
 <template>
   <div class="chart-spec-view">
-    <div v-if="renderState === 'renderable' && renderKind === 'table'" class="chart-spec-table-wrap">
-      <table class="chart-spec-table">
-        <thead>
-          <tr>
-            <th v-for="column in columns" :key="column">{{ column }}</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="(row, rowIndex) in rows" :key="rowIndex">
-            <td v-for="column in columns" :key="column">{{ row[column] }}</td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-if="toolbarVisible" class="chart-spec-toolbar">
+      <button
+        v-if="canToggleType"
+        type="button"
+        class="chart-spec-btn"
+        data-action="toggle-type"
+        @click="toggleChartType"
+      >{{ effectiveChartType === 'bar' ? '折线' : '柱状' }}</button>
+      <button
+        v-if="canToggleView"
+        type="button"
+        class="chart-spec-btn"
+        data-action="toggle-view"
+        @click="viewMode = viewMode === 'data' ? 'chart' : 'data'"
+      >{{ viewMode === 'data' ? '查看图表' : '查看数据' }}</button>
+      <button
+        v-if="canExportImage"
+        type="button"
+        class="chart-spec-btn"
+        data-action="download-png"
+        @click="downloadPng"
+      >下载图片</button>
+      <button
+        v-if="canCopyImage"
+        type="button"
+        class="chart-spec-btn"
+        data-action="copy-image"
+        @click="copyImage"
+      >{{ imageCopied ? '已复制' : '复制图片' }}</button>
+      <button
+        v-if="datasetRows.length"
+        type="button"
+        class="chart-spec-btn"
+        data-action="export-csv"
+        @click="exportCsv"
+      >导出CSV</button>
     </div>
+
+    <ResultDataTable
+      v-if="showDataTable"
+      :columns="datasetColumns"
+      :rows="datasetRows"
+      :title="specTitle"
+      class="chart-spec-data-table"
+    />
 
     <div v-else-if="renderState === 'renderable' && option" ref="chartCanvasRef" class="chart-spec-canvas" />
     <div v-else-if="renderState === 'empty'" class="chart-spec-empty">图表暂无可渲染数据</div>
@@ -34,6 +65,8 @@ import {
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 import { buildChartRenderModel } from './chartSpec'
+import { downloadCsv, exportFilename } from '@/utils/tableExport'
+import ResultDataTable from './components/ResultDataTable.vue'
 
 use([
   CanvasRenderer,
@@ -54,13 +87,56 @@ const props = defineProps({
 })
 
 const chartCanvasRef = ref(null)
+const viewMode = ref('chart')
+const typeOverride = ref('')
+const imageCopied = ref(false)
+let imageCopiedTimer = 0
 
-const renderModel = computed(() => buildChartRenderModel(props.spec))
+const baseRenderModel = computed(() => buildChartRenderModel(props.spec))
+const baseSpec = computed(() => baseRenderModel.value?.spec || null)
+const baseChartType = computed(() => String(baseSpec.value?.chart_type || ''))
+
+const effectiveChartType = computed(() => typeOverride.value || baseChartType.value)
+
+// 柱/折切换通过覆盖 chart_type 与 series.type 重建渲染模型，原 spec 不变。
+const renderModel = computed(() => {
+  if (!typeOverride.value || !baseSpec.value) return baseRenderModel.value
+  const overridden = {
+    ...baseSpec.value,
+    chart_type: typeOverride.value,
+    series: (baseSpec.value.series || []).map((series) => ({ ...series, type: typeOverride.value }))
+  }
+  return buildChartRenderModel(overridden)
+})
+
 const renderState = computed(() => String(renderModel.value?.state || 'empty'))
 const renderKind = computed(() => String(renderModel.value?.kind || ''))
 const renderError = computed(() => String(renderModel.value?.errorText || '').trim())
-const columns = computed(() => (Array.isArray(renderModel.value?.columns) ? renderModel.value.columns : []))
-const rows = computed(() => (Array.isArray(renderModel.value?.rows) ? renderModel.value.rows : []))
+
+const specTitle = computed(() => String(baseSpec.value?.title || '').trim() || 'chart')
+const datasetRows = computed(() => (Array.isArray(baseSpec.value?.dataset) ? baseSpec.value.dataset : []))
+const datasetColumns = computed(() => {
+  const columns = Array.isArray(baseSpec.value?.columns) ? baseSpec.value.columns.filter(Boolean) : []
+  if (columns.length) return columns
+  const firstRow = datasetRows.value[0]
+  return firstRow && typeof firstRow === 'object' ? Object.keys(firstRow) : []
+})
+
+const isTableSpec = computed(() => renderKind.value === 'table' || baseChartType.value === 'table')
+const showDataTable = computed(() => {
+  if (renderState.value !== 'renderable') return false
+  return isTableSpec.value || viewMode.value === 'data'
+})
+
+const toolbarVisible = computed(() => renderState.value === 'renderable' && (datasetRows.value.length > 0 || renderKind.value === 'echarts'))
+const canToggleView = computed(() => renderState.value === 'renderable' && !isTableSpec.value && datasetRows.value.length > 0)
+const canToggleType = computed(() => ['bar', 'line'].includes(baseChartType.value) && !showDataTable.value)
+const canExportImage = computed(() => renderState.value === 'renderable' && !showDataTable.value && renderKind.value === 'echarts')
+const clipboardImageSupported = typeof window !== 'undefined'
+  && typeof window.ClipboardItem !== 'undefined'
+  && Boolean(typeof navigator !== 'undefined' && navigator.clipboard?.write)
+  && Boolean(typeof window !== 'undefined' && window.isSecureContext)
+const canCopyImage = computed(() => canExportImage.value && clipboardImageSupported)
 
 // Mirror the chart polish applied to tool-call charts so inline conclusion
 // charts stay visually consistent with the ones rendered below tool blocks.
@@ -104,6 +180,51 @@ let chartRefreshFrame = 0
 let chartInstance = null
 let chartResizeObserver = null
 
+const toggleChartType = () => {
+  const next = effectiveChartType.value === 'bar' ? 'line' : 'bar'
+  typeOverride.value = next === baseChartType.value ? '' : next
+}
+
+const chartImageDataUrl = () => {
+  if (!chartInstance) return ''
+  try {
+    return chartInstance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })
+  } catch (_error) {
+    return ''
+  }
+}
+
+const downloadPng = () => {
+  const dataUrl = chartImageDataUrl()
+  if (!dataUrl || typeof document === 'undefined') return
+  const link = document.createElement('a')
+  link.href = dataUrl
+  link.download = exportFilename(specTitle.value, 'png')
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+}
+
+const copyImage = async () => {
+  const dataUrl = chartImageDataUrl()
+  if (!dataUrl || !clipboardImageSupported) return
+  try {
+    const blob = await (await fetch(dataUrl)).blob()
+    await navigator.clipboard.write([new window.ClipboardItem({ [blob.type]: blob })])
+    imageCopied.value = true
+    if (imageCopiedTimer) window.clearTimeout(imageCopiedTimer)
+    imageCopiedTimer = window.setTimeout(() => {
+      imageCopied.value = false
+    }, 1500)
+  } catch (_error) {
+    // 复制失败时静默，按钮状态不变化即可感知
+  }
+}
+
+const exportCsv = () => {
+  downloadCsv(specTitle.value, datasetColumns.value, datasetRows.value)
+}
+
 const disposeChart = () => {
   if (chartResizeObserver) {
     chartResizeObserver.disconnect()
@@ -145,9 +266,9 @@ const refreshChart = async () => {
 }
 
 watch(
-  () => [renderState.value, option.value],
+  () => [renderState.value, option.value, showDataTable.value],
   () => {
-    if (renderState.value === 'renderable' && option.value) {
+    if (renderState.value === 'renderable' && option.value && !showDataTable.value) {
       refreshChart()
       return
     }
@@ -156,13 +277,24 @@ watch(
   { deep: true }
 )
 
+watch(
+  () => props.spec,
+  () => {
+    viewMode.value = 'chart'
+    typeOverride.value = ''
+  }
+)
+
 onMounted(() => {
-  if (renderState.value === 'renderable' && option.value) refreshChart()
+  if (renderState.value === 'renderable' && option.value && !showDataTable.value) refreshChart()
 })
 
 onBeforeUnmount(() => {
   if (chartRefreshFrame && typeof window !== 'undefined') {
     window.cancelAnimationFrame(chartRefreshFrame)
+  }
+  if (imageCopiedTimer && typeof window !== 'undefined') {
+    window.clearTimeout(imageCopiedTimer)
   }
   disposeChart()
 })
@@ -171,6 +303,42 @@ onBeforeUnmount(() => {
 <style scoped>
 .chart-spec-view {
   margin: 12px 0;
+}
+
+.chart-spec-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-bottom: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chart-spec-view:hover .chart-spec-toolbar,
+.chart-spec-view:focus-within .chart-spec-toolbar {
+  opacity: 1;
+}
+
+.chart-spec-btn {
+  padding: 4px 10px;
+  border: 1px solid #dbe3ec;
+  border-radius: 8px;
+  background: #fff;
+  color: #31567a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chart-spec-btn:hover {
+  border-color: #4f81ff;
+  color: #1d3f5e;
+}
+
+.chart-spec-data-table {
+  margin-top: 0;
 }
 
 .chart-spec-canvas {
@@ -185,39 +353,6 @@ onBeforeUnmount(() => {
   background: #f9fafc;
   border: 1px solid #eef1f5;
   padding: 8px;
-}
-
-.chart-spec-table-wrap {
-  border: 1px solid #e1e8f0;
-  border-radius: 14px;
-  background: #fff;
-  overflow-x: auto;
-  overscroll-behavior: contain;
-}
-
-.chart-spec-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 480px;
-}
-
-.chart-spec-table th,
-.chart-spec-table td {
-  padding: 10px 12px;
-  border-bottom: 1px solid #edf2f7;
-  text-align: left;
-  font-size: 12px;
-  color: #233142;
-  white-space: pre-wrap;
-  word-break: break-word;
-  vertical-align: top;
-}
-
-.chart-spec-table th {
-  background: #f8fbff;
-  color: #607185;
-  font-weight: 700;
-  white-space: nowrap;
 }
 
 .chart-spec-empty {

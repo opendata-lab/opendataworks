@@ -82,6 +82,14 @@ class CreateTaskRequest(BaseModel):
     source_schedule_log_id: Optional[str] = None
 
 
+class ExecuteQueryRequest(BaseModel):
+    sql: str
+    database: str
+    engine: Optional[str] = None
+    limit: Optional[int] = None
+    timeout_seconds: Optional[int] = None
+
+
 class MessageQueueQueryRequest(BaseModel):
     topic_id: Optional[str] = None
     page: int = 1
