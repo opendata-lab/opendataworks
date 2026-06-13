@@ -148,16 +148,6 @@ class SettingsUpdateRequest(BaseModel):
     providers: Optional[List[ProviderSettingsUpdate]] = None
 
 
-class SqlExecutionResult(BaseModel):
-    sql: str
-    columns: List[str] = Field(default_factory=list)
-    rows: List[Dict[str, Any]] = Field(default_factory=list)
-    row_count: int = 0
-    has_more: bool = False
-    duration_ms: int = 0
-    error: Optional[str] = None
-
-
 class ModelDetectionState(BaseModel):
     status: str = "unverified"
     message: str = ""
