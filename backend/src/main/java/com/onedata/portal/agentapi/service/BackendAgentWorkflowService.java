@@ -5,6 +5,7 @@ import com.onedata.portal.agentapi.dto.AgentPublishPreviewResponse;
 import com.onedata.portal.agentapi.dto.AgentPublishRequest;
 import com.onedata.portal.agentapi.dto.AgentScheduleUpsertRequest;
 import com.onedata.portal.agentapi.dto.AgentWorkflowUpsertRequest;
+import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.dto.workflow.WorkflowDefinitionRequest;
 import com.onedata.portal.dto.workflow.WorkflowDetailResponse;
 import com.onedata.portal.dto.workflow.WorkflowPublishRequest;
@@ -19,7 +20,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Agent-facing workflow write API, delegating to the existing workflow services.
@@ -41,12 +44,14 @@ public class BackendAgentWorkflowService implements AgentWorkflowService {
 
     @Override
     public Object createWorkflow(AgentWorkflowUpsertRequest request, String operator) {
+        validateWorkflowDataScope(request);
         WorkflowDefinitionRequest definition = toDefinition(request, operator);
         return workflowService.createWorkflow(definition);
     }
 
     @Override
     public Object updateWorkflow(Long workflowId, AgentWorkflowUpsertRequest request, String operator) {
+        validateWorkflowDataScope(request);
         WorkflowDefinitionRequest definition = toDefinition(request, operator);
         return workflowService.updateWorkflow(workflowId, definition);
     }
@@ -109,6 +114,26 @@ public class BackendAgentWorkflowService implements AgentWorkflowService {
     @Override
     public Object scheduleOffline(Long workflowId, String operator) {
         return workflowScheduleService.offlineSchedule(workflowId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private void validateWorkflowDataScope(AgentWorkflowUpsertRequest request) {
+        if (!AgentDataScopeContext.isActive() || request.getWorkflow() == null) {
+            return;
+        }
+        Object tasks = request.getWorkflow().get("tasks");
+        if (!(tasks instanceof List)) {
+            return;
+        }
+        for (Object item : (List<?>) tasks) {
+            if (!(item instanceof Map)) {
+                continue;
+            }
+            Object ds = ((Map<String, Object>) item).get("datasourceName");
+            if (ds instanceof String && StringUtils.hasText((String) ds)) {
+                AgentDataScopeContext.requireDatabaseNameAllowed((String) ds);
+            }
+        }
     }
 
     private WorkflowDefinitionRequest toDefinition(AgentWorkflowUpsertRequest request, String operator) {

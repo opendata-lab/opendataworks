@@ -138,7 +138,13 @@ class PublishWorkflowInput(BaseModel):
 
     workflow_id: int = Field(..., description="工作流 ID")
     operation: Literal["deploy", "online", "offline"] = Field(..., description="发布操作")
-    preview_token: str = Field(..., min_length=1, description="发布预览返回的一次性凭证;deploy/online 必填,确保已先预览")
+    preview_token: str | None = Field(default=None, description="发布预览返回的一次性凭证;deploy/online 必填,offline 可省略")
+
+    @model_validator(mode="after")
+    def validate_token_required(self) -> "PublishWorkflowInput":
+        if self.operation in ("deploy", "online") and not self.preview_token:
+            raise ValueError("deploy/online 操作必须提供 preview_token")
+        return self
 
 
 class UpsertScheduleInput(BaseModel):
@@ -332,7 +338,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_create_workflow(params: CreateWorkflowInput) -> dict[str, Any]:
         """Create a draft workflow with its task bindings and edges."""
-        return await service.create_workflow(params.workflow)
+        return await service.create_workflow({"workflow": params.workflow})
 
     @mcp.tool(
         name="portal_update_workflow",
@@ -340,7 +346,7 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_update_workflow(params: UpdateWorkflowInput) -> dict[str, Any]:
         """Update a draft workflow's structure."""
-        return await service.update_workflow(params.workflow_id, params.workflow)
+        return await service.update_workflow(params.workflow_id, {"workflow": params.workflow})
 
     @mcp.tool(
         name="portal_get_workflow",
@@ -372,10 +378,10 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_publish_workflow(params: PublishWorkflowInput) -> dict[str, Any]:
         """HIGH-RISK: deploy/online/offline a workflow to the scheduler. Requires user confirmation. Call portal_preview_publish first and pass its preview_token."""
-        return await service.publish_workflow(
-            params.workflow_id,
-            {"operation": params.operation, "previewToken": params.preview_token},
-        )
+        payload: dict[str, Any] = {"operation": params.operation}
+        if params.preview_token:
+            payload["previewToken"] = params.preview_token
+        return await service.publish_workflow(params.workflow_id, payload)
 
     @mcp.tool(
         name="portal_upsert_schedule",
@@ -383,7 +389,9 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
     )
     async def portal_upsert_schedule(params: UpsertScheduleInput) -> dict[str, Any]:
         """Create or update a workflow's schedule configuration (cron/timezone/etc.)."""
-        return await service.upsert_schedule(params.workflow_id, params.schedule)
+        schedule = dict(params.schedule)
+        schedule.pop("enabled", None)
+        return await service.upsert_schedule(params.workflow_id, {"schedule": schedule})
 
     @mcp.tool(
         name="portal_workflow_schedule_online",

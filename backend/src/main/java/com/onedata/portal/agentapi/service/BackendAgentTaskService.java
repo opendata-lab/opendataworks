@@ -2,6 +2,7 @@ package com.onedata.portal.agentapi.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.dto.AgentTaskUpsertRequest;
+import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.entity.DataTask;
 import com.onedata.portal.service.DataTaskService;
 import lombok.RequiredArgsConstructor;
@@ -29,6 +30,7 @@ public class BackendAgentTaskService implements AgentTaskService {
     @Override
     public Object createTask(AgentTaskUpsertRequest request, String operator) {
         DataTask task = toTask(request);
+        validateDataScope(task);
         applyAuditDefaults(task, operator, true);
         return dataTaskService.create(task, nullSafe(request.getInputTableIds()), nullSafe(request.getOutputTableIds()));
     }
@@ -37,6 +39,7 @@ public class BackendAgentTaskService implements AgentTaskService {
     public Object updateTask(Long taskId, AgentTaskUpsertRequest request, String operator) {
         DataTask task = toTask(request);
         task.setId(taskId);
+        validateDataScope(task);
         applyAuditDefaults(task, operator, false);
         return dataTaskService.update(task, nullSafe(request.getInputTableIds()), nullSafe(request.getOutputTableIds()));
     }
@@ -70,5 +73,15 @@ public class BackendAgentTaskService implements AgentTaskService {
 
     private List<Long> nullSafe(List<Long> ids) {
         return ids == null ? Collections.emptyList() : ids;
+    }
+
+    private void validateDataScope(DataTask task) {
+        if (!AgentDataScopeContext.isActive() || task == null) {
+            return;
+        }
+        String datasourceName = task.getDatasourceName();
+        if (StringUtils.hasText(datasourceName)) {
+            AgentDataScopeContext.requireDatabaseNameAllowed(datasourceName);
+        }
     }
 }

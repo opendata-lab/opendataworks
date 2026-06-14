@@ -82,7 +82,6 @@ const handleCreate = async () => {
       name: '新智能体',
       description: '',
       system_prompt: '',
-      permission_mode: 'inherit',
       allowed_tools: ['Skill', 'Bash', 'Read', 'LS', 'Glob', 'Grep'],
       mcp_server_ids: [],
       skill_folders: [],

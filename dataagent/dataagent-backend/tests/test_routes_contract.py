@@ -141,6 +141,14 @@ class _FakeStore:
         topic = self.topics.get(topic_id) or {}
         return normalize_permission_mode(topic.get("permission_mode"))
 
+    def get_pending_permission_request_id(self, task_id: str) -> str | None:
+        records = self.sdk_records.get(task_id, [])
+        for rec in reversed(records):
+            if rec.get("record_type") == "permission_request":
+                data = rec.get("data") or {}
+                return str(data.get("request_id") or "")
+        return None
+
     def delete_topic(self, topic_id: str, context=None):
         self.topics.pop(topic_id, None)
         self.topic_messages.pop(topic_id, None)

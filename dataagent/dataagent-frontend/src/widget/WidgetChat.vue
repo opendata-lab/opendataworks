@@ -114,6 +114,14 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
+                      <!-- Generic Chat V2 permission confirmation card -->
+                      <PermissionConfirmationCard
+                        v-else-if="block.type === 'permission_request'"
+                        :block="block"
+                        :disabled="msg._v2state.status !== 'streaming'"
+                        @decide="(payload) => handlePermissionDecision(msg, payload)"
+                      />
+
                       <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="query-main-text">
                         <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
@@ -278,6 +286,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, triggerRef, watch 
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import ChartSpecView from '@/views/intelligence/ChartSpecView.vue'
+import PermissionConfirmationCard from '@/views/intelligence/PermissionConfirmationCard.vue'
 import { splitChartSpecText, stripChartSpecsFromText } from '@/views/intelligence/chartSpec'
 import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
 import { extractErrorText, isPlainEnterSubmit, renderMarkdown as renderMarkdownBase } from '@/views/intelligence/chatMessage'
@@ -431,6 +440,25 @@ const formatBytes = (size) => {
 // Split answer prose into ordered text/chart segments so an inline chart_spec
 // (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
 const answerSegments = (content) => splitChartSpecText(String(content || ''))
+
+// Generic Chat V2 permission confirmation handler (shared with NL2SqlChatV2).
+const handlePermissionDecision = async (msg, payload) => {
+  const taskId = String(msg?.task_id || activeTaskId.value || '').trim()
+  const requestId = String(payload?.requestId || '').trim()
+  const decision = payload?.decision
+  if (!taskId || !requestId || (decision !== 'allow' && decision !== 'deny')) return
+  try {
+    await api.taskApi.submitPermissionDecision(taskId, requestId, decision)
+  } catch (_err) {
+    const block = (msg?._v2state?.blocks || []).find(
+      (b) => b.type === 'permission_request' && b.requestId === requestId,
+    )
+    if (block && block.decision === 'pending') {
+      block.summary = (block.summary || '') + '\n[提交失败，请重试]'
+      block._submitFailed = Date.now()
+    }
+  }
+}
 
 let copyNoticeTimer = null
 const showCopyNotice = (message) => {

@@ -20,7 +20,7 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 const props = defineProps({
   block: { type: Object, required: true },
@@ -29,6 +29,10 @@ const props = defineProps({
 const emit = defineEmits(['decide'])
 
 const submitting = ref(false)
+
+watch(() => props.block._submitFailed, (failed) => {
+  if (failed) submitting.value = false
+})
 
 const isPending = computed(() => (props.block.decision || 'pending') === 'pending')
 const bareTool = computed(() => {
@@ -60,10 +64,9 @@ const resultLabel = computed(() => {
 function decide(decision) {
   if (props.disabled || submitting.value) return
   submitting.value = true
-  // Optimistic: parent posts the decision; the streamed permission_decision
-  // record will reconcile the final state.
   emit('decide', { requestId: props.block.requestId, decision })
 }
+
 </script>
 
 <style scoped>

@@ -1087,11 +1087,13 @@ async function handlePermissionDecision(msg, payload) {
   try {
     await api.taskApi.submitPermissionDecision(taskId, requestId, decision)
   } catch (err) {
-    // Surface failure on the block so the user can retry.
     const block = (msg?._v2state?.blocks || []).find(
       (b) => b.type === 'permission_request' && b.requestId === requestId,
     )
-    if (block && block.decision === 'pending') block.summary = (block.summary || '') + '\n[提交失败，请重试]'
+    if (block && block.decision === 'pending') {
+      block.summary = (block.summary || '') + '\n[提交失败，请重试]'
+      block._submitFailed = Date.now()
+    }
   }
 }
 

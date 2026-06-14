@@ -1399,6 +1399,30 @@ class TopicTaskStore:
             conn.close()
         return self.get_task(task_id)
 
+    def get_pending_permission_request_id(self, task_id: str) -> str | None:
+        """Return the request_id of the latest permission_request record for a task
+        that has no corresponding permission_decision yet, or None."""
+        self._ensure_ready()
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT data FROM da_agent_sdk_record
+                    WHERE task_id = %s AND record_type = 'permission_request'
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (task_id,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                import json as _json
+                data = row["data"] if isinstance(row["data"], dict) else _json.loads(row["data"])
+                return str(data.get("request_id") or "")
+        finally:
+            conn.close()
+
     def heartbeat_task(self, task_id: str):
         self._ensure_ready()
         conn = self._connect(database=self._schema_name())
