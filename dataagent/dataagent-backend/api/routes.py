@@ -850,6 +850,11 @@ async def api_execute_readonly_query(http_request: Request, request: ExecuteQuer
     if not database:
         raise HTTPException(status_code=400, detail="database 不能为空")
 
+    data_scope_header: str | None = None
+    topic_id = str(request.topic_id or "").strip()
+    if topic_id:
+        data_scope_header = _resolve_topic_data_scope_header(topic_id)
+
     try:
         return await execute_readonly_query(
             sql,
@@ -857,11 +862,26 @@ async def api_execute_readonly_query(http_request: Request, request: ExecuteQuer
             engine=request.engine,
             limit=request.limit,
             timeout_seconds=request.timeout_seconds,
+            data_scope_header=data_scope_header,
         )
     except QueryProxyConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except QueryProxyUpstreamError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+def _resolve_topic_data_scope_header(topic_id: str) -> str:
+    from core.data_scope import encode_scope_header, normalize_data_scope
+
+    store = _get_store()
+    topic = store.get_topic(topic_id)
+    if not topic:
+        return ""
+    snapshot = topic.get("agent_snapshot") or {}
+    scope = normalize_data_scope(snapshot.get("data_scope") or {})
+    if not scope.get("allowed_scopes"):
+        return ""
+    return encode_scope_header(scope)
 
 
 router.include_router(topic_router)

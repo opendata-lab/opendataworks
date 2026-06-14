@@ -236,11 +236,12 @@ export function createNl2SqlApiClient(options = {}) {
   }
 
   const queryApi = {
-    executeSql({ sql, database, engine, limit, timeoutSeconds } = {}) {
+    executeSql({ sql, database, engine, limit, timeoutSeconds, topicId } = {}) {
       const payload = { sql, database }
       if (engine) payload.engine = engine
       if (limit) payload.limit = limit
       if (timeoutSeconds) payload.timeout_seconds = timeoutSeconds
+      if (topicId) payload.topic_id = topicId
       return runtimeRequest.post('/query/execute', payload)
     }
   }

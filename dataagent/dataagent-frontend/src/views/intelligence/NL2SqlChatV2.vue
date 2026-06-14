@@ -512,7 +512,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
@@ -532,6 +532,7 @@ const router = useRouter()
 
 const api = createNl2SqlApiClient({ timeout: 300000 })
 const { topicApi, agentApi } = api
+provide('nl2sqlApi', api)
 
 // ── State ────────────────────────────────────────────────────────────────────
 const agents = ref([])
@@ -577,6 +578,7 @@ const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
   notifyCopied: (message) => ElMessage.success(message),
   notifyError: (message) => ElMessage.error(message),
 })
+provide('nl2sqlTopicId', activeTopicId)
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.
