@@ -459,7 +459,7 @@ describe('NL2SqlChatV2 URL location', () => {
     await wrapper.find('.v2-send-btn').trigger('click')
     await flushPromises()
 
-    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('hi there', { agent_id: 'agent_default' })
+    expect(apiMocks.topicApi.createTopic).toHaveBeenCalledWith('hi there', { agent_id: 'agent_default', permission_mode: 'default' })
     expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(
       expect.objectContaining({ topic_id: 'topic-new', content: 'hi there', provider_id: 'provider-1', model: 'model-1' })
     )

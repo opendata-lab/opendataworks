@@ -216,6 +216,14 @@
                         <ToolOutputRenderer :tool="blockToToolProp(block)" />
                       </div>
 
+                      <!-- Generic Chat V2 permission confirmation card -->
+                      <PermissionConfirmationCard
+                        v-else-if="block.type === 'permission_request'"
+                        :block="block"
+                        :disabled="msg._v2state.status !== 'streaming'"
+                        @decide="(payload) => handlePermissionDecision(msg, payload)"
+                      />
+
                       <!-- Text block (inline chart_spec rendered as a real chart) -->
                       <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
                         <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
@@ -365,6 +373,22 @@
           <!-- Bottom toolbar -->
           <div class="v2-composer-toolbar">
             <div class="v2-composer-toolbar-left">
+              <el-dropdown trigger="click" @command="changePermissionMode">
+                <button type="button" class="v2-perm-pill" title="会话权限模式">
+                  <span class="v2-perm-pill-dot" :class="permissionMode"></span>
+                  {{ permissionModeLabel }}
+                </button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item
+                      v-for="opt in PERMISSION_MODE_OPTIONS"
+                      :key="opt.value"
+                      :command="opt.value"
+                      :class="{ 'is-active': opt.value === permissionMode }"
+                    >{{ opt.label }}</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
               <span class="v2-composer-hint">Enter 发送，Shift + Enter 换行</span>
             </div>
             <div class="v2-composer-toolbar-right">
@@ -495,6 +519,7 @@ import { createNl2SqlApiClient } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import ToolOutputRenderer from './ToolOutputRenderer.vue'
 import ChartSpecView from './ChartSpecView.vue'
+import PermissionConfirmationCard from './PermissionConfirmationCard.vue'
 import { blockToToolProp } from './v2StreamParser'
 import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
@@ -512,6 +537,14 @@ const { topicApi, agentApi } = api
 const agents = ref([])
 const settings = reactive({ providers: [], default_provider_id: '', default_model: '' })
 const agentSelectValue = ref('')
+// Session permission mode (latest selection). Default per design: 'default'.
+const permissionMode = ref('default')
+const PERMISSION_MODE_OPTIONS = [
+  { value: 'default', label: '逐步确认' },
+  { value: 'acceptEdits', label: '草稿自动·发布确认' },
+  { value: 'plan', label: '仅规划' },
+  { value: 'bypassPermissions', label: '全自动' },
+]
 const searchKeyword = ref('')
 const autoScroll = ref(true)
 
@@ -522,6 +555,7 @@ const autoScroll = ref(true)
 const chat = useNl2SqlChat({
   api,
   getAgentId: () => agentSelectValue.value || '',
+  getPermissionMode: () => permissionMode.value || '',
   topicTitleLength: 60,
   afterRun: () => loadTopics(),
   onTopicEnsured: (id) => { if (!isWidgetMode.value) replaceRouteTopic(id) },
@@ -1041,6 +1075,50 @@ function onEnterKey(event) {
 // Explicit stop: cancel the backend task (engine marks the topic suspended).
 function handleCancel() {
   void engineCancel()
+}
+
+// Generic Chat V2 permission confirmation: post the user's allow/deny for a
+// paused run. The streamed permission_decision record reconciles the card state.
+async function handlePermissionDecision(msg, payload) {
+  const taskId = String(msg?.task_id || activeTaskId.value || '').trim()
+  const requestId = String(payload?.requestId || '').trim()
+  const decision = payload?.decision
+  if (!taskId || !requestId || (decision !== 'allow' && decision !== 'deny')) return
+  try {
+    await api.taskApi.submitPermissionDecision(taskId, requestId, decision)
+  } catch (err) {
+    // Surface failure on the block so the user can retry.
+    const block = (msg?._v2state?.blocks || []).find(
+      (b) => b.type === 'permission_request' && b.requestId === requestId,
+    )
+    if (block && block.decision === 'pending') block.summary = (block.summary || '') + '\n[提交失败，请重试]'
+  }
+}
+
+// Permission mode pill: reflects the active topic's latest selection and pushes
+// switches immediately (the next task picks up the new mode; deliver-message also
+// carries it as a fallback). New (topic-less) sessions use the pill value at create.
+const permissionModeLabel = computed(() => {
+  const opt = PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode.value)
+  return opt ? opt.label : '逐步确认'
+})
+const currentTopic = computed(() => (topics.value || []).find((t) => t.topic_id === activeTopicId.value) || null)
+watch(currentTopic, (topic) => {
+  if (topic && topic.permission_mode) permissionMode.value = topic.permission_mode
+}, { immediate: true })
+async function changePermissionMode(mode) {
+  if (!mode || mode === permissionMode.value) {
+    permissionMode.value = mode || permissionMode.value
+    return
+  }
+  permissionMode.value = mode
+  if (activeTopicId.value) {
+    try {
+      await topicApi.updateTopic(activeTopicId.value, { permission_mode: mode })
+    } catch (err) {
+      ElMessage.error('切换权限模式失败')
+    }
+  }
 }
 
 // Retry from a failed reply's error card: the engine re-asks the question that
@@ -2092,6 +2170,29 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 8px;
 }
+
+.v2-perm-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dbe3ef;
+  background: #f4f7fb;
+  border-radius: 12px;
+  padding: 2px 10px;
+  font-size: 12px;
+  color: #4a5568;
+  cursor: pointer;
+}
+.v2-perm-pill-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e6a23c;
+}
+.v2-perm-pill-dot.bypassPermissions { background: #c0392b; }
+.v2-perm-pill-dot.plan { background: #909399; }
+.v2-perm-pill-dot.acceptEdits { background: #e6a23c; }
+.v2-perm-pill-dot.default { background: #409eff; }
 
 .v2-composer-hint {
   color: #9aa5b1;

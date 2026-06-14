@@ -197,6 +197,13 @@ export function createNl2SqlApiClient(options = {}) {
     cancelTask(taskId) {
       return runtimeRequest.post(`/tasks/${taskId}/cancel`)
     },
+    submitPermissionDecision(taskId, requestId, decision, note = '') {
+      return runtimeRequest.post(`/tasks/${taskId}/permission-decision`, {
+        request_id: requestId,
+        decision,
+        note,
+      })
+    },
     async streamSdkEvents(taskId, options = {}) {
       const { onRecord, signal, afterId = 0 } = options
       const response = await fetch(

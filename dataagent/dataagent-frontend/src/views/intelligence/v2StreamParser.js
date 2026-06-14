@@ -43,12 +43,47 @@ export function processV2Record(state, record) {
     _handleStreamEvent(state, record.data || {})
   } else if (record.record_type === 'tool_result') {
     _handleToolResult(state, record.data || {})
+  } else if (record.record_type === 'permission_request') {
+    _handlePermissionRequest(state, record.data || {})
+  } else if (record.record_type === 'permission_decision') {
+    _handlePermissionDecision(state, record.data || {})
   } else if (record.record_type === 'done') {
     state.status = (record.data || {}).is_error ? 'error' : 'done'
   } else if (record.record_type === 'error') {
     state.status = 'error'
     state.errorText = String((record.data || {}).message || '未知错误')
   }
+}
+
+function _handlePermissionRequest(state, data) {
+  const currentTurn = state.turns.at(-1)
+  const block = {
+    turnIndex: currentTurn ? currentTurn.turnIndex : 0,
+    blockIndex: currentTurn ? currentTurn.blocks.length : state.blocks.length,
+    type: 'permission_request',
+    content: '',
+    status: 'done',
+    requestId: data.request_id || '',
+    tool_name: data.tool_name || '',
+    risk_level: data.risk_level || 'high',
+    title: data.title || '',
+    summary: data.summary || '',
+    payload_preview: data.payload_preview ?? null,
+    decision: 'pending',
+    note: '',
+    decided_at: '',
+  }
+  if (currentTurn) currentTurn.blocks.push(block)
+  state.blocks.push(block)
+}
+
+function _handlePermissionDecision(state, data) {
+  const requestId = data.request_id || ''
+  const block = state.blocks.find((b) => b.type === 'permission_request' && b.requestId === requestId)
+  if (!block) return
+  block.decision = data.decision || 'pending'
+  block.note = data.note || ''
+  block.decided_at = data.decided_at || ''
 }
 
 function _handleStreamEvent(state, evt) {
