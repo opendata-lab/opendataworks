@@ -123,6 +123,7 @@ async def execute_readonly_query(
     engine: str | None = None,
     limit: Any = None,
     timeout_seconds: Any = None,
+    data_scope_header: str | None = None,
 ) -> dict[str, Any]:
     base_url = _ai_base_url()
     token = _service_token()
@@ -135,7 +136,7 @@ async def execute_readonly_query(
     clamped_timeout = clamp_timeout_seconds(timeout_seconds)
 
     headers = {_service_token_header_name(): token}
-    data_scope = runtime_data_scope_header()
+    data_scope = data_scope_header or runtime_data_scope_header()
     if data_scope:
         headers[DATA_SCOPE_HEADER_NAME] = data_scope
 

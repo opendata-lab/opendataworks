@@ -111,7 +111,7 @@
 
                       <!-- Tool use block (chart-producing tools render their chart directly below the block) -->
                       <div v-else-if="block.type === 'tool_use'" class="query-tool-row">
-                        <ToolOutputRenderer :tool="blockToToolProp(block)" />
+                        <ToolOutputRenderer :tool="blockToToolProp(block)" :file-url-resolver="resolveWorkspaceFileHref" />
                       </div>
 
                       <!-- Text block (inline chart_spec rendered as a real chart) -->
@@ -274,7 +274,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, triggerRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, triggerRef, watch } from 'vue'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ToolOutputRenderer from '@/views/intelligence/ToolOutputRenderer.vue'
 import ChartSpecView from '@/views/intelligence/ChartSpecView.vue'
@@ -302,6 +302,7 @@ const api = createNl2SqlApiClient({
   timeout: 300000,
   defaultHeaders: props.config.headers
 })
+provide('nl2sqlApi', api)
 
 const DEFAULT_SUGGESTIONS = [
   '各数据层表数量对比',
@@ -346,6 +347,7 @@ const {
   send: sendReal, cancel,
   selectTopic: selectTopicEngine, newConversation: newConversationEngine, deleteConversation,
 } = chat
+provide('nl2sqlTopicId', topicId)
 
 const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
 const hasWorkingTopicRecord = computed(() => topics.value.some((topic) => isTopicWorking(topic)))

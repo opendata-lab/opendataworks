@@ -53,7 +53,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { EditorView, keymap, placeholder } from '@codemirror/view'
 import { Compartment, EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -62,6 +62,9 @@ import { MySQL, sql } from '@codemirror/lang-sql'
 import { copyText } from '@/utils/clipboard'
 import { createNl2SqlApiClient } from '@/api/nl2sql'
 import ResultDataTable from './ResultDataTable.vue'
+
+const injectedApi = inject('nl2sqlApi', null)
+const injectedTopicId = inject('nl2sqlTopicId', ref(''))
 
 const props = defineProps({
   sql: { type: String, default: '' },
@@ -95,6 +98,7 @@ const executeResultMeta = computed(() => ({
 }))
 
 const getApi = () => {
+  if (injectedApi) return injectedApi
   if (!apiClient) apiClient = createNl2SqlApiClient({ timeout: 150000 })
   return apiClient
 }
@@ -181,11 +185,13 @@ const executeSql = async () => {
   running.value = true
   executeError.value = ''
   try {
+    const topicId = typeof injectedTopicId === 'object' && injectedTopicId !== null ? injectedTopicId.value : (injectedTopicId || '')
     const result = await getApi().queryApi.executeSql({
       sql: currentSql.value,
       database: props.database,
       engine: props.engine || undefined,
-      limit: limit.value
+      limit: limit.value,
+      topicId: topicId || undefined
     })
     executeResult.value = result
     if (result?.error) {

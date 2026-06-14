@@ -103,6 +103,7 @@ class ExecuteQueryRequest(BaseModel):
     engine: Optional[str] = None
     limit: Optional[int] = None
     timeout_seconds: Optional[int] = None
+    topic_id: Optional[str] = None
 
 
 class MessageQueueQueryRequest(BaseModel):
