@@ -18,26 +18,26 @@
 | 5 | opendataworks-data-dev 技能包 + 启用到平台助手 + alembic 数据迁移 | `c9e3dc4` | profile/skill-content/skill-admin 套件通过；技能目录/JSON 结构校验 |
 | 6 | 前端 Chat V2 权限卡片 + 会话模式 pill（门户 + widget 共享引擎）+ 删除 profile 权限选择器 | `12ba944` | 前端 vitest **233 passed（27 文件）**；production build 成功；双侧投影契约 13 用例两侧一致 |
 
-## 环境与未跑的端到端 smoke（如实说明）
+## Live smoke：已在真机运行的部分
 
-本环境**无法运行设计要求的 live 全链路 smoke**，原因：
+本轮在容器内启动了 docker daemon(Docker Hub CDN 被网络策略 403,无法拉镜像),改用 apt 安装 **MariaDB 10.11(MySQL 兼容)+ Redis**,完成了此前最关键的未测层——**数据库迁移与 DB 落地的 API 贯通**:
 
-- **Docker daemon 不可用**：`docker` CLI 存在但守护进程未运行，且无 podman；无法按 `deploy/docker-compose.dev.yml` 启动本地 MySQL（`127.0.0.1:3316`)与 Redis（`127.0.0.1:6379`），三个端口均 closed。
-- **无可用 DataAgent provider 凭证**：环境仅有 Claude Code 自身的 OAuth token（文件描述符形式），不可直接作为 dataagent-backend 的 provider 凭证；真实模型执行不可达。
-- 因此 `claude_agent_sdk` 真实运行路径（含 `can_use_tool` 结果类 `PermissionResultAllow/Deny` 的实际契约）未在真机执行——后端套件里该 SDK 缺包的 1 个导入测试始终失败，属环境限制。
+- **两个 alembic 迁移在真机 MySQL 兼容库上执行通过**:
+  - `20260613_000017`(权限模式迁移):`upgrade` 后 `da_agent_topic.permission_mode` 存在、默认 `'default'`、NOT NULL;`da_agent_profile.permission_mode` 已删除(列数 0)。`downgrade` 回到 000016 时:topic 列移除(0)、profile 列恢复(1);再 `upgrade head` 复原——**完整 down/up 往返通过**。
+  - `20260613_000018`(技能启用):`agent_opendataworks` 内置 profile 的 `skill_folders_json` 变为 `["opendataworks-business-knowledge","opendataworks-platform-tools","opendataworks-data-dev"]`;down/up 往返通过。
+  - 注:一个**既有**(非本次)迁移 `20260601_000014` 在 MariaDB 严格性下产出 `DEFAULT 'NULL'` 报 1067,与本改动无关;smoke 中 stamp 跳过该 comment-only 迁移后,本次两个迁移正常执行。
+- **DB 落地的 API 贯通**(dataagent-backend 连真机 MySQL+Redis,health OK,协调器启动):
+  - `POST /topics`(permission_mode=plan)→ 落库并返回 `plan`;无 mode → `default`。
+  - `PUT /topics/{id}` 切到 `bypassPermissions` → 生效;切 `junk` → 归一化 `default`;`GET` 反映最新值。
+  - `PUT /topics/{id}` 空 body → 400;`POST /tasks/{id}/permission-decision`(不存在任务)→ 404。
+  - 验证了 Stage 1 的 store SQL(create/update/get_topic + permission_mode)、归一化与 decision 端点路由,均在真实 MySQL 上。
+- 环境:MariaDB `127.0.0.1:3306`(库 `dataagent`/用户 `dataagent`)、Redis `127.0.0.1:6379`、Python venv 安装 `requirements` 子集、未配置 provider(无真实模型)。
 
-### 已验证层
+## 仍未执行（需 provider/模型 或 部署后端）
 
-- 后端 Python：单元 + 契约 + 路由（fake store）+ can_use_tool 编排（fake writer/store/wait），real-logic 覆盖。
-- 双侧投影契约：后端 `test_sdk_block_projection_contract.py` 与前端 `sdkBlockProjection.contract.spec.js` 共用 `cases.json`,四态一致。
-- Java：真实 `mvn` 编译通过 + 委托/凭证强制单测。
-- 前端：完整 vitest + 生产构建。
-
-### 尚未执行（需 live 环境）
-
-- 两个 alembic 迁移（`20260613_000017` 列增删、`20260613_000018` 技能 JSON 追加）对真实 MySQL 8 的 `upgrade head` / `downgrade`。迁移用 `_has_table`/`_has_column` 守卫且为标准 DDL，但未真机执行。
-- 真实模型驱动的确认流四场景：default 确认→deploy→online / plan 拒绝 / deny / timeout；门户与 widget 各一次。
-- portal-mcp → backend-agent-api → backend service 的真实 HTTP 贯通（含 previewToken 在真实 publish 上的校验）。
+- **无可用 DataAgent provider 凭证**:环境仅有 Claude Code 自身的 OAuth token,不可作为 dataagent provider;`claude_agent_sdk` 真实运行(含 `can_use_tool` 结果类 `PermissionResultAllow/Deny` 的实际契约、task 进入 `waiting_permission` 的 409 路径)未真机跑。
+- 真实模型驱动的确认流四场景:default 确认→deploy→online / plan 拒绝 / deny / timeout;门户与 widget 各一次。
+- portal-mcp → backend-agent-api → backend service 的真实 HTTP 贯通(需部署 Java 后端 + DolphinScheduler;previewToken 在真实 publish 上的校验)。
 
 ### 复跑建议（待环境具备时）
 
