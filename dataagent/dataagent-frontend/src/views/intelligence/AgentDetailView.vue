@@ -75,26 +75,6 @@
               </el-form-item>
             </section>
 
-            <!-- 权限模式 -->
-            <section v-else-if="activeTab === 'permission'" key="permission" class="agent-panel-section">
-              <h3>权限模式</h3>
-              <div class="permission-card-list">
-                <div
-                  v-for="mode in capabilities.permission_modes"
-                  :key="mode"
-                  class="permission-card"
-                  :class="{ selected: form.permission_mode === mode }"
-                  @click="form.permission_mode = mode"
-                >
-                  <div class="permission-card-header">
-                    <span class="permission-card-name">{{ permissionModeLabel(mode) }}</span>
-                    <el-icon v-if="form.permission_mode === mode" class="permission-card-check"><CircleCheck /></el-icon>
-                  </div>
-                  <p class="permission-card-desc">{{ permissionModeDesc(mode) }}</p>
-                </div>
-              </div>
-            </section>
-
             <!-- 工具 -->
             <section v-else-if="activeTab === 'tools'" key="tools" class="agent-panel-section">
               <h3>预授权工具</h3>
@@ -185,7 +165,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ChatLineRound, CircleCheck } from '@element-plus/icons-vue'
+import { ArrowLeft, ChatLineRound } from '@element-plus/icons-vue'
 import { dataagentApi } from '@/api/dataagent'
 
 const route = useRoute()
@@ -201,31 +181,16 @@ const tabs = [
   { key: 'basic', label: '基础信息' },
   { key: 'prompt', label: '提示词设置' },
   { key: 'questions', label: '预设问题' },
-  { key: 'permission', label: '权限模式' },
   { key: 'tools', label: '工具' },
   { key: 'skills', label: 'Skills' },
   { key: 'scope', label: '数据范围' },
   { key: 'advanced', label: '高级设置' }
 ]
 
-const permissionModeLabels = {
-  inherit: '继承模式',
-  default: '默认模式',
-  bypassPermissions: '全自动模式'
-}
-const permissionModeDescs = {
-  inherit: '继承父级或平台默认权限配置。',
-  default: '可自由读取文件，编辑或执行命令前会询问。',
-  bypassPermissions: '可执行任何操作，无需询问。请谨慎使用。'
-}
-const permissionModeLabel = (mode) => permissionModeLabels[mode] || mode
-const permissionModeDesc = (mode) => permissionModeDescs[mode] || ''
-
 const capabilities = reactive({
   tools: [],
   mcp_servers: [],
-  skills: [],
-  permission_modes: ['inherit', 'default', 'bypassPermissions']
+  skills: []
 })
 
 const form = reactive({
@@ -233,7 +198,6 @@ const form = reactive({
   name: '',
   description: '',
   system_prompt: '',
-  permission_mode: 'inherit',
   allowed_tools: [],
   mcp_server_ids: [],
   skill_folders: [],
@@ -286,7 +250,6 @@ const applyAgent = (agent) => {
     name: String(agent?.name || ''),
     description: String(agent?.description || ''),
     system_prompt: String(agent?.system_prompt || ''),
-    permission_mode: String(agent?.permission_mode || 'inherit'),
     allowed_tools: Array.isArray(agent?.allowed_tools) ? [...agent.allowed_tools] : [],
     mcp_server_ids: Array.isArray(agent?.mcp_server_ids) ? [...agent.mcp_server_ids] : [],
     skill_folders: Array.isArray(agent?.skill_folders) ? [...agent.skill_folders] : [],
@@ -316,8 +279,7 @@ const loadDetail = async () => {
     Object.assign(capabilities, {
       tools: caps?.tools || [],
       mcp_servers: caps?.mcp_servers || [],
-      skills: caps?.skills || [],
-      permission_modes: caps?.permission_modes || capabilities.permission_modes
+      skills: caps?.skills || []
     })
     dataScopeOptions.value = Array.isArray(scopeOptions) ? scopeOptions : []
     applyAgent(agent)
@@ -340,7 +302,6 @@ const buildPayload = () => {
     name: form.name,
     description: form.description,
     system_prompt: form.system_prompt,
-    permission_mode: form.permission_mode,
     allowed_tools: [...form.allowed_tools],
     mcp_server_ids: [...form.mcp_server_ids],
     skill_folders: [...form.skill_folders],

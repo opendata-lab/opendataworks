@@ -13,6 +13,7 @@ if str(BACKEND_ROOT) not in sys.path:
 
 import api.routes as routes
 import main
+from core.agent_profile_service import normalize_permission_mode
 
 
 DEFAULT_AGENT = {
@@ -81,7 +82,7 @@ class _FakeStore:
         self._schedule_log_seq += 1
         return f"schedule_log_{self._schedule_log_seq}"
 
-    def create_topic(self, *, title: str, agent_snapshot=None, context=None):
+    def create_topic(self, *, title: str, agent_snapshot=None, permission_mode=None, context=None):
         topic_id = self._new_topic()
         snapshot = dict(agent_snapshot or DEFAULT_AGENT)
         self.topics[topic_id] = {
@@ -97,6 +98,7 @@ class _FakeStore:
                 "description": snapshot.get("description", ""),
                 "is_default": bool(snapshot.get("is_default")),
             },
+            "permission_mode": normalize_permission_mode(permission_mode),
             "current_task_id": None,
             "current_task_status": None,
             "message_count": 0,
@@ -125,12 +127,19 @@ class _FakeStore:
         row["last_message_preview"] = self.topic_messages.get(topic_id, [{}])[-1].get("content", "")[:120] if self.topic_messages.get(topic_id) else ""
         return row
 
-    def update_topic(self, topic_id: str, *, title: str, context=None):
+    def update_topic(self, topic_id: str, *, title=None, permission_mode=None, context=None):
         if topic_id not in self.topics:
             return None
-        self.topics[topic_id]["title"] = title
+        if title is not None:
+            self.topics[topic_id]["title"] = title
+        if permission_mode is not None:
+            self.topics[topic_id]["permission_mode"] = normalize_permission_mode(permission_mode)
         self.topics[topic_id]["updated_at"] = _now()
         return self.get_topic(topic_id)
+
+    def get_topic_permission_mode(self, topic_id: str) -> str:
+        topic = self.topics.get(topic_id) or {}
+        return normalize_permission_mode(topic.get("permission_mode"))
 
     def delete_topic(self, topic_id: str, context=None):
         self.topics.pop(topic_id, None)
@@ -486,6 +495,15 @@ class _FakeCoordinator:
     async def request_cancel(self, task_id: str):
         self.cancelled.append(task_id)
 
+    def __init_decisions(self):
+        if not hasattr(self, "decisions"):
+            self.decisions = {}
+
+    async def submit_permission_decision(self, task_id: str, request_id: str, decision: str) -> str:
+        self.__init_decisions()
+        # first decision wins (idempotent)
+        return self.decisions.setdefault((task_id, request_id), decision)
+
 
 def _submit_message_task_factory(store: _FakeStore, calls: list[dict]):
     async def _submit_message_task(**kwargs):
@@ -683,6 +701,86 @@ def test_topics_tasks_and_v2_routes(monkeypatch):
         deleted = client.delete(f"/api/v1/nl2sql/topics/{topic_id}")
         assert deleted.status_code == 200
         assert store.get_topic(topic_id) is None
+
+
+def test_topic_permission_mode_lifecycle(monkeypatch):
+    client, store, _coordinator, _submit_calls = _build_client(monkeypatch)
+    with client:
+        # Create defaults to ``default``; explicit mode is honored.
+        default_topic = client.post("/api/v1/nl2sql/topics", json={"title": "默认模式"}).json()
+        assert default_topic["permission_mode"] == "default"
+
+        created = client.post(
+            "/api/v1/nl2sql/topics",
+            json={"title": "规划模式", "permission_mode": "plan"},
+        ).json()
+        topic_id = created["topic_id"]
+        assert created["permission_mode"] == "plan"
+
+        # PUT switches the latest selection mid-session.
+        switched = client.put(
+            f"/api/v1/nl2sql/topics/{topic_id}",
+            json={"permission_mode": "bypassPermissions"},
+        )
+        assert switched.status_code == 200
+        assert switched.json()["permission_mode"] == "bypassPermissions"
+
+        # Unknown values normalize to ``default``.
+        normalized = client.put(
+            f"/api/v1/nl2sql/topics/{topic_id}",
+            json={"permission_mode": "junk"},
+        )
+        assert normalized.json()["permission_mode"] == "default"
+
+        # deliver-message carrying a mode updates the topic's latest selection.
+        delivered = client.post(
+            "/api/v1/nl2sql/tasks/deliver-message",
+            json={"topic_id": topic_id, "content": "你好", "permission_mode": "acceptEdits"},
+        )
+        assert delivered.status_code == 200
+        assert store.get_topic_permission_mode(topic_id) == "acceptEdits"
+
+        # PUT with neither field is a 400.
+        empty = client.put(f"/api/v1/nl2sql/topics/{topic_id}", json={})
+        assert empty.status_code == 400
+
+
+def test_permission_decision_endpoint(monkeypatch):
+    client, store, coordinator, _submit_calls = _build_client(monkeypatch)
+    with client:
+        topic_id = client.post("/api/v1/nl2sql/topics", json={"title": "确认流"}).json()["topic_id"]
+        delivered = client.post(
+            "/api/v1/nl2sql/tasks/deliver-message",
+            json={"topic_id": topic_id, "content": "发布工作流"},
+        ).json()
+        task_id = delivered["task_id"]
+
+        base = f"/api/v1/nl2sql/tasks/{task_id}/permission-decision"
+        # Not awaiting a decision yet -> 409.
+        assert client.post(base, json={"request_id": "req-1", "decision": "allow"}).status_code == 409
+
+        # Move the run into the waiting state.
+        store.tasks[task_id]["task_status"] = "waiting_permission"
+
+        # Invalid decision value -> 400.
+        assert client.post(base, json={"request_id": "req-1", "decision": "maybe"}).status_code == 400
+        # Missing request_id -> 400.
+        assert client.post(base, json={"request_id": "", "decision": "allow"}).status_code == 400
+
+        # Valid allow.
+        ok = client.post(base, json={"request_id": "req-1", "decision": "allow"})
+        assert ok.status_code == 200
+        assert ok.json() == {"task_id": task_id, "request_id": "req-1", "decision": "allow"}
+
+        # Idempotent: a later deny for the same request_id returns the first decision.
+        again = client.post(base, json={"request_id": "req-1", "decision": "deny"})
+        assert again.json()["decision"] == "allow"
+
+        # Unknown task -> 404.
+        assert client.post(
+            "/api/v1/nl2sql/tasks/task_missing/permission-decision",
+            json={"request_id": "req-1", "decision": "allow"},
+        ).status_code == 404
 
 
 def test_followup_suggestions_route_generates_without_changing_message_contract(monkeypatch):

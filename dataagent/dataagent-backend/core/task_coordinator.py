@@ -11,6 +11,7 @@ from typing import Any
 import redis.asyncio as redis
 
 from config import get_settings
+from core.permission_gate import permission_decision_redis_key
 from core.task_submission_service import compute_next_run_at, current_utc_naive, submit_message_task
 from core.task_executor import TaskExecutionInput, execute_task_stream
 from core.topic_files import diff_generated_files, snapshot_workspace_state
@@ -88,6 +89,29 @@ class TaskCoordinator:
             return True
         return self.store.is_task_cancel_requested(task_id)
 
+    async def submit_permission_decision(self, task_id: str, request_id: str, decision: str) -> str:
+        """Publish a user permission decision for a waiting run (allow/deny).
+
+        Idempotent: the first decision for a ``request_id`` wins; later calls
+        return the recorded value. Mirrors the cancel-flag pattern so both the
+        in-process executor and the sandbox runner can observe it via Redis.
+        Returns the effective decision.
+        """
+        effective = str(decision or "denied")
+        if self._redis is None:
+            return effective
+        key = self._permission_key(task_id, request_id)
+        ttl = max(60, int(self.settings.task_permission_wait_seconds or 600) + 60)
+        await self._redis.set(key, effective, ex=ttl, nx=True)
+        current = await self._redis.get(key)
+        return str(current) if current is not None else effective
+
+    async def read_permission_decision(self, task_id: str, request_id: str) -> str | None:
+        if self._redis is None:
+            return None
+        value = await self._redis.get(self._permission_key(task_id, request_id))
+        return str(value) if value is not None else None
+
     async def _queue_loop(self) -> None:
         while not self._closing:
             task_id = await self._queue.get()
@@ -148,6 +172,7 @@ class TaskCoordinator:
                         sql_read_timeout_seconds=int(task.get("sql_read_timeout_seconds") or 0),
                         sql_write_timeout_seconds=int(task.get("sql_write_timeout_seconds") or 0),
                         agent_snapshot=task.get("agent_snapshot"),
+                        permission_mode=self.store.get_topic_permission_mode(topic_id),
                     ),
                     emit=lambda record: self._persist_emitted_sdk_record(
                         topic_id=topic_id,
@@ -465,6 +490,9 @@ class TaskCoordinator:
 
     def _cancel_key(self, task_id: str) -> str:
         return f"da:task:cancel:{task_id}"
+
+    def _permission_key(self, task_id: str, request_id: str) -> str:
+        return permission_decision_redis_key(task_id, request_id)
 
     def _recovery_key(self) -> str:
         return "da:task:recovery:lock"

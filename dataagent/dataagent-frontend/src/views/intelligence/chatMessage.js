@@ -111,6 +111,10 @@ export function buildV2StateFromStoredBlocks(item) {
       const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
       turn.blocks.push(block)
       v2state.blocks.push(block)
+    } else if (kind === 'permission_request') {
+      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'permission_request', content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false, requestId: b.request_id || '', tool_name: b.tool_name || '', risk_level: b.risk_level || 'high', title: b.title || '', summary: b.summary || '', payload_preview: b.payload_preview ?? null, decision: b.decision || 'pending', note: b.note || '', decided_at: b.decided_at || '' }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
     }
   }
   const content = String(item?.content || '')

@@ -25,6 +25,8 @@ from core.topic_task_store import get_topic_task_store
 from models.schemas import (
     CancelTaskResponse,
     CreateTaskRequest,
+    PermissionDecisionRequest,
+    PermissionDecisionResponse,
     CreateTopicRequest,
     DeliverMessageRequest,
     ExecuteQueryRequest,
@@ -258,6 +260,7 @@ async def api_create_topic(http_request: Request, request: CreateTopicRequest | 
     topic = store.create_topic(
         title=str(payload.title or "").strip() or "新话题",
         agent_snapshot=build_agent_snapshot(profile),
+        permission_mode=payload.permission_mode,
         context=context,
     )
     return TopicDetail.model_validate(topic)
@@ -279,11 +282,21 @@ async def api_get_topic(topic_id: str, request: Request):
 @topic_router.put("/{topic_id}", response_model=TopicDetail)
 async def api_update_topic(topic_id: str, payload: UpdateTopicRequest, request: Request):
     context = _request_context(request)
-    title = str(payload.title or "").strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title is required")
+    title: str | None = None
+    if payload.title is not None:
+        title = str(payload.title).strip()
+        if not title:
+            raise HTTPException(status_code=400, detail="title is required")
+    permission_mode = payload.permission_mode
+    if title is None and permission_mode is None:
+        raise HTTPException(status_code=400, detail="title or permission_mode is required")
     _require_topic(topic_id, context)
-    topic = _get_store().update_topic(topic_id, title=title, context=context)
+    topic = _get_store().update_topic(
+        topic_id,
+        title=title,
+        permission_mode=permission_mode,
+        context=context,
+    )
     if not topic:
         raise HTTPException(status_code=404, detail="Topic not found")
     return TopicDetail.model_validate(topic)
@@ -443,6 +456,14 @@ async def api_deliver_message(payload: DeliverMessageRequest, request: Request):
     if not content:
         raise HTTPException(status_code=400, detail="content is required")
     _require_topic(topic_id, context)
+    # Permission mode is a session-level choice; applying it here updates the
+    # topic's latest selection so the next task runs under it.
+    if payload.permission_mode is not None:
+        _get_store().update_topic(
+            topic_id,
+            permission_mode=payload.permission_mode,
+            context=context,
+        )
     try:
         submitted = await submit_message_task(
             topic_id=topic_id,
@@ -596,6 +617,30 @@ async def api_cancel_task(task_id: str, request: Request):
     await get_task_coordinator().request_cancel(task_id)
     task = store.get_task(task_id, context=context) or task
     return CancelTaskResponse.model_validate(task)
+
+
+@task_router.post("/{task_id}/permission-decision", response_model=PermissionDecisionResponse)
+async def api_submit_permission_decision(task_id: str, payload: PermissionDecisionRequest, request: Request):
+    store = _get_store()
+    context = _request_context(request)
+    task = store.get_task(task_id, context=context)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    request_id = str(payload.request_id or "").strip()
+    if not request_id:
+        raise HTTPException(status_code=400, detail="request_id is required")
+    decision = str(payload.decision or "").strip().lower()
+    if decision not in {"allow", "deny"}:
+        raise HTTPException(status_code=400, detail="decision must be allow or deny")
+    # Only a run paused at a confirmation can accept a decision.
+    if str(task.get("task_status") or "") != "waiting_permission":
+        raise HTTPException(status_code=409, detail="task is not awaiting a permission decision")
+    # Signal the waiting executor; first decision wins (idempotent). The executor
+    # writes the durable permission_decision record when it observes this.
+    effective = await get_task_coordinator().submit_permission_decision(task_id, request_id, decision)
+    return PermissionDecisionResponse.model_validate(
+        {"task_id": task_id, "request_id": request_id, "decision": effective}
+    )
 
 
 @queue_router.post("/queries", response_model=MessageQueuePageResponse)

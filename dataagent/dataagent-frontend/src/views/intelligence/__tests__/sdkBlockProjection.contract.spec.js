@@ -22,6 +22,15 @@ function toCanonical(blocks) {
         output: block.output ?? null,
         is_error: Boolean(block.is_error),
       })
+    } else if (block.type === 'permission_request') {
+      canonical.push({
+        kind: 'permission_request',
+        tool_name: block.tool_name ?? null,
+        risk_level: block.risk_level ?? null,
+        title: block.title ?? null,
+        summary: block.summary ?? null,
+        decision: block.decision ?? null,
+      })
     } else {
       const text = String(block.content ?? '')
       if (!text.trim()) continue

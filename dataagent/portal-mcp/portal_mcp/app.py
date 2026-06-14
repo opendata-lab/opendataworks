@@ -12,7 +12,7 @@ from starlette.routing import Mount, Route
 
 from .backend_client import BackendApiClient
 from .config import Settings, load_settings
-from .scope_context import set_data_scope_header
+from .scope_context import set_data_scope_header, set_operator_header
 from .service import PortalToolService
 
 
@@ -78,6 +78,91 @@ class QueryReadonlyInput(BaseModel):
     timeout_seconds: int = Field(default=30, ge=1, le=120, description="单次查询超时秒数")
 
 
+# --- data development assistant: write tool inputs ---------------------------
+# Nested task/workflow/schedule payloads are forwarded as-is to the backend
+# agent API, which owns the authoritative field schema (mirrors the web DTOs).
+
+
+class CreateTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task: dict[str, Any] = Field(..., description="任务定义(对齐平台 DataTask 字段,如 taskName/dolphinNodeType/taskSql/datasourceName)")
+    input_table_ids: list[int] = Field(default_factory=list, description="输入表 ID 列表(维护血缘)")
+    output_table_ids: list[int] = Field(default_factory=list, description="输出表 ID 列表(维护血缘)")
+
+
+class UpdateTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: int = Field(..., description="任务 ID")
+    task: dict[str, Any] = Field(..., description="任务定义(仅 draft 状态可更新)")
+    input_table_ids: list[int] = Field(default_factory=list)
+    output_table_ids: list[int] = Field(default_factory=list)
+
+
+class TaskIdInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: int = Field(..., description="任务 ID")
+
+
+class ListInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    keyword: str | None = Field(default=None, description="名称/编码关键字,可选")
+    status: str | None = Field(default=None, description="状态过滤,可选")
+    limit: int = Field(default=50, ge=1, le=200, description="返回数量上限")
+
+
+class CreateWorkflowInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow: dict[str, Any] = Field(..., description="工作流定义(对齐 WorkflowDefinitionRequest:workflowName/tasks/edges/globalParams 等)")
+
+
+class UpdateWorkflowInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: int = Field(..., description="工作流 ID")
+    workflow: dict[str, Any] = Field(..., description="工作流结构(draft 状态)")
+
+
+class WorkflowIdInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: int = Field(..., description="工作流 ID")
+
+
+class PublishWorkflowInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    workflow_id: int = Field(..., description="工作流 ID")
+    operation: Literal["deploy", "online", "offline"] = Field(..., description="发布操作")
+    preview_token: str = Field(..., min_length=1, description="发布预览返回的一次性凭证;deploy/online 必填,确保已先预览")
+
+
+class UpsertScheduleInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    workflow_id: int = Field(..., description="工作流 ID")
+    schedule: dict[str, Any] = Field(..., description="调度配置(对齐 WorkflowScheduleRequest:scheduleCron/timezone 等)")
+
+
+class ScheduleOnlineInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    workflow_id: int = Field(..., description="工作流 ID")
+    preview_token: str = Field(..., min_length=1, description="发布预览返回的一次性凭证;调度上线必填")
+
+
+class AnalyzeSqlInput(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    sql: str = Field(..., min_length=1, description="待分析 SQL")
+    database: str | None = Field(default=None, description="数据库名,可选")
+    cluster_id: int | None = Field(default=None, description="集群 ID,可选")
+
+
 class FrontDoorTokenMiddleware:
     def __init__(self, app, settings: Settings):
         self.app = app
@@ -108,9 +193,11 @@ class FrontDoorTokenMiddleware:
             return
 
         reset_scope = set_data_scope_header(headers.get("x-agent-data-scope", ""))
+        reset_operator = set_operator_header(headers.get("x-agent-operator", ""))
         try:
             await self.app(scope, receive, send)
         finally:
+            reset_operator()
             reset_scope()
 
 
@@ -191,6 +278,139 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
         if "timeout_seconds" in payload:
             payload["timeoutSeconds"] = payload.pop("timeout_seconds")
         return await service.query_readonly(payload)
+
+    # --- data development assistant: write tools -----------------------------
+
+    @mcp.tool(
+        name="portal_create_task",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_create_task(params: CreateTaskInput) -> dict[str, Any]:
+        """Create a draft data-development task (e.g. a SQL task). Requires input/output table ids for lineage."""
+        return await service.create_task(
+            {
+                "task": params.task,
+                "inputTableIds": params.input_table_ids,
+                "outputTableIds": params.output_table_ids,
+            }
+        )
+
+    @mcp.tool(
+        name="portal_update_task",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_update_task(params: UpdateTaskInput) -> dict[str, Any]:
+        """Update a draft task definition."""
+        return await service.update_task(
+            params.task_id,
+            {
+                "task": params.task,
+                "inputTableIds": params.input_table_ids,
+                "outputTableIds": params.output_table_ids,
+            },
+        )
+
+    @mcp.tool(
+        name="portal_get_task",
+        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    )
+    async def portal_get_task(params: TaskIdInput) -> dict[str, Any]:
+        """Get a task's detail by id."""
+        return await service.get_task(params.task_id)
+
+    @mcp.tool(
+        name="portal_list_tasks",
+        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    )
+    async def portal_list_tasks(params: ListInput) -> dict[str, Any]:
+        """List tasks with optional keyword/status filters."""
+        return await service.list_tasks(params.model_dump(exclude_none=True))
+
+    @mcp.tool(
+        name="portal_create_workflow",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_create_workflow(params: CreateWorkflowInput) -> dict[str, Any]:
+        """Create a draft workflow with its task bindings and edges."""
+        return await service.create_workflow(params.workflow)
+
+    @mcp.tool(
+        name="portal_update_workflow",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_update_workflow(params: UpdateWorkflowInput) -> dict[str, Any]:
+        """Update a draft workflow's structure."""
+        return await service.update_workflow(params.workflow_id, params.workflow)
+
+    @mcp.tool(
+        name="portal_get_workflow",
+        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    )
+    async def portal_get_workflow(params: WorkflowIdInput) -> dict[str, Any]:
+        """Get a workflow's detail (tasks, edges, latest instance)."""
+        return await service.get_workflow(params.workflow_id)
+
+    @mcp.tool(
+        name="portal_list_workflows",
+        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    )
+    async def portal_list_workflows(params: ListInput) -> dict[str, Any]:
+        """List workflows with optional keyword/status filters."""
+        return await service.list_workflows(params.model_dump(exclude_none=True))
+
+    @mcp.tool(
+        name="portal_preview_publish",
+        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_preview_publish(params: WorkflowIdInput) -> dict[str, Any]:
+        """Preview a workflow publish: validation, diff, warnings, and a one-time preview_token used by publish/schedule-online."""
+        return await service.preview_publish(params.workflow_id)
+
+    @mcp.tool(
+        name="portal_publish_workflow",
+        annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True},
+    )
+    async def portal_publish_workflow(params: PublishWorkflowInput) -> dict[str, Any]:
+        """HIGH-RISK: deploy/online/offline a workflow to the scheduler. Requires user confirmation. Call portal_preview_publish first and pass its preview_token."""
+        return await service.publish_workflow(
+            params.workflow_id,
+            {"operation": params.operation, "previewToken": params.preview_token},
+        )
+
+    @mcp.tool(
+        name="portal_upsert_schedule",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_upsert_schedule(params: UpsertScheduleInput) -> dict[str, Any]:
+        """Create or update a workflow's schedule configuration (cron/timezone/etc.)."""
+        return await service.upsert_schedule(params.workflow_id, params.schedule)
+
+    @mcp.tool(
+        name="portal_workflow_schedule_online",
+        annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False, "openWorldHint": True},
+    )
+    async def portal_workflow_schedule_online(params: ScheduleOnlineInput) -> dict[str, Any]:
+        """HIGH-RISK: enable a workflow's schedule so it triggers on cron. Requires user confirmation and a preview_token."""
+        return await service.schedule_online(params.workflow_id, {"previewToken": params.preview_token})
+
+    @mcp.tool(
+        name="portal_workflow_schedule_offline",
+        annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False},
+    )
+    async def portal_workflow_schedule_offline(params: WorkflowIdInput) -> dict[str, Any]:
+        """Disable a workflow's schedule."""
+        return await service.schedule_offline(params.workflow_id)
+
+    @mcp.tool(
+        name="portal_analyze_sql",
+        annotations={"readOnlyHint": True, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False},
+    )
+    async def portal_analyze_sql(params: AnalyzeSqlInput) -> dict[str, Any]:
+        """Analyze a SQL statement: input/output tables, operation type, and warnings (for SQL polish and lineage)."""
+        payload = params.model_dump(exclude_none=True)
+        if "cluster_id" in payload:
+            payload["clusterId"] = payload.pop("cluster_id")
+        return await service.analyze_sql(payload)
 
     return mcp
 

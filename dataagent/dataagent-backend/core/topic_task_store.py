@@ -11,7 +11,13 @@ from typing import Any
 import pymysql
 
 from config import get_settings
-from core.agent_profile_service import DEFAULT_AGENT_ID, agent_summary_from_snapshot, default_agent_payload, normalize_agent_snapshot
+from core.agent_profile_service import (
+    DEFAULT_AGENT_ID,
+    agent_summary_from_snapshot,
+    default_agent_payload,
+    normalize_agent_snapshot,
+    normalize_permission_mode,
+)
 from core.topic_workspace import delete_topic_workspace
 
 logger = logging.getLogger(__name__)
@@ -94,6 +100,7 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
     current_turn_blocks: list[dict[str, Any]] | None = None
     block_by_index: dict[int, dict[str, Any]] = {}
     blocks_by_tool_id: dict[str, dict[str, Any]] = {}
+    perm_blocks_by_request_id: dict[str, dict[str, Any]] = {}
     max_seq_id = 0
 
     for record in records:
@@ -169,6 +176,35 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                             block["input"] = json.loads(input_json)
                         except Exception:
                             block["input"] = input_json
+
+        elif record_type == "permission_request":
+            request_id = str(data.get("request_id") or "")
+            block = {
+                "type": "permission_request",
+                "request_id": request_id,
+                "tool_name": str(data.get("tool_name") or ""),
+                "risk_level": str(data.get("risk_level") or "high"),
+                "title": str(data.get("title") or ""),
+                "summary": str(data.get("summary") or ""),
+                "payload_preview": data.get("payload_preview"),
+                "decision": "pending",
+                "note": "",
+                "decided_at": "",
+                "_idx": len(ordered_blocks),
+            }
+            ordered_blocks.append(block)
+            if current_turn_blocks is not None:
+                current_turn_blocks.append(block)
+            if request_id:
+                perm_blocks_by_request_id[request_id] = block
+
+        elif record_type == "permission_decision":
+            request_id = str(data.get("request_id") or "")
+            block = perm_blocks_by_request_id.get(request_id)
+            if block is not None:
+                block["decision"] = str(data.get("decision") or "pending")
+                block["note"] = str(data.get("note") or "")
+                block["decided_at"] = str(data.get("decided_at") or "")
 
         elif record_type == "tool_result":
             tool_use_id = str(data.get("tool_use_id") or "")
@@ -386,12 +422,14 @@ class TopicTaskStore:
         *,
         title: str,
         agent_snapshot: dict[str, Any] | None = None,
+        permission_mode: str | None = None,
         context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._ensure_ready()
         normalized_context = self._normalize_context(context)
         snapshot = normalize_agent_snapshot(agent_snapshot or default_agent_payload())
         agent_id = str(snapshot.get("agent_id") or DEFAULT_AGENT_ID)
+        resolved_permission_mode = normalize_permission_mode(permission_mode)
         topic_id = _new_id("topic")
         chat_topic_id = _new_id("chat_topic")
         chat_conversation_id = _new_id("chat_conv")
@@ -403,9 +441,9 @@ class TopicTaskStore:
                     INSERT INTO da_agent_topic (
                         topic_id, title, chat_topic_id, chat_conversation_id,
                         current_task_id, current_task_status, last_message_seq,
-                        agent_id, agent_snapshot_json,
+                        agent_id, agent_snapshot_json, permission_mode,
                         source, website_id, external_user_id, visitor_id
-                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         topic_id,
@@ -414,6 +452,7 @@ class TopicTaskStore:
                         chat_conversation_id,
                         agent_id,
                         _json_dump(snapshot),
+                        resolved_permission_mode,
                         normalized_context["source"],
                         normalized_context["website_id"],
                         normalized_context["external_user_id"],
@@ -448,6 +487,7 @@ class TopicTaskStore:
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
                            t.external_user_id, t.visitor_id, t.agent_id, t.agent_snapshot_json,
+                           t.permission_mode,
                            t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
@@ -550,6 +590,7 @@ class TopicTaskStore:
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
                            t.external_user_id, t.visitor_id, t.agent_id, t.agent_snapshot_json,
+                           t.permission_mode,
                            t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
@@ -674,6 +715,7 @@ class TopicTaskStore:
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
                            t.external_user_id, t.visitor_id, t.agent_id, t.agent_snapshot_json,
+                           t.permission_mode,
                            t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
@@ -703,21 +745,58 @@ class TopicTaskStore:
             return None
         return self._normalize_topic_row(row, include_messages=False)
 
-    def update_topic(self, topic_id: str, *, title: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
+    def get_topic_permission_mode(self, topic_id: str) -> str:
+        """Read the session's current permission mode (latest selection).
+
+        Used at task-execution assembly time so a run honors the mode active on
+        its topic without snapshotting it onto the task row.
+        """
         self._ensure_ready()
-        if not self.get_topic(topic_id, context=context):
-            return None
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    "SELECT permission_mode FROM da_agent_topic WHERE topic_id = %s LIMIT 1",
+                    (topic_id,),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        return normalize_permission_mode((row or {}).get("permission_mode"))
+
+    def update_topic(
+        self,
+        topic_id: str,
+        *,
+        title: str | None = None,
+        permission_mode: str | None = None,
+        context: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        self._ensure_ready()
+        if not self.get_topic(topic_id, context=context):
+            return None
+        assignments: list[str] = []
+        params: list[Any] = []
+        if title is not None:
+            assignments.append("title = %s")
+            params.append(title or "新话题")
+        if permission_mode is not None:
+            assignments.append("permission_mode = %s")
+            params.append(normalize_permission_mode(permission_mode))
+        if not assignments:
+            return self.get_topic(topic_id, context=context)
+        assignments.append("updated_at = CURRENT_TIMESTAMP")
+        params.append(topic_id)
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"""
                     UPDATE da_agent_topic
-                    SET title = %s,
-                        updated_at = CURRENT_TIMESTAMP
+                    SET {", ".join(assignments)}
                     WHERE topic_id = %s
                     """,
-                    (title or "新话题", topic_id),
+                    tuple(params),
                 )
             conn.commit()
         finally:
@@ -1276,6 +1355,44 @@ class TopicTaskStore:
                       AND t.current_task_id = k.task_id
                     """,
                     (task_id,),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return self.get_task(task_id)
+
+    def set_task_status(self, task_id: str, status: str) -> dict[str, Any] | None:
+        """Set a non-terminal in-flight status (e.g. ``waiting_permission`` while
+        a run waits at a confirmation, then back to ``running``).
+
+        Terminal transitions go through the dedicated finalize paths; this is for
+        reversible in-flight states only.
+        """
+        self._ensure_ready()
+        safe_status = str(status or "running")
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE da_agent_task
+                    SET task_status = %s,
+                        heartbeat_at = CURRENT_TIMESTAMP,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE task_id = %s
+                    """,
+                    (safe_status, task_id),
+                )
+                cur.execute(
+                    """
+                    UPDATE da_agent_topic t
+                    JOIN da_agent_task k ON k.topic_id = t.topic_id
+                    SET t.current_task_status = %s,
+                        t.updated_at = CURRENT_TIMESTAMP
+                    WHERE k.task_id = %s
+                      AND t.current_task_id = k.task_id
+                    """,
+                    (safe_status, task_id),
                 )
             conn.commit()
         finally:
@@ -2206,6 +2323,7 @@ class TopicTaskStore:
             "agent_id": str(row.get("agent_id") or snapshot.get("agent_id") or DEFAULT_AGENT_ID),
             "agent_snapshot": snapshot,
             "agent": agent_summary_from_snapshot(snapshot),
+            "permission_mode": normalize_permission_mode(row.get("permission_mode")),
             "current_task_id": str(row.get("current_task_id") or "") or None,
             "current_task_status": str(row.get("current_task_status") or "") or None,
             "source": str(row.get("source") or "portal"),

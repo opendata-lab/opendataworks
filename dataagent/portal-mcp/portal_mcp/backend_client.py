@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
-from .scope_context import get_data_scope_header
+from .scope_context import get_data_scope_header, get_operator_header
 
 
 class BackendApiError(RuntimeError):
@@ -37,6 +37,50 @@ class BackendApiClient:
     async def query_readonly(self, payload: dict[str, Any]) -> dict[str, Any]:
         return await self._request("POST", "/v1/ai/query/read", json=payload)
 
+    # --- write surface (data development assistant) ---------------------------
+
+    async def create_task(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", "/v1/ai/task", json=payload)
+
+    async def update_task(self, task_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("PUT", f"/v1/ai/task/{task_id}", json=payload)
+
+    async def get_task(self, task_id: int) -> dict[str, Any]:
+        return await self._request("GET", f"/v1/ai/task/{task_id}")
+
+    async def list_tasks(self, **params: Any) -> dict[str, Any]:
+        return await self._request("GET", "/v1/ai/task/list", params=params)
+
+    async def create_workflow(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", "/v1/ai/workflow", json=payload)
+
+    async def update_workflow(self, workflow_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("PUT", f"/v1/ai/workflow/{workflow_id}", json=payload)
+
+    async def get_workflow(self, workflow_id: int) -> dict[str, Any]:
+        return await self._request("GET", f"/v1/ai/workflow/{workflow_id}")
+
+    async def list_workflows(self, **params: Any) -> dict[str, Any]:
+        return await self._request("GET", "/v1/ai/workflow/list", params=params)
+
+    async def preview_publish(self, workflow_id: int) -> dict[str, Any]:
+        return await self._request("GET", f"/v1/ai/workflow/{workflow_id}/publish/preview")
+
+    async def publish_workflow(self, workflow_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", f"/v1/ai/workflow/{workflow_id}/publish", json=payload)
+
+    async def upsert_schedule(self, workflow_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("PUT", f"/v1/ai/workflow/{workflow_id}/schedule", json=payload)
+
+    async def schedule_online(self, workflow_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", f"/v1/ai/workflow/{workflow_id}/schedule/online", json=payload)
+
+    async def schedule_offline(self, workflow_id: int) -> dict[str, Any]:
+        return await self._request("POST", f"/v1/ai/workflow/{workflow_id}/schedule/offline", json={})
+
+    async def analyze_sql(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return await self._request("POST", "/v1/ai/sql/analyze", json=payload)
+
     async def _request(
         self,
         method: str,
@@ -52,6 +96,9 @@ class BackendApiClient:
         data_scope = get_data_scope_header()
         if data_scope:
             headers["X-Agent-Data-Scope"] = data_scope
+        operator = get_operator_header()
+        if operator:
+            headers["X-Agent-Operator"] = operator
         timeout = httpx.Timeout(self.settings.backend_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:

@@ -33,6 +33,9 @@ export function useNl2SqlChat(options) {
   const {
     api,
     getAgentId = () => '',
+    // Session permission mode (default/acceptEdits/plan/bypassPermissions) for new
+    // topics and to carry mid-session switches; '' lets the backend default it.
+    getPermissionMode = () => '',
     messagePageSize = 200,
     topicTitleLength = 30,
     // Called after each real send settles. The portal refreshes its own faceted
@@ -229,7 +232,10 @@ export function useNl2SqlChat(options) {
 
   const ensureTopic = async (title) => {
     if (topicId.value) return topicId.value
-    const topic = normalizeTopic(await api.topicApi.createTopic(title || '新会话', { agent_id: getAgentId() || undefined }))
+    const topic = normalizeTopic(await api.topicApi.createTopic(title || '新会话', {
+      agent_id: getAgentId() || undefined,
+      permission_mode: getPermissionMode() || undefined,
+    }))
     if (!topic.topic_id) return ''
     upsertTopicAtTop(topic)
     topicId.value = topic.topic_id
@@ -403,6 +409,7 @@ export function useNl2SqlChat(options) {
         provider_id: selectedProvider.value || undefined,
         model: selectedModel.value || undefined,
         agent_id: getAgentId() || undefined,
+        permission_mode: getPermissionMode() || undefined,
         debug: false,
         execution_mode: 'auto',
       })

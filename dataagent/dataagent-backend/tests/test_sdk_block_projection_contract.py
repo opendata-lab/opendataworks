@@ -40,6 +40,17 @@ def _to_canonical(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "is_error": bool(block.get("is_error")),
                 }
             )
+        elif btype == "permission_request":
+            canonical.append(
+                {
+                    "kind": "permission_request",
+                    "tool_name": block.get("tool_name"),
+                    "risk_level": block.get("risk_level"),
+                    "title": block.get("title"),
+                    "summary": block.get("summary"),
+                    "decision": block.get("decision"),
+                }
+            )
         else:
             kind = "text" if btype == "main_text" else str(btype or "")
             text = str(block.get("text") or "")

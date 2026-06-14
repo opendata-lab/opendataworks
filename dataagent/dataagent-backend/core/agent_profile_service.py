@@ -18,7 +18,12 @@ OPENDATAWORKS_AGENT_ID = "agent_opendataworks"
 OPENDATAWORKS_AGENT_NAME = "OpenDataWorks平台助手"
 ONTOLOGY_MODELING_AGENT_ID = "agent_ontology_modeling"
 ONTOLOGY_MODELING_AGENT_NAME = "本体建模助手"
-PERMISSION_MODES = {"inherit", "default", "bypassPermissions"}
+
+# Session-level permission modes, aligned with the Claude Agent SDK. Legacy
+# values (the removed ``inherit`` or anything unknown) normalize to ``default``.
+PERMISSION_MODES: tuple[str, ...] = ("default", "acceptEdits", "plan", "bypassPermissions")
+DEFAULT_PERMISSION_MODE = "default"
+
 SAFE_AGENT_TOOLS = ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
 GENERAL_AGENT_TOOLS = ["Read", "LS", "Glob", "Grep"]
 PORTAL_MCP_SERVER_ID = "portal"
@@ -95,11 +100,16 @@ def _validate_name(value: Any) -> str:
     return text
 
 
-def _validate_permission_mode(value: Any) -> str:
-    text = str(value or "inherit").strip() or "inherit"
-    if text not in PERMISSION_MODES:
-        raise ValueError("permission_mode must be inherit, default, or bypassPermissions")
-    return text
+def normalize_permission_mode(permission_mode: Any) -> str:
+    """Coerce any stored/requested value to a valid SDK permission mode.
+
+    The removed legacy ``inherit`` value and any unknown input collapse to
+    ``default``.
+    """
+    requested = str(permission_mode or "").strip()
+    if requested in PERMISSION_MODES:
+        return requested
+    return DEFAULT_PERMISSION_MODE
 
 
 def _validate_tools(values: Any) -> list[str]:
@@ -199,7 +209,6 @@ def normalize_agent_profile_payload(
     name = _validate_name(data.get("name", base.get("name") if has_existing else ""))
     description = str(data.get("description", base.get("description") or "") or "").strip()
     system_prompt = str(data.get("system_prompt", base.get("system_prompt") or "") or "").strip()
-    permission_mode = _validate_permission_mode(data.get("permission_mode", base.get("permission_mode") or "inherit"))
     allowed_tools = _validate_tools(data.get("allowed_tools", base.get("allowed_tools") or list(SAFE_AGENT_TOOLS)))
     mcp_server_ids = _validate_members(
         data.get("mcp_server_ids", base.get("mcp_server_ids") or []),
@@ -221,7 +230,6 @@ def normalize_agent_profile_payload(
         "name": name,
         "description": description,
         "system_prompt": system_prompt,
-        "permission_mode": permission_mode,
         "allowed_tools": allowed_tools,
         "mcp_server_ids": mcp_server_ids,
         "skill_folders": skill_folders,
@@ -238,7 +246,6 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "name": str(profile.get("name") or DEFAULT_AGENT_NAME),
         "description": str(profile.get("description") or ""),
         "system_prompt": str(profile.get("system_prompt") or ""),
-        "permission_mode": str(profile.get("permission_mode") or "inherit"),
         "allowed_tools": _dedupe_strings(profile.get("allowed_tools")),
         "mcp_server_ids": _dedupe_strings(profile.get("mcp_server_ids")),
         "skill_folders": _dedupe_strings(profile.get("skill_folders")),
@@ -282,7 +289,6 @@ def default_agent_payload() -> dict[str, Any]:
         "name": DEFAULT_AGENT_NAME,
         "description": "通用对话与分析入口，不预置 OpenDataWorks 专属 Skills。",
         "system_prompt": "",
-        "permission_mode": "default",
         "allowed_tools": list(GENERAL_AGENT_TOOLS),
         "mcp_server_ids": [],
         "skill_folders": [],
@@ -298,12 +304,20 @@ def opendataworks_agent_payload() -> dict[str, Any]:
     return {
         "agent_id": OPENDATAWORKS_AGENT_ID,
         "name": OPENDATAWORKS_AGENT_NAME,
-        "description": "面向 OpenDataWorks 数据门户、元数据、血缘、工作流和智能问数场景。",
-        "system_prompt": "你是 OpenDataWorks 数据门户助手，优先围绕平台元数据、工作流、血缘、数据质量和智能问数场景提供帮助。",
-        "permission_mode": "inherit",
+        "description": "面向 OpenDataWorks 数据门户、元数据、血缘、工作流、智能问数与数据开发场景。",
+        "system_prompt": (
+            "你是 OpenDataWorks 数据门户助手，优先围绕平台元数据、工作流、血缘、数据质量和智能问数场景提供帮助。"
+            "你同时具备数据开发能力：可以生成与润色 SQL、创建数据任务、组装工作流、发布与上线、配置调度。"
+            "数据开发以问数为主、开发为辅；执行开发动作时严格遵循 opendataworks-data-dev 技能的 playbook，"
+            "发布与上线等高危操作必须先预览再经用户确认，绝不跳过。"
+        ),
         "allowed_tools": list(SAFE_AGENT_TOOLS),
         "mcp_server_ids": [PORTAL_MCP_SERVER_ID],
-        "skill_folders": ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
+        "skill_folders": [
+            "opendataworks-business-knowledge",
+            "opendataworks-platform-tools",
+            "opendataworks-data-dev",
+        ],
         "max_turns": 0,
         "env_vars": {},
         "data_scope": {"allowed_scopes": []},
@@ -318,7 +332,6 @@ def ontology_modeling_agent_payload() -> dict[str, Any]:
         "name": ONTOLOGY_MODELING_AGENT_NAME,
         "description": "根据业务需求、上传文档和数据库表字段创建特定业务域本体语义 Skill。",
         "system_prompt": "你是 OpenDataWorks 本体建模助手，专注把用户需求、上传文档和数据库表字段整理成可复用的领域本体语义 Skill。",
-        "permission_mode": "inherit",
         "allowed_tools": list(SAFE_AGENT_TOOLS),
         "mcp_server_ids": [PORTAL_MCP_SERVER_ID],
         "skill_folders": ["ontology-modeling-assistant"],
@@ -380,7 +393,6 @@ class AgentProfileStore:
             "name": str(row.get("name") or ""),
             "description": str(row.get("description") or ""),
             "system_prompt": str(row.get("system_prompt") or ""),
-            "permission_mode": str(row.get("permission_mode") or "inherit"),
             "allowed_tools": _dedupe_strings(_safe_json_load(row.get("allowed_tools_json"), [])),
             "mcp_server_ids": _dedupe_strings(_safe_json_load(row.get("mcp_server_ids_json"), [])),
             "skill_folders": _dedupe_strings(_safe_json_load(row.get("skill_folders_json"), [])),
@@ -402,7 +414,7 @@ class AgentProfileStore:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT agent_id, name, description, system_prompt, permission_mode,
+                    SELECT agent_id, name, description, system_prompt,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
                            max_turns, env_vars_json, data_scope_json, preset_questions_json,
                            is_default, is_builtin, created_at, updated_at
@@ -422,7 +434,7 @@ class AgentProfileStore:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT agent_id, name, description, system_prompt, permission_mode,
+                    SELECT agent_id, name, description, system_prompt,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
                            max_turns, env_vars_json, data_scope_json, preset_questions_json,
                            is_default, is_builtin, created_at, updated_at
@@ -450,16 +462,15 @@ class AgentProfileStore:
                 cur.execute(
                     """
                     INSERT INTO da_agent_profile (
-                        agent_id, name, description, system_prompt, permission_mode,
+                        agent_id, name, description, system_prompt,
                         allowed_tools_json, mcp_server_ids_json, skill_folders_json,
                         max_turns, env_vars_json, data_scope_json, preset_questions_json,
                         is_default, is_builtin
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         name = VALUES(name),
                         description = VALUES(description),
                         system_prompt = VALUES(system_prompt),
-                        permission_mode = VALUES(permission_mode),
                         allowed_tools_json = VALUES(allowed_tools_json),
                         mcp_server_ids_json = VALUES(mcp_server_ids_json),
                         skill_folders_json = VALUES(skill_folders_json),
@@ -476,7 +487,6 @@ class AgentProfileStore:
                         str(profile.get("name") or ""),
                         str(profile.get("description") or ""),
                         str(profile.get("system_prompt") or ""),
-                        str(profile.get("permission_mode") or "inherit"),
                         _json_dump(_dedupe_strings(profile.get("allowed_tools"))),
                         _json_dump(_dedupe_strings(profile.get("mcp_server_ids"))),
                         _json_dump(_dedupe_strings(profile.get("skill_folders"))),
@@ -654,7 +664,6 @@ def agent_capabilities(skill_documents: list[dict[str, Any]]) -> dict[str, Any]:
         "tools": list(SAFE_AGENT_TOOLS),
         "mcp_servers": available_mcp_servers(),
         "skills": sorted(folders.values(), key=lambda item: item["folder"]),
-        "permission_modes": sorted(PERMISSION_MODES),
     }
 
 
