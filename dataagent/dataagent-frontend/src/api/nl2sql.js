@@ -235,6 +235,16 @@ export function createNl2SqlApiClient(options = {}) {
     }
   }
 
+  const queryApi = {
+    executeSql({ sql, database, engine, limit, timeoutSeconds } = {}) {
+      const payload = { sql, database }
+      if (engine) payload.engine = engine
+      if (limit) payload.limit = limit
+      if (timeoutSeconds) payload.timeout_seconds = timeoutSeconds
+      return runtimeRequest.post('/query/execute', payload)
+    }
+  }
+
   const messageQueueApi = {
     query(data) {
       return runtimeRequest.post('/message-queue/queries', data)
@@ -322,6 +332,7 @@ export function createNl2SqlApiClient(options = {}) {
     runtimeApi,
     topicApi,
     taskApi,
+    queryApi,
     messageQueueApi,
     scheduleApi,
     adminApi,

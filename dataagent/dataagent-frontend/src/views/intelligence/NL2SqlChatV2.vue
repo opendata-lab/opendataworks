@@ -213,7 +213,7 @@
 
                       <!-- Tool use block (chart-producing tools render their chart directly below the block) -->
                       <div v-else-if="block.type === 'tool_use'" class="v2-tool-row">
-                        <ToolOutputRenderer :tool="blockToToolProp(block)" />
+                        <ToolOutputRenderer :tool="blockToToolProp(block)" :file-url-resolver="resolveWorkspaceFileHref" />
                       </div>
 
                       <!-- Generic Chat V2 permission confirmation card -->

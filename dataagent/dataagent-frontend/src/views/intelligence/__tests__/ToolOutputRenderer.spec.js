@@ -38,9 +38,10 @@ vi.mock('echarts/renderers', () => ({
 }))
 
 import ToolOutputRenderer from '../ToolOutputRenderer.vue'
+import ChartSpecView from '../ChartSpecView.vue'
 
-const mountRenderer = (tool) => shallowMount(ToolOutputRenderer, {
-  props: { tool },
+const mountRenderer = (tool, props = {}) => shallowMount(ToolOutputRenderer, {
+  props: { tool, ...props },
   global: {
     stubs: {
       ElScrollbar: {
@@ -51,7 +52,7 @@ const mountRenderer = (tool) => shallowMount(ToolOutputRenderer, {
 })
 
 describe('ToolOutputRenderer', () => {
-  it('renders table chart_spec payloads as tables', () => {
+  it('delegates table chart_spec payloads to ChartSpecView', () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',
       status: 'streaming',
@@ -67,9 +68,10 @@ describe('ToolOutputRenderer', () => {
       }
     })
 
-    expect(wrapper.findAll('th').map((node) => node.text())).toEqual(['workflow_id', 'status'])
-    expect(wrapper.text()).toContain('173')
-    expect(wrapper.text()).toContain('success')
+    const chartView = wrapper.findComponent(ChartSpecView)
+    expect(chartView.exists()).toBe(true)
+    expect(chartView.props('spec').chart_type).toBe('table')
+    expect(chartView.props('spec').dataset).toEqual([{ workflow_id: 173, status: 'success' }])
   })
 
   it('renders chart_spec payloads through the chart renderer', () => {
@@ -91,11 +93,13 @@ describe('ToolOutputRenderer', () => {
       }
     })
 
-    expect(wrapper.find('.tool-chart').exists()).toBe(true)
-    expect(wrapper.find('.tool-chart-below').exists()).toBe(true)
+    const chartView = wrapper.findComponent(ChartSpecView)
+    expect(chartView.exists()).toBe(true)
+    expect(chartView.classes()).toContain('tool-chart-below')
+    expect(chartView.props('spec').chart_type).toBe('line')
   })
 
-  it('shows a short invalid-spec message below the block instead of raw chart_spec JSON', () => {
+  it('passes invalid chart_spec to ChartSpecView without dumping raw JSON', () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',
       status: 'streaming',
@@ -109,7 +113,7 @@ describe('ToolOutputRenderer', () => {
       }
     })
 
-    expect(wrapper.text()).toContain('bar 类型必须提供 x_field')
+    expect(wrapper.findComponent(ChartSpecView).exists()).toBe(true)
     // Raw chart_spec JSON must never be dumped into the UI.
     expect(wrapper.text()).not.toContain('"chart_type": "bar"')
   })
@@ -507,5 +511,59 @@ describe('ToolOutputRenderer', () => {
     const traceIcon = wrapper.find('.shell-trace-summary .shell-trace-icon')
     expect(traceIcon.exists()).toBe(true)
     expect(traceIcon.findAll('path').length).toBeGreaterThan(0)
+  })
+
+  it('delegates sql_execution rendering to SqlCodePanel and ResultDataTable', () => {
+    const wrapper = mountRenderer({
+      name: 'SQLQuery',
+      status: 'streaming',
+      output: {
+        kind: 'sql_execution',
+        sql: 'select workflow_id from t limit 2',
+        database: 'demo',
+        engine: 'mysql',
+        columns: ['workflow_id'],
+        rows: [{ workflow_id: 1 }],
+        row_count: 1,
+        has_more: true,
+        duration_ms: 12
+      }
+    })
+
+    const sqlPanel = wrapper.findComponent({ name: 'SqlCodePanel' })
+    expect(sqlPanel.exists()).toBe(true)
+    expect(sqlPanel.props('sql')).toBe('select workflow_id from t limit 2')
+    expect(sqlPanel.props('database')).toBe('demo')
+
+    const table = wrapper.findComponent({ name: 'ResultDataTable' })
+    expect(table.exists()).toBe(true)
+    expect(table.props('columns')).toEqual(['workflow_id'])
+    expect(table.props('meta')).toMatchObject({ rowCount: 1, hasMore: true, durationMs: 12 })
+  })
+
+  it('renders sql_export download link via fileUrlResolver and preview table', () => {
+    const resolver = (relPath) => `/api/v1/nl2sql/topics/topic-1/files/${relPath}?download=1`
+    const wrapper = mountRenderer(
+      {
+        name: 'SQLExport',
+        status: 'streaming',
+        output: {
+          kind: 'sql_export',
+          sql: 'select * from t',
+          database: 'demo',
+          file_path: '/workspace/topic-1/output/result.csv',
+          columns: ['a'],
+          preview_rows: [{ a: 1 }],
+          row_count: 621
+        }
+      },
+      { fileUrlResolver: resolver }
+    )
+
+    const link = wrapper.find('.tool-export-download')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('/api/v1/nl2sql/topics/topic-1/files/output/result.csv?download=1')
+    expect(link.text()).toContain('result.csv')
+    expect(wrapper.findComponent({ name: 'ResultDataTable' }).exists()).toBe(true)
   })
 })
