@@ -19,4 +19,9 @@ public class WorkflowImportCommitResponse {
     private Integer createdTaskCount;
 
     private String appliedRelationDecision;
+
+    /**
+     * 实际应用的运行态归属：ADOPT / RESET
+     */
+    private String appliedRuntimeBinding;
 }

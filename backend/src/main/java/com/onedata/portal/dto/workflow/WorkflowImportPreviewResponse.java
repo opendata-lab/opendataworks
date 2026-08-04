@@ -35,4 +35,9 @@ public class WorkflowImportPreviewResponse {
      * 规范化后的平台同构 JSON（默认使用 SQL 推断关系）
      */
     private String normalizedJson;
+
+    /**
+     * 本次导入的 Dolphin 运行态归属结论
+     */
+    private WorkflowImportRuntimeBinding runtimeBinding;
 }

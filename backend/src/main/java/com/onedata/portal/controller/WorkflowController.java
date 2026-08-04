@@ -95,12 +95,20 @@ public class WorkflowController {
 
     @GetMapping("/import/dolphin")
     public Result<PageResult<DolphinRuntimeWorkflowOption>> listDolphinImportWorkflows(
+            @RequestParam(required = false) Long dolphinConfigId,
             @RequestParam(required = false) Long projectCode,
             @RequestParam(defaultValue = "1") Integer pageNum,
             @RequestParam(defaultValue = "20") Integer pageSize,
             @RequestParam(required = false) String keyword) {
         return Result.success(workflowDefinitionLifecycleService.listDolphinWorkflows(
-                projectCode, pageNum, pageSize, keyword));
+                dolphinConfigId, projectCode, pageNum, pageSize, keyword));
+    }
+
+    @GetMapping("/import/dolphin/{workflowCode}")
+    public Result<DolphinRuntimeWorkflowOption> findDolphinImportWorkflow(
+            @PathVariable Long workflowCode,
+            @RequestParam(required = false) Long dolphinConfigId) {
+        return Result.success(workflowDefinitionLifecycleService.findDolphinWorkflow(dolphinConfigId, workflowCode));
     }
 
     @PostMapping("/import/commit")

@@ -34,6 +34,16 @@ public class WorkflowImportCommitRequest {
     private String workflowName;
 
     /**
+     * 目标 Dolphin 环境 id（必填）
+     */
+    private Long dolphinConfigId;
+
+    /**
+     * 关联的目标 Dolphin 运行态工作流编码；为空表示不关联，按全新工作流导入
+     */
+    private Long linkedWorkflowCode;
+
+    /**
      * 关系轨道选择：DECLARED / INFERRED（仅在预检提示差异时必填）
      */
     private String relationDecision;

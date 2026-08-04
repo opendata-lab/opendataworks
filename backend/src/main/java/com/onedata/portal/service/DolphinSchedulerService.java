@@ -172,6 +172,35 @@ public class DolphinSchedulerService {
         return withConfig(dolphinConfigId, () -> getProjectCode(forceRefresh));
     }
 
+    /**
+     * 只读解析项目编码：项目不存在时返回 null，不会自动创建。
+     * 导入预检这类只读路径必须用这个方法，避免 {@link #getProjectCode(boolean)} 的自动建项目副作用。
+     */
+    public Long findProjectCode(Long dolphinConfigId) {
+        Supplier<Long> lookup = this::lookupProjectCodeReadOnly;
+        return withConfig(dolphinConfigId, lookup);
+    }
+
+    private Long lookupProjectCodeReadOnly() {
+        DolphinConfig activeConfig = getConfig();
+        Long cacheKey = configCacheKey(activeConfig);
+        Long cached = cachedProjectCodeByConfigId.get(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            DolphinProject project = openApiClient.getProject(activeConfig.getProjectName());
+            if (project == null || project.getCode() == null) {
+                return null;
+            }
+            cachedProjectCodeByConfigId.put(cacheKey, project.getCode());
+            return project.getCode();
+        } catch (Exception e) {
+            log.warn("Failed to resolve project code for {}: {}", activeConfig.getProjectName(), e.getMessage());
+            return null;
+        }
+    }
+
     public boolean testConnection(Long dolphinConfigId) {
         DolphinConfig config = dolphinConfigService.getEnabledConfig(dolphinConfigId);
         return openApiClient.testConnection(config);

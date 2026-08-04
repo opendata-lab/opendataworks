@@ -5,108 +5,151 @@
     width="980px"
     @close="handleClose"
   >
-    <div class="import-panel">
-      <div class="mode-switch">
-        <el-radio-group v-model="importMode" @change="handleModeChange">
+    <el-form
+      ref="formRef"
+      :model="form"
+      :rules="rules"
+      label-width="130px"
+      class="import-panel"
+    >
+      <el-form-item label="导入来源">
+        <el-radio-group v-model="form.importMode" @change="handleModeChange">
           <el-radio-button label="json">JSON 导入</el-radio-button>
           <el-radio-button label="dolphin">从 Dolphin 导入</el-radio-button>
         </el-radio-group>
-      </div>
+      </el-form-item>
 
-      <div v-if="importMode === 'json'" class="json-import">
-        <div class="import-toolbar">
-          <input
-            ref="fileInputRef"
-            type="file"
-            accept=".json,application/json"
-            class="hidden-file-input"
-            @change="handleFileSelected"
+      <el-form-item label="目标 Dolphin" prop="dolphinConfigId">
+        <div class="inline-field">
+          <el-select
+            v-model="form.dolphinConfigId"
+            placeholder="请选择目标 Dolphin 环境"
+            filterable
+            :loading="dolphinConfigsLoading"
+            class="grow"
+            @change="handleDolphinConfigChange"
           >
-          <el-button @click="openFilePicker">选择文件</el-button>
-          <span class="file-name">{{ fileName || '未选择文件' }}</span>
-        </div>
-
-        <el-input
-          v-model="definitionJson"
-          type="textarea"
-          :rows="10"
-          placeholder="可直接粘贴 workflow JSON 文本，或选择 .json 文件"
-        />
-      </div>
-
-      <div v-else class="dolphin-import">
-        <div class="dolphin-toolbar">
-          <el-input
-            v-model="dolphinQuery.keyword"
-            placeholder="搜索工作流名称"
-            clearable
-            @keyup.enter="handleDolphinSearch"
-          />
-          <el-input
-            v-model="dolphinQuery.projectCode"
-            placeholder="项目编码（可选）"
-            clearable
-            style="width: 180px"
-          />
-          <el-button type="primary" :loading="dolphinLoading" @click="handleDolphinSearch">查询</el-button>
-          <el-button @click="handleDolphinReset">重置</el-button>
-        </div>
-
-        <el-table
-          v-loading="dolphinLoading"
-          :data="dolphinWorkflows"
-          row-key="workflowCode"
-          highlight-current-row
-          max-height="260"
-          @current-change="handleDolphinCurrentChange"
-        >
-          <el-table-column label="工作流" min-width="280">
-            <template #default="{ row }">
-              <div class="name-line">
-                <span>{{ row.workflowName || '-' }}</span>
-                <el-tag size="small" :type="row.releaseState === 'ONLINE' ? 'success' : 'info'">
-                  {{ row.releaseState || '-' }}
-                </el-tag>
-              </div>
-            </template>
-          </el-table-column>
-          <el-table-column prop="projectCode" label="项目编码" width="160" />
-          <el-table-column prop="workflowCode" label="工作流编码" width="180" />
-        </el-table>
-
-        <el-pagination
-          class="pagination"
-          v-model:current-page="dolphinPagination.pageNum"
-          v-model:page-size="dolphinPagination.pageSize"
-          :total="dolphinPagination.total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @size-change="handleDolphinSizeChange"
-          @current-change="loadDolphinWorkflows"
-        />
-
-        <el-form label-width="120px" class="name-form">
-          <el-form-item label="新工作流名称" required>
-            <el-input
-              v-model="importWorkflowName"
-              placeholder="默认使用 Dolphin 工作流名称，可编辑"
-              maxlength="100"
-              show-word-limit
+            <el-option
+              v-for="item in dolphinConfigs"
+              :key="item.id"
+              :label="formatDolphinConfigLabel(item)"
+              :value="item.id"
+              :disabled="item.isActive === false"
             />
-          </el-form-item>
-        </el-form>
-      </div>
+          </el-select>
+          <el-button link type="primary" @click="goToDolphinSettings">管理 Dolphin</el-button>
+        </div>
+        <div v-if="!dolphinConfigsLoading && !selectableConfigCount" class="field-hint is-warning">
+          还没有可用的 Dolphin 连接，请先前往「管理 Dolphin」完成配置
+        </div>
+      </el-form-item>
 
-      <div class="action-bar">
+      <template v-if="form.importMode === 'json'">
+        <el-form-item label="定义文件" prop="definitionJson">
+          <div class="import-toolbar">
+            <input
+              ref="fileInputRef"
+              type="file"
+              accept=".json,application/json"
+              class="hidden-file-input"
+              @change="handleFileSelected"
+            >
+            <el-button @click="openFilePicker">选择文件</el-button>
+            <span class="file-name">{{ fileName || '未选择文件' }}</span>
+          </div>
+          <el-input
+            v-model="form.definitionJson"
+            type="textarea"
+            :rows="8"
+            placeholder="可直接粘贴 workflow JSON 文本，或选择 .json 文件"
+            @change="handleDefinitionJsonChange"
+          />
+        </el-form-item>
+
+        <el-form-item label="关联运行态">
+          <div class="inline-field">
+            <el-select
+              v-model="form.linkedWorkflowCode"
+              placeholder="不关联，作为全新工作流导入"
+              clearable
+              filterable
+              remote
+              :remote-method="handleRuntimeSearch"
+              :loading="runtimeLoading"
+              :disabled="!form.dolphinConfigId"
+              class="grow"
+              @change="handleLinkedWorkflowChange"
+            >
+              <el-option
+                v-for="item in runtimeWorkflows"
+                :key="item.workflowCode"
+                :label="formatRuntimeWorkflowLabel(item)"
+                :value="item.workflowCode"
+                :disabled="Boolean(item.localWorkflowId)"
+              />
+            </el-select>
+          </div>
+          <div v-if="runtimeConflictText" class="field-hint is-error">{{ runtimeConflictText }}</div>
+          <div v-else class="field-hint">
+            留空则发布时在目标 Dolphin 创建新的工作流定义；选中则发布时更新该定义
+          </div>
+        </el-form-item>
+      </template>
+
+      <template v-else>
+        <el-form-item label="运行态工作流" prop="dolphinWorkflow">
+          <el-table
+            v-loading="dolphinLoading"
+            :data="dolphinWorkflows"
+            row-key="workflowCode"
+            highlight-current-row
+            max-height="240"
+            @current-change="handleDolphinCurrentChange"
+          >
+            <el-table-column label="工作流" min-width="280">
+              <template #default="{ row }">
+                <div class="name-line">
+                  <span>{{ row.workflowName || '-' }}</span>
+                  <el-tag size="small" :type="row.releaseState === 'ONLINE' ? 'success' : 'info'">
+                    {{ row.releaseState || '-' }}
+                  </el-tag>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column prop="projectCode" label="项目编码" width="140" />
+            <el-table-column prop="workflowCode" label="工作流编码" width="170" />
+          </el-table>
+          <el-pagination
+            class="pagination"
+            v-model:current-page="dolphinPagination.pageNum"
+            v-model:page-size="dolphinPagination.pageSize"
+            :total="dolphinPagination.total"
+            :page-sizes="[10, 20, 50]"
+            layout="total, sizes, prev, pager, next"
+            @size-change="handleDolphinSizeChange"
+            @current-change="loadDolphinWorkflows"
+          />
+        </el-form-item>
+      </template>
+
+      <el-form-item label="新工作流名称" prop="workflowName">
+        <el-input
+          v-model="form.workflowName"
+          placeholder="默认取定义中的名称，可编辑"
+          maxlength="100"
+          show-word-limit
+        />
+      </el-form-item>
+
+      <el-form-item label=" ">
         <el-button
           type="primary"
-          :disabled="!canPreview"
           :loading="previewLoading"
           @click="handlePreview"
         >
           预检
         </el-button>
-      </div>
+      </el-form-item>
 
       <div v-if="previewResult" class="preview-panel">
         <div class="preview-header">
@@ -116,6 +159,14 @@
           <span>工作流：{{ previewResult.workflowName || '-' }}</span>
           <span>任务数：{{ previewResult.taskCount || 0 }}</span>
         </div>
+
+        <el-alert
+          v-if="runtimeBindingHint"
+          :type="runtimeBindingHint.type"
+          :title="runtimeBindingHint.text"
+          :closable="false"
+          show-icon
+        />
 
         <el-alert
           v-if="previewResult.errors?.length"
@@ -155,7 +206,7 @@
 
         <div v-if="previewResult.relationDecisionRequired" class="relation-decision">
           <div class="relation-title">关系差异存在，请选择导入轨道</div>
-          <el-radio-group v-model="relationDecision">
+          <el-radio-group v-model="form.relationDecision">
             <el-radio label="INFERRED">SQL 推断关系（推荐）</el-radio>
             <el-radio label="DECLARED">文件声明关系</el-radio>
           </el-radio-group>
@@ -195,7 +246,7 @@
           </div>
         </div>
       </div>
-    </div>
+    </el-form>
 
     <template #footer>
       <el-button @click="handleClose">取消</el-button>
@@ -213,8 +264,19 @@
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { workflowApi } from '@/api/workflow'
+import { settingsApi } from '@/api/settings'
+import {
+  buildImportPayload,
+  describeRuntimeBinding,
+  describeRuntimeConflict,
+  formatDolphinConfigLabel,
+  formatRuntimeWorkflowLabel,
+  parseDefinitionHints,
+  resolveDefaultDolphinConfigId
+} from './importFormHelper'
 
 const props = defineProps({
   modelValue: {
@@ -225,50 +287,112 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'imported'])
 
+const router = useRouter()
+const formRef = ref(null)
 const fileInputRef = ref(null)
-const importMode = ref('json')
 const fileName = ref('')
-const definitionJson = ref('')
+
+const form = reactive({
+  importMode: 'json',
+  dolphinConfigId: null,
+  definitionJson: '',
+  linkedWorkflowCode: null,
+  dolphinWorkflow: null,
+  workflowName: '',
+  relationDecision: ''
+})
+
+const rules = {
+  dolphinConfigId: [{ required: true, message: '请选择目标 Dolphin 环境', trigger: 'change' }],
+  definitionJson: [{ required: true, message: '请选择文件或粘贴 JSON', trigger: 'blur' }],
+  workflowName: [{ required: true, message: '请填写新工作流名称', trigger: 'blur' }],
+  dolphinWorkflow: [{
+    // 选中的是整行对象，用自定义校验避免 required 按字符串规则判空
+    validator: (rule, value, callback) => {
+      callback(value?.workflowCode ? undefined : new Error('请选择要导入的 Dolphin 工作流'))
+    },
+    trigger: 'change'
+  }]
+}
+
+const dolphinConfigs = ref([])
+const dolphinConfigsLoading = ref(false)
+
+const runtimeWorkflows = ref([])
+const runtimeLoading = ref(false)
 
 const dolphinLoading = ref(false)
 const dolphinWorkflows = ref([])
-const selectedDolphinWorkflow = ref(null)
-const importWorkflowName = ref('')
-const dolphinQuery = reactive({
-  keyword: '',
-  projectCode: ''
-})
-const dolphinPagination = reactive({
-  pageNum: 1,
-  pageSize: 10,
-  total: 0
-})
+const dolphinPagination = reactive({ pageNum: 1, pageSize: 10, total: 0 })
 
 const previewLoading = ref(false)
 const commitLoading = ref(false)
 const previewResult = ref(null)
-const relationDecision = ref('INFERRED')
 
-const canPreview = computed(() => {
-  if (importMode.value === 'dolphin') {
-    return Boolean(selectedDolphinWorkflow.value?.workflowCode && importWorkflowName.value.trim())
-  }
-  return Boolean(definitionJson.value.trim())
-})
+const selectableConfigCount = computed(
+  () => dolphinConfigs.value.filter((item) => item.isActive !== false).length
+)
+
+const selectedRuntimeWorkflow = computed(
+  () => runtimeWorkflows.value.find((item) => item.workflowCode === form.linkedWorkflowCode) || null
+)
+
+const runtimeConflictText = computed(() => describeRuntimeConflict(selectedRuntimeWorkflow.value))
+
+const runtimeBindingHint = computed(() => describeRuntimeBinding(previewResult.value?.runtimeBinding))
 
 const canCommit = computed(() => {
   if (!previewResult.value?.canImport) return false
-  if (importMode.value === 'dolphin' && !importWorkflowName.value.trim()) return false
+  if (runtimeConflictText.value) return false
   if (!previewResult.value?.relationDecisionRequired) return true
-  return Boolean(relationDecision.value)
+  return Boolean(form.relationDecision)
 })
 
 watch(() => props.modelValue, (visible) => {
   if (!visible) return
-  if (importMode.value === 'dolphin' && !dolphinWorkflows.value.length) {
-    loadDolphinWorkflows()
-  }
+  loadDolphinConfigs()
 })
+
+const loadDolphinConfigs = async () => {
+  dolphinConfigsLoading.value = true
+  try {
+    const list = await settingsApi.listDolphinConfigs()
+    dolphinConfigs.value = Array.isArray(list) ? list : (list?.records || [])
+    if (!form.dolphinConfigId) {
+      form.dolphinConfigId = resolveDefaultDolphinConfigId(dolphinConfigs.value)
+    }
+    if (form.dolphinConfigId) {
+      refreshRuntimeSources()
+    }
+  } catch (error) {
+    console.error('加载 Dolphin 配置失败', error)
+    ElMessage.error('加载 Dolphin 配置失败')
+  } finally {
+    dolphinConfigsLoading.value = false
+  }
+}
+
+const goToDolphinSettings = () => {
+  router.push({ path: '/settings', query: { tab: 'dolphin' } })
+}
+
+const handleDolphinConfigChange = () => {
+  previewResult.value = null
+  form.linkedWorkflowCode = null
+  form.dolphinWorkflow = null
+  dolphinPagination.pageNum = 1
+  refreshRuntimeSources()
+}
+
+const refreshRuntimeSources = async () => {
+  if (form.importMode === 'dolphin') {
+    await loadDolphinWorkflows()
+    return
+  }
+  // 先把列表拉回来再补预选项，否则列表结果会把预选项覆盖掉
+  await loadRuntimeWorkflows()
+  await autoLinkFromDefinition()
+}
 
 const openFilePicker = () => {
   fileInputRef.value?.click()
@@ -279,31 +403,82 @@ const handleFileSelected = async (event) => {
   if (!file) return
   fileName.value = file.name
   try {
-    definitionJson.value = await file.text()
-    previewResult.value = null
+    form.definitionJson = await file.text()
+    handleDefinitionJsonChange()
   } catch (error) {
     console.error('读取文件失败', error)
     ElMessage.error('读取文件失败')
   }
 }
 
-const handleModeChange = () => {
+/**
+ * 文件换了就重新猜一次名称与关联项，但不覆盖用户已经手工改过的名称。
+ */
+const handleDefinitionJsonChange = () => {
   previewResult.value = null
-  relationDecision.value = 'INFERRED'
-  if (importMode.value === 'dolphin' && !dolphinWorkflows.value.length) {
-    loadDolphinWorkflows()
+  const hints = parseDefinitionHints(form.definitionJson)
+  if (hints.workflowName && !form.workflowName) {
+    form.workflowName = hints.workflowName
+  }
+  autoLinkFromDefinition()
+}
+
+/**
+ * 用文件里携带的来源编码在目标 Dolphin 里探一次：命中就默认关联上，
+ * 没命中就保持"不关联"，用户不需要理解 workflowCode 这些内部概念。
+ */
+const autoLinkFromDefinition = async () => {
+  const hints = parseDefinitionHints(form.definitionJson)
+  if (!hints.workflowCode || !form.dolphinConfigId) return
+  try {
+    const found = await workflowApi.findImportDolphinWorkflow(hints.workflowCode, {
+      dolphinConfigId: form.dolphinConfigId
+    })
+    if (!found?.workflowCode) return
+    if (!runtimeWorkflows.value.some((item) => item.workflowCode === found.workflowCode)) {
+      runtimeWorkflows.value = [found, ...runtimeWorkflows.value]
+    }
+    if (!found.localWorkflowId) {
+      form.linkedWorkflowCode = found.workflowCode
+    }
+  } catch (error) {
+    console.error('探测目标 Dolphin 运行态失败', error)
   }
 }
 
-const handleDolphinSearch = () => {
-  dolphinPagination.pageNum = 1
-  loadDolphinWorkflows()
+const loadRuntimeWorkflows = async (keyword) => {
+  if (!form.dolphinConfigId) return
+  runtimeLoading.value = true
+  try {
+    const page = await workflowApi.listImportDolphinWorkflows({
+      dolphinConfigId: form.dolphinConfigId,
+      pageNum: 1,
+      pageSize: 50,
+      keyword: keyword || undefined
+    })
+    runtimeWorkflows.value = page?.records || []
+  } catch (error) {
+    console.error('加载目标 Dolphin 工作流失败', error)
+    runtimeWorkflows.value = []
+  } finally {
+    runtimeLoading.value = false
+  }
 }
 
-const handleDolphinReset = () => {
-  dolphinQuery.keyword = ''
-  dolphinQuery.projectCode = ''
-  handleDolphinSearch()
+const handleRuntimeSearch = (keyword) => {
+  loadRuntimeWorkflows(keyword)
+}
+
+const handleLinkedWorkflowChange = () => {
+  previewResult.value = null
+}
+
+const handleModeChange = () => {
+  previewResult.value = null
+  form.relationDecision = ''
+  form.linkedWorkflowCode = null
+  form.dolphinWorkflow = null
+  refreshRuntimeSources()
 }
 
 const handleDolphinSizeChange = () => {
@@ -312,19 +487,13 @@ const handleDolphinSizeChange = () => {
 }
 
 const loadDolphinWorkflows = async () => {
-  const projectCodeText = dolphinQuery.projectCode?.trim()
-  const parsedProjectCode = projectCodeText ? Number(projectCodeText) : undefined
-  if (projectCodeText && !Number.isFinite(parsedProjectCode)) {
-    ElMessage.warning('项目编码必须是数字')
-    return
-  }
+  if (!form.dolphinConfigId) return
   dolphinLoading.value = true
   try {
     const page = await workflowApi.listImportDolphinWorkflows({
+      dolphinConfigId: form.dolphinConfigId,
       pageNum: dolphinPagination.pageNum,
-      pageSize: dolphinPagination.pageSize,
-      keyword: dolphinQuery.keyword || undefined,
-      projectCode: parsedProjectCode
+      pageSize: dolphinPagination.pageSize
     })
     dolphinWorkflows.value = page?.records || []
     dolphinPagination.total = page?.total || 0
@@ -337,50 +506,22 @@ const loadDolphinWorkflows = async () => {
 }
 
 const handleDolphinCurrentChange = (row) => {
-  selectedDolphinWorkflow.value = row || null
+  form.dolphinWorkflow = row || null
   previewResult.value = null
-  relationDecision.value = 'INFERRED'
-  if (!row) {
-    importWorkflowName.value = ''
-    return
+  form.relationDecision = ''
+  if (row) {
+    form.workflowName = String(row.workflowName || `workflow_${row.workflowCode}`).trim()
   }
-  importWorkflowName.value = buildDefaultImportedWorkflowName(row)
-}
-
-const buildDefaultImportedWorkflowName = (workflow) => {
-  return String(workflow?.workflowName || `workflow_${workflow?.workflowCode || 'new'}`).trim()
-}
-
-const buildImportPayload = () => {
-  const payload = {
-    sourceType: importMode.value,
-    operator: 'portal-ui'
-  }
-  if (importMode.value === 'dolphin') {
-    payload.projectCode = selectedDolphinWorkflow.value?.projectCode
-    payload.workflowCode = selectedDolphinWorkflow.value?.workflowCode
-    payload.workflowName = importWorkflowName.value.trim()
-  } else {
-    payload.definitionJson = definitionJson.value
-  }
-  return payload
 }
 
 const handlePreview = async () => {
-  if (!canPreview.value) {
-    ElMessage.warning(importMode.value === 'dolphin'
-      ? '请先选择 Dolphin 工作流并填写新工作流名称'
-      : '请先选择文件或粘贴 JSON')
-    return
-  }
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   previewLoading.value = true
   try {
-    const result = await workflowApi.previewImportDefinition(buildImportPayload())
+    const result = await workflowApi.previewImportDefinition(buildImportPayload(form))
     previewResult.value = result
-    relationDecision.value = result?.suggestedRelationDecision || 'INFERRED'
-    if (importMode.value === 'dolphin' && result?.workflowName && !importWorkflowName.value.trim()) {
-      importWorkflowName.value = result.workflowName
-    }
+    form.relationDecision = result?.suggestedRelationDecision || 'INFERRED'
   } catch (error) {
     console.error('导入预检失败', error)
   } finally {
@@ -389,15 +530,17 @@ const handlePreview = async () => {
 }
 
 const handleCommit = async () => {
+  const valid = await formRef.value?.validate().catch(() => false)
+  if (!valid) return
   if (!canCommit.value) {
     ElMessage.warning('当前预检未通过，无法导入')
     return
   }
   commitLoading.value = true
   try {
-    const payload = buildImportPayload()
-    if (previewResult.value?.relationDecisionRequired) {
-      payload.relationDecision = relationDecision.value
+    const payload = buildImportPayload(form)
+    if (!previewResult.value?.relationDecisionRequired) {
+      delete payload.relationDecision
     }
     const result = await workflowApi.commitImportDefinition(payload)
     ElMessage.success(`导入成功：${result?.workflowName || ''}`)
@@ -418,19 +561,21 @@ const formatEdge = (edge) => {
 }
 
 const resetState = () => {
-  importMode.value = 'json'
+  form.importMode = 'json'
+  form.dolphinConfigId = null
+  form.definitionJson = ''
+  form.linkedWorkflowCode = null
+  form.dolphinWorkflow = null
+  form.workflowName = ''
+  form.relationDecision = ''
   fileName.value = ''
-  definitionJson.value = ''
   previewResult.value = null
-  relationDecision.value = 'INFERRED'
-  selectedDolphinWorkflow.value = null
-  importWorkflowName.value = ''
-  dolphinQuery.keyword = ''
-  dolphinQuery.projectCode = ''
+  runtimeWorkflows.value = []
+  dolphinWorkflows.value = []
   dolphinPagination.pageNum = 1
   dolphinPagination.pageSize = 10
   dolphinPagination.total = 0
-  dolphinWorkflows.value = []
+  formRef.value?.clearValidate()
   if (fileInputRef.value) {
     fileInputRef.value.value = ''
   }
@@ -446,20 +591,25 @@ const handleClose = () => {
 .import-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
-.mode-switch {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.import-toolbar,
-.dolphin-toolbar,
-.action-bar {
+.inline-field {
   display: flex;
   align-items: center;
   gap: 10px;
+  width: 100%;
+}
+
+.inline-field .grow {
+  flex: 1;
+}
+
+.import-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 8px;
 }
 
 .hidden-file-input {
@@ -472,6 +622,22 @@ const handleClose = () => {
   flex: 1;
 }
 
+.field-hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #909399;
+}
+
+.field-hint.is-warning {
+  color: #e6a23c;
+}
+
+.field-hint.is-error {
+  color: #f56c6c;
+}
+
 .name-line {
   display: flex;
   align-items: center;
@@ -481,23 +647,15 @@ const handleClose = () => {
 .pagination {
   display: flex;
   justify-content: flex-end;
-}
-
-.name-form {
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  padding: 12px 12px 0;
-  background: #fcfcfc;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .preview-panel {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  border: 1px solid #ebeef5;
-  border-radius: 6px;
-  padding: 12px;
-  background: #fcfcfc;
+  gap: 12px;
+  margin-top: 4px;
 }
 
 .preview-header {
@@ -514,18 +672,16 @@ const handleClose = () => {
 }
 
 .relation-decision {
-  border: 1px dashed #dcdfe6;
-  border-radius: 6px;
-  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .relation-title {
-  margin-bottom: 8px;
   font-weight: 600;
 }
 
 .relation-hint {
-  margin-top: 6px;
   font-size: 12px;
   color: #909399;
 }
@@ -533,7 +689,7 @@ const handleClose = () => {
 .relation-diff {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  gap: 12px;
 }
 
 .relation-col {
@@ -541,7 +697,6 @@ const handleClose = () => {
   border-radius: 6px;
   padding: 8px;
   min-height: 90px;
-  background: #fff;
 }
 
 .relation-col-title {

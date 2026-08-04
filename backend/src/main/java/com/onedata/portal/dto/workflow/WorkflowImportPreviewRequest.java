@@ -33,5 +33,15 @@ public class WorkflowImportPreviewRequest {
      */
     private String workflowName;
 
+    /**
+     * 目标 Dolphin 环境 id（必填）
+     */
+    private Long dolphinConfigId;
+
+    /**
+     * 关联的目标 Dolphin 运行态工作流编码；为空表示不关联，按全新工作流导入
+     */
+    private Long linkedWorkflowCode;
+
     private String operator;
 }

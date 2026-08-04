@@ -89,6 +89,39 @@ public class DolphinRuntimeDefinitionService {
                 () -> listRuntimeWorkflows(projectCode, pageNum, pageSize, keyword));
     }
 
+    /**
+     * 按编码精确查询单条运行态工作流，不存在时返回 null。
+     * 用于导入表单按文件里的 workflowCode 预选关联项，避免它不在分页第一页而选不中。
+     */
+    public DolphinRuntimeWorkflowOption findRuntimeWorkflow(Long dolphinConfigId,
+            Long projectCode,
+            Long workflowCode) {
+        if (workflowCode == null || workflowCode <= 0) {
+            return null;
+        }
+        return dolphinSchedulerService.withConfig(dolphinConfigId, () -> {
+            long resolvedProjectCode = resolveProjectCode(projectCode);
+            JsonNode raw;
+            try {
+                raw = openApiClient.getProcessDefinition(resolvedProjectCode, workflowCode);
+            } catch (Exception ex) {
+                log.debug("Runtime workflow {} not found in project {}: {}",
+                        workflowCode, resolvedProjectCode, ex.getMessage());
+                return null;
+            }
+            if (raw == null || raw.isNull() || raw.isMissingNode()) {
+                return null;
+            }
+            JsonNode definition = unwrapDefinition(raw);
+            DolphinRuntimeWorkflowOption option = new DolphinRuntimeWorkflowOption();
+            option.setProjectCode(resolvedProjectCode);
+            option.setWorkflowCode(workflowCode);
+            option.setWorkflowName(readText(definition, "name", "workflowName"));
+            option.setReleaseState(readText(definition, "releaseState", "publishStatus", "scheduleReleaseState"));
+            return option;
+        });
+    }
+
     public RuntimeWorkflowDefinition loadRuntimeDefinition(Long projectCode, Long workflowCode) {
         if (workflowCode == null || workflowCode <= 0) {
             throw new IllegalArgumentException("workflowCode 不能为空");
