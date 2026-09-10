@@ -31,7 +31,11 @@ def _event(sequence: int, event_type: str, payload: dict[str, Any] | None = None
     }
 
 
-def test_writes_neutral_records_with_pi_event_type():
+def test_writes_neutral_records_as_agent_event():
+    """The record type carries the envelope now; "pi_event" is the legacy name.
+
+    Both are accepted on read, so existing rows keep replaying.
+    """
     store = _FakeStore()
     writer = PiEventWriter(store, "task-1", "topic-1")
 
@@ -39,7 +43,7 @@ def test_writes_neutral_records_with_pi_event_type():
     writer.ingest(_event(2, "turn.started", {"turn_id": "turn-1"}))
     writer.ingest(_event(3, "content.delta", {"content_id": "c-0", "kind": "answer", "delta": "hi"}))
 
-    assert [r["record_type"] for r in store.records] == ["pi_event"] * 3
+    assert [r["record_type"] for r in store.records] == ["agent_event"] * 3
     assert [r["event_type"] for r in store.records] == ["run.started", "turn.started", "content.delta"]
     assert store.records[-1]["data"] == {"content_id": "c-0", "kind": "answer", "delta": "hi"}
 
@@ -81,7 +85,7 @@ def test_run_failed_also_emits_the_shared_error_record():
         _event(1, "run.failed", {"error_code": "CELL_LOSS", "message": "child exited", "detail": "signal 9"})
     )
 
-    assert [r["record_type"] for r in store.records] == ["pi_event", "error"]
+    assert [r["record_type"] for r in store.records] == ["agent_event", "error"]
     error_payload = store.records[-1]["data"]
     assert error_payload["code"] == "CELL_LOSS"
     assert error_payload["message"] == "child exited"

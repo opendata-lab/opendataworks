@@ -252,6 +252,9 @@ export class Cell {
             emit(
               sm.createEvent("tool.denied", {
                 turn_id: normalizer.turnId,
+                // The reducer locates the tool block by this id; without it a
+                // denied call renders as a call that never finished.
+                tool_call_id: String(context.toolCall?.id ?? ""),
                 tool_name: toolName,
                 reason,
               })

@@ -47,8 +47,9 @@ export function createChatState() {
 export function processV2Record(state, record) {
   if (record.record_type === 'stream') {
     _handleStreamEvent(state, record.data || {})
-  } else if (record.record_type === 'pi_event') {
-    // Rows written by the Pi data plane. Dispatching here rather than at each
+  } else if (record.record_type === 'pi_event' || record.record_type === 'agent_event') {
+    // Rows written by an engine adapter. 'pi_event' is the pre-envelope name;
+    // both carry the same neutral events. Dispatching here rather than at each
     // call site keeps every consumer (portal chat, widget, history replay)
     // engine-agnostic for free, and mirrors the backend projection, which also
     // handles both engines in one function.
