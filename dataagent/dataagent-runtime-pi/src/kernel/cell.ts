@@ -21,7 +21,6 @@ import {
   shouldFold,
   extractDigest,
   formatDigestText,
-  isRenderableStructuredOutput,
   STRUCTURED_OUTPUT_MAX_BYTES,
 } from "../context/tabular-digest.js";
 import { CompactionSession } from "../context/compaction-session.js";
@@ -274,7 +273,11 @@ export class Cell {
                 meta: mergeFoldProvenance(unwrapped.output_meta, {
                   model_context_folded: true,
                   result_ref: saveOutcome.result_ref,
-                  original_bytes: saveOutcome.byte_size,
+                  // What was folded, not what it compacted to: a tabular result
+                  // is rewritten to JSONL on the way to disk, so the stored size
+                  // understates the payload this digest stands in for.
+                  original_bytes: uiBytes,
+                  stored_bytes: saveOutcome.byte_size,
                 }),
               });
             }
@@ -290,7 +293,8 @@ export class Cell {
                   folded: true,
                   result_ref: saveOutcome.result_ref,
                   storage_path: saveOutcome.relative_path,
-                  original_bytes: saveOutcome.byte_size,
+                  original_bytes: uiBytes,
+                  stored_bytes: saveOutcome.byte_size,
                   folded_text_blocks: textBlocks.length,
                   preserved_blocks: nonTextBlockCount,
                 }

@@ -210,6 +210,7 @@ const DETAIL_FIELD_ALIASES: Record<string, string> = {
   result_ref: "result_ref",
   storage_path: "storage_path",
   original_bytes: "original_bytes",
+  stored_bytes: "stored_bytes",
   skill_name: "skill_name",
   root_path: "root_path",
   denied: "denied",
