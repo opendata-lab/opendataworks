@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -570,13 +571,27 @@ def _resolve_json_pointer(root: dict[str, Any], ref: str) -> Any:
     return node
 
 
+class SchemaInlineError(RuntimeError):
+    """A tool schema has a shape this inliner refuses to rewrite."""
+
+
 def _inline_refs(schema: Any, root: dict[str, Any], seen: frozenset[str] = frozenset()) -> Any:
     """Replace local ``$ref`` pointers with their definitions and drop ``$defs``.
 
-    ``seen`` carries the refs already expanded on the current branch so a
-    self-referential model degrades to a plain object instead of recursing
-    forever. Today's portal models are flat, but a future nested one must not
-    hang the server at import time.
+    Deliberately narrow. This handles the one shape Pydantic emits — a plain
+    ``{"$ref": "#/$defs/Name"}`` with no siblings, resolving to an object
+    schema — and raises on anything else instead of guessing.
+
+    A general JSON Schema inliner is not what this needs to be, and pretending
+    otherwise is how it would go wrong quietly: under 2020-12 a ``$ref`` and its
+    siblings are a conjunction, so merging them by dict-update lets a sibling
+    ``minLength: 2`` silently relax a target's ``minLength: 5``. Recursive
+    models, boolean schemas (``true``/``false`` are valid targets) and dangling
+    pointers have the same problem — every "safe degradation" here would publish
+    a schema that promises less than the model enforces.
+
+    Failing at startup instead means a future model shape breaks the build, not
+    a production run.
     """
     if isinstance(schema, list):
         return [_inline_refs(item, root, seen) for item in schema]
@@ -584,16 +599,23 @@ def _inline_refs(schema: Any, root: dict[str, Any], seen: frozenset[str] = froze
         return schema
 
     ref = schema.get("$ref")
-    if isinstance(ref, str) and ref.startswith("#/"):
+    if isinstance(ref, str):
+        if not ref.startswith("#/"):
+            raise SchemaInlineError(f"non-local $ref is not supported: {ref!r}")
         if ref in seen:
-            return {"type": "object"}
+            raise SchemaInlineError(f"recursive $ref is not supported: {ref!r}")
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        if siblings:
+            # Merging would change what the schema promises; see docstring.
+            raise SchemaInlineError(
+                f"$ref {ref!r} carries sibling keys {sorted(siblings)}; refusing to merge"
+            )
         target = _resolve_json_pointer(root, ref)
         if not isinstance(target, dict):
-            # Leave an unresolvable ref untouched rather than silently
-            # producing a schema that claims fewer constraints than it has.
-            return schema
-        siblings = {key: value for key, value in schema.items() if key != "$ref"}
-        return _inline_refs({**target, **siblings}, root, seen | {ref})
+            raise SchemaInlineError(
+                f"$ref {ref!r} resolves to {type(target).__name__}, expected an object schema"
+            )
+        return _inline_refs(target, root, seen | {ref})
 
     return {
         key: _inline_refs(value, root, seen)
@@ -618,10 +640,17 @@ def _inline_tool_schema_refs(mcp: FastMCP) -> None:
     while making the published schema self-contained for every client, not just
     the one runtime that happens to compensate client-side.
     """
-    for tool in mcp._tool_manager._tools.values():  # noqa: SLF001 - no public accessor
+    for tool in mcp._tool_manager.list_tools():  # noqa: SLF001 - manager itself is private
         schema = tool.parameters
-        if isinstance(schema, dict) and "$defs" in schema:
-            tool.parameters = _inline_refs(schema, schema)
+        if not isinstance(schema, dict) or "$defs" not in schema:
+            continue
+        inlined = _inline_refs(schema, schema)
+        remaining = json.dumps(inlined)
+        if '"$ref"' in remaining:
+            # Dropping $defs while a pointer survives would publish exactly the
+            # dangling reference this function exists to prevent.
+            raise SchemaInlineError(f"tool {tool.name!r} still has a $ref after inlining")
+        tool.parameters = inlined
 
 
 def create_app(
