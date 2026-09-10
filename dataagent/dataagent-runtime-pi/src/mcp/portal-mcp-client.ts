@@ -55,7 +55,10 @@ export function formatSchemaHelp(
   const required = Array.isArray(resolvedSchema.required) ? (resolvedSchema.required as string[]) : [];
 
   const fieldLines: string[] = [];
-  const exampleObj: Record<string, unknown> = {};
+  // Null-prototype: property names come from the MCP server's own schema, so a
+  // field called `__proto__` would set this object's prototype and drop
+  // silently out of the example the model is shown.
+  const exampleObj: Record<string, unknown> = Object.create(null);
 
   for (const [key, def] of Object.entries(properties)) {
     let typeName = "any";

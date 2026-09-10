@@ -82,8 +82,8 @@
           <tr v-for="(row, rowIndex) in pagedRows" :key="rowIndex">
             <td class="result-table-index-col">{{ pageStart + rowIndex + 1 }}</td>
             <td v-for="column in columns" :key="column">
-              <span v-if="row[column] === null || row[column] === undefined" class="result-table-null">NULL</span>
-              <template v-else>{{ row[column] }}</template>
+              <span v-if="cellValue(row, column) === null || cellValue(row, column) === undefined" class="result-table-null">NULL</span>
+              <template v-else>{{ cellValue(row, column) }}</template>
             </td>
           </tr>
           <tr v-if="!pagedRows.length">
@@ -129,6 +129,12 @@ const openFilterColumn = ref('')
 // and an object lookup answers for those with something inherited. Sorting read
 // the truthy result as "numeric", the text filter rendered a function's source,
 // and opening a value filter threw because Object.prototype is not iterable.
+// Reading a cell by column name has to ignore the prototype: a row that lacks a
+// column called `constructor` or `toString` answers with the inherited member,
+// so the NULL check passed it through and the cell rendered a function's source.
+const cellValue = (row, column) =>
+  row && Object.hasOwn(row, column) ? row[column] : undefined
+
 const columnValueFilters = reactive(new Map())
 const columnTextFilters = reactive(new Map())
 const page = ref(1)
@@ -158,7 +164,7 @@ const truncatedNotice = computed(() => {
 const searchedRows = computed(() => {
   const text = keyword.value.toLowerCase()
   if (!text) return props.rows
-  return props.rows.filter((row) => props.columns.some((column) => cellText(row?.[column]).toLowerCase().includes(text)))
+  return props.rows.filter((row) => props.columns.some((column) => cellText(cellValue(row, column)).toLowerCase().includes(text)))
 })
 
 const filteredRows = computed(() => {
@@ -166,11 +172,11 @@ const filteredRows = computed(() => {
   for (const column of props.columns) {
     const checked = columnValueFilters.get(column)
     if (checked && checked.size) {
-      rows = rows.filter((row) => checked.has(cellText(row?.[column])))
+      rows = rows.filter((row) => checked.has(cellText(cellValue(row, column))))
     }
     const textFilter = String(columnTextFilters.get(column) || '').toLowerCase()
     if (textFilter) {
-      rows = rows.filter((row) => cellText(row?.[column]).toLowerCase().includes(textFilter))
+      rows = rows.filter((row) => cellText(cellValue(row, column)).toLowerCase().includes(textFilter))
     }
   }
   return rows
@@ -184,7 +190,7 @@ const numericColumnCache = computed(() => {
     let hasNumber = false
     let numeric = true
     for (const row of props.rows) {
-      const value = row?.[column]
+      const value = cellValue(row, column)
       if (value === null || value === undefined || value === '') continue
       if (typeof value === 'number') {
         hasNumber = true
@@ -209,8 +215,8 @@ const sortedRows = computed(() => {
   const factor = sortDirection.value === 'desc' ? -1 : 1
   const numeric = isNumericColumn(column)
   return [...filteredRows.value].sort((a, b) => {
-    const left = a?.[column]
-    const right = b?.[column]
+    const left = cellValue(a, column)
+    const right = cellValue(b, column)
     const leftMissing = left === null || left === undefined || left === ''
     const rightMissing = right === null || right === undefined || right === ''
     if (leftMissing && rightMissing) return 0
@@ -266,7 +272,7 @@ const distinctValueCache = computed(() => {
   for (const column of props.columns) {
     const values = new Set()
     for (const row of props.rows) {
-      values.add(cellText(row?.[column]))
+      values.add(cellText(cellValue(row, column)))
       if (values.size > DISTINCT_LIMIT) break
     }
     cache.set(column, [...values].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')))

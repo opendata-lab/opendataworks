@@ -130,6 +130,18 @@ describe('columns named after Object.prototype members', () => {
     { constructor: 'alpha', toString: 'a', __proto__: 'd' }
   ].map((row) => JSON.parse(JSON.stringify(row)))
 
+  it('renders a missing cell as NULL, not as an inherited function', () => {
+    // Reading row['constructor'] on a row that lacks the column answers with
+    // Object's constructor, so the NULL check passed it through and the cell
+    // rendered "function Object() { [native code] }".
+    const sparse = [JSON.parse('{"toString": "only this one"}')]
+    const wrapper = mountTable({ columns: protoColumns, rows: sparse })
+
+    const text = wrapper.find('tbody tr').text()
+    expect(text).not.toContain('native code')
+    expect(wrapper.find('.result-table-null').exists()).toBe(true)
+  })
+
   it('sorts them as text rather than mistaking them for numbers', async () => {
     const wrapper = mountTable({ columns: protoColumns, rows: protoRows })
     await wrapper.findAll('thead th')[1].trigger('click')
