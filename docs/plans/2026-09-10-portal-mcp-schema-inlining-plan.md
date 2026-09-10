@@ -56,8 +56,8 @@ cd dataagent/portal-mcp
 portal-mcp 为独立镜像，改动需重建并重启后才生效：
 
 1. 重建 `mikefan2019/opendataworks-portal-mcp:1.5.0`
-2. 重启内网 portal-mcp 服务
-3. 重跑内网问数「生产环境有多少个分级保障组件？」
+2. 重启目标环境的 portal-mcp 服务
+3. 重跑一条需要「取表 DDL + 只读聚合查询」的问数
 4. 确认 `portal_get_table_ddl` / `portal_query_readonly` **一次调用成功**，不再退化到脚本 fallback
 
 ## 3. 回滚与风险预案
