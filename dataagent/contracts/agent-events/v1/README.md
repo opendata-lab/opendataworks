@@ -1,6 +1,20 @@
-# Agent events v1
+# Agent events v1 (partial: vocabulary only)
 
-The wire contract every engine adapter produces before anything is persisted.
+The event vocabulary every engine adapter produces.
+
+**Scope.** This is phase 2A of the unified-contract plan, not the whole of
+phase 2. What exists here is the closed event-type list, the tool-output shape
+and the task-status vocabulary. What the plan also calls for and is *not* here:
+`agent-record.schema.json`, the envelope columns on `da_agent_sdk_record`,
+producer/reducer/invalid fixtures, the legacy→`agent_event` read normalizer, and
+`processV2Record` accepting `agent_event`. Those depend on phases 3 and 5, which
+are deferred. Do not read this directory as evidence that AgentRecordV1 has
+landed.
+
+Enforcement today is likewise partial: a test reads the TypeScript event enum
+and asserts it equals the schema's. The JS reducer and the Python writer are not
+yet validated against these files, and `payload` is typed as a bare object, so a
+malformed payload still passes.
 
 ## Why this exists
 

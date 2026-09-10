@@ -231,3 +231,29 @@ function capRowCells(row: Record<string, unknown>): Record<string, unknown> {
   }
   return capped;
 }
+
+
+/** Persistence ceiling for a structured payload, matching the query result guard. */
+export const STRUCTURED_OUTPUT_MAX_BYTES = 512 * 1024;
+
+/**
+ * Whether this text is a platform structured output the UI renders directly.
+ *
+ * These carry a top-level `kind` (chart_spec, sql_execution, sql_export) and the
+ * renderer keys off it. Folding one replaces it with a digest, and the chart or
+ * table is gone from the transcript for good — no amount of unwrapping
+ * downstream can recover it. So they are exempt from folding up to the
+ * persistence ceiling, at the cost of the tokens they occupy.
+ */
+export function isRenderableStructuredOutput(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{")) {
+    return false;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Boolean(parsed && typeof parsed === "object" && typeof parsed.kind === "string");
+  } catch {
+    return false;
+  }
+}

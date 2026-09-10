@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { shouldFold, extractDigest, formatDigestText } from "../src/context/tabular-digest.js";
+import {
+  shouldFold,
+  extractDigest,
+  formatDigestText,
+  isRenderableStructuredOutput,
+  STRUCTURED_OUTPUT_MAX_BYTES,
+} from "../src/context/tabular-digest.js";
 
 test("shouldFold identifies payloads exceeding byte threshold", () => {
   const small = { rows: [{ id: 1, name: "Alice" }] };
@@ -107,4 +113,32 @@ test("a wide cell cannot make the digest larger than the original", () => {
     digestBytes < Buffer.byteLength(raw, "utf8"),
     `digest ${digestBytes}B should be smaller than original ${Buffer.byteLength(raw, "utf8")}B`
   );
+});
+
+test("a large chart_spec is exempt from folding so it can still render", () => {
+  // Folding replaces the payload with a digest, and the chart is gone from the
+  // transcript for good. A 37,845-byte chart_spec — the size review reproduced
+  // — is far past the 16 KiB fold threshold but well inside the persistence
+  // ceiling, so it must survive intact.
+  const spec = {
+    kind: "chart_spec",
+    version: 1,
+    chart_type: "bar",
+    columns: ["name", "value"],
+    dataset: Array.from({ length: 900 }, (_, i) => ({ name: `项目-${i}`, value: i })),
+    error: null,
+  };
+  const text = JSON.stringify(spec);
+  assert.ok(Buffer.byteLength(text, "utf8") > 16 * 1024, "fixture must exceed the fold threshold");
+  assert.ok(Buffer.byteLength(text, "utf8") < STRUCTURED_OUTPUT_MAX_BYTES);
+  assert.equal(isRenderableStructuredOutput(text), true);
+});
+
+test("ordinary large output is not mistaken for structured output", () => {
+  // Only a top-level `kind` marks a payload the renderer can draw; without it,
+  // folding is still the right call.
+  assert.equal(isRenderableStructuredOutput("数".repeat(20_000)), false);
+  assert.equal(isRenderableStructuredOutput(JSON.stringify({ rows: [1, 2, 3] })), false);
+  assert.equal(isRenderableStructuredOutput(JSON.stringify([{ kind: "chart_spec" }])), false);
+  assert.equal(isRenderableStructuredOutput("not json at all"), false);
 });

@@ -17,7 +17,13 @@ import { createTools } from "../tools/tool-registry.js";
 import { connectMcpServers, type McpBridgeResult } from "../mcp/portal-mcp-client.js";
 import { logDiagnostic } from "../protocol/channel.js";
 import { saveToolResult } from "../context/result-store.js";
-import { shouldFold, extractDigest, formatDigestText } from "../context/tabular-digest.js";
+import {
+  shouldFold,
+  extractDigest,
+  formatDigestText,
+  isRenderableStructuredOutput,
+  STRUCTURED_OUTPUT_MAX_BYTES,
+} from "../context/tabular-digest.js";
 import { CompactionSession } from "../context/compaction-session.js";
 
 export type EventSink = (event: NeutralAgentEvent) => void;
@@ -172,6 +178,23 @@ export class Cell {
           const rawText = textBlocks.map((block) => String(block.text ?? "")).join("\n");
           if (!shouldFold(rawText, foldThreshold)) {
             return undefined;
+          }
+
+          // A platform structured output is what the UI renders as a chart or a
+          // table. Folding replaces it with a digest, and the payload is gone
+          // from the transcript for good — unwrapping downstream cannot bring it
+          // back. Exempt it up to the persistence ceiling and pay the tokens.
+          if (isRenderableStructuredOutput(rawText)) {
+            const bytes = Buffer.byteLength(rawText, "utf8");
+            if (bytes <= STRUCTURED_OUTPUT_MAX_BYTES) {
+              return undefined;
+            }
+            // Past the ceiling, say so rather than passing a digest off as the
+            // chart: a renderer given a digest shows a broken chart with no
+            // indication that anything was dropped.
+            logDiagnostic(
+              `STRUCTURED_OUTPUT_TOO_LARGE: ${bytes}B exceeds ${STRUCTURED_OUTPUT_MAX_BYTES}B; folding`
+            );
           }
 
           try {

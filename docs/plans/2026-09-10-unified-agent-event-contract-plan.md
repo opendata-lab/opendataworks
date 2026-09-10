@@ -26,7 +26,8 @@
 | 0 | Pi task status 止血 | 是，不必等整体方案定稿 |
 | 0B | 修复历史 task/downstream 状态 | 是，在阶段 0 后 |
 | 1 | Pi output 解包和 legacy output 兼容 | 是 |
-| 2 | AgentRecordV1 schema、存储字段、reader 双读、删除 progress | 是 |
+| 2A | 事件词汇 schema + 删除 tool.progress（**已完成**） | 是 |
+| 2B | AgentRecordV1 信封、存储字段、reader 双读、fixtures（**未做**，依赖阶段 3/5） | 否 |
 | 3 | Claude/Pi writer 保存完整信封，Pi 切换 agent_event | 必须在阶段 2 后 |
 | 4 | 模型折叠与 UI 持久化解耦 | 内部修改必须原子上线 |
 | 5 | 历史直接重放并删除两套旧投影 | 前后端协同迁移 |
