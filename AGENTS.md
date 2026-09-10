@@ -238,10 +238,10 @@ When working in this repository, optimize for:
 
 ### Intelligent Query runtime engine selection
 
-- `DATAAGENT_RUNTIME_KIND` picks the engine and defaults to `claude_code`. A smoke run that does not set it exercises the Claude SDK path no matter what was changed in `dataagent-runtime-pi`, and the run still looks healthy — so a Pi change can be "verified" without any of it executing.
-- To smoke the Pi engine, set both:
-  - `DATAAGENT_RUNTIME_KIND=pi_agent_core`
-  - `DATAAGENT_RUNTIME_PI_DIR=<repo>/dataagent/dataagent-runtime-pi`
+- `DATAAGENT_RUNTIME_KIND` picks the engine and defaults to `pi_agent_core`, which is what production runs. It defaulted to `claude_code` until 2026-09-11; a smoke run from before then that did not set it exercised the Claude SDK path no matter what had changed in `dataagent-runtime-pi`, and still looked healthy.
+- To smoke the Claude SDK engine instead, set `DATAAGENT_RUNTIME_KIND=claude_code`.
+- For the Pi engine, point `DATAAGENT_RUNTIME_PI_DIR` at `<repo>/dataagent/dataagent-runtime-pi` when running outside a container.
+- Production runs Pi in the child-container topology (`DATAAGENT_SANDBOX_MODE`), which spawns the same `core/pi_runtime.py` inside the container — so a local Pi smoke exercises the same engine code, but not the container hop itself.
 - Build the runtime first (`npm run build` in `dataagent-runtime-pi`); the backend spawns the compiled output, so TypeScript edits do not take effect until it is rebuilt.
 - Confirm which engine actually ran before trusting the result: `da_agent_sdk_record.engine_kind` is `pi_agent_core` for Pi records, and the backend log shows `claude_agent_sdk._internal.transport.subprocess_cli` for the Claude path.
 - The default agent (`agent_default`) has no skills and no MCP servers, so it cannot query data or produce charts. Use `agent_opendataworks`, which carries the portal MCP server and the business-knowledge skills, and start portal-mcp with a reachable `DATAAGENT_PORTAL_MCP_BASE_URL` plus its frontdoor token.
