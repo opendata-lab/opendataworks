@@ -141,17 +141,6 @@ export class EventNormalizer {
         );
         break;
       }
-      case "tool_execution_update": {
-        events.push(
-          this.sm.createEvent("tool.progress", {
-            turn_id: this.currentTurnId,
-            tool_call_id: piEvent.toolCallId,
-            tool_name: piEvent.toolName,
-            progress: redact(piEvent.partialResult ?? {}),
-          })
-        );
-        break;
-      }
       case "tool_execution_end": {
         const { output, output_meta } = unwrapToolResult(piEvent.result);
         events.push(

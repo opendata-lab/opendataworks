@@ -501,3 +501,30 @@ test("cell properly initializes with history and executes single prompt", async 
   const answerDeltas = events.filter((e) => e.type === "content.delta");
   assert.ok(answerDeltas.length > 0);
 });
+
+
+
+test("the event stream carries no liveness-only events", async () => {
+  // tool.progress was removed from AgentEventType: nothing on either side
+  // rendered it, so it only filled the record table. The type system now
+  // rejects emitting it at all; this guards the runtime shape as well.
+  const init = initPayload(workspace());
+  const { events } = await runCell(init, textStreamFactory("hello"));
+  const types = events.map((e) => String(e.type));
+  assert.equal(types.includes("tool.progress"), false);
+  assert.ok(types.includes("run.completed"), "a real terminal event still arrives");
+});
+
+test("a heartbeat sink is optional and does not change the run outcome", async () => {
+  // Liveness moved to a protocol frame. The sink must be wired without becoming
+  // required, or every existing caller breaks.
+  const init = initPayload(workspace());
+  const events: NeutralAgentEvent[] = [];
+  const beats: Array<Record<string, unknown>> = [];
+  const cell = new Cell(textStreamFactory("hello") as never);
+
+  const result = await cell.run(init, (e) => events.push(e), (d) => beats.push(d));
+
+  assert.equal(result.terminal_status, "success");
+  assert.equal(beats.length, 0, "no slow tool in this run, so no beat is due");
+});

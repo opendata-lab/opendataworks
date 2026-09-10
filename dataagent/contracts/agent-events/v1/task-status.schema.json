@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendataworks/contracts/agent-events/v1/task-status.schema.json",
+  "title": "TaskStatusVocabulary",
+  "description": "Engines describe outcomes; the platform has its own statuses. Returning an engine word verbatim left the SSE stream open and made finish_task record a success as a failure.",
+  "type": "object",
+  "properties": {
+    "engine_outcome": { "enum": ["success", "failed", "error", "cancelled", "suspended"] },
+    "task_status_active": { "enum": ["waiting", "running", "waiting_input", "waiting_permission"] },
+    "task_status_terminal": { "enum": ["finished", "error", "suspended"] },
+    "downstream_status": { "enum": ["completed", "failed", "suspended"] }
+  },
+  "$comment": "Mapping lives in dataagent-backend/core/task_status.py: success->finished, cancelled->suspended, failed/error->error; finished->completed, error->failed, suspended->suspended."
+}

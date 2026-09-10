@@ -21,6 +21,8 @@ import { shouldFold, extractDigest, formatDigestText } from "../context/tabular-
 import { CompactionSession } from "../context/compaction-session.js";
 
 export type EventSink = (event: NeutralAgentEvent) => void;
+/** Liveness signal during a slow tool. Carries no state the UI renders. */
+export type HeartbeatSink = (detail: Record<string, unknown>) => void;
 
 export interface RunModelFactory {
   (providerId: string, modelId: string): { model: Model<Api>; streamFn: StreamFn };
@@ -43,7 +45,12 @@ export class Cell {
     this.agent?.abort();
   }
 
-  public async run(init: CellInitPayload, sink: EventSink): Promise<CellRunResult> {
+  public async run(
+    init: CellInitPayload,
+    sink: EventSink,
+    onHeartbeat: HeartbeatSink = () => {}
+  ): Promise<CellRunResult> {
+    const heartbeat = onHeartbeat;
     const sm = new RunStateMachine(init.run_id, init.task_id, init.run_id);
     const normalizer = new EventNormalizer(sm);
 
@@ -239,14 +246,11 @@ export class Cell {
           const toolCallId = piEvent.toolCallId;
           const toolName = piEvent.toolName;
           activeToolTimer = setInterval(() => {
-            emit(
-              sm.createEvent("tool.progress", {
-                turn_id: normalizer.turnId,
-                tool_call_id: toolCallId,
-                tool_name: toolName,
-                progress: { status: "executing" },
-              })
-            );
+            // A protocol frame, not an event: this exists to keep the control
+            // plane's idle timer alive during a slow tool, and nothing renders
+            // it. Emitting an event instead filled the record table with rows
+            // no consumer read.
+            heartbeat({ tool_call_id: toolCallId, tool_name: toolName });
           }, 15_000);
         } else if (piEvent.type === "tool_execution_end") {
           if (activeToolTimer) {
