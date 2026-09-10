@@ -198,6 +198,23 @@ export class EventNormalizer {
 }
 
 /** Public output_meta fields, in the snake_case the wire contract uses. */
+/**
+ * The fields a fold claims for itself, and so the only ones it can displace.
+ *
+ * Reading provenance off a `source_` prefix alone would promote a tool's own
+ * `source_error` or `source_count` into the contract by accident — the prefix
+ * says nothing about who wrote it.
+ */
+export const FOLD_PROVENANCE_FIELDS = new Set([
+  "folded",
+  "result_ref",
+  "storage_path",
+  "original_bytes",
+  "stored_bytes",
+  "folded_text_blocks",
+  "preserved_blocks",
+]);
+
 const DETAIL_FIELD_ALIASES: Record<string, string> = {
   exitCode: "exit_code",
   exit_code: "exit_code",
@@ -249,8 +266,9 @@ export function unwrapToolResult(result: unknown): {
   if (wrapper.details && typeof wrapper.details === "object" && !Array.isArray(wrapper.details)) {
     for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
       const alias = DETAIL_FIELD_ALIASES[key];
-      const displacedAlias = key.startsWith("source_")
-        ? DETAIL_FIELD_ALIASES[key.slice("source_".length)]
+      const displacedKey = key.startsWith("source_") ? key.slice("source_".length) : "";
+      const displacedAlias = FOLD_PROVENANCE_FIELDS.has(displacedKey)
+        ? DETAIL_FIELD_ALIASES[displacedKey]
         : undefined;
       if (alias) {
         meta[alias] = value;

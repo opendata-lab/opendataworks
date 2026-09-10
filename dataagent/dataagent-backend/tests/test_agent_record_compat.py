@@ -112,3 +112,41 @@ def test_a_source_prefix_over_an_unknown_field_is_still_namespaced():
     meta = normalized["output_meta"]
     assert meta["engine_details"]["source_type"] == "MYSQL"
     assert "source_type" not in {k for k in meta if k != "engine_details"}
+
+
+def test_a_source_name_a_fold_could_not_have_written_stays_namespaced():
+    """The prefix says nothing about who wrote it.
+
+    source_error and source_count are fields a tool is free to invent, so
+    promoting them would put a tool's own words where the contract promises
+    fold provenance.
+    """
+    normalized = normalize_tool_output(
+        {
+            "output": {
+                "content": [],
+                "details": {
+                    "source_error": "upstream said no",
+                    "source_count": 3,
+                    "source_result_ref": "res_a",
+                },
+            }
+        }
+    )
+
+    meta = normalized["output_meta"]
+    assert meta["engine_details"]["source_error"] == "upstream said no"
+    assert meta["engine_details"]["source_count"] == 3
+    assert "source_error" not in meta
+    assert "source_count" not in meta
+    # Only a field a fold actually claims counts as displaced provenance.
+    assert meta["source_result_ref"] == "res_a"
+
+
+def test_details_that_are_not_a_mapping_are_kept_whole():
+    """Mirrors the TypeScript rule so neither side silently discards evidence."""
+    normalized = normalize_tool_output(
+        {"output": {"content": [], "details": "plain text"}}
+    )
+
+    assert normalized["output_meta"]["engine_details"]["raw_details"] == "plain text"

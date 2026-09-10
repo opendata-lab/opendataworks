@@ -227,3 +227,38 @@ test("a second fold cannot overwrite the source the first one recorded", async (
   assert.equal(twice.result_ref, "res_outer");
   assert.equal(twice.source_result_ref, "res_root", "the first source must survive");
 });
+
+test("a source_ name a fold could not have written stays namespaced", async () => {
+  // The prefix says nothing about who wrote it. source_error and source_count
+  // are fields a tool is free to invent, and promoting them would put a tool's
+  // own words where the contract promises fold provenance.
+  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
+
+  const meta = unwrapToolResult({
+    content: [],
+    details: { source_error: "upstream said no", source_count: 3, source_result_ref: "res_a" },
+  }).output_meta!;
+
+  const engine = meta.engine_details as Record<string, unknown>;
+  assert.equal(engine.source_error, "upstream said no");
+  assert.equal(engine.source_count, 3);
+  assert.equal(meta.source_error, undefined);
+  assert.equal(meta.source_count, undefined);
+  // Only a field a fold actually claims is treated as displaced provenance.
+  assert.equal(meta.source_result_ref, "res_a");
+});
+
+test("details that are not an object are kept whole, not destructured", async () => {
+  // AgentToolResult types details as anything. Spreading a string turned it
+  // into numeric keys, an array into indices, and a number into nothing.
+  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+
+  assert.equal(mergeFoldProvenance("plain text", { folded: true }).raw_details, "plain text");
+  assert.deepEqual(mergeFoldProvenance([1, 2], { folded: true }).raw_details, [1, 2]);
+  assert.equal(mergeFoldProvenance(42, { folded: true }).raw_details, 42);
+  // A string must not survive as {"0":"p","1":"l",...}.
+  assert.equal(mergeFoldProvenance("ab", { folded: true })["0"], undefined);
+  // Nothing to keep means nothing invented.
+  assert.equal("raw_details" in mergeFoldProvenance(null, { folded: true }), false);
+  assert.equal("raw_details" in mergeFoldProvenance(undefined, { folded: true }), false);
+});

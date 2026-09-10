@@ -36,10 +36,19 @@ import { UiToolResultRegistry } from "./ui-tool-result-registry.js";
  * one nobody would ever notice. Displaced values keep a `source_` prefix.
  */
 export function mergeFoldProvenance(
-  toolMeta: Record<string, unknown> | null | undefined,
+  toolMeta: unknown,
   fold: Record<string, unknown>
 ): Record<string, unknown> {
-  const merged: Record<string, unknown> = { ...(toolMeta ?? {}) };
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+  const merged: Record<string, unknown> = isPlainObject(toolMeta) ? { ...toolMeta } : {};
+  if (toolMeta != null && !isPlainObject(toolMeta)) {
+    // A tool's details are typed as anything. Spreading a string turned it into
+    // numeric keys, an array into indices, and a number or boolean into nothing
+    // at all — so keep whatever it is whole instead of destructuring it.
+    merged.raw_details = toolMeta;
+  }
   for (const [key, value] of Object.entries(fold)) {
     const displaced = `source_${key}`;
     // One slot per field, and the first occupant keeps it. A second fold over
@@ -277,21 +286,18 @@ export class Cell {
             // Merging rather than replacing also matters past the persistence
             // ceiling: nothing is registered there, so this is the only copy
             // the transcript gets.
-            const foldedDetails = mergeFoldProvenance(
-              toolResult.details as Record<string, unknown> | undefined,
-              {
-                folded: true,
-                result_ref: saveOutcome.result_ref,
-                storage_path: saveOutcome.relative_path,
-                // What was folded, not what it compacted to: a tabular result
-                // is rewritten to JSONL on the way to disk, so the stored size
-                // understates the payload this digest stands in for.
-                original_bytes: uiBytes,
-                stored_bytes: saveOutcome.byte_size,
-                folded_text_blocks: textBlocks.length,
-                preserved_blocks: nonTextBlockCount,
-              }
-            );
+            const foldedDetails = mergeFoldProvenance(toolResult.details, {
+              folded: true,
+              result_ref: saveOutcome.result_ref,
+              storage_path: saveOutcome.relative_path,
+              // What was folded, not what it compacted to: a tabular result is
+              // rewritten to JSONL on the way to disk, so the stored size
+              // understates the payload this digest stands in for.
+              original_bytes: uiBytes,
+              stored_bytes: saveOutcome.byte_size,
+              folded_text_blocks: textBlocks.length,
+              preserved_blocks: nonTextBlockCount,
+            });
 
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;

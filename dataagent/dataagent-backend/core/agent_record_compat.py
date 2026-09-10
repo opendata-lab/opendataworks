@@ -17,6 +17,21 @@ from typing import Any
 # Mirrors DETAIL_FIELD_ALIASES in
 # dataagent-runtime-pi/src/kernel/event-normalizer.ts. The two must agree, or a
 # legacy record and a fresh one render with different metadata keys.
+# The fields a fold claims for itself, and so the only ones it can displace.
+# Reading provenance off a "source_" prefix alone would promote a tool's own
+# source_error or source_count into the contract by accident.
+_FOLD_PROVENANCE_FIELDS = frozenset(
+    {
+        "folded",
+        "result_ref",
+        "storage_path",
+        "original_bytes",
+        "stored_bytes",
+        "folded_text_blocks",
+        "preserved_blocks",
+    }
+)
+
 _DETAIL_FIELD_ALIASES = {
     "exitCode": "exit_code",
     "exit_code": "exit_code",
@@ -65,9 +80,10 @@ def normalize_tool_output(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(details, dict):
         for key, value in details.items():
             alias = _DETAIL_FIELD_ALIASES.get(key)
+            displaced_key = key[len("source_") :] if key.startswith("source_") else ""
             displaced = (
-                _DETAIL_FIELD_ALIASES.get(key[len("source_") :])
-                if key.startswith("source_")
+                _DETAIL_FIELD_ALIASES.get(displaced_key)
+                if displaced_key in _FOLD_PROVENANCE_FIELDS
                 else None
             )
             if alias:
@@ -78,6 +94,11 @@ def normalize_tool_output(data: dict[str, Any]) -> dict[str, Any]:
                 meta[f"source_{displaced}"] = value
             else:
                 engine_details[key] = value
+    elif details is not None:
+        # Mirrors the TypeScript rule: a tool's details are typed as anything,
+        # and a string or list is evidence too. Keep it whole rather than
+        # dropping it for not being a mapping.
+        engine_details["raw_details"] = details
     if engine_details:
         meta["engine_details"] = engine_details
 
