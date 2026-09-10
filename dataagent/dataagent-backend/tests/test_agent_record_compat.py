@@ -194,10 +194,28 @@ def test_the_two_readers_agree_on_a_matrix_of_wrapper_shapes():
     from pathlib import Path
 
     runtime = Path(__file__).resolve().parents[2] / "dataagent-runtime-pi"
-    if not (runtime / "dist" / "src" / "kernel" / "event-normalizer.js").exists():
-        import pytest
+    built = runtime / "dist" / "src" / "kernel" / "event-normalizer.js"
 
-        pytest.skip("pi runtime is not built")
+    # Build when the output is missing or older than any source. dist/ is
+    # gitignored, so trusting its presence meant this test skipped on a clean
+    # checkout and compared stale JavaScript against current Python everywhere
+    # else — a guard that reports nothing is worse than one that is red.
+    sources = list((runtime / "src").rglob("*.ts"))
+    assert sources, "pi runtime sources are missing"
+    newest = max(path.stat().st_mtime for path in sources)
+    if not built.exists() or built.stat().st_mtime < newest:
+        build = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=runtime,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert build.returncode == 0, (
+            "the pi runtime must build for the two readers to be compared:\n"
+            f"{build.stdout}\n{build.stderr}"
+        )
+    assert built.exists(), f"build produced no {built}"
 
     cases = [
         {"content": [], "details": {"exitCode": 0}},
@@ -223,13 +241,21 @@ def test_the_two_readers_agree_on_a_matrix_of_wrapper_shapes():
         {"content": [], "details": {"constructor": "c"}},
         {"content": [], "details": {"valueOf": 1}},
         {"content": [], "details": {"hasOwnProperty": True}},
+        # A platform structured output carries kind at the top level. The one
+        # that also has a content field is the case the two readers disagreed
+        # on, and comparing only output_meta would have missed it.
+        {"kind": "sql_execution", "content": "unrelated", "details": {"count": 1}},
+        {"kind": "sql_execution", "content": "unrelated"},
+        {"kind": "chart_spec", "details": {"count": 1}},
+        {"kind": "query_result", "rows": [1, 2]},
     ]
 
     module = (runtime / "dist" / "src" / "kernel" / "event-normalizer.js").as_uri()
     script = (
         f"const {{unwrapToolResult}} = await import({module!r});"
-        "console.log(JSON.stringify("
-        "JSON.parse(process.env.CASES).map((c) => unwrapToolResult(c).output_meta)));"
+        "console.log(JSON.stringify(JSON.parse(process.env.CASES)"
+        ".map((c) => { const r = unwrapToolResult(c);"
+        " return [r.output, r.output_meta]; })));"
     )
     completed = subprocess.run(
         ["node", "--input-type=module", "-e", script],
@@ -242,9 +268,13 @@ def test_the_two_readers_agree_on_a_matrix_of_wrapper_shapes():
     assert completed.returncode == 0, completed.stderr
     ts_metas = json.loads(completed.stdout)
 
-    py_metas = [
-        normalize_tool_output({"output": case}).get("output_meta") for case in cases
-    ]
+    py_pairs = []
+    for case in cases:
+        normalized = normalize_tool_output({"output": case})
+        py_pairs.append([normalized.get("output"), normalized.get("output_meta")])
 
-    for case, ts_meta, py_meta in zip(cases, ts_metas, py_metas):
-        assert ts_meta == py_meta, f"readers disagree on {case!r}: {ts_meta!r} vs {py_meta!r}"
+    for case, ts_pair, py_pair in zip(cases, ts_metas, py_pairs):
+        assert ts_pair == py_pair, (
+            f"readers disagree on {case!r}:\n  TS  output/meta = {ts_pair!r}\n"
+            f"  PY  output/meta = {py_pair!r}"
+        )

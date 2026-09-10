@@ -271,9 +271,18 @@ export function unwrapToolResult(result: unknown): {
     return { output: result ?? null, output_meta: null };
   }
 
-  const wrapper = result as { content?: unknown; details?: unknown };
-  if (!("content" in wrapper) && !("details" in wrapper)) {
-    // Already a plain payload (a platform object carrying `kind`, say).
+  const wrapper = result as { content?: unknown; details?: unknown; kind?: unknown };
+  // A platform structured output carries `kind` at the top level and is already
+  // the payload. The comment here always said so, but the condition only caught
+  // it when the payload had neither field — one that happened to carry `content`
+  // was taken apart, and the Python reader kept it whole, so the same record
+  // meant two things.
+  //
+  // Object.hasOwn, not `in`: `in` answers for inherited names too.
+  const isLegacyWrapper =
+    (Object.hasOwn(wrapper, "content") || Object.hasOwn(wrapper, "details")) &&
+    !Object.hasOwn(wrapper, "kind");
+  if (!isLegacyWrapper) {
     return { output: result, output_meta: null };
   }
 
