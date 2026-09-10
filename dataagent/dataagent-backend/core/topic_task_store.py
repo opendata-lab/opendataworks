@@ -184,7 +184,10 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                         except Exception:
                             block["input"] = input_json
 
-        elif record_type == "pi_event":
+        elif record_type in ("pi_event", "agent_event"):
+            # "pi_event" is the pre-envelope name. Both carry the same neutral
+            # events, so they project identically; only the stored envelope
+            # differs.
             # Neutral events from the Pi data plane. Projected into exactly the
             # same block shapes the SDK "stream" branch above produces, so a
             # topic whose turns were executed by different engines still renders
@@ -2337,15 +2340,26 @@ class TopicTaskStore:
         record_type: str,
         event_type: str | None,
         data: dict[str, Any],
+        envelope: dict[str, Any] | None = None,
     ) -> None:
+        """Persist one record, with the producer envelope when one is supplied.
+
+        The envelope is optional so the Claude writer and older callers keep
+        working; a row without it is a legacy row, which the reader tells apart
+        by contract_version being NULL.
+        """
         self._ensure_ready()
+        env = envelope or {}
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO da_agent_sdk_record (topic_id, task_id, turn_index, record_type, event_type, data)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO da_agent_sdk_record
+                        (topic_id, task_id, turn_index, record_type, event_type, data,
+                         contract_version, engine_kind, event_id, run_id,
+                         task_attempt_id, engine_sequence, occurred_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         topic_id,
@@ -2354,6 +2368,13 @@ class TopicTaskStore:
                         record_type,
                         event_type,
                         json.dumps(data, ensure_ascii=False, default=_json_default),
+                        env.get("contract_version"),
+                        env.get("engine_kind"),
+                        env.get("event_id"),
+                        env.get("run_id"),
+                        env.get("task_attempt_id"),
+                        env.get("engine_sequence"),
+                        env.get("occurred_at"),
                     ),
                 )
             conn.commit()

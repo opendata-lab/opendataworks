@@ -23,9 +23,25 @@ the existing error surfacing keeps working unchanged across both data planes.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_occurred_at(value: Any) -> Any:
+    """Producer timestamp as a datetime, or None if it is not usable.
+
+    A malformed timestamp must not cost us the record: ordering falls back to
+    the row's own created_at, which is close enough for display.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 # Payload keys are deliberately aligned with the SDK path's projected block
 # fields (``output`` / ``is_error``) rather than inventing parallel names
@@ -96,13 +112,26 @@ class PiEventWriter:
         # handling need, so coerce rather than drop.
         raw_payload = event.get("payload")
         payload = dict(raw_payload) if isinstance(raw_payload, dict) else {}
+        # The envelope was previously discarded, so a stored record could not be
+        # deduplicated, ordered against its producer, or attributed to an engine
+        # — everything history replay needs once it stops going through a second
+        # projection.
         self._store.append_sdk_record(
             task_id=self._task_id,
             topic_id=self._topic_id,
             turn_index=self._turn_index,
-            record_type="pi_event",
+            record_type="agent_event",
             event_type=event_type,
             data=payload,
+            envelope={
+                "contract_version": 1,
+                "engine_kind": "pi_agent_core",
+                "event_id": str(event.get("event_id") or "") or None,
+                "run_id": str(event.get("run_id") or "") or None,
+                "task_attempt_id": str(event.get("task_attempt_id") or "") or None,
+                "engine_sequence": sequence if isinstance(sequence, int) else None,
+                "occurred_at": _parse_occurred_at(event.get("timestamp")),
+            },
         )
 
         if event_type == "run.failed":
