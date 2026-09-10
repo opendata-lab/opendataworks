@@ -121,6 +121,15 @@ class Settings(BaseSettings):
     dataagent_context_max_inline_result_bytes: int = 16 * 1024
     dataagent_context_protect_tail_turns: int = 6
     dataagent_context_max_context_tokens: int = 64_000
+    # Compaction watermarks, as fractions of max_context_tokens. Pruning runs
+    # only when the context crosses the high mark, because pi-ai caches the
+    # prompt prefix and rewriting history on every turn invalidates it.
+    dataagent_context_prune_high_watermark_ratio: float = 0.90
+    dataagent_context_prune_target_ratio: float = 0.70
+    # Prompt cache retention passed explicitly to the Cell: short | long | off.
+    # DISABLE_PROMPT_CACHING never reached the Pi runtime, so caching was on
+    # while the backend believed it was off.
+    dataagent_pi_cache_retention: str = "short"
 
     # ---- Topic runtime root / sandbox ----
     # Filesystem root visible to the current process. Containerized backend

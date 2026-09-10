@@ -65,6 +65,18 @@ export interface GovernanceSettings {
   max_inline_result_bytes?: number;
   protect_tail_turns?: number;
   max_context_tokens?: number;
+  /** Fraction of max_context_tokens that triggers a compaction. */
+  prune_high_watermark_ratio?: number;
+  /** Fraction of max_context_tokens a compaction must reach. */
+  prune_target_ratio?: number;
+  /**
+   * Prompt cache retention passed explicitly to pi-ai.
+   *
+   * pi-ai defaults to "short" when nothing is supplied, so caching was on while
+   * the backend believed DISABLE_PROMPT_CACHING had turned it off — a variable
+   * the Pi runtime never reads.
+   */
+  cache_retention?: "short" | "long" | "off";
 }
 
 export interface CellInitPayload {

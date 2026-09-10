@@ -74,13 +74,11 @@ class PiRunContext:
     idle_timeout_seconds: int = 300
     max_turns: int = 30
     max_tool_calls: int = 50
-    # Context governance. Field names mirror the ``governance_settings`` wire
-    # contract in ``src/protocol/frames.ts`` so the Cell reads them directly;
-    # a rename on either side has to move in lockstep or the Cell silently
-    # falls back to its own defaults.
-    max_inline_result_bytes: int = 16 * 1024
-    protect_tail_turns: int = 6
-    max_context_tokens: int = 64_000
+    # Context governance, assembled by core.context_governance so the wire
+    # contract has one producer. Field names mirror ``governance_settings`` in
+    # ``src/protocol/frames.ts``; a rename on either side has to move in
+    # lockstep or the Cell silently falls back to its own defaults.
+    governance_settings: dict[str, Any] = field(default_factory=dict)
 
     def to_init_payload(self) -> dict[str, Any]:
         """Serialize for the ``cell.init`` frame.
@@ -116,11 +114,7 @@ class PiRunContext:
                 "max_turns": self.max_turns,
                 "max_tool_calls": self.max_tool_calls,
             },
-            "governance_settings": {
-                "max_inline_result_bytes": self.max_inline_result_bytes,
-                "protect_tail_turns": self.protect_tail_turns,
-                "max_context_tokens": self.max_context_tokens,
-            },
+            "governance_settings": dict(self.governance_settings),
         }
 
 

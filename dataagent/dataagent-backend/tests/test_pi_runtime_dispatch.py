@@ -298,11 +298,14 @@ async def test_governance_settings_flow_from_settings_into_cell_init(monkeypatch
         update_settings(originals)
 
     governance = captured["ctx"].to_init_payload()["governance_settings"]
-    assert governance == {
-        "max_inline_result_bytes": 4096,
-        "protect_tail_turns": 3,
-        "max_context_tokens": 12_345,
-    }
+    assert governance["max_inline_result_bytes"] == 4096
+    assert governance["protect_tail_turns"] == 3
+    assert governance["max_context_tokens"] == 12_345
+    # Watermarks and cache retention ride in the same section, so the Cell has a
+    # single source for every governance decision.
+    assert governance["prune_high_watermark_ratio"] == 0.90
+    assert governance["prune_target_ratio"] == 0.70
+    assert governance["cache_retention"] in {"short", "long", "off"}
 
 
 
