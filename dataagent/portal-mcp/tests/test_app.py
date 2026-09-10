@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from starlette.testclient import TestClient
@@ -283,3 +284,214 @@ async def test_query_readonly_forwards_default_limit():
         },
     )
     assert result.structuredContent["kind"] == "query_result"
+
+
+@pytest.mark.anyio
+async def test_published_tool_schemas_contain_no_ref_indirection():
+    """Every published schema must be self-contained.
+
+    FastMCP derives schemas from `params: SomeModel` signatures, which parks the
+    real fields under `$defs` and leaves `properties.params` as a `$ref`.
+    Clients that rebuild the schema keeping only type/properties/required — the
+    pi-ai non-strict Anthropic adapter does — drop `$defs` and hand the model a
+    dangling pointer, so it cannot see field names and guesses them.
+    """
+    import json
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = await mcp.list_tools()
+    assert tools, "expected registered tools"
+
+    offenders = []
+    for tool in tools:
+        text = json.dumps(tool.inputSchema)
+        if '"$ref"' in text or "$defs" in tool.inputSchema:
+            offenders.append(tool.name)
+    assert not offenders, f"tools still publish $ref/$defs indirection: {offenders}"
+
+
+@pytest.mark.anyio
+async def test_inlined_schema_keeps_fields_and_extra_forbid():
+    """Inlining must not weaken what the schema promises."""
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+
+    params = tools["portal_get_table_ddl"].inputSchema["properties"]["params"]
+    assert set(params["properties"]) == {"database", "table", "table_id"}
+    # extra="forbid" survives as additionalProperties:false, which is what stops
+    # a guessed field like table_name from being silently accepted.
+    assert params["additionalProperties"] is False
+    assert params["properties"]["database"]["description"]
+
+
+@pytest.mark.anyio
+async def test_published_schemas_have_no_ref_at_any_depth():
+    """Recursively, not just at the top level.
+
+    A dangling pointer nested inside array items or a sub-object is just as
+    unusable to the model as one on the root.
+    """
+    import json
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = await mcp.list_tools()
+    assert tools
+
+    offenders = [
+        tool.name
+        for tool in tools
+        if '"$ref"' in json.dumps(tool.inputSchema) or '"$defs"' in json.dumps(tool.inputSchema)
+    ]
+    assert not offenders, f"tools still publish $ref/$defs: {offenders}"
+
+
+@pytest.mark.anyio
+async def test_inlined_schema_keeps_fields_and_extra_forbid():
+    """Inlining must not weaken what the schema promises."""
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+
+    params = tools["portal_get_table_ddl"].inputSchema["properties"]["params"]
+    assert set(params["properties"]) == {"database", "table", "table_id"}
+    # extra="forbid" survives as additionalProperties:false — this is what stops
+    # a guessed field like table_name from being silently accepted.
+    assert params["additionalProperties"] is False
+    assert params["properties"]["database"]["description"]
+
+
+@pytest.mark.anyio
+async def test_nested_model_is_expanded_with_real_content():
+    """Asserting 'no $ref' alone would also pass if the ref became {}."""
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    create = tools.get("portal_create_table")
+    if create is None:
+        pytest.skip("portal_create_table not registered")
+
+    params = create.inputSchema["properties"]["params"]
+    columns = params["properties"]["columns"]
+    item = columns["items"] if "items" in columns else columns["anyOf"][0]["items"]
+    assert item["properties"], "nested column model lost its fields"
+    # Aliases must survive: the backend payload depends on camelCase names.
+    assert "columnName" in item["properties"] or "column_name" in item["properties"]
+    assert item.get("additionalProperties") is False
+
+
+def test_inliner_refuses_ref_with_sibling_keys():
+    """Under 2020-12 a $ref and its siblings are a conjunction.
+
+    Merging by dict-update would let a sibling silently relax the target's
+    constraint, so this shape must fail loudly instead.
+    """
+    from portal_mcp.app import SchemaInlineError, _inline_refs
+
+    schema = {
+        "$defs": {"S": {"type": "string", "minLength": 5}},
+        "properties": {"x": {"$ref": "#/$defs/S", "minLength": 2}},
+        "type": "object",
+    }
+    with pytest.raises(SchemaInlineError, match="sibling"):
+        _inline_refs(schema, schema)
+
+
+def test_inliner_refuses_recursive_and_unresolvable_refs():
+    """Both would otherwise publish a schema promising less than the model."""
+    from portal_mcp.app import SchemaInlineError, _inline_refs
+
+    recursive = {
+        "$defs": {"Node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/Node"}}}},
+        "properties": {"root": {"$ref": "#/$defs/Node"}},
+        "type": "object",
+    }
+    with pytest.raises(SchemaInlineError, match="recursive"):
+        _inline_refs(recursive, recursive)
+
+    dangling = {"$defs": {}, "properties": {"x": {"$ref": "#/$defs/Missing"}}, "type": "object"}
+    with pytest.raises(SchemaInlineError):
+        _inline_refs(dangling, dangling)
+
+
+def test_inliner_refuses_boolean_schema_target():
+    """true/false are valid JSON Schema documents, but not a shape we rewrite."""
+    from portal_mcp.app import SchemaInlineError, _inline_refs
+
+    schema = {"$defs": {"B": True}, "properties": {"x": {"$ref": "#/$defs/B"}}, "type": "object"}
+    with pytest.raises(SchemaInlineError, match="expected an object schema"):
+        _inline_refs(schema, schema)
+
+
+@pytest.mark.anyio
+async def test_calls_still_enforce_pydantic_semantics_after_inlining():
+    """The published schema is a separate object from the one that validates.
+
+    Tool calls go through fn_metadata + the original model, so extra="forbid"
+    and cross-field validators must still reject bad input.
+    """
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+
+    with pytest.raises(Exception):
+        # table_name is not a field; extra="forbid" must reject it.
+        await mcp.call_tool(
+            "portal_get_table_ddl", {"params": {"database": "public", "table_name": "t"}}
+        )
+
+    with pytest.raises(Exception):
+        # Cross-field validator: table alone is not a valid locator.
+        await mcp.call_tool("portal_get_table_ddl", {"params": {"table": "t"}})
+
+
+class _RecursiveProbeInput(BaseModel):
+    """A shape the inliner refuses: a model that references itself."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None)
+    child: "_RecursiveProbeInput | None" = Field(default=None)
+
+
+_RecursiveProbeInput.model_rebuild()
+
+
+@pytest.mark.anyio
+async def test_an_uninlinable_tool_does_not_take_down_the_server():
+    """One bad model must not make every tool unreachable.
+
+    _inline_tool_schema_refs runs at import time, so raising would stop the
+    service from starting at all. The offending tool keeps the schema FastMCP
+    produced — no worse than before inlining existed — and the rest are fixed.
+    """
+    from portal_mcp.app import _inline_tool_schema_refs
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+
+    @mcp.tool(name="portal_recursive_probe")
+    async def probe(params: _RecursiveProbeInput) -> dict:
+        """recursive on purpose"""
+        return {}
+
+    # Must not raise: the server still comes up.
+    _inline_tool_schema_refs(mcp)
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    import json
+
+    # The offender keeps its original (still-referencing) schema...
+    assert "$ref" in json.dumps(tools["portal_recursive_probe"].inputSchema)
+    # ...while every other tool is still correctly inlined.
+    assert "$ref" not in json.dumps(tools["portal_get_table_ddl"].inputSchema)
+
+
+@pytest.mark.anyio
+async def test_strict_mode_raises_so_ci_blocks_the_regression():
+    """Production degrades; tests must not."""
+    from portal_mcp.app import SchemaInlineError, _inline_tool_schema_refs
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+
+    @mcp.tool(name="portal_recursive_probe")
+    async def probe(params: _RecursiveProbeInput) -> dict:
+        """recursive on purpose"""
+        return {}
+
+    with pytest.raises(SchemaInlineError):
+        _inline_tool_schema_refs(mcp, strict=True)

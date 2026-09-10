@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import contextlib
+import json
+import logging
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -15,6 +17,9 @@ from .backend_client import BackendApiClient
 from .config import Settings, load_settings
 from .scope_context import set_data_scope_header, set_operator_header
 from .service import PortalToolService
+
+
+logger = logging.getLogger(__name__)
 
 
 class SearchTablesInput(BaseModel):
@@ -554,7 +559,120 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
             payload["clusterId"] = payload.pop("cluster_id")
         return await service.analyze_sql(payload)
 
+    _inline_tool_schema_refs(mcp)
     return mcp
+
+
+def _resolve_json_pointer(root: dict[str, Any], ref: str) -> Any:
+    """Resolve a local JSON Pointer such as ``#/$defs/TableDdlInput``."""
+    node: Any = root
+    for raw in ref[2:].split("/"):
+        # RFC 6901 escapes: ~1 is "/", ~0 is "~". Order matters.
+        key = raw.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+class SchemaInlineError(RuntimeError):
+    """A tool schema has a shape this inliner refuses to rewrite."""
+
+
+def _inline_refs(schema: Any, root: dict[str, Any], seen: frozenset[str] = frozenset()) -> Any:
+    """Replace local ``$ref`` pointers with their definitions and drop ``$defs``.
+
+    Deliberately narrow. This handles the one shape Pydantic emits — a plain
+    ``{"$ref": "#/$defs/Name"}`` with no siblings, resolving to an object
+    schema — and raises on anything else instead of guessing.
+
+    A general JSON Schema inliner is not what this needs to be, and pretending
+    otherwise is how it would go wrong quietly: under 2020-12 a ``$ref`` and its
+    siblings are a conjunction, so merging them by dict-update lets a sibling
+    ``minLength: 2`` silently relax a target's ``minLength: 5``. Recursive
+    models, boolean schemas (``true``/``false`` are valid targets) and dangling
+    pointers have the same problem — every "safe degradation" here would publish
+    a schema that promises less than the model enforces.
+
+    Failing at startup instead means a future model shape breaks the build, not
+    a production run.
+    """
+    if isinstance(schema, list):
+        return [_inline_refs(item, root, seen) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str):
+        if not ref.startswith("#/"):
+            raise SchemaInlineError(f"non-local $ref is not supported: {ref!r}")
+        if ref in seen:
+            raise SchemaInlineError(f"recursive $ref is not supported: {ref!r}")
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        if siblings:
+            # Merging would change what the schema promises; see docstring.
+            raise SchemaInlineError(
+                f"$ref {ref!r} carries sibling keys {sorted(siblings)}; refusing to merge"
+            )
+        target = _resolve_json_pointer(root, ref)
+        if not isinstance(target, dict):
+            raise SchemaInlineError(
+                f"$ref {ref!r} resolves to {type(target).__name__}, expected an object schema"
+            )
+        return _inline_refs(target, root, seen | {ref})
+
+    return {
+        key: _inline_refs(value, root, seen)
+        for key, value in schema.items()
+        if key != "$defs"
+    }
+
+
+def _inline_tool_schema_refs(mcp: FastMCP, *, strict: bool = False) -> None:
+    """Publish tool schemas with no ``$ref`` indirection.
+
+    FastMCP derives each tool's schema from its ``params: SomeModel`` signature,
+    which puts the real fields under ``$defs`` and leaves ``properties.params``
+    as a ``$ref``. Some clients rebuild the schema keeping only type/properties/
+    required — pi-ai's non-strict Anthropic adapter does exactly this — which
+    drops ``$defs`` and hands the model a pointer into nothing. The model then
+    cannot see the field names and guesses them (``table_name`` instead of
+    ``table``), and the server rejects the call under ``extra="forbid"``.
+
+    Inlining here keeps every Pydantic guarantee intact — cross-field
+    validators, aliases, ``extra="forbid"`` all still run on the real models —
+    while making the published schema self-contained for every client, not just
+    the one runtime that happens to compensate client-side.
+
+    A model shape the inliner refuses to rewrite is a bug to fix, but it is not
+    worth taking the service down for: this runs at import time, so raising
+    would leave every tool unreachable instead of one tool's schema unimproved.
+    Such a tool is therefore left exactly as FastMCP produced it — no worse than
+    before this function existed — and the failure is logged. ``strict=True``
+    turns the same condition into an error so tests and CI still block it before
+    it can ship.
+    """
+    for tool in mcp._tool_manager.list_tools():  # noqa: SLF001 - manager itself is private
+        schema = tool.parameters
+        if not isinstance(schema, dict) or "$defs" not in schema:
+            continue
+        try:
+            inlined = _inline_refs(schema, schema)
+            if '"$ref"' in json.dumps(inlined):
+                # Dropping $defs while a pointer survives would publish exactly
+                # the dangling reference this function exists to prevent.
+                raise SchemaInlineError(f"a $ref survived inlining for {tool.name!r}")
+        except SchemaInlineError as exc:
+            if strict:
+                raise
+            logger.error(
+                "portal-mcp: publishing tool %r with un-inlined schema: %s. "
+                "Clients that drop $defs will not see its field names.",
+                tool.name,
+                exc,
+            )
+            continue
+        tool.parameters = inlined
 
 
 def create_app(
