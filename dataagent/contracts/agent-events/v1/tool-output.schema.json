@@ -34,7 +34,7 @@
         "stored_bytes": { "type": "integer", "minimum": 0 },
         "fold": {
           "type": "object",
-          "description": "Fold provenance. Nested so it cannot collide with a field the tool reports about itself.",
+          "description": "Fold provenance, nested so it cannot collide with a field the tool reports about itself. Its presence is what marks a record as folded. Records written before this shape put the same fields at the top level alongside model_context_folded: there, a flat result_ref belongs to the fold, and without that marker it belongs to the tool. Either way a top-level result_ref on a record carrying `fold` is the tool's own.",
           "additionalProperties": true
         },
         "skill_name": { "type": "string" },
