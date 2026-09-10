@@ -326,11 +326,14 @@ function projectColumns(
   row: Record<string, unknown>,
   columns: string[]
 ): Record<string, unknown> {
-  const filtered: Record<string, unknown> = {};
+  // Null-prototype: the read side already guards against inherited names, but
+  // writing `__proto__` to an ordinary object sets its prototype rather than
+  // the column, so a requested column vanished from the projection.
+  const filtered: Record<string, unknown> = Object.create(null);
   for (const col of columns) {
     if (Object.prototype.hasOwnProperty.call(row, col)) {
       filtered[col] = row[col];
     }
   }
-  return filtered;
+  return { ...filtered };
 }

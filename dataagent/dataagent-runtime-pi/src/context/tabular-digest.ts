@@ -139,7 +139,11 @@ export function extractDigest(
     // fully in memory, so a prefix bought nothing while reporting a max of 99
     // for a dataset whose real max sat in row 101 — a wrong number is worse
     // than a slow one when the model reasons numerically on it.
-    const columnStats: Record<string, ColumnStat> = {};
+    // Null-prototype: column names come from query results, and assigning
+    // `__proto__` to an ordinary object sets its prototype instead of storing a
+    // stat — the digest then advertised a column it had silently dropped from
+    // both stats and preview.
+    const columnStats: Record<string, ColumnStat> = Object.create(null);
 
     for (const col of columns) {
       const isNum = col.type === "INTEGER" || col.type === "DECIMAL";
@@ -181,7 +185,7 @@ export function extractDigest(
       columns,
       preview_head: previewHead,
       preview_tail: previewTail,
-      column_stats: columnStats,
+      column_stats: { ...columnStats },
       notice,
     };
   }
@@ -221,7 +225,7 @@ function capRowCells(row: Record<string, unknown>): Record<string, unknown> {
   if (!row || typeof row !== "object") {
     return row;
   }
-  const capped: Record<string, unknown> = {};
+  const capped: Record<string, unknown> = Object.create(null);
   for (const [key, value] of Object.entries(row)) {
     if (typeof value === "string" && value.length > MAX_CELL_CHARS) {
       capped[key] = `${value.slice(0, MAX_CELL_CHARS)}…[+${value.length - MAX_CELL_CHARS} chars, use fetch_tool_result]`;
@@ -229,7 +233,7 @@ function capRowCells(row: Record<string, unknown>): Record<string, unknown> {
       capped[key] = value;
     }
   }
-  return capped;
+  return { ...capped };
 }
 
 

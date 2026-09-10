@@ -142,3 +142,28 @@ test("ordinary large output is not mistaken for structured output", () => {
   assert.equal(isRenderableStructuredOutput(JSON.stringify([{ kind: "chart_spec" }])), false);
   assert.equal(isRenderableStructuredOutput("not json at all"), false);
 });
+
+test("a column named like a prototype member is not dropped from its own digest", () => {
+  // Column names come from query results. Writing `__proto__` into an ordinary
+  // accumulator set its prototype instead of storing anything, so the digest
+  // listed the column and then omitted it from both stats and preview — it
+  // described data the model was never shown.
+  const rows = JSON.parse('[{"__proto__": 7, "x": 2}, {"__proto__": 8, "x": 3}]');
+  const digest = extractDigest(JSON.stringify(rows), { resultRef: "r", toolName: "t" });
+  assert.equal(digest.is_tabular, true);
+  if (!digest.is_tabular) return;
+
+  const declared = digest.columns.map((c) => c.name);
+  assert.ok(declared.includes("__proto__"));
+  // Every column it declares, it must also describe.
+  for (const name of declared) {
+    assert.ok(
+      Object.hasOwn(digest.column_stats ?? {}, name),
+      `${name} is declared but has no stats`
+    );
+  }
+  const first = digest.preview_head![0];
+  assert.equal(Object.getOwnPropertyDescriptor(first, "__proto__")?.value, 7);
+  assert.equal(Object.getPrototypeOf(first), Object.prototype);
+  assert.equal(({} as Record<string, unknown>).x, undefined);
+});
