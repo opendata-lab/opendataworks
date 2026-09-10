@@ -66,7 +66,7 @@
                 </template>
                 <template v-else>
                   <input
-                    :value="columnTextFilters[column] || ''"
+                    :value="columnTextFilters.get(column) || ''"
                     type="text"
                     class="result-table-search result-table-filter-text"
                     placeholder="列内过滤…"
@@ -125,8 +125,12 @@ const keyword = ref('')
 const sortColumn = ref('')
 const sortDirection = ref('')
 const openFilterColumn = ref('')
-const columnValueFilters = reactive({})
-const columnTextFilters = reactive({})
+// Maps, not plain objects: a column can be called `constructor` or `toString`,
+// and an object lookup answers for those with something inherited. Sorting read
+// the truthy result as "numeric", the text filter rendered a function's source,
+// and opening a value filter threw because Object.prototype is not iterable.
+const columnValueFilters = reactive(new Map())
+const columnTextFilters = reactive(new Map())
 const page = ref(1)
 const pageSize = ref(20)
 const { copiedKey: copiedAction, copyWithFeedback } = useCopyFeedback()
@@ -160,11 +164,11 @@ const searchedRows = computed(() => {
 const filteredRows = computed(() => {
   let rows = searchedRows.value
   for (const column of props.columns) {
-    const checked = columnValueFilters[column]
+    const checked = columnValueFilters.get(column)
     if (checked && checked.size) {
       rows = rows.filter((row) => checked.has(cellText(row?.[column])))
     }
-    const textFilter = String(columnTextFilters[column] || '').toLowerCase()
+    const textFilter = String(columnTextFilters.get(column) || '').toLowerCase()
     if (textFilter) {
       rows = rows.filter((row) => cellText(row?.[column]).toLowerCase().includes(textFilter))
     }
@@ -175,7 +179,7 @@ const filteredRows = computed(() => {
 // Memoize numeric detection per column so repeated sorts/paging don't rescan
 // every row on each recompute; only recomputed when the underlying data changes.
 const numericColumnCache = computed(() => {
-  const result = {}
+  const result = new Map()
   for (const column of props.columns) {
     let hasNumber = false
     let numeric = true
@@ -193,11 +197,11 @@ const numericColumnCache = computed(() => {
       numeric = false
       break
     }
-    result[column] = numeric && hasNumber
+    result.set(column, numeric && hasNumber)
   }
   return result
 })
-const isNumericColumn = (column) => numericColumnCache.value[column] || false
+const isNumericColumn = (column) => numericColumnCache.value.get(column) || false
 
 const sortedRows = computed(() => {
   if (!sortColumn.value || !sortDirection.value) return filteredRows.value
@@ -227,8 +231,8 @@ const pagedRows = computed(() => {
 
 const filterActive = computed(() => {
   if (keyword.value) return true
-  if (Object.values(columnTextFilters).some((value) => String(value || '').trim())) return true
-  return Object.values(columnValueFilters).some((checked) => checked && checked.size)
+  if ([...columnTextFilters.values()].some((value) => String(value || '').trim())) return true
+  return [...columnValueFilters.values()].some((checked) => checked && checked.size)
 })
 
 watch([filteredRows, pageSize], () => {
@@ -258,48 +262,47 @@ const sortIcon = (column) => {
 }
 
 const distinctValueCache = computed(() => {
-  const cache = {}
+  const cache = new Map()
   for (const column of props.columns) {
     const values = new Set()
     for (const row of props.rows) {
       values.add(cellText(row?.[column]))
       if (values.size > DISTINCT_LIMIT) break
     }
-    cache[column] = [...values].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'))
+    cache.set(column, [...values].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN')))
   }
   return cache
 })
 
-const distinctValues = (column) => distinctValueCache.value[column] || []
+const distinctValues = (column) => distinctValueCache.value.get(column) || []
 
 const toggleFilterPanel = (column) => {
   openFilterColumn.value = openFilterColumn.value === column ? '' : column
 }
 
 const isColumnFiltered = (column) => {
-  if (columnValueFilters[column]?.size) return true
-  return Boolean(String(columnTextFilters[column] || '').trim())
+  if (columnValueFilters.get(column)?.size) return true
+  return Boolean(String(columnTextFilters.get(column) || '').trim())
 }
 
-const isValueChecked = (column, value) => Boolean(columnValueFilters[column]?.has(value))
+const isValueChecked = (column, value) => Boolean(columnValueFilters.get(column)?.has(value))
 
 const toggleFilterValue = (column, value) => {
-  const current = columnValueFilters[column] || new Set()
-  const next = new Set(current)
+  const next = new Set(columnValueFilters.get(column) || [])
   if (next.has(value)) next.delete(value)
   else next.add(value)
-  columnValueFilters[column] = next
+  columnValueFilters.set(column, next)
   page.value = 1
 }
 
 const setColumnTextFilter = (column, value) => {
-  columnTextFilters[column] = String(value || '')
+  columnTextFilters.set(column, String(value || ''))
   page.value = 1
 }
 
 const clearColumnFilter = (column) => {
-  delete columnValueFilters[column]
-  delete columnTextFilters[column]
+  columnValueFilters.delete(column)
+  columnTextFilters.delete(column)
   openFilterColumn.value = ''
   page.value = 1
 }
