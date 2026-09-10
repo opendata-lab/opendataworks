@@ -304,7 +304,12 @@ test("a details key that names something on Object.prototype is not an alias", a
     }).output_meta!;
     const engine = meta.engine_details as Record<string, unknown>;
 
-    assert.deepEqual(engine[name], { v: 1 }, `${name} must survive as data`);
+    assert.ok(Object.hasOwn(engine, name), `${name} must be stored as a key`);
+    assert.deepEqual(
+      Object.getOwnPropertyDescriptor(engine, name)?.value,
+      { v: 1 },
+      `${name} must survive as data`
+    );
     assert.equal(meta["[object Object]"], undefined);
     // The value must not have become anyone's prototype.
     assert.equal(Object.getPrototypeOf(engine), Object.prototype);
@@ -312,4 +317,52 @@ test("a details key that names something on Object.prototype is not an alias", a
 
   // And nothing leaked onto every object in the process.
   assert.equal(({} as Record<string, unknown>).v, undefined);
+});
+
+test("redaction keeps a __proto__ key instead of dropping it", async () => {
+  // The unwrap fix alone was not enough: redact runs over every output and
+  // output_meta on the way to the transcript, and its accumulator had the same
+  // problem, so the value was still lost before anything was stored.
+  const { redact } = await import("../src/observability/redaction.js");
+
+  const redacted = redact(
+    JSON.parse('{"engine_details": {"__proto__": {"x": 1}, "api_key": "sk-live-abc"}}')
+  ) as Record<string, Record<string, unknown>>;
+
+  // Own property, not the prototype: reading `.__proto__` returns the
+  // prototype, so it answers {x:1} whether the key was stored or used to
+  // reassign the prototype — which is how the first version of this test
+  // passed against the bug it was written for.
+  const engine = redacted.engine_details;
+  assert.ok(Object.hasOwn(engine, "__proto__"), "__proto__ must be stored as a key");
+  assert.deepEqual(Object.getOwnPropertyDescriptor(engine, "__proto__")?.value, { x: 1 });
+  assert.equal(Object.getPrototypeOf(engine), Object.prototype);
+  // Redaction still does its job on the way through.
+  assert.notEqual(redacted.engine_details.api_key, "sk-live-abc");
+  assert.equal(({} as Record<string, unknown>).x, undefined);
+});
+
+test("a __proto__ detail survives the whole normalizer path", async () => {
+  // End to end through the event the transcript actually stores, because the
+  // last fix passed its own unit test and was undone one call later.
+  const { EventNormalizer } = await import("../src/kernel/event-normalizer.js");
+  const { RunStateMachine } = await import("../src/kernel/run-state-machine.js");
+
+  const normalizer = new EventNormalizer(new RunStateMachine("r", "t", "r"));
+  const events = normalizer.normalize({
+    type: "tool_execution_end",
+    toolCallId: "tc",
+    toolName: "mcp_tool",
+    isError: false,
+    result: JSON.parse('{"content": [], "details": {"__proto__": {"x": 1}, "count": 2}}'),
+  } as never);
+
+  const payload = events.find((e) => e.type === "tool.completed")!.payload as Record<string, unknown>;
+  const meta = payload.output_meta as Record<string, unknown>;
+  assert.equal(meta.count, 2);
+  const engine = meta.engine_details as Record<string, unknown>;
+  assert.ok(Object.hasOwn(engine, "__proto__"));
+  assert.deepEqual(Object.getOwnPropertyDescriptor(engine, "__proto__")?.value, { x: 1 });
+  assert.equal(Object.getPrototypeOf(engine), Object.prototype);
+  assert.equal(meta["[object Object]"], undefined);
 });
