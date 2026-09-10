@@ -65,3 +65,50 @@ def test_unknown_details_are_namespaced_not_dropped():
 def test_a_string_output_passes_through():
     """The SDK path stores a plain string and must not be touched."""
     assert normalize_tool_output({"output": "plain"})["output"] == "plain"
+
+
+def test_displaced_provenance_keeps_its_field_s_home():
+    """Mirrors the TypeScript rule so a record reads the same on both sides.
+
+    A fold takes result_ref for the stored copy and pushes the tool's own value
+    to source_result_ref. Filing that under engine_details here while the
+    producer keeps it at the top would split one fact across two shapes
+    depending on which side you asked.
+    """
+    normalized = normalize_tool_output(
+        {
+            "output": {
+                "content": [{"type": "text", "text": "digest"}],
+                "details": {
+                    "result_ref": "res_fold",
+                    "source_result_ref": "res_source",
+                    "original_bytes": 900,
+                    "source_original_bytes": 100,
+                    "stored_bytes": 400,
+                },
+            }
+        }
+    )
+
+    meta = normalized["output_meta"]
+    assert meta["result_ref"] == "res_fold"
+    assert meta["source_result_ref"] == "res_source"
+    assert meta["original_bytes"] == 900
+    assert meta["source_original_bytes"] == 100
+    assert meta["stored_bytes"] == 400
+    assert "engine_details" not in meta
+
+
+def test_a_source_prefix_over_an_unknown_field_is_still_namespaced():
+    """The rule fires only when the suffix is a field we actually know.
+
+    Otherwise any tool that happens to name something source_* would have it
+    promoted to the top of the contract by accident.
+    """
+    normalized = normalize_tool_output(
+        {"output": {"content": [], "details": {"source_type": "MYSQL"}}}
+    )
+
+    meta = normalized["output_meta"]
+    assert meta["engine_details"]["source_type"] == "MYSQL"
+    assert "source_type" not in {k for k in meta if k != "engine_details"}
