@@ -83,7 +83,7 @@ export interface GovernanceSettings {
    * the backend believed DISABLE_PROMPT_CACHING had turned it off — a variable
    * the Pi runtime never reads.
    */
-  cache_retention?: "short" | "long" | "off";
+  cache_retention?: "short" | "long" | "off" | "none";
 }
 
 export interface CellInitPayload {

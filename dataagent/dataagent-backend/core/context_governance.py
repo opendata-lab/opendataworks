@@ -16,7 +16,7 @@ class InvalidContextGovernance(ValueError):
     """A governance setting is outside its permitted range."""
 
 
-def resolve_cache_retention(cfg: Any) -> str:
+def resolve_cache_retention(cfg: Any, provider_env: dict[str, str] | None = None) -> str:
     """Explicit retention, with the legacy flag honoured only when it says off.
 
     ``DISABLE_PROMPT_CACHING`` is a Claude Code variable the Pi runtime never
@@ -32,7 +32,10 @@ def resolve_cache_retention(cfg: Any) -> str:
         if configured != "short":
             return configured
 
-    legacy = str(getattr(cfg, "disable_prompt_caching", "") or "").strip().lower()
+    # DISABLE_PROMPT_CACHING is produced by provider_runtime.build_provider_env,
+    # not by Settings — reading it off cfg found nothing and silently ignored an
+    # operator who had switched caching off.
+    legacy = str((provider_env or {}).get("DISABLE_PROMPT_CACHING", "") or "").strip().lower()
     if legacy in {"1", "true", "yes"}:
         return "off"
     return configured or "short"
@@ -58,7 +61,7 @@ def resolve_prune_watermarks(cfg: Any) -> tuple[float, float]:
     return high, target
 
 
-def build_governance_settings(cfg: Any) -> dict[str, Any]:
+def build_governance_settings(cfg: Any, provider_env: dict[str, str] | None = None) -> dict[str, Any]:
     """Assemble the ``governance_settings`` section of the cell.init frame."""
     high, target = resolve_prune_watermarks(cfg)
     return {
@@ -69,5 +72,5 @@ def build_governance_settings(cfg: Any) -> dict[str, Any]:
         "max_context_tokens": int(getattr(cfg, "dataagent_context_max_context_tokens", 64_000)),
         "prune_high_watermark_ratio": high,
         "prune_target_ratio": target,
-        "cache_retention": resolve_cache_retention(cfg),
+        "cache_retention": resolve_cache_retention(cfg, provider_env),
     }

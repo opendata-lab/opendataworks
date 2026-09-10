@@ -116,7 +116,7 @@ export function resolveModel(providerId: string, modelId: string): Model<Api> {
   } as unknown as Model<Api>;
 }
 
-export function resolveStreamFn(providerId: string): StreamFn {
+export function resolveStreamFn(providerId: string, cacheRetention?: string): StreamFn {
   const profile = resolveProviderProfile(providerId);
   const apiKey = firstEnv(profile.apiKeyEnvVars);
   if (!apiKey) {
@@ -127,10 +127,51 @@ export function resolveStreamFn(providerId: string): StreamFn {
   const streams = profile.streams();
   // streamSimple is the shape Agent's StreamFn contract expects; the api key is
   // injected here so it never travels through agent state or an event payload.
+  //
+  // cacheRetention has to be injected here too. pi-ai defaults it to "short"
+  // when the option is absent, so declaring the setting anywhere else — an env
+  // var, a field on the init frame — leaves caching on while the operator
+  // believes it is off. That is exactly how DISABLE_PROMPT_CACHING became a
+  // setting the Pi runtime never read.
+  const retention = toPiCacheRetention(cacheRetention);
   return ((model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-    streams.streamSimple(model, context, { ...(options ?? {}), apiKey })) as unknown as StreamFn;
+    streams.streamSimple(model, context, {
+      ...(options ?? {}),
+      apiKey,
+      ...(retention ? { cacheRetention: retention } : {}),
+    })) as unknown as StreamFn;
 }
 
-export function resolveRuntimeModel(providerId: string, modelId: string): ResolvedRuntimeModel {
-  return { model: resolveModel(providerId, modelId), streamFn: resolveStreamFn(providerId) };
+/**
+ * Translate the contract's value into pi-ai's.
+ *
+ * The contract says "off" because that is what an operator writes; pi-ai calls
+ * the same thing "none". Passing "off" through would not disable anything —
+ * resolveCacheRetention only recognises "none" and would fall back to "short".
+ */
+export function toPiCacheRetention(
+  value: string | undefined
+): "none" | "short" | "long" | undefined {
+  switch (String(value ?? "").trim()) {
+    case "off":
+    case "none":
+      return "none";
+    case "short":
+      return "short";
+    case "long":
+      return "long";
+    default:
+      return undefined;
+  }
+}
+
+export function resolveRuntimeModel(
+  providerId: string,
+  modelId: string,
+  cacheRetention?: string
+): ResolvedRuntimeModel {
+  return {
+    model: resolveModel(providerId, modelId),
+    streamFn: resolveStreamFn(providerId, cacheRetention),
+  };
 }

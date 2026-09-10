@@ -981,7 +981,7 @@ async def _execute_task_stream_via_pi_runtime(
         mcp_servers=mcp_servers_list,
         total_timeout_seconds=int(params.timeout_seconds or 0) or int(getattr(cfg, "dataagent_run_total_timeout_seconds", 600)),
         idle_timeout_seconds=int(getattr(cfg, "dataagent_run_idle_timeout_seconds", 300)),
-        governance_settings=build_governance_settings(cfg),
+        governance_settings=build_governance_settings(cfg, provider_env),
         max_turns=_resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0)),
     )
 
