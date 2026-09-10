@@ -11,7 +11,7 @@ import type { AgentEvent as PiAgentEvent, StreamFn } from "@earendil-works/pi-ag
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { CellInitPayload, NeutralAgentEvent } from "../protocol/frames.js";
 import { RunStateMachine } from "./run-state-machine.js";
-import { EventNormalizer } from "./event-normalizer.js";
+import { EventNormalizer, unwrapToolResult } from "./event-normalizer.js";
 import { WorkspaceBoundaryEnforcer, type BoundaryPolicy } from "../policy/workspace-boundary-enforcer.js";
 import { createTools } from "../tools/tool-registry.js";
 import { connectMcpServers, type McpBridgeResult } from "../mcp/portal-mcp-client.js";
@@ -191,24 +191,23 @@ export class Cell {
           // outputs no longer need a fold exemption paid for in tokens.
           const toolCallId = String(context.toolCall?.id ?? "");
           const uiBytes = Buffer.byteLength(rawText, "utf8");
+          // Unwrap here rather than storing the raw wrapper, so a registered
+          // copy and the normalizer's own fallback produce the same shape. It
+          // also keeps the tool's own details: registering content alone
+          // silently dropped them for exactly the large results this registry
+          // exists to protect, and the fold provenance below then looked like
+          // the whole story.
+          const unwrapped = unwrapToolResult(toolResult);
           // Held locally so the fold below can attach provenance without a
-          // take/set round-trip. take() counts a miss, and a result past the
-          // ceiling never registers one — so the round-trip logged a miss for
-          // a perfectly normal case and made the metric useless as a signal
-          // that the wiring is broken.
-          const uiContent =
+          // take/set round-trip.
+          const uiOutput =
             uiBytes <= STRUCTURED_OUTPUT_MAX_BYTES
               // Copy the array: sharing it would let the fold below mutate what
               // the UI is about to persist.
               ? toolResult.content.map((block) => ({ ...block }))
               : null;
-          if (uiContent) {
-            uiResults.set(toolCallId, {
-              // Copy the array: sharing it would let the fold below mutate what
-              // the UI is about to persist.
-              content: uiContent,
-              meta: null,
-            });
+          if (uiOutput) {
+            uiResults.set(toolCallId, { output: uiOutput, meta: unwrapped.output_meta });
           } else {
             // Past the persistence ceiling the transcript keeps the digest too.
             // Saying so beats handing the renderer a digest silently, which
@@ -246,10 +245,11 @@ export class Cell {
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;
             // this is provenance, not a substitute for it.
-            if (uiContent) {
+            if (uiOutput) {
               uiResults.set(toolCallId, {
-                content: uiContent,
+                output: uiOutput,
                 meta: {
+                  ...(unwrapped.output_meta ?? {}),
                   model_context_folded: true,
                   result_ref: saveOutcome.result_ref,
                   original_bytes: saveOutcome.byte_size,
@@ -377,8 +377,10 @@ export class Cell {
       this.agent = null;
       // Whatever was never consumed goes now, on every exit path — a run that
       // failed or was cancelled mid-tool would otherwise leave results behind.
-      if (uiResults.misses > 0) {
-        logDiagnostic(`ui result registry: ${uiResults.misses} miss(es) during this run`);
+      if (uiResults.unconsumed > 0) {
+        // Registered but never claimed: the afterToolCall/tool_execution_end
+        // pairing is broken, which is the one asymmetry worth logging.
+        logDiagnostic(`ui result registry: ${uiResults.unconsumed} unconsumed copy/copies`);
       }
       uiResults.clear();
       if (mcpBridge) {

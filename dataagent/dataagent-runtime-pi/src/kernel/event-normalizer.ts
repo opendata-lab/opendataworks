@@ -15,6 +15,7 @@
 import type { AgentEvent as PiAgentEvent } from "@earendil-works/pi-agent-core";
 import type { NeutralAgentEvent } from "../protocol/frames.js";
 import type { RunStateMachine } from "./run-state-machine.js";
+import type { UiToolResult } from "./ui-tool-result-registry.js";
 import { redact } from "../observability/redaction.js";
 
 interface PiUsage {
@@ -57,7 +58,7 @@ export class EventNormalizer {
      * event's own result is persisted, which is the pre-decoupling behaviour.
      */
     private readonly uiResults?: {
-      take(toolCallId: string): { content: unknown; meta: Record<string, unknown> | null } | null;
+      take(toolCallId: string): UiToolResult | null;
     }
   ) {}
 
@@ -158,7 +159,7 @@ export class EventNormalizer {
         // charts and tables from history.
         const uiCopy = this.uiResults?.take(String(piEvent.toolCallId ?? "")) ?? null;
         const { output, output_meta } = uiCopy
-          ? { output: uiCopy.content, output_meta: uiCopy.meta }
+          ? { output: uiCopy.output, output_meta: uiCopy.meta }
           : unwrapToolResult(piEvent.result);
         events.push(
           this.sm.createEvent("tool.completed", {

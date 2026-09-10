@@ -76,7 +76,7 @@ test("the UI copy survives folding, so a large chart still replays", async () =>
 
   const registry = new UiToolResultRegistry();
   registry.set("call-1", {
-    content: [{ type: "text", text: fullText }],
+    output: [{ type: "text", text: fullText }],
     meta: { model_context_folded: true, result_ref: "res_abc" },
   });
 
@@ -105,7 +105,7 @@ test("the UI copy survives folding, so a large chart still replays", async () =>
 });
 
 test("without a registered copy the event result is still persisted", async () => {
-  // A registry miss must degrade to the old behaviour, not drop the event.
+  // An unregistered lookup must degrade to the old behaviour, not drop the event.
   const { EventNormalizer } = await import("../src/kernel/event-normalizer.js");
   const { RunStateMachine } = await import("../src/kernel/run-state-machine.js");
   const { UiToolResultRegistry } = await import("../src/kernel/ui-tool-result-registry.js");
@@ -124,5 +124,5 @@ test("without a registered copy the event result is still persisted", async () =
   const payload = events.find((e) => e.type === "tool.completed")!.payload as Record<string, unknown>;
   assert.deepEqual(payload.output, [{ type: "text", text: "ok" }]);
   assert.equal((payload.output_meta as Record<string, unknown>).exit_code, 0);
-  assert.equal(registry.misses, 1, "the miss must be counted for observability");
+  assert.equal(registry.unconsumed, 0, "an unregistered lookup is not a fault");
 });

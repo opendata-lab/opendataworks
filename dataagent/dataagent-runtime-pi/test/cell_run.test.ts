@@ -528,3 +528,67 @@ test("a heartbeat sink is optional and does not change the run outcome", async (
   assert.equal(result.terminal_status, "success");
   assert.equal(beats.length, 0, "no slow tool in this run, so no beat is due");
 });
+
+test("folding keeps the tool's own details alongside the fold provenance", async () => {
+  // Registering only the content array dropped `details` for exactly the large
+  // results the UI registry exists to protect, so the transcript kept the full
+  // payload but lost what the tool said about it — and the fold provenance that
+  // replaced it looked like the whole story.
+  //
+  // Drives a real Read over a file past the fold threshold, so the assertion is
+  // about what afterToolCall actually registers, not about a copy hand-placed
+  // into the registry.
+  const root = workspace();
+  const big = "x".repeat(64 * 1024);
+  fs.writeFileSync(path.join(root, "big.txt"), big);
+  let turn = 0;
+
+  const factory = () => ({
+    model: { api: "faux", provider: "faux", id: "faux-1" } as never,
+    streamFn: (() => {
+      const stream = createAssistantMessageEventStream();
+      const wantsTool = turn++ === 0;
+      const content = wantsTool
+        ? [
+            {
+              type: "toolCall" as const,
+              id: "tc-fold",
+              name: "Read",
+              arguments: { file_path: path.join(root, "big.txt") },
+            },
+          ]
+        : [{ type: "text" as const, text: "done" }];
+      queueMicrotask(() => {
+        const message = {
+          role: "assistant" as const,
+          content,
+          api: "faux" as const,
+          provider: "faux",
+          model: "faux-1",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          stopReason: wantsTool ? ("toolUse" as const) : ("stop" as const),
+          timestamp: Date.now(),
+        };
+        stream.push({ type: "start", partial: message as never });
+        stream.push({ type: "done", reason: wantsTool ? "toolUse" : "stop", message: message as never });
+        stream.end();
+      });
+      return stream;
+    }) as never,
+  });
+
+  const { events } = await runCell(initPayload(root), factory as never);
+
+  const completed = events.find((e) => e.type === "tool.completed");
+  assert.ok(completed, "expected a tool.completed event");
+  const meta = completed.payload.output_meta as Record<string, unknown>;
+
+  // The tool's own report survives.
+  assert.equal(typeof meta.byte_count, "number", "Read's byte count must survive folding");
+  assert.equal(meta.truncated, false);
+  // And the fold provenance is added rather than substituted.
+  assert.equal(meta.model_context_folded, true);
+  assert.equal(typeof meta.result_ref, "string");
+  // The transcript still holds the whole payload, not the digest.
+  assert.match(JSON.stringify(completed.payload.output), /x{2000}/);
+});

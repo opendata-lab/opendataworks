@@ -18,20 +18,24 @@
  */
 
 export interface UiToolResult {
-  content: unknown;
+  /** Already unwrapped, so it matches what unwrapToolResult would have produced. */
+  output: unknown;
   meta: Record<string, unknown> | null;
 }
 
 export class UiToolResultRegistry {
   private readonly entries = new Map<string, UiToolResult>();
-  private missCount = 0;
 
-  /** Number of lookups that found nothing; a rising count means a wiring bug. */
-  public get misses(): number {
-    return this.missCount;
-  }
-
-  public get size(): number {
+  /**
+   * Copies nobody claimed.
+   *
+   * A lookup that finds nothing is not evidence of anything: only folded
+   * results are registered, so every small result misses by design and counting
+   * those drowned the signal the counter was added to give. The asymmetry that
+   * does mean something is the other direction — a result was registered and no
+   * tool_execution_end ever came for it, so the pairing is broken.
+   */
+  public get unconsumed(): number {
     return this.entries.size;
   }
 
@@ -45,16 +49,10 @@ export class UiToolResultRegistry {
     this.entries.set(key, result);
   }
 
-  /**
-   * Take the UI copy for a tool call, if one was registered.
-   *
-   * Consuming on read keeps the map bounded and makes a double-persist visible
-   * as a miss rather than silently succeeding twice.
-   */
+  /** Take the UI copy for a tool call, or null when none was registered. */
   public take(toolCallId: string): UiToolResult | null {
     const key = String(toolCallId || "").trim();
-    if (!key || !this.entries.has(key)) {
-      this.missCount += 1;
+    if (!key) {
       return null;
     }
     const value = this.entries.get(key) ?? null;
