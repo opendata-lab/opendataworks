@@ -418,7 +418,7 @@ def test_deepeval_poll_task_tolerates_transient_status_error(monkeypatch):
 def test_deepeval_extracts_evidence_from_bash_script_text_outputs(monkeypatch):
     _install_fake_deepeval(monkeypatch)
     runner = _load_runner()
-    actual_sql = "select count(1) from public.dim_tech_env_workflow_df"
+    actual_sql = "select count(1) from public.dim_demo_workflow_df"
     chart_spec = {
         "kind": "chart_spec",
         "chart_type": "bar",
@@ -535,7 +535,7 @@ def test_deepeval_auto_rule_check_fails_missing_sql_or_tool_requirements(monkeyp
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_tech_env_workflow_df"]},
+        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_demo_workflow_df"]},
         "expected_tools": {**_sample_case()["expected_tools"], "allowed_alternative_groups": [["run_sql"]]},
     }
 
@@ -548,7 +548,7 @@ def test_deepeval_auto_rule_check_fails_missing_sql_or_tool_requirements(monkeyp
     )
 
     assert result["passed"] is False
-    assert result["missing_sql_fragments"] == ["public.dim_tech_env_workflow_df"]
+    assert result["missing_sql_fragments"] == ["public.dim_demo_workflow_df"]
     assert set(result["missing_tool_names"]) == {"query_execute", "run_sql"}
     assert {"missing_sql_fragment", "missing_tool"}.issubset(set(result["failure_attribution"]))
 
@@ -558,7 +558,7 @@ def test_deepeval_auto_rule_check_ignores_tool_doc_text_for_user_visible_regexes
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_tech_env_workflow_df"], "forbidden_patterns": [r"(?i)select\s+\*"]},
+        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_demo_workflow_df"], "forbidden_patterns": [r"(?i)select\s+\*"]},
         "expected_time": {**_sample_case()["expected_time"], "required": False},
     }
     blocks = [
@@ -573,7 +573,7 @@ def test_deepeval_auto_rule_check_ignores_tool_doc_text_for_user_visible_regexes
         case,
         final_answer="当前 DEV 环境共有 10 个工作流。",
         blocks=blocks,
-        sql_outputs=["SELECT count(1) FROM public.dim_tech_env_workflow_df WHERE env_name = 'DEV'"],
+        sql_outputs=["SELECT count(1) FROM public.dim_demo_workflow_df WHERE env_name = 'DEV'"],
         tool_names=["Read", "run_sql"],
     )
 

@@ -434,7 +434,7 @@ def test_three_engines_derive_expected_empty_from_reference_truth():
 
 def test_three_engines_report_reference_sql_case_and_statement_on_backend_failure(monkeypatch):
     modules = {name: _load(name, path) for name, path in RUNNERS.items()}
-    sql = "SELECT cmp_name, system_name FROM public.dim_tech_public_env_cmp_df"
+    sql = "SELECT component_name, owner_name FROM public.dim_demo_component_df"
     case = {
         "case_id": "ARCH_DIAGNOSTIC_001",
         "expected_result": {
@@ -454,7 +454,7 @@ def test_three_engines_report_reference_sql_case_and_statement_on_backend_failur
             lambda *_args, **_kwargs: {
                 "rows": [],
                 "result_state": "failed",
-                "error": "Unknown column 'system_name'",
+                "error": "Unknown column 'owner_name'",
             },
         )
         try:
@@ -466,11 +466,11 @@ def test_three_engines_report_reference_sql_case_and_statement_on_backend_failur
             assert "database=public" in message, engine
             assert "engine=doris" in message, engine
             assert f'sql={json.dumps(sql, ensure_ascii=False)}' in message, engine
-            assert "Unknown column 'system_name'" in message, engine
+            assert "Unknown column 'owner_name'" in message, engine
             assert exc.details["error_code"] == "reference_sql_failed", engine
             assert exc.details["case_id"] == "ARCH_DIAGNOSTIC_001", engine
             assert exc.details["sql"] == sql, engine
-            assert exc.details["cause"].endswith("Unknown column 'system_name'"), engine
+            assert exc.details["cause"].endswith("Unknown column 'owner_name'"), engine
         else:
             raise AssertionError(f"{engine}: failed reference SQL must abort with diagnostics")
 

@@ -332,7 +332,7 @@ def test_auto_rule_check_fails_missing_sql_or_tool_requirements():
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_tech_env_workflow_df"]},
+        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_demo_workflow_df"]},
         "expected_tools": {**_sample_case()["expected_tools"], "allowed_alternative_groups": [["run_sql"]]},
     }
 
@@ -345,7 +345,7 @@ def test_auto_rule_check_fails_missing_sql_or_tool_requirements():
     )
 
     assert result["passed"] is False
-    assert result["missing_sql_fragments"] == ["public.dim_tech_env_workflow_df"]
+    assert result["missing_sql_fragments"] == ["public.dim_demo_workflow_df"]
     assert set(result["missing_tool_names"]) == {"query_execute", "run_sql"}
     assert {"missing_sql_fragment", "missing_tool"}.issubset(set(result["failure_attribution"]))
 
@@ -354,7 +354,7 @@ def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
     runner = _load_runner()
     actual_sql = (
         "SELECT COUNT(node_name) AS node_cnt "
-        "FROM public.dim_tech_env_workflow_df "
+        "FROM public.dim_demo_workflow_df "
         "WHERE env_name = 'DEV'"
     )
     blocks = [
@@ -381,7 +381,7 @@ def test_extract_sql_outputs_ignores_reference_text_and_uses_tool_sql():
 
 def test_extract_evidence_from_bash_script_text_outputs():
     runner = _load_runner()
-    actual_sql = "select count(1) from public.dim_tech_env_workflow_df"
+    actual_sql = "select count(1) from public.dim_demo_workflow_df"
     chart_spec = {
         "kind": "chart_spec",
         "chart_type": "bar",
@@ -428,11 +428,11 @@ def test_auto_rule_check_ignores_sql_style_forbidden_patterns():
     runner = _load_runner()
     case = {
         **_sample_case(),
-        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_tech_env_workflow_df"], "forbidden_patterns": [r"(?i)select\s+\*"]},
+        "expected_sql": {**_sample_case()["expected_sql"], "tables": ["public.dim_demo_workflow_df"], "forbidden_patterns": [r"(?i)select\s+\*"]},
     }
     actual_sql = (
         "SELECT * "
-        "FROM public.dim_tech_env_workflow_df "
+        "FROM public.dim_demo_workflow_df "
         "WHERE env_name = 'DEV'"
     )
     blocks = [
@@ -570,7 +570,7 @@ def test_reference_query_transport_failure_has_specific_reason(monkeypatch):
 def test_reference_query_failure_is_persisted_with_structured_context(tmp_path, monkeypatch):
     runner = _load_runner()
     dataset = _write_dataset(tmp_path / "cases.jsonl")
-    sql = "SELECT system_name FROM public.dim_tech_public_env_cmp_df"
+    sql = "SELECT owner_name FROM public.dim_demo_component_df"
     details = {
         "error_code": "reference_sql_failed",
         "case_id": "ODW_SAMPLE_001",
@@ -578,14 +578,14 @@ def test_reference_query_failure_is_persisted_with_structured_context(tmp_path, 
         "engine": "doris",
         "sql": sql,
         "sql_sha256": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
-        "cause": "Unknown column 'system_name'",
+        "cause": "Unknown column 'owner_name'",
     }
 
     monkeypatch.setattr(runner, "preflight", lambda *_args, **_kwargs: {"auth": {"auth_enabled": False}})
 
     def fail_cases(*_args, **_kwargs):
         raise runner.InfrastructureAbort(
-            "reference_sql_failed: case_id=ODW_SAMPLE_001; cause=Unknown column 'system_name'",
+            "reference_sql_failed: case_id=ODW_SAMPLE_001; cause=Unknown column 'owner_name'",
             details=details,
         )
 
@@ -694,12 +694,12 @@ def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
             "tool_name": "run_sql",
             "is_error": False,
             "input": {
-                "sql": "select count(1) from public.dim_tech_env_workflow_df",
+                "sql": "select count(1) from public.dim_demo_workflow_df",
                 "description": "count workflows",
             },
             "output": {
                 "kind": "sql_execution",
-                "sql": "select count(1) from public.dim_tech_env_workflow_df",
+                "sql": "select count(1) from public.dim_demo_workflow_df",
                 "columns": ["cnt"],
                 "rows": [{"cnt": 10}],
                 "row_count": 1,
@@ -719,12 +719,12 @@ def test_summarize_tool_events_drops_reasoning_noise_and_keeps_evidence():
             "seq_id": 1,
             "tool_name": "run_sql",
             "input": {
-                "sql": "select count(1) from public.dim_tech_env_workflow_df",
+                "sql": "select count(1) from public.dim_demo_workflow_df",
                 "description": "count workflows",
             },
             "output": {
                 "kind": "sql_execution",
-                "sql": "select count(1) from public.dim_tech_env_workflow_df",
+                "sql": "select count(1) from public.dim_demo_workflow_df",
                 "columns": ["cnt"],
                 "rows": [{"cnt": 10}],
                 "row_count": 1,
