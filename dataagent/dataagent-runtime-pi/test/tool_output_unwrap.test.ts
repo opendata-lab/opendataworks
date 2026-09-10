@@ -77,7 +77,7 @@ test("the UI copy survives folding, so a large chart still replays", async () =>
   const registry = new UiToolResultRegistry();
   registry.set("call-1", {
     output: [{ type: "text", text: fullText }],
-    meta: { model_context_folded: true, result_ref: "res_abc" },
+    meta: { fold: { result_ref: "res_abc" } },
   });
 
   const sm = new RunStateMachine("run-1", "task-1", "run-1");
@@ -101,7 +101,10 @@ test("the UI copy survives folding, so a large chart still replays", async () =>
   assert.equal(JSON.parse(output[0].text).kind, "chart_spec");
   assert.equal(JSON.parse(output[0].text).dataset.length, 900);
   // Provenance says the model saw something smaller.
-  assert.equal((payload.output_meta as Record<string, unknown>).model_context_folded, true);
+  assert.equal(
+    ((payload.output_meta as Record<string, unknown>).fold as Record<string, unknown>).result_ref,
+    "res_abc"
+  );
 });
 
 test("without a registered copy the event result is still persisted", async () => {

@@ -20,6 +20,7 @@ import { saveToolResult } from "../context/result-store.js";
 import {
   shouldFold,
   extractDigest,
+  DEFAULT_FOLD_THRESHOLD_BYTES,
   formatDigestText,
   STRUCTURED_OUTPUT_MAX_BYTES,
 } from "../context/tabular-digest.js";
@@ -191,7 +192,7 @@ export class Cell {
         // reusing a prefix built from another conversation would be wrong.
         transformContext: async (messages) => compaction.transform(messages),
         afterToolCall: async (context) => {
-          const foldThreshold = init.governance_settings?.max_inline_result_bytes ?? 16 * 1024;
+          const foldThreshold = init.governance_settings?.max_inline_result_bytes ?? DEFAULT_FOLD_THRESHOLD_BYTES;
           const toolResult = context.result;
           if (!toolResult || !Array.isArray(toolResult.content)) {
             return undefined;

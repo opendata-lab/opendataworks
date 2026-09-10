@@ -32,6 +32,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Optional
+from config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -154,17 +155,6 @@ def _frame(frame_type: str, payload: dict[str, Any] | None = None) -> str:
     )
 
 
-# One NDJSON frame must fit in the reader's buffer or readline() raises
-# "Separator is not found, and chunk exceed the limit" and takes the whole run
-# with it — every completed turn lost, with nothing in the message to say why.
-#
-# asyncio defaults to 64 KiB. The Cell keeps a UI copy of a tool result up to
-# STRUCTURED_OUTPUT_MAX_BYTES (512 KiB) and sends it in one tool.completed
-# frame, so the two constants have to be read together: anything between the
-# default and that ceiling killed the run. Sized well above it to leave room for
-# JSON escaping and the envelope around the payload.
-_STDIO_FRAME_LIMIT_BYTES = 4 * 1024 * 1024
-
 class _CellChannel:
     """stdio framing for one Cell child process."""
 
@@ -266,6 +256,24 @@ class PiRunOutcome:
     last_sequence: int = 0
 
 
+def _stdio_frame_limit() -> int:
+    """Bytes a single NDJSON frame may occupy on the way back from the Cell.
+
+    One frame must fit in the reader's buffer or readline() raises "Separator is
+    not found, and chunk exceed the limit" and takes the whole run with it —
+    every completed turn lost, and nothing in the failed message to say why. The
+    Cell may send a UI copy of a tool result up to STRUCTURED_OUTPUT_MAX_BYTES
+    (512 KiB) in one frame, so asyncio's 64 KiB default is far too small.
+
+    Shares agent_max_buffer_size_bytes with the SDK transport and the sandbox
+    runner, which already size their streams this way. A separate constant here
+    would mean the same run had different limits depending on which topology it
+    landed in.
+    """
+    configured = int(getattr(get_settings(), "agent_max_buffer_size_bytes", 0) or 0)
+    return max(1024 * 1024, configured)
+
+
 async def execute_pi_run(
     ctx: PiRunContext,
     *,
@@ -294,7 +302,7 @@ async def execute_pi_run(
         stderr=asyncio.subprocess.PIPE,
         cwd=str(ctx.project_cwd),
         env=env,
-        limit=_STDIO_FRAME_LIMIT_BYTES,
+        limit=_stdio_frame_limit(),
     )
     channel = _CellChannel(process, ctx.task_id)
     stderr_task = asyncio.create_task(_drain_stderr(process, ctx.task_id))

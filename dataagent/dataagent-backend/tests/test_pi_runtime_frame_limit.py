@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from core.pi_runtime import _STDIO_FRAME_LIMIT_BYTES
+from core.pi_runtime import _stdio_frame_limit
 
 
 def _read_one_frame(payload_bytes: int, limit: int) -> dict:
@@ -47,14 +47,29 @@ def test_the_default_limit_is_the_one_that_broke_runs():
 
 def test_a_frame_at_the_structured_output_ceiling_survives():
     # 512 KiB is what the Cell may send; the reader has to take it whole.
-    frame = _read_one_frame(512 * 1024, limit=_STDIO_FRAME_LIMIT_BYTES)
+    frame = _read_one_frame(512 * 1024, limit=_stdio_frame_limit())
     assert len(frame["payload"]) == 512 * 1024
 
 
 def test_the_limit_clears_the_ceiling_with_room_for_encoding():
     # JSON escaping and the frame envelope both add to the payload, so equality
     # with the ceiling would be too tight.
-    assert _STDIO_FRAME_LIMIT_BYTES > 512 * 1024 * 2
+    assert _stdio_frame_limit() > 512 * 1024 * 2
+
+
+def test_the_limit_is_the_one_the_rest_of_the_stack_already_uses():
+    """Not a constant of its own.
+
+    The SDK transport and the sandbox runner both size their streams from
+    agent_max_buffer_size_bytes. A separate number here would give the same run
+    a different limit depending on which topology it landed in — which is the
+    failure this whole fix was about, one level up.
+    """
+    from config import get_settings
+
+    assert _stdio_frame_limit() == max(
+        1024 * 1024, int(get_settings().agent_max_buffer_size_bytes)
+    )
 
 
 def test_the_limit_actually_reaches_the_subprocess():
@@ -68,6 +83,6 @@ def test_the_limit_actually_reaches_the_subprocess():
     from core import pi_runtime
 
     source = inspect.getsource(pi_runtime.execute_pi_run)
-    assert "limit=_STDIO_FRAME_LIMIT_BYTES" in source, (
+    assert "limit=_stdio_frame_limit()" in source, (
         "create_subprocess_exec must be given the frame limit"
     )
