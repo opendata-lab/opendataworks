@@ -32,6 +32,11 @@
         "storage_path": { "type": "string" },
         "original_bytes": { "type": "integer", "minimum": 0 },
         "stored_bytes": { "type": "integer", "minimum": 0 },
+        "fold": {
+          "type": "object",
+          "description": "Fold provenance. Nested so it cannot collide with a field the tool reports about itself.",
+          "additionalProperties": true
+        },
         "skill_name": { "type": "string" },
         "root_path": { "type": "string" },
         "denied": { "type": "boolean" },

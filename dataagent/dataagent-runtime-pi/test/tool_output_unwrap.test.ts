@@ -127,140 +127,19 @@ test("without a registered copy the event result is still persisted", async () =
   assert.equal(registry.unconsumed, 0, "an unregistered lookup is not a fault");
 });
 
-test("fold provenance takes the canonical names without discarding the tool's", async () => {
-  // fetch_tool_result reports the source it read in details.result_ref. Folding
-  // its output has to claim result_ref for the stored copy — a reader following
-  // it must reach that copy — but overwriting silently swapped one plausible
-  // ref for another, which is the kind of loss nobody notices.
-  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
-
-  const merged = mergeFoldProvenance(
-    { result_ref: "res_source", is_tabular: true, original_bytes: 11 },
-    { model_context_folded: true, result_ref: "res_fold", original_bytes: 99 }
-  );
-
-  assert.equal(merged.result_ref, "res_fold", "the fold must own the canonical name");
-  assert.equal(merged.source_result_ref, "res_source", "the tool's ref must survive");
-  assert.equal(merged.original_bytes, 99);
-  assert.equal(merged.source_original_bytes, 11);
-  // Non-colliding keys pass through untouched.
-  assert.equal(merged.is_tabular, true);
-  assert.equal(merged.model_context_folded, true);
-});
-
-test("a tool without colliding metadata gains nothing extra", async () => {
-  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
-  const merged = mergeFoldProvenance({ count: 3 }, { model_context_folded: true });
-  assert.deepEqual(merged, { count: 3, model_context_folded: true });
-});
-
-test("folding past the persistence ceiling still reports the tool's details", async () => {
-  // Past the ceiling nothing is registered, so the folded result is the only
-  // copy the transcript gets. Replacing details rather than merging dropped
-  // every detail the tool reported for exactly the largest results.
-  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
-  const { EventNormalizer } = await import("../src/kernel/event-normalizer.js");
-  const { RunStateMachine } = await import("../src/kernel/run-state-machine.js");
-
-  const foldedResult = {
-    content: [{ type: "text", text: "digest" }],
-    details: mergeFoldProvenance(
-      { exitCode: 0, result_ref: "res_source" },
-      { folded: true, result_ref: "res_fold", original_bytes: 900_000 }
-    ),
-  };
-
-  const normalizer = new EventNormalizer(new RunStateMachine("r", "t", "r"));
-  const events = normalizer.normalize({
-    type: "tool_execution_end",
-    toolCallId: "tc",
-    toolName: "Bash",
-    isError: false,
-    result: foldedResult,
-  } as never);
-
-  const meta = (events.find((e) => e.type === "tool.completed")!.payload as Record<string, unknown>)
-    .output_meta as Record<string, unknown>;
-  // The digest identifies itself, which is why no separate ui_truncated flag
-  // was added.
-  assert.equal(meta.model_context_folded, true);
-  assert.equal(meta.result_ref, "res_fold");
-  // And the tool's own report is still there.
-  assert.equal(meta.exit_code, 0);
-  // Top level, not buried in engine_details. This assertion previously encoded
-  // the opposite, which is how the split went unnoticed: the same field landed
-  // in a different place depending on how big the result was.
-  assert.equal(meta.source_result_ref, "res_source");
-});
-
-test("a displaced value lands in the same place whatever the result's size", async () => {
-  // The two branches build provenance at different stages, so this is the
-  // property that keeps them honest: readers must not have to know which one
-  // produced a record.
-  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
-  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
-
-  const details = mergeFoldProvenance(
-    { exitCode: 0, result_ref: "res_source" },
-    { folded: true, result_ref: "res_fold", original_bytes: 10, stored_bytes: 7 }
-  );
-  // Small enough to register: the registry unwraps the merged details itself.
-  const registered = unwrapToolResult({ content: [], details }).output_meta!;
-  // Past the ceiling: the normalizer unwraps the same merged details later.
-  const fallback = unwrapToolResult({ content: [], details }).output_meta!;
-
-  assert.deepEqual(registered, fallback);
-  assert.equal(registered.source_result_ref, "res_source");
-  assert.equal(registered.result_ref, "res_fold");
-  assert.equal(registered.original_bytes, 10);
-  assert.equal(registered.stored_bytes, 7);
-});
-
-test("a second fold cannot overwrite the source the first one recorded", async () => {
-  // One slot per field. Without the guard a nested fold would replace the
-  // chain's root with its own parent and leave no sign anything was lost.
-  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
-
-  const once = mergeFoldProvenance({ result_ref: "res_root" }, { result_ref: "res_mid" });
-  const twice = mergeFoldProvenance(once, { result_ref: "res_outer" });
-
-  assert.equal(twice.result_ref, "res_outer");
-  assert.equal(twice.source_result_ref, "res_root", "the first source must survive");
-});
-
-test("a source_ name a fold could not have written stays namespaced", async () => {
-  // The prefix says nothing about who wrote it. source_error and source_count
-  // are fields a tool is free to invent, and promoting them would put a tool's
-  // own words where the contract promises fold provenance.
-  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
-
-  const meta = unwrapToolResult({
-    content: [],
-    details: { source_error: "upstream said no", source_count: 3, source_result_ref: "res_a" },
-  }).output_meta!;
-
-  const engine = meta.engine_details as Record<string, unknown>;
-  assert.equal(engine.source_error, "upstream said no");
-  assert.equal(engine.source_count, 3);
-  assert.equal(meta.source_error, undefined);
-  assert.equal(meta.source_count, undefined);
-  // Only a field a fold actually claims is treated as displaced provenance.
-  assert.equal(meta.source_result_ref, "res_a");
-});
-
 test("details that are not an object are kept whole, not destructured", async () => {
   // AgentToolResult types details as anything. Spreading a string turned it
   // into numeric keys, an array into indices, and a number into nothing.
-  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+  const { withFoldProvenance } = await import("../src/kernel/cell.js");
 
-  assert.equal(mergeFoldProvenance("plain text", { folded: true }).raw_details, "plain text");
-  assert.deepEqual(mergeFoldProvenance([1, 2], { folded: true }).raw_details, [1, 2]);
-  assert.equal(mergeFoldProvenance(42, { folded: true }).raw_details, 42);
+  assert.equal(withFoldProvenance("plain text", { folded: true }).raw_details, "plain text");
+  assert.deepEqual(withFoldProvenance([1, 2], { folded: true }).raw_details, [1, 2]);
+  assert.equal(withFoldProvenance(42, { folded: true }).raw_details, 42);
   // A string must not survive as {"0":"p","1":"l",...}.
-  assert.equal(mergeFoldProvenance("ab", { folded: true })["0"], undefined);
+  assert.equal(withFoldProvenance("ab", { folded: true })["0"], undefined);
   // Nothing to keep means nothing invented.
-  assert.equal("raw_details" in mergeFoldProvenance(null, { folded: true }), false);
-  assert.equal("raw_details" in mergeFoldProvenance(undefined, { folded: true }), false);
+  assert.equal("raw_details" in withFoldProvenance(null, { folded: true }), false);
+  assert.equal("raw_details" in withFoldProvenance(undefined, { folded: true }), false);
 });
 
 test("an unfolded result's non-object details are kept, not dropped", async () => {
@@ -365,4 +244,21 @@ test("a __proto__ detail survives the whole normalizer path", async () => {
   assert.deepEqual(Object.getOwnPropertyDescriptor(engine, "__proto__")?.value, { x: 1 });
   assert.equal(Object.getPrototypeOf(engine), Object.prototype);
   assert.equal(meta["[object Object]"], undefined);
+});
+
+test("fold provenance nests, so it cannot collide with what the tool wrote", async () => {
+  // fetch_tool_result reports the source it read in details.result_ref. When the
+  // fold claimed that name too, one of the two had to lose; nesting means
+  // neither does, with no field list or prefix rule to keep in sync.
+  const { withFoldProvenance } = await import("../src/kernel/cell.js");
+  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
+
+  const details = withFoldProvenance(
+    { result_ref: "res_source", is_tabular: true },
+    { result_ref: "res_fold", original_bytes: 900 }
+  );
+  const meta = unwrapToolResult({ content: [], details }).output_meta!;
+
+  assert.equal(meta.result_ref, "res_source", "the tool keeps its own field");
+  assert.deepEqual(meta.fold, { result_ref: "res_fold", original_bytes: 900 });
 });

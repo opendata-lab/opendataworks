@@ -12,7 +12,6 @@ import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { CellInitPayload, NeutralAgentEvent } from "../protocol/frames.js";
 import { RunStateMachine } from "./run-state-machine.js";
 import { EventNormalizer, unwrapToolResult } from "./event-normalizer.js";
-import type { FoldProvenanceField } from "./event-normalizer.js";
 import { WorkspaceBoundaryEnforcer, type BoundaryPolicy } from "../policy/workspace-boundary-enforcer.js";
 import { createTools } from "../tools/tool-registry.js";
 import { connectMcpServers, type McpBridgeResult } from "../mcp/portal-mcp-client.js";
@@ -28,39 +27,30 @@ import { CompactionSession } from "../context/compaction-session.js";
 import { UiToolResultRegistry } from "./ui-tool-result-registry.js";
 
 /**
- * Add fold provenance to a tool's own metadata without losing either.
+ * Attach fold provenance without touching anything the tool wrote.
  *
- * The fold has to win the canonical names: a reader following `result_ref` must
- * reach the stored result, not whatever the tool happened to reference. But
- * overwriting silently destroys real evidence — fetch_tool_result reports the
- * source it read in `details.result_ref`, and a replacement that plausible is
- * one nobody would ever notice. Displaced values keep a `source_` prefix.
+ * The fold used to claim top-level names like `result_ref`, which collides with
+ * what a tool reports about itself — fetch_tool_result names the source it read
+ * that way. Displacing the loser under a `source_` prefix worked but needed a
+ * closed field list, an alias rule, and a mirror of both in Python, all to
+ * arbitrate a collision. Nesting the fold's own fields cannot collide at all.
  */
-export function mergeFoldProvenance(
-  toolMeta: unknown,
+export function withFoldProvenance(
+  toolDetails: unknown,
   fold: Record<string, unknown>
 ): Record<string, unknown> {
   const isPlainObject = (value: unknown): value is Record<string, unknown> =>
     typeof value === "object" && value !== null && !Array.isArray(value);
 
-  const merged: Record<string, unknown> = isPlainObject(toolMeta) ? { ...toolMeta } : {};
-  if (toolMeta != null && !isPlainObject(toolMeta)) {
-    // A tool's details are typed as anything. Spreading a string turned it into
-    // numeric keys, an array into indices, and a number or boolean into nothing
-    // at all — so keep whatever it is whole instead of destructuring it.
-    merged.raw_details = toolMeta;
-  }
-  for (const [key, value] of Object.entries(fold)) {
-    const displaced = `source_${key}`;
-    // One slot per field, and the first occupant keeps it. A second fold over
-    // an already-displaced value would otherwise overwrite the chain's root
-    // with its own parent and leave no trace that anything was lost.
-    if (key in merged && !(displaced in merged)) {
-      merged[displaced] = merged[key];
-    }
-    merged[key] = value;
-  }
-  return merged;
+  // A tool's details are typed as anything. Spreading a string would turn it
+  // into numeric keys and a number into nothing, so keep it whole instead.
+  const base = isPlainObject(toolDetails)
+    ? { ...toolDetails }
+    : toolDetails != null
+      ? { raw_details: toolDetails }
+      : {};
+
+  return { ...base, dataagent_fold: fold };
 }
 
 export type EventSink = (event: NeutralAgentEvent) => void;
@@ -287,8 +277,7 @@ export class Cell {
             // Merging rather than replacing also matters past the persistence
             // ceiling: nothing is registered there, so this is the only copy
             // the transcript gets.
-            const foldProvenance: Record<FoldProvenanceField, unknown> = {
-              folded: true,
+            const foldedDetails = withFoldProvenance(toolResult.details, {
               result_ref: saveOutcome.result_ref,
               storage_path: saveOutcome.relative_path,
               // What was folded, not what it compacted to: a tabular result is
@@ -298,8 +287,7 @@ export class Cell {
               stored_bytes: saveOutcome.byte_size,
               folded_text_blocks: textBlocks.length,
               preserved_blocks: nonTextBlockCount,
-            };
-            const foldedDetails = mergeFoldProvenance(toolResult.details, foldProvenance);
+            });
 
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;

@@ -154,6 +154,17 @@ def _frame(frame_type: str, payload: dict[str, Any] | None = None) -> str:
     )
 
 
+# One NDJSON frame must fit in the reader's buffer or readline() raises
+# "Separator is not found, and chunk exceed the limit" and takes the whole run
+# with it — every completed turn lost, with nothing in the message to say why.
+#
+# asyncio defaults to 64 KiB. The Cell keeps a UI copy of a tool result up to
+# STRUCTURED_OUTPUT_MAX_BYTES (512 KiB) and sends it in one tool.completed
+# frame, so the two constants have to be read together: anything between the
+# default and that ceiling killed the run. Sized well above it to leave room for
+# JSON escaping and the envelope around the payload.
+_STDIO_FRAME_LIMIT_BYTES = 4 * 1024 * 1024
+
 class _CellChannel:
     """stdio framing for one Cell child process."""
 
@@ -283,6 +294,7 @@ async def execute_pi_run(
         stderr=asyncio.subprocess.PIPE,
         cwd=str(ctx.project_cwd),
         env=env,
+        limit=_STDIO_FRAME_LIMIT_BYTES,
     )
     channel = _CellChannel(process, ctx.task_id)
     stderr_task = asyncio.create_task(_drain_stderr(process, ctx.task_id))

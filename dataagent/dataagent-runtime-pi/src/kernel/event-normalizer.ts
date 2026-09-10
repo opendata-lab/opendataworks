@@ -198,39 +198,6 @@ export class EventNormalizer {
 }
 
 /** Public output_meta fields, in the snake_case the wire contract uses. */
-/**
- * The fields a fold claims for itself, and so the only ones it can displace.
- *
- * Reading provenance off a `source_` prefix alone would promote a tool's own
- * `source_error` or `source_count` into the contract by accident — the prefix
- * says nothing about who wrote it.
- */
-export const FOLD_PROVENANCE_FIELDS = [
-  "folded",
-  "result_ref",
-  "storage_path",
-  "original_bytes",
-  "stored_bytes",
-  "folded_text_blocks",
-  "preserved_blocks",
-] as const;
-
-/** Keys a fold writes. Typing the payload as a full record of these makes a
- * field added on one side and forgotten on the other a compile error, which is
- * how stored_bytes came to exist in TypeScript and nowhere else. */
-export type FoldProvenanceField = (typeof FOLD_PROVENANCE_FIELDS)[number];
-
-const FOLD_PROVENANCE_FIELD_SET: ReadonlySet<string> = new Set(FOLD_PROVENANCE_FIELDS);
-
-/**
- * Looked up through a Map, not an object.
- * 
- * A plain object answers for every name on Object.prototype, so a tool
- * returning details named `toString` or `__proto__` got a truthy "alias" —
- * a function or the prototype itself — and its value was filed under a key
- * like `[object Object]`. Tool results come from MCP servers too, so the
- * names are not ours to trust.
- */
 const DETAIL_FIELD_ALIASES = new Map<string, string>([
   ["exitCode", "exit_code"],
   ["exit_code", "exit_code"],
@@ -243,6 +210,9 @@ const DETAIL_FIELD_ALIASES = new Map<string, string>([
   ["result_ref", "result_ref"],
   ["storage_path", "storage_path"],
   ["original_bytes", "original_bytes"],
+  // Fold provenance arrives nested, so it cannot collide with a tool's own
+  // fields and needs no arbitration.
+  ["dataagent_fold", "fold"],
   ["stored_bytes", "stored_bytes"],
   ["skill_name", "skill_name"],
   ["root_path", "root_path"],
@@ -293,18 +263,8 @@ export function unwrapToolResult(result: unknown): {
   if (wrapper.details && typeof wrapper.details === "object" && !Array.isArray(wrapper.details)) {
     for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
       const alias = DETAIL_FIELD_ALIASES.get(key);
-      const displacedKey = key.startsWith("source_") ? key.slice("source_".length) : "";
-      const displacedAlias = FOLD_PROVENANCE_FIELD_SET.has(displacedKey)
-        ? DETAIL_FIELD_ALIASES.get(displacedKey)
-        : undefined;
       if (alias) {
         meta[alias] = value;
-      } else if (displacedAlias) {
-        // A value a fold pushed out of its canonical name keeps that name's
-        // home, one level up. Without this it would land in engine_details
-        // while the field that displaced it stayed at the top, which puts the
-        // two halves of one fact in different places.
-        meta[`source_${displacedAlias}`] = value;
       } else {
         // Unknown keys are kept rather than dropped — they are still evidence —
         // but namespaced so they cannot collide with contract fields.

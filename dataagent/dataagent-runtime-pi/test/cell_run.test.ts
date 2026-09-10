@@ -586,9 +586,10 @@ test("folding keeps the tool's own details alongside the fold provenance", async
   // The tool's own report survives.
   assert.equal(typeof meta.byte_count, "number", "Read's byte count must survive folding");
   assert.equal(meta.truncated, false);
-  // And the fold provenance is added rather than substituted.
-  assert.equal(meta.model_context_folded, true);
-  assert.equal(typeof meta.result_ref, "string");
+  // And the fold provenance sits beside it rather than on top of it.
+  const fold = meta.fold as Record<string, unknown>;
+  assert.equal(typeof fold.result_ref, "string");
+  assert.equal(fold.original_bytes, 64 * 1024);
   // The transcript still holds the whole payload, not the digest.
   assert.match(JSON.stringify(completed.payload.output), /x{2000}/);
 });
