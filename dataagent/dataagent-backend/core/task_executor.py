@@ -15,6 +15,7 @@ import httpx
 
 from config import get_settings, resolve_runtime_kind, resolve_workspace_scratch_dirs
 from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, normalize_permission_mode
+from core.context_governance import build_governance_settings
 from core.task_status import from_engine_outcome as task_status_from_engine_outcome
 from core.ask_user_question import (
     ASK_USER_QUESTION_TOOL_NAME,
@@ -980,9 +981,7 @@ async def _execute_task_stream_via_pi_runtime(
         mcp_servers=mcp_servers_list,
         total_timeout_seconds=int(params.timeout_seconds or 0) or int(getattr(cfg, "dataagent_run_total_timeout_seconds", 600)),
         idle_timeout_seconds=int(getattr(cfg, "dataagent_run_idle_timeout_seconds", 300)),
-        max_inline_result_bytes=int(getattr(cfg, "dataagent_context_max_inline_result_bytes", 16 * 1024)),
-        protect_tail_turns=int(getattr(cfg, "dataagent_context_protect_tail_turns", 6)),
-        max_context_tokens=int(getattr(cfg, "dataagent_context_max_context_tokens", 64_000)),
+        governance_settings=build_governance_settings(cfg),
         max_turns=_resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0)),
     )
 

@@ -18,7 +18,7 @@ import { connectMcpServers, type McpBridgeResult } from "../mcp/portal-mcp-clien
 import { logDiagnostic } from "../protocol/channel.js";
 import { saveToolResult } from "../context/result-store.js";
 import { shouldFold, extractDigest, formatDigestText } from "../context/tabular-digest.js";
-import { pruneContext } from "../context/context-pruner.js";
+import { CompactionSession } from "../context/compaction-session.js";
 
 export type EventSink = (event: NeutralAgentEvent) => void;
 
@@ -115,6 +115,14 @@ export class Cell {
         };
       });
 
+      const governance = init.governance_settings;
+      const compaction = new CompactionSession({
+        protectTailCount: governance?.protect_tail_turns ?? 6,
+        maxContextTokens: governance?.max_context_tokens ?? 64_000,
+        highWatermarkRatio: governance?.prune_high_watermark_ratio,
+        targetRatio: governance?.prune_target_ratio,
+      });
+
       const agent = new Agent({
         initialState: {
           systemPrompt: init.system_prompt,
@@ -127,12 +135,9 @@ export class Cell {
         // them concurrently would make ordering — and therefore the boundary
         // decisions and the event stream — nondeterministic.
         toolExecution: "sequential",
-        transformContext: async (messages) => {
-          return pruneContext(messages, {
-            protectTailCount: init.governance_settings?.protect_tail_turns ?? 6,
-            maxContextTokens: init.governance_settings?.max_context_tokens ?? 64_000,
-          });
-        },
+        // One session per run: compaction state must not leak between runs, and
+        // reusing a prefix built from another conversation would be wrong.
+        transformContext: async (messages) => compaction.transform(messages),
         afterToolCall: async (context) => {
           const foldThreshold = init.governance_settings?.max_inline_result_bytes ?? 16 * 1024;
           const toolResult = context.result;
