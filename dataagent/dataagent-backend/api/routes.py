@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
+from core.task_status import TERMINAL_TASK_STATUSES
 from core.agent_visibility import agent_visible_to
 from core.auth import AuthIdentity, is_auth_enabled, resolve_identity
 from core.followup_suggestions import generate_followup_suggestions
@@ -67,8 +68,9 @@ from models.schemas import (
 
 logger = logging.getLogger(__name__)
 
+# Message-level wording, deliberately broader than the task vocabulary: it also
+# accepts statuses persisted by earlier versions.
 SUCCESS_MESSAGE_STATUSES = {"finished", "success", "completed"}
-TERMINAL_TASK_STATUSES = {"finished", "error", "suspended"}
 
 router = APIRouter(prefix="/api/v1/nl2sql")
 topic_router = APIRouter(prefix="/topics")
