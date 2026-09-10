@@ -4,7 +4,7 @@
 
 import { reactive } from 'vue'
 import { marked } from 'marked'
-import { createChatState } from './v2StreamParser'
+import { createChatState, processV2Record } from './v2StreamParser'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -100,6 +100,47 @@ export function compareTopicsByRecency(a, b) {
 // Reconstruct the live stream state (_v2state) from a persisted assistant
 // message's stored blocks so reload / topic-restore renders the same turns,
 // tool calls, and error card as the original streamed run.
+/**
+ * Rebuild a finished message's state by replaying its stored records.
+ *
+ * The live stream and history used to run two independently written
+ * projections, and they were not equivalent: this one flattened every turn of a
+ * run into turn 0 and recognised only four block kinds, silently dropping
+ * question_request. Replaying the same records through the same reducer the
+ * live path uses removes that whole class of divergence — a new block type is
+ * now implemented once.
+ *
+ * `blocks` hydration remains as a fallback for messages stored before the API
+ * returned records, so old rows keep rendering.
+ */
+export function buildV2StateFromStoredRecords(item) {
+  const records = Array.isArray(item?.records) ? item.records : []
+  if (!records.length) {
+    return buildV2StateFromStoredBlocks(item)
+  }
+
+  const v2state = createChatState()
+  for (const record of records) {
+    processV2Record(v2state, record)
+  }
+  // A replayed run is finished by definition; a stored record set that ends
+  // without a terminal event would otherwise leave the UI spinning forever.
+  if (v2state.status === 'streaming') {
+    v2state.status = 'done'
+  }
+  for (const block of v2state.blocks) {
+    if (block.status === 'streaming') block.status = 'done'
+  }
+  for (const turn of v2state.turns) {
+    if (turn.status === 'streaming') turn.status = 'done'
+  }
+  if (String(item?.status || '') === 'error') {
+    v2state.status = 'error'
+    v2state.errorText = extractErrorText(item?.error) || '会话执行失败'
+  }
+  return v2state
+}
+
 export function buildV2StateFromStoredBlocks(item) {
   const v2state = createChatState()
   v2state.status = 'done'
@@ -181,7 +222,7 @@ export function hydrateMessageFromApi(item) {
     feedback: String(item?.feedback || ''),
     attachments: Array.isArray(item?.attachments) ? item.attachments : [],
     created_at: item?.created_at || '',
-    _v2state: reactive(buildV2StateFromStoredBlocks(item)),
+    _v2state: reactive(buildV2StateFromStoredRecords(item)),
   })
 }
 
