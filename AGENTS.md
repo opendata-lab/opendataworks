@@ -227,12 +227,26 @@ When working in this repository, optimize for:
     - `SESSION_MYSQL_DATABASE=dataagent`
     - `REDIS_HOST=127.0.0.1`
     - `REDIS_PORT=6379`
+    - `SKILLS_ROOT_DIR=<repo>/dataagent/.claude/skills` — required; skill discovery raises without it
+    - `DATAAGENT_HOST_ROOT=<repo>`
   - run `alembic upgrade head` in `dataagent/dataagent-backend`
   - ensure `da_agent_settings` in `dataagent` contains a valid provider selection and runtime DB config before starting services
   - start `uvicorn main:app`
   - do not start a separate `worker_main.py`; the task coordinator is started inside `main.py`
   - drive the smoke through real HTTP requests, not mocked store calls
   - do not stop at `/api/v1/nl2sql/health`; also verify `POST /api/v1/nl2sql/topics` succeeds, because `health` can be green while topic/task-store MySQL access is still broken
+
+### Intelligent Query runtime engine selection
+
+- `DATAAGENT_RUNTIME_KIND` picks the engine and defaults to `claude_code`. A smoke run that does not set it exercises the Claude SDK path no matter what was changed in `dataagent-runtime-pi`, and the run still looks healthy — so a Pi change can be "verified" without any of it executing.
+- To smoke the Pi engine, set both:
+  - `DATAAGENT_RUNTIME_KIND=pi_agent_core`
+  - `DATAAGENT_RUNTIME_PI_DIR=<repo>/dataagent/dataagent-runtime-pi`
+- Build the runtime first (`npm run build` in `dataagent-runtime-pi`); the backend spawns the compiled output, so TypeScript edits do not take effect until it is rebuilt.
+- Confirm which engine actually ran before trusting the result: `da_agent_sdk_record.engine_kind` is `pi_agent_core` for Pi records, and the backend log shows `claude_agent_sdk._internal.transport.subprocess_cli` for the Claude path.
+- The default agent (`agent_default`) has no skills and no MCP servers, so it cannot query data or produce charts. Use `agent_opendataworks`, which carries the portal MCP server and the business-knowledge skills, and start portal-mcp with a reachable `DATAAGENT_PORTAL_MCP_BASE_URL` plus its frontdoor token.
+- The SSE route is `GET /api/v1/nl2sql/tasks/{task_id}/sdk-events/stream`. `/events/stream` returns 404.
+- The task submission body uses `message_type` and `message_content`, not `question`.
 
 ### Intelligent Query environment defaults
 
