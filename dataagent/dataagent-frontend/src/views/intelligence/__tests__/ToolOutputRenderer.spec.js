@@ -52,6 +52,41 @@ const mountRenderer = (tool, props = {}) => shallowMount(ToolOutputRenderer, {
 })
 
 describe('ToolOutputRenderer', () => {
+  it('renders a chart from an unwrapped Pi content array', () => {
+    // Pi results arrive as SDK-shaped content blocks now. Emitting the raw
+    // {content, details} wrapper instead is what made charts fall back to JSON.
+    const spec = {
+      kind: 'chart_spec',
+      version: 1,
+      chart_type: 'bar',
+      title: 'Pi 渲染',
+      columns: ['name', 'value'],
+      dataset: [{ name: 'a', value: 1 }],
+      error: null
+    }
+    const wrapper = mountRenderer({
+      name: 'run_sql',
+      status: 'done',
+      output: [{ type: 'text', text: JSON.stringify(spec) }]
+    })
+
+    const chartView = wrapper.findComponent(ChartSpecView)
+    expect(chartView.exists()).toBe(true)
+    expect(chartView.props('spec').chart_type).toBe('bar')
+  })
+
+  it('does not print the raw Pi wrapper as JSON', () => {
+    const spec = { kind: 'chart_spec', version: 1, chart_type: 'bar', columns: [], dataset: [], error: null }
+    const wrapper = mountRenderer({
+      name: 'run_sql',
+      status: 'done',
+      output: [{ type: 'text', text: JSON.stringify(spec) }]
+    })
+
+    expect(wrapper.text()).not.toContain('"details"')
+    expect(wrapper.findComponent(ChartSpecView).exists()).toBe(true)
+  })
+
   it('delegates table chart_spec payloads to ChartSpecView', () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',

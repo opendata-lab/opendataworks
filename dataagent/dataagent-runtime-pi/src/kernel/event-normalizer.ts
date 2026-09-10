@@ -153,12 +153,14 @@ export class EventNormalizer {
         break;
       }
       case "tool_execution_end": {
+        const { output, output_meta } = unwrapToolResult(piEvent.result);
         events.push(
           this.sm.createEvent("tool.completed", {
             turn_id: this.currentTurnId,
             tool_call_id: piEvent.toolCallId,
             tool_name: piEvent.toolName,
-            output: redact(piEvent.result ?? null),
+            output: redact(output),
+            ...(output_meta ? { output_meta: redact(output_meta) } : {}),
             is_error: Boolean(piEvent.isError),
           })
         );
@@ -186,4 +188,74 @@ export class EventNormalizer {
 
     return events.filter((e): e is NeutralAgentEvent => e !== null);
   }
+}
+
+/** Public output_meta fields, in the snake_case the wire contract uses. */
+const DETAIL_FIELD_ALIASES: Record<string, string> = {
+  exitCode: "exit_code",
+  exit_code: "exit_code",
+  bytes: "byte_count",
+  byte_count: "byte_count",
+  truncated: "truncated",
+  count: "count",
+  folded: "model_context_folded",
+  model_context_folded: "model_context_folded",
+  result_ref: "result_ref",
+  storage_path: "storage_path",
+  original_bytes: "original_bytes",
+  skill_name: "skill_name",
+  root_path: "root_path",
+  denied: "denied",
+  error: "error",
+};
+
+/**
+ * Split a pi-agent-core tool result into the neutral wire shape.
+ *
+ * pi returns `{content: ContentBlock[], details?: object}`. Emitting that whole
+ * object as `output` is what broke chart and table rendering: the frontend
+ * looks for a platform `kind` inside a string, a content-block array, or an
+ * object that carries `kind` itself — and finds nothing in a `{content,
+ * details}` wrapper, so it falls back to printing raw JSON.
+ *
+ * Unwrapping `content` restores that detection with no frontend change, because
+ * the array branch already reads each block's `text`. Engine metadata moves to
+ * the sibling `output_meta`, keeping `output` a superset-compatible SDK shape.
+ */
+export function unwrapToolResult(result: unknown): {
+  output: unknown;
+  output_meta: Record<string, unknown> | null;
+} {
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    return { output: result ?? null, output_meta: null };
+  }
+
+  const wrapper = result as { content?: unknown; details?: unknown };
+  if (!("content" in wrapper) && !("details" in wrapper)) {
+    // Already a plain payload (a platform object carrying `kind`, say).
+    return { output: result, output_meta: null };
+  }
+
+  const meta: Record<string, unknown> = {};
+  const engineDetails: Record<string, unknown> = {};
+  if (wrapper.details && typeof wrapper.details === "object" && !Array.isArray(wrapper.details)) {
+    for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
+      const alias = DETAIL_FIELD_ALIASES[key];
+      if (alias) {
+        meta[alias] = value;
+      } else {
+        // Unknown keys are kept rather than dropped — they are still evidence —
+        // but namespaced so they cannot collide with contract fields.
+        engineDetails[key] = value;
+      }
+    }
+  }
+  if (Object.keys(engineDetails).length > 0) {
+    meta.engine_details = engineDetails;
+  }
+
+  return {
+    output: wrapper.content ?? null,
+    output_meta: Object.keys(meta).length > 0 ? meta : null,
+  };
 }

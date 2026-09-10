@@ -11,6 +11,7 @@ from typing import Any
 import pymysql
 
 from config import get_settings
+from core.agent_record_compat import normalize_tool_output
 from core.auth import is_auth_enabled
 from core.task_status import to_downstream_status
 from core.agent_profile_service import (
@@ -238,7 +239,13 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 tool_id = str(data.get("tool_call_id") or "")
                 block = blocks_by_tool_id.get(tool_id) if tool_id else None
                 if block is not None:
+                    # Records written before the producer unwrapped Pi results
+                    # still hold the raw {content, details} wrapper; replaying
+                    # one verbatim renders it as JSON instead of a chart.
+                    data = normalize_tool_output(data)
                     block["output"] = data.get("output")
+                    if data.get("output_meta"):
+                        block["output_meta"] = data.get("output_meta")
                     block["is_error"] = bool(data.get("is_error"))
 
         elif record_type == "permission_request":
@@ -2385,12 +2392,19 @@ class TopicTaskStore:
                     raw_data = json.loads(raw_data)
                 except Exception:
                     raw_data = {}
+            data = raw_data or {}
+            # Normalize here rather than at each consumer: this is the single
+            # source every reader goes through — SSE, history and the block
+            # projection alike — so a legacy {content, details} wrapper cannot
+            # reach one of them unconverted.
+            if str(row.get("event_type") or "") == "tool.completed":
+                data = normalize_tool_output(data)
             result.append({
                 "seq_id": int(row.get("id") or 0),
                 "turn_index": int(row.get("turn_index") or 0),
                 "record_type": str(row.get("record_type") or ""),
                 "event_type": row.get("event_type"),
-                "data": raw_data or {},
+                "data": data,
                 "created_at": _to_iso(row["created_at"]) if row.get("created_at") else None,
             })
         return result
