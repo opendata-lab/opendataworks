@@ -5,6 +5,7 @@ from pathlib import Path
 
 import httpx
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from starlette.testclient import TestClient
@@ -437,3 +438,60 @@ async def test_calls_still_enforce_pydantic_semantics_after_inlining():
     with pytest.raises(Exception):
         # Cross-field validator: table alone is not a valid locator.
         await mcp.call_tool("portal_get_table_ddl", {"params": {"table": "t"}})
+
+
+class _RecursiveProbeInput(BaseModel):
+    """A shape the inliner refuses: a model that references itself."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None)
+    child: "_RecursiveProbeInput | None" = Field(default=None)
+
+
+_RecursiveProbeInput.model_rebuild()
+
+
+@pytest.mark.anyio
+async def test_an_uninlinable_tool_does_not_take_down_the_server():
+    """One bad model must not make every tool unreachable.
+
+    _inline_tool_schema_refs runs at import time, so raising would stop the
+    service from starting at all. The offending tool keeps the schema FastMCP
+    produced — no worse than before inlining existed — and the rest are fixed.
+    """
+    from portal_mcp.app import _inline_tool_schema_refs
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+
+    @mcp.tool(name="portal_recursive_probe")
+    async def probe(params: _RecursiveProbeInput) -> dict:
+        """recursive on purpose"""
+        return {}
+
+    # Must not raise: the server still comes up.
+    _inline_tool_schema_refs(mcp)
+
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    import json
+
+    # The offender keeps its original (still-referencing) schema...
+    assert "$ref" in json.dumps(tools["portal_recursive_probe"].inputSchema)
+    # ...while every other tool is still correctly inlined.
+    assert "$ref" not in json.dumps(tools["portal_get_table_ddl"].inputSchema)
+
+
+@pytest.mark.anyio
+async def test_strict_mode_raises_so_ci_blocks_the_regression():
+    """Production degrades; tests must not."""
+    from portal_mcp.app import SchemaInlineError, _inline_tool_schema_refs
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+
+    @mcp.tool(name="portal_recursive_probe")
+    async def probe(params: _RecursiveProbeInput) -> dict:
+        """recursive on purpose"""
+        return {}
+
+    with pytest.raises(SchemaInlineError):
+        _inline_tool_schema_refs(mcp, strict=True)

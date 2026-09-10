@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
@@ -16,6 +17,9 @@ from .backend_client import BackendApiClient
 from .config import Settings, load_settings
 from .scope_context import set_data_scope_header, set_operator_header
 from .service import PortalToolService
+
+
+logger = logging.getLogger(__name__)
 
 
 class SearchTablesInput(BaseModel):
@@ -624,7 +628,7 @@ def _inline_refs(schema: Any, root: dict[str, Any], seen: frozenset[str] = froze
     }
 
 
-def _inline_tool_schema_refs(mcp: FastMCP) -> None:
+def _inline_tool_schema_refs(mcp: FastMCP, *, strict: bool = False) -> None:
     """Publish tool schemas with no ``$ref`` indirection.
 
     FastMCP derives each tool's schema from its ``params: SomeModel`` signature,
@@ -639,17 +643,35 @@ def _inline_tool_schema_refs(mcp: FastMCP) -> None:
     validators, aliases, ``extra="forbid"`` all still run on the real models —
     while making the published schema self-contained for every client, not just
     the one runtime that happens to compensate client-side.
+
+    A model shape the inliner refuses to rewrite is a bug to fix, but it is not
+    worth taking the service down for: this runs at import time, so raising
+    would leave every tool unreachable instead of one tool's schema unimproved.
+    Such a tool is therefore left exactly as FastMCP produced it — no worse than
+    before this function existed — and the failure is logged. ``strict=True``
+    turns the same condition into an error so tests and CI still block it before
+    it can ship.
     """
     for tool in mcp._tool_manager.list_tools():  # noqa: SLF001 - manager itself is private
         schema = tool.parameters
         if not isinstance(schema, dict) or "$defs" not in schema:
             continue
-        inlined = _inline_refs(schema, schema)
-        remaining = json.dumps(inlined)
-        if '"$ref"' in remaining:
-            # Dropping $defs while a pointer survives would publish exactly the
-            # dangling reference this function exists to prevent.
-            raise SchemaInlineError(f"tool {tool.name!r} still has a $ref after inlining")
+        try:
+            inlined = _inline_refs(schema, schema)
+            if '"$ref"' in json.dumps(inlined):
+                # Dropping $defs while a pointer survives would publish exactly
+                # the dangling reference this function exists to prevent.
+                raise SchemaInlineError(f"a $ref survived inlining for {tool.name!r}")
+        except SchemaInlineError as exc:
+            if strict:
+                raise
+            logger.error(
+                "portal-mcp: publishing tool %r with un-inlined schema: %s. "
+                "Clients that drop $defs will not see its field names.",
+                tool.name,
+                exc,
+            )
+            continue
         tool.parameters = inlined
 
 
