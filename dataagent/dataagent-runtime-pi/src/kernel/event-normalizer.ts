@@ -249,8 +249,17 @@ export function unwrapToolResult(result: unknown): {
   if (wrapper.details && typeof wrapper.details === "object" && !Array.isArray(wrapper.details)) {
     for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
       const alias = DETAIL_FIELD_ALIASES[key];
+      const displacedAlias = key.startsWith("source_")
+        ? DETAIL_FIELD_ALIASES[key.slice("source_".length)]
+        : undefined;
       if (alias) {
         meta[alias] = value;
+      } else if (displacedAlias) {
+        // A value a fold pushed out of its canonical name keeps that name's
+        // home, one level up. Without this it would land in engine_details
+        // while the field that displaced it stayed at the top, which puts the
+        // two halves of one fact in different places.
+        meta[`source_${displacedAlias}`] = value;
       } else {
         // Unknown keys are kept rather than dropped — they are still evidence —
         // but namespaced so they cannot collide with contract fields.

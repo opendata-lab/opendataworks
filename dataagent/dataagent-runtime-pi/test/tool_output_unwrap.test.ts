@@ -187,5 +187,43 @@ test("folding past the persistence ceiling still reports the tool's details", as
   assert.equal(meta.result_ref, "res_fold");
   // And the tool's own report is still there.
   assert.equal(meta.exit_code, 0);
-  assert.equal((meta.engine_details as Record<string, unknown>).source_result_ref, "res_source");
+  // Top level, not buried in engine_details. This assertion previously encoded
+  // the opposite, which is how the split went unnoticed: the same field landed
+  // in a different place depending on how big the result was.
+  assert.equal(meta.source_result_ref, "res_source");
+});
+
+test("a displaced value lands in the same place whatever the result's size", async () => {
+  // The two branches build provenance at different stages, so this is the
+  // property that keeps them honest: readers must not have to know which one
+  // produced a record.
+  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
+
+  const details = mergeFoldProvenance(
+    { exitCode: 0, result_ref: "res_source" },
+    { folded: true, result_ref: "res_fold", original_bytes: 10, stored_bytes: 7 }
+  );
+  // Small enough to register: the registry unwraps the merged details itself.
+  const registered = unwrapToolResult({ content: [], details }).output_meta!;
+  // Past the ceiling: the normalizer unwraps the same merged details later.
+  const fallback = unwrapToolResult({ content: [], details }).output_meta!;
+
+  assert.deepEqual(registered, fallback);
+  assert.equal(registered.source_result_ref, "res_source");
+  assert.equal(registered.result_ref, "res_fold");
+  assert.equal(registered.original_bytes, 10);
+  assert.equal(registered.stored_bytes, 7);
+});
+
+test("a second fold cannot overwrite the source the first one recorded", async () => {
+  // One slot per field. Without the guard a nested fold would replace the
+  // chain's root with its own parent and leave no sign anything was lost.
+  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+
+  const once = mergeFoldProvenance({ result_ref: "res_root" }, { result_ref: "res_mid" });
+  const twice = mergeFoldProvenance(once, { result_ref: "res_outer" });
+
+  assert.equal(twice.result_ref, "res_outer");
+  assert.equal(twice.source_result_ref, "res_root", "the first source must survive");
 });

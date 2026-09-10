@@ -31,6 +31,7 @@
         "result_ref": { "type": "string" },
         "storage_path": { "type": "string" },
         "original_bytes": { "type": "integer", "minimum": 0 },
+        "stored_bytes": { "type": "integer", "minimum": 0 },
         "skill_name": { "type": "string" },
         "root_path": { "type": "string" },
         "denied": { "type": "boolean" },

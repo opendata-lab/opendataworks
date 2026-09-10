@@ -29,6 +29,7 @@ _DETAIL_FIELD_ALIASES = {
     "result_ref": "result_ref",
     "storage_path": "storage_path",
     "original_bytes": "original_bytes",
+    "stored_bytes": "stored_bytes",
     "skill_name": "skill_name",
     "root_path": "root_path",
     "denied": "denied",
@@ -64,8 +65,17 @@ def normalize_tool_output(data: dict[str, Any]) -> dict[str, Any]:
     if isinstance(details, dict):
         for key, value in details.items():
             alias = _DETAIL_FIELD_ALIASES.get(key)
+            displaced = (
+                _DETAIL_FIELD_ALIASES.get(key[len("source_") :])
+                if key.startswith("source_")
+                else None
+            )
             if alias:
                 meta[alias] = value
+            elif displaced:
+                # Mirrors the TypeScript rule: a value a fold pushed out of its
+                # canonical name keeps that name's home, one level up.
+                meta[f"source_{displaced}"] = value
             else:
                 engine_details[key] = value
     if engine_details:

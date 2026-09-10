@@ -41,8 +41,12 @@ export function mergeFoldProvenance(
 ): Record<string, unknown> {
   const merged: Record<string, unknown> = { ...(toolMeta ?? {}) };
   for (const [key, value] of Object.entries(fold)) {
-    if (key in merged) {
-      merged[`source_${key}`] = merged[key];
+    const displaced = `source_${key}`;
+    // One slot per field, and the first occupant keeps it. A second fold over
+    // an already-displaced value would otherwise overwrite the chain's root
+    // with its own parent and leave no trace that anything was lost.
+    if (key in merged && !(displaced in merged)) {
+      merged[displaced] = merged[key];
     }
     merged[key] = value;
   }
@@ -264,41 +268,44 @@ export class Cell {
               (block: { type?: string }) => block && block.type !== "text"
             );
 
+            // One merge, one shape. The registry built provenance after
+            // unwrapping and the returned details before it, so the same
+            // source_result_ref sat at the top of output_meta for a small
+            // result and inside engine_details for a large one. Where a field
+            // lives must not depend on how big the result was.
+            //
+            // Merging rather than replacing also matters past the persistence
+            // ceiling: nothing is registered there, so this is the only copy
+            // the transcript gets.
+            const foldedDetails = mergeFoldProvenance(
+              toolResult.details as Record<string, unknown> | undefined,
+              {
+                folded: true,
+                result_ref: saveOutcome.result_ref,
+                storage_path: saveOutcome.relative_path,
+                // What was folded, not what it compacted to: a tabular result
+                // is rewritten to JSONL on the way to disk, so the stored size
+                // understates the payload this digest stands in for.
+                original_bytes: uiBytes,
+                stored_bytes: saveOutcome.byte_size,
+                folded_text_blocks: textBlocks.length,
+                preserved_blocks: nonTextBlockCount,
+              }
+            );
+
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;
             // this is provenance, not a substitute for it.
             if (uiOutput) {
               uiResults.set(toolCallId, {
                 output: uiOutput,
-                meta: mergeFoldProvenance(unwrapped.output_meta, {
-                  model_context_folded: true,
-                  result_ref: saveOutcome.result_ref,
-                  // What was folded, not what it compacted to: a tabular result
-                  // is rewritten to JSONL on the way to disk, so the stored size
-                  // understates the payload this digest stands in for.
-                  original_bytes: uiBytes,
-                  stored_bytes: saveOutcome.byte_size,
-                }),
+                meta: unwrapToolResult({ content: uiOutput, details: foldedDetails }).output_meta,
               });
             }
 
             return {
               content: [{ type: "text" as const, text: compactText }, ...preservedBlocks],
-              // Merge rather than replace: past the persistence ceiling nothing
-              // is registered, so this is the only copy the transcript gets and
-              // substituting it dropped every detail the tool reported.
-              details: mergeFoldProvenance(
-                toolResult.details as Record<string, unknown> | undefined,
-                {
-                  folded: true,
-                  result_ref: saveOutcome.result_ref,
-                  storage_path: saveOutcome.relative_path,
-                  original_bytes: uiBytes,
-                  stored_bytes: saveOutcome.byte_size,
-                  folded_text_blocks: textBlocks.length,
-                  preserved_blocks: nonTextBlockCount,
-                }
-              ),
+              details: foldedDetails,
             };
           } catch (err) {
             logDiagnostic(`afterToolCall fold failed, keeping raw: ${err}`);
