@@ -541,6 +541,10 @@ class TopicMessage(BaseModel):
     content_type: Optional[str] = None
     usage: Optional[Dict[str, Any]] = None
     blocks: Optional[List[Dict[str, Any]]] = None
+    # The records `blocks` were projected from. Clients replay these through the
+    # same reducer the live stream uses; `blocks` stays until every client has
+    # switched, so the change can be reverted without touching stored data.
+    records: Optional[List[Dict[str, Any]]] = None
     resume_after_seq: int = 0
     show_in_ui: bool = True
     feedback: str = ""

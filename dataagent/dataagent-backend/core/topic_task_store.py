@@ -3132,19 +3132,31 @@ class TopicTaskStore:
                         raw_data = json.loads(raw_data)
                     except Exception:
                         raw_data = {}
+                data = raw_data or {}
+                # Same normalizer the live read path uses, so a legacy record
+                # replays identically whether it arrives over SSE or in history.
+                if str(row.get("event_type") or "") == "tool.completed":
+                    data = normalize_tool_output(data)
                 sdk_records.setdefault(task_id, []).append({
                     "seq_id": int(row.get("id") or 0),
                     "turn_index": int(row.get("turn_index") or 0),
                     "record_type": str(row.get("record_type") or ""),
                     "event_type": row.get("event_type"),
-                    "data": raw_data or {},
+                    "data": data,
                 })
 
         for task_id in task_ids:
-            if sdk_records.get(task_id):
-                history_by_task_id[task_id] = _project_sdk_records(sdk_records[task_id])
+            records = sdk_records.get(task_id) or []
+            if records:
+                view = _project_sdk_records(records)
             else:
-                history_by_task_id[task_id] = {"blocks": [], "resume_after_seq": 0}
+                view = {"blocks": [], "resume_after_seq": 0}
+            # Ship the raw records alongside the projected blocks. The frontend
+            # is moving to replaying these through the same reducer the live
+            # stream uses; until it has, blocks stay so the current UI keeps
+            # working. Sending both is what makes that switch reversible.
+            view["records"] = records
+            history_by_task_id[task_id] = view
         return history_by_task_id
 
     def _normalize_message_row(self, row: dict[str, Any], *, history: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -3173,6 +3185,11 @@ class TopicTaskStore:
         }
         if normalized["sender_type"] == "assistant":
             normalized["blocks"] = list(history.get("blocks") or []) if history else []
+            # The records the blocks were projected from. The frontend replays
+            # these through the live reducer instead of hydrating blocks, which
+            # is how the second projection eventually goes away; blocks remain
+            # meanwhile so the switch can be reverted without a data change.
+            normalized["records"] = list(history.get("records") or []) if history else []
             normalized["resume_after_seq"] = int(history.get("resume_after_seq") or 0) if history else 0
         return normalized
 
