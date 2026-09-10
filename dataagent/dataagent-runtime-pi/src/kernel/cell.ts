@@ -12,6 +12,7 @@ import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { CellInitPayload, NeutralAgentEvent } from "../protocol/frames.js";
 import { RunStateMachine } from "./run-state-machine.js";
 import { EventNormalizer, unwrapToolResult } from "./event-normalizer.js";
+import type { FoldProvenanceField } from "./event-normalizer.js";
 import { WorkspaceBoundaryEnforcer, type BoundaryPolicy } from "../policy/workspace-boundary-enforcer.js";
 import { createTools } from "../tools/tool-registry.js";
 import { connectMcpServers, type McpBridgeResult } from "../mcp/portal-mcp-client.js";
@@ -286,7 +287,7 @@ export class Cell {
             // Merging rather than replacing also matters past the persistence
             // ceiling: nothing is registered there, so this is the only copy
             // the transcript gets.
-            const foldedDetails = mergeFoldProvenance(toolResult.details, {
+            const foldProvenance: Record<FoldProvenanceField, unknown> = {
               folded: true,
               result_ref: saveOutcome.result_ref,
               storage_path: saveOutcome.relative_path,
@@ -297,7 +298,8 @@ export class Cell {
               stored_bytes: saveOutcome.byte_size,
               folded_text_blocks: textBlocks.length,
               preserved_blocks: nonTextBlockCount,
-            });
+            };
+            const foldedDetails = mergeFoldProvenance(toolResult.details, foldProvenance);
 
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;

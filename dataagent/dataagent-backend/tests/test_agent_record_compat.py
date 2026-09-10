@@ -150,3 +150,31 @@ def test_details_that_are_not_a_mapping_are_kept_whole():
     )
 
     assert normalized["output_meta"]["engine_details"]["raw_details"] == "plain text"
+
+
+def test_the_fold_field_set_matches_the_typescript_producer():
+    """The two sides keep separate copies of one list, so pin them together.
+
+    stored_bytes existed in the TypeScript table and nowhere else until a review
+    caught it. TypeScript now makes its own half a compile error; this is the
+    half that crosses the language boundary, where no compiler can look.
+    """
+    import re
+    from pathlib import Path
+
+    from core.agent_record_compat import _FOLD_PROVENANCE_FIELDS
+
+    producer = (
+        Path(__file__).resolve().parents[2]
+        / "dataagent-runtime-pi"
+        / "src"
+        / "kernel"
+        / "event-normalizer.ts"
+    )
+    source = producer.read_text(encoding="utf-8")
+    declared = re.search(
+        r"FOLD_PROVENANCE_FIELDS = \[(.*?)\] as const", source, re.S
+    )
+    assert declared, "the producer no longer declares FOLD_PROVENANCE_FIELDS"
+
+    assert set(re.findall(r'"(\w+)"', declared.group(1))) == set(_FOLD_PROVENANCE_FIELDS)

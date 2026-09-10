@@ -205,7 +205,7 @@ export class EventNormalizer {
  * `source_error` or `source_count` into the contract by accident — the prefix
  * says nothing about who wrote it.
  */
-export const FOLD_PROVENANCE_FIELDS = new Set([
+export const FOLD_PROVENANCE_FIELDS = [
   "folded",
   "result_ref",
   "storage_path",
@@ -213,7 +213,14 @@ export const FOLD_PROVENANCE_FIELDS = new Set([
   "stored_bytes",
   "folded_text_blocks",
   "preserved_blocks",
-]);
+] as const;
+
+/** Keys a fold writes. Typing the payload as a full record of these makes a
+ * field added on one side and forgotten on the other a compile error, which is
+ * how stored_bytes came to exist in TypeScript and nowhere else. */
+export type FoldProvenanceField = (typeof FOLD_PROVENANCE_FIELDS)[number];
+
+const FOLD_PROVENANCE_FIELD_SET: ReadonlySet<string> = new Set(FOLD_PROVENANCE_FIELDS);
 
 const DETAIL_FIELD_ALIASES: Record<string, string> = {
   exitCode: "exit_code",
@@ -267,7 +274,7 @@ export function unwrapToolResult(result: unknown): {
     for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
       const alias = DETAIL_FIELD_ALIASES[key];
       const displacedKey = key.startsWith("source_") ? key.slice("source_".length) : "";
-      const displacedAlias = FOLD_PROVENANCE_FIELDS.has(displacedKey)
+      const displacedAlias = FOLD_PROVENANCE_FIELD_SET.has(displacedKey)
         ? DETAIL_FIELD_ALIASES[displacedKey]
         : undefined;
       if (alias) {
