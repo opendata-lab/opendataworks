@@ -262,3 +262,29 @@ test("details that are not an object are kept whole, not destructured", async ()
   assert.equal("raw_details" in mergeFoldProvenance(null, { folded: true }), false);
   assert.equal("raw_details" in mergeFoldProvenance(undefined, { folded: true }), false);
 });
+
+test("an unfolded result's non-object details are kept, not dropped", async () => {
+  // The fold path already kept these, but the ordinary unwrap discarded them
+  // while the Python reader kept them, so one record meant two things
+  // depending on which side read it.
+  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
+
+  assert.equal(
+    (unwrapToolResult({ content: [], details: "plain text" }).output_meta
+      ?.engine_details as Record<string, unknown>).raw_details,
+    "plain text"
+  );
+  assert.deepEqual(
+    (unwrapToolResult({ content: [], details: [1, 2] }).output_meta
+      ?.engine_details as Record<string, unknown>).raw_details,
+    [1, 2]
+  );
+  assert.equal(
+    (unwrapToolResult({ content: [], details: 42 }).output_meta
+      ?.engine_details as Record<string, unknown>).raw_details,
+    42
+  );
+  // Absent details still produce no meta at all.
+  assert.equal(unwrapToolResult({ content: [] }).output_meta, null);
+  assert.equal(unwrapToolResult({ content: [], details: null }).output_meta, null);
+});

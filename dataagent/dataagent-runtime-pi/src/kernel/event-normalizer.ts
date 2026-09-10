@@ -292,6 +292,13 @@ export function unwrapToolResult(result: unknown): {
       }
     }
   }
+  if (wrapper.details != null && !(typeof wrapper.details === "object" && !Array.isArray(wrapper.details))) {
+    // Same rule the fold path uses: details are typed as anything, and a string
+    // or a number is evidence too. Dropping it here while the Python reader
+    // kept it made one record mean different things on the two sides.
+    engineDetails.raw_details = wrapper.details;
+  }
+
   if (Object.keys(engineDetails).length > 0) {
     meta.engine_details = engineDetails;
   }

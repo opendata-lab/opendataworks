@@ -178,3 +178,60 @@ def test_the_fold_field_set_matches_the_typescript_producer():
     assert declared, "the producer no longer declares FOLD_PROVENANCE_FIELDS"
 
     assert set(re.findall(r'"(\w+)"', declared.group(1))) == set(_FOLD_PROVENANCE_FIELDS)
+
+
+def test_the_two_readers_agree_on_a_matrix_of_wrapper_shapes():
+    """Differential test, because separate suites hid a real divergence.
+
+    Both sides had tests for non-object details and both passed, yet the fold
+    path kept them and the plain unwrap dropped them — so one record meant two
+    things depending on which reader saw it. Comparing outputs directly is the
+    only check that would have caught it.
+    """
+    import json
+    import os
+    import subprocess
+    from pathlib import Path
+
+    runtime = Path(__file__).resolve().parents[2] / "dataagent-runtime-pi"
+    if not (runtime / "dist" / "src" / "kernel" / "event-normalizer.js").exists():
+        import pytest
+
+        pytest.skip("pi runtime is not built")
+
+    cases = [
+        {"content": [], "details": {"exitCode": 0}},
+        {"content": [], "details": {"result_ref": "a", "source_result_ref": "b"}},
+        {"content": [], "details": {"source_error": "x", "source_count": 1}},
+        {"content": [], "details": {"stored_bytes": 4, "original_bytes": 9}},
+        {"content": [], "details": "plain text"},
+        {"content": [], "details": [1, 2]},
+        {"content": [], "details": 42},
+        {"content": [], "details": True},
+        {"content": [], "details": None},
+        {"content": [{"type": "text", "text": "hi"}]},
+    ]
+
+    module = (runtime / "dist" / "src" / "kernel" / "event-normalizer.js").as_uri()
+    script = (
+        f"const {{unwrapToolResult}} = await import({module!r});"
+        "console.log(JSON.stringify("
+        "JSON.parse(process.env.CASES).map((c) => unwrapToolResult(c).output_meta)));"
+    )
+    completed = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=runtime,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "CASES": json.dumps(cases)},
+    )
+    assert completed.returncode == 0, completed.stderr
+    ts_metas = json.loads(completed.stdout)
+
+    py_metas = [
+        normalize_tool_output({"output": case}).get("output_meta") for case in cases
+    ]
+
+    for case, ts_meta, py_meta in zip(cases, ts_metas, py_metas):
+        assert ts_meta == py_meta, f"readers disagree on {case!r}: {ts_meta!r} vs {py_meta!r}"
