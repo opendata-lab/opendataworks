@@ -28,9 +28,15 @@ function bootstrap(): void {
         const init = frame.payload as unknown as CellInitPayload;
         channel.send("cell.ready", { manifest: { runtime_kind: "pi_agent_core", protocol_version: 1 } });
         try {
-          const result = await cell.run(init, (event) => {
-            channel.send("run.event", event as unknown as Record<string, unknown>);
-          });
+          const result = await cell.run(
+            init,
+            (event) => {
+              channel.send("run.event", event as unknown as Record<string, unknown>);
+            },
+            (detail) => {
+              channel.send("run.heartbeat", detail);
+            }
+          );
           channel.send("run.settled", result as unknown as Record<string, unknown>);
         } finally {
           running = false;

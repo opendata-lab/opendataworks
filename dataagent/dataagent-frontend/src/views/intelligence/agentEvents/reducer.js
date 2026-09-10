@@ -23,7 +23,6 @@ export const AgentEventType = Object.freeze({
   CONTENT_STARTED: 'content.started',
   CONTENT_COMPLETED: 'content.completed',
   TOOL_STARTED: 'tool.started',
-  TOOL_PROGRESS: 'tool.progress',
   TOOL_COMPLETED: 'tool.completed',
   TOOL_DENIED: 'tool.denied',
   USAGE_UPDATED: 'usage.updated',
@@ -166,6 +165,9 @@ export function reducePiEvent(state, record) {
     }
 
     default:
+      // Unknown types are ignored on purpose. Records written before
+      // tool.progress was removed still carry it, and a stored event must never
+      // be able to break replay of the events around it.
       break
   }
 

@@ -17,7 +17,15 @@ export const PROTOCOL_VERSION = 1;
 /** Frames the control plane sends to this Cell. */
 export type InboundFrameType = "cell.init" | "run.cancel" | "cell.shutdown";
 /** Frames this Cell sends to the control plane. */
-export type OutboundFrameType = "cell.ready" | "run.event" | "run.settled" | "protocol.error";
+export type OutboundFrameType =
+  | "cell.ready"
+  | "run.event"
+  // Liveness only. The control plane refreshes its idle timer on any frame, so
+  // a slow tool no longer needs a synthetic tool.progress event that nothing
+  // renders just to avoid being mistaken for a stall.
+  | "run.heartbeat"
+  | "run.settled"
+  | "protocol.error";
 
 export interface ProtocolFrame<T = Record<string, unknown>> {
   protocol_version: number;
@@ -33,7 +41,6 @@ export type AgentEventType =
   | "content.delta"
   | "content.completed"
   | "tool.started"
-  | "tool.progress"
   | "tool.completed"
   | "tool.denied"
   | "usage.updated"

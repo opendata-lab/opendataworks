@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opendataworks/contracts/agent-events/v1/tool-output.schema.json",
+  "title": "ToolCompletedPayload",
+  "description": "Payload of tool.completed. `output` is a superset of what the Anthropic SDK path already stored, so existing renderers need no change; engine metadata rides in the sibling `output_meta` and never inside `output`.",
+  "type": "object",
+  "required": ["tool_call_id", "tool_name", "output", "is_error"],
+  "properties": {
+    "turn_id": { "type": "string" },
+    "tool_call_id": { "type": "string", "minLength": 1 },
+    "tool_name": { "type": "string", "minLength": 1 },
+    "is_error": { "type": "boolean" },
+    "output": {
+      "description": "String, SDK content-block array, or a platform object carrying a top-level `kind`. Wrapping any of these breaks chart and table detection.",
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string" },
+        { "type": "array", "items": { "type": "object" } },
+        { "type": "object" }
+      ]
+    },
+    "output_meta": {
+      "type": "object",
+      "description": "Engine metadata. Unrecognised keys are kept under engine_details rather than dropped.",
+      "properties": {
+        "exit_code": { "type": "integer" },
+        "byte_count": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "count": { "type": "integer", "minimum": 0 },
+        "model_context_folded": { "type": "boolean" },
+        "result_ref": { "type": "string" },
+        "storage_path": { "type": "string" },
+        "original_bytes": { "type": "integer", "minimum": 0 },
+        "skill_name": { "type": "string" },
+        "root_path": { "type": "string" },
+        "denied": { "type": "boolean" },
+        "error": { "type": "string" },
+        "engine_details": { "type": "object" }
+      }
+    }
+  }
+}

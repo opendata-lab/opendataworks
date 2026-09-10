@@ -397,6 +397,12 @@ async def execute_pi_run(
             elif ftype == "cell.ready":
                 logger.info("pi_cell.ready task_id=%s manifest=%s", ctx.task_id, payload.get("manifest"))
 
+            elif ftype == "run.heartbeat":
+                # Liveness only. last_activity was already refreshed above by the
+                # act of receiving a frame, which is the whole point: a slow tool
+                # stays alive without emitting an event nothing renders.
+                pass
+
             elif ftype == "protocol.error":
                 logger.error("pi_cell.protocol_error task_id=%s payload=%s", ctx.task_id, payload)
 
