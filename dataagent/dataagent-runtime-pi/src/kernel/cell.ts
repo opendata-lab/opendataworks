@@ -25,6 +25,7 @@ import {
   STRUCTURED_OUTPUT_MAX_BYTES,
 } from "../context/tabular-digest.js";
 import { CompactionSession } from "../context/compaction-session.js";
+import { UiToolResultRegistry } from "./ui-tool-result-registry.js";
 
 export type EventSink = (event: NeutralAgentEvent) => void;
 /** Liveness signal during a slow tool. Carries no state the UI renders. */
@@ -61,7 +62,10 @@ export class Cell {
   ): Promise<CellRunResult> {
     const heartbeat = onHeartbeat;
     const sm = new RunStateMachine(init.run_id, init.task_id, init.run_id);
-    const normalizer = new EventNormalizer(sm);
+    // Holds the UI copy of a tool result between afterToolCall and the
+    // normalizer. Scoped to this run so nothing survives it.
+    const uiResults = new UiToolResultRegistry();
+    const normalizer = new EventNormalizer(sm, uiResults);
 
     const emit = (event: NeutralAgentEvent | null) => {
       if (event) {
@@ -180,20 +184,27 @@ export class Cell {
             return undefined;
           }
 
-          // A platform structured output is what the UI renders as a chart or a
-          // table. Folding replaces it with a digest, and the payload is gone
-          // from the transcript for good — unwrapping downstream cannot bring it
-          // back. Exempt it up to the persistence ceiling and pay the tokens.
-          if (isRenderableStructuredOutput(rawText)) {
-            const bytes = Buffer.byteLength(rawText, "utf8");
-            if (bytes <= STRUCTURED_OUTPUT_MAX_BYTES) {
-              return undefined;
-            }
-            // Past the ceiling, say so rather than passing a digest off as the
-            // chart: a renderer given a digest shows a broken chart with no
-            // indication that anything was dropped.
+          // Register the UI's copy before folding anything. The two used to be
+          // the same object, so shrinking the model's context also erased the
+          // chart from history. Now the transcript keeps the full result and
+          // only the model sees the digest — which is also why structured
+          // outputs no longer need a fold exemption paid for in tokens.
+          const toolCallId = String(context.toolCall?.id ?? "");
+          const uiBytes = Buffer.byteLength(rawText, "utf8");
+          if (uiBytes <= STRUCTURED_OUTPUT_MAX_BYTES) {
+            uiResults.set(toolCallId, {
+              // Copy the array: sharing it would let the fold below mutate what
+              // the UI is about to persist.
+              content: toolResult.content.map((block) => ({ ...block })),
+              meta: null,
+            });
+          } else {
+            // Past the persistence ceiling the transcript keeps the digest too.
+            // Saying so beats handing the renderer a digest silently, which
+            // draws a broken chart with no sign anything was dropped.
             logDiagnostic(
-              `STRUCTURED_OUTPUT_TOO_LARGE: ${bytes}B exceeds ${STRUCTURED_OUTPUT_MAX_BYTES}B; folding`
+              `STRUCTURED_OUTPUT_TOO_LARGE: ${uiBytes}B exceeds ${STRUCTURED_OUTPUT_MAX_BYTES}B; ` +
+                `UI copy will hold the digest`
             );
           }
 
@@ -220,6 +231,21 @@ export class Cell {
             const preservedBlocks = toolResult.content.filter(
               (block: { type?: string }) => block && block.type !== "text"
             );
+
+            // Record on the UI copy that the model saw a digest, and where the
+            // full result lives. The transcript still holds the whole payload;
+            // this is provenance, not a substitute for it.
+            const registered = uiResults.take(toolCallId);
+            if (registered) {
+              uiResults.set(toolCallId, {
+                content: registered.content,
+                meta: {
+                  model_context_folded: true,
+                  result_ref: saveOutcome.result_ref,
+                  original_bytes: saveOutcome.byte_size,
+                },
+              });
+            }
 
             return {
               content: [{ type: "text" as const, text: compactText }, ...preservedBlocks],
@@ -339,6 +365,12 @@ export class Cell {
         activeToolTimer = null;
       }
       this.agent = null;
+      // Whatever was never consumed goes now, on every exit path — a run that
+      // failed or was cancelled mid-tool would otherwise leave results behind.
+      if (uiResults.misses > 0) {
+        logDiagnostic(`ui result registry: ${uiResults.misses} miss(es) during this run`);
+      }
+      uiResults.clear();
       if (mcpBridge) {
         await mcpBridge.close();
       }

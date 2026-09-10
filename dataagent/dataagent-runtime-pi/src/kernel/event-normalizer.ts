@@ -48,7 +48,18 @@ export class EventNormalizer {
   private currentTurnId = "turn-0";
   private contentCounter = 0;
 
-  constructor(private readonly sm: RunStateMachine) {}
+  constructor(
+    private readonly sm: RunStateMachine,
+    /**
+     * UI copies of tool results, captured before folding.
+     *
+     * Optional so existing callers and tests keep working; when absent the
+     * event's own result is persisted, which is the pre-decoupling behaviour.
+     */
+    private readonly uiResults?: {
+      take(toolCallId: string): { content: unknown; meta: Record<string, unknown> | null } | null;
+    }
+  ) {}
 
   public get turnId(): string {
     return this.currentTurnId;
@@ -142,7 +153,13 @@ export class EventNormalizer {
         break;
       }
       case "tool_execution_end": {
-        const { output, output_meta } = unwrapToolResult(piEvent.result);
+        // Prefer the copy captured before folding: piEvent.result is the model's
+        // digest whenever the result was large, and persisting that is what lost
+        // charts and tables from history.
+        const uiCopy = this.uiResults?.take(String(piEvent.toolCallId ?? "")) ?? null;
+        const { output, output_meta } = uiCopy
+          ? { output: uiCopy.content, output_meta: uiCopy.meta }
+          : unwrapToolResult(piEvent.result);
         events.push(
           this.sm.createEvent("tool.completed", {
             turn_id: this.currentTurnId,
