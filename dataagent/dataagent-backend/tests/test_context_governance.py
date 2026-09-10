@@ -63,14 +63,19 @@ def test_an_unknown_cache_retention_is_rejected():
         resolve_cache_retention(_cfg(dataagent_pi_cache_retention="sometimes"))
 
 
-def test_the_legacy_disable_flag_still_turns_caching_off():
-    """DISABLE_PROMPT_CACHING never reached Pi; honour it now that it can."""
-    cfg = _cfg()
-    cfg.disable_prompt_caching = "1"
-    assert resolve_cache_retention(cfg) == "off"
+def test_the_legacy_disable_flag_is_read_from_provider_env():
+    """DISABLE_PROMPT_CACHING comes from build_provider_env, not from Settings.
+
+    Reading it off cfg found nothing and silently ignored an operator who had
+    switched caching off — the same class of miss as the flag never reaching the
+    Pi runtime in the first place.
+    """
+    assert resolve_cache_retention(_cfg(), {"DISABLE_PROMPT_CACHING": "1"}) == "off"
+    # Absent or empty leaves the configured value alone.
+    assert resolve_cache_retention(_cfg(), {"DISABLE_PROMPT_CACHING": ""}) == "short"
+    assert resolve_cache_retention(_cfg(), {}) == "short"
 
 
 def test_an_explicit_retention_wins_over_the_legacy_flag():
     cfg = _cfg(dataagent_pi_cache_retention="long")
-    cfg.disable_prompt_caching = "1"
-    assert resolve_cache_retention(cfg) == "long"
+    assert resolve_cache_retention(cfg, {"DISABLE_PROMPT_CACHING": "1"}) == "long"

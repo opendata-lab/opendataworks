@@ -47,3 +47,21 @@ test("resolveModel builds model for anyrouter", () => {
 test("resolveProviderProfile rejects openrouter until Bearer auth is supported", () => {
   assert.throws(() => resolveProviderProfile("openrouter"), ProviderNotSupportedError);
 });
+
+test("cache retention reaches the stream options, not just the init frame", async () => {
+  // The previous attempt declared cache_retention on the contract and never
+  // passed it to pi-ai, which defaults to "short" whenever the option is
+  // absent. Asserting the field exists on cell.init would have passed while
+  // caching stayed on — the same failure as DISABLE_PROMPT_CACHING.
+  const { toPiCacheRetention } = await import("../src/providers/stream-fn-resolver.js");
+
+  // "off" is what an operator writes; pi-ai only recognises "none".
+  assert.equal(toPiCacheRetention("off"), "none");
+  assert.equal(toPiCacheRetention("none"), "none");
+  assert.equal(toPiCacheRetention("short"), "short");
+  assert.equal(toPiCacheRetention("long"), "long");
+  // Unset must stay unset so pi-ai keeps its own default rather than being
+  // handed an invalid string.
+  assert.equal(toPiCacheRetention(undefined), undefined);
+  assert.equal(toPiCacheRetention("nonsense"), undefined);
+});

@@ -25,7 +25,10 @@ export type EventSink = (event: NeutralAgentEvent) => void;
 export type HeartbeatSink = (detail: Record<string, unknown>) => void;
 
 export interface RunModelFactory {
-  (providerId: string, modelId: string): { model: Model<Api>; streamFn: StreamFn };
+  (providerId: string, modelId: string, cacheRetention?: string): {
+    model: Model<Api>;
+    streamFn: StreamFn;
+  };
 }
 
 export interface CellRunResult {
@@ -70,7 +73,13 @@ export class Cell {
 
     try {
       mcpBridge = await connectMcpServers(init.mcp_servers, { connectTimeoutMs: 10_000 });
-      const { model, streamFn } = this.modelFactory(init.model.provider_id, init.model.model_id);
+      // Cache retention must reach the stream options, not merely the init
+      // frame: pi-ai defaults to "short" whenever the option is absent.
+      const { model, streamFn } = this.modelFactory(
+        init.model.provider_id,
+        init.model.model_id,
+        init.governance_settings?.cache_retention
+      );
       const boundary = new WorkspaceBoundaryEnforcer(init.boundary_policy as unknown as BoundaryPolicy);
       const tools = createTools({
         boundary,

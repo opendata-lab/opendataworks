@@ -71,7 +71,7 @@ def upgrade() -> None:
             "queue rows failed against a successful task",
             """
             SELECT COUNT(*) FROM da_agent_message_queue q
-            JOIN da_agent_task t ON t.task_id = q.last_task_id
+            JOIN da_agent_task t ON t.task_id = q.last_task_id AND t.source_queue_id = q.queue_id
             WHERE q.status = 'failed' AND t.task_status IN ('success', 'finished')
             """,
         )
@@ -81,6 +81,7 @@ def upgrade() -> None:
             """
             SELECT COUNT(*) FROM da_agent_message_schedule_log l
             JOIN da_agent_task t ON t.task_id = l.task_id
+                 AND t.source_schedule_log_id = l.schedule_log_id
             WHERE l.status = 'failed' AND t.task_status IN ('success', 'finished')
             """,
         )
@@ -103,11 +104,14 @@ def upgrade() -> None:
         op.execute(
             """
             UPDATE da_agent_message_queue q
-            JOIN da_agent_task t ON t.task_id = q.last_task_id
+            JOIN da_agent_task t
+              ON t.task_id = q.last_task_id
+             AND t.source_queue_id = q.queue_id
             SET q.status = 'completed', q.error_message = NULL
             WHERE q.status = 'failed'
               AND t.task_status = 'finished'
-              AND (t.error_message IS NULL OR t.error_message = '')
+              AND (t.error_json IS NULL OR t.error_json = '')
+              AND (q.error_message IS NULL OR q.error_message = '')
             """
         )
 
@@ -115,25 +119,23 @@ def upgrade() -> None:
         op.execute(
             """
             UPDATE da_agent_message_schedule_log l
-            JOIN da_agent_task t ON t.task_id = l.task_id
+            JOIN da_agent_task t
+              ON t.task_id = l.task_id
+             AND t.source_schedule_log_id = l.schedule_log_id
             SET l.status = 'completed', l.error_message = NULL
             WHERE l.status = 'failed'
               AND t.task_status = 'finished'
-              AND (t.error_message IS NULL OR t.error_message = '')
+              AND (t.error_json IS NULL OR t.error_json = '')
+              AND (l.error_message IS NULL OR l.error_message = '')
             """
         )
 
-    if _has_table("da_agent_message_schedule"):
-        op.execute(
-            """
-            UPDATE da_agent_message_schedule s
-            JOIN da_agent_task t ON t.task_id = s.last_task_id
-            SET s.last_error_message = NULL
-            WHERE s.last_error_message IS NOT NULL
-              AND t.task_status = 'finished'
-              AND (t.error_message IS NULL OR t.error_message = '')
-            """
-        )
+
+
+# da_agent_message_schedule.last_error_message is deliberately left alone. The
+# success->failed defect wrote NULL there anyway, so there is no known dirty
+# value to repair, and clearing it for any schedule that happens to point at a
+# finished task would erase unrelated evidence.
 
 
 def downgrade() -> None:
