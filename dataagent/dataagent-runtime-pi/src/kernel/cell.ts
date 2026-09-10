@@ -191,11 +191,22 @@ export class Cell {
           // outputs no longer need a fold exemption paid for in tokens.
           const toolCallId = String(context.toolCall?.id ?? "");
           const uiBytes = Buffer.byteLength(rawText, "utf8");
-          if (uiBytes <= STRUCTURED_OUTPUT_MAX_BYTES) {
+          // Held locally so the fold below can attach provenance without a
+          // take/set round-trip. take() counts a miss, and a result past the
+          // ceiling never registers one — so the round-trip logged a miss for
+          // a perfectly normal case and made the metric useless as a signal
+          // that the wiring is broken.
+          const uiContent =
+            uiBytes <= STRUCTURED_OUTPUT_MAX_BYTES
+              // Copy the array: sharing it would let the fold below mutate what
+              // the UI is about to persist.
+              ? toolResult.content.map((block) => ({ ...block }))
+              : null;
+          if (uiContent) {
             uiResults.set(toolCallId, {
               // Copy the array: sharing it would let the fold below mutate what
               // the UI is about to persist.
-              content: toolResult.content.map((block) => ({ ...block })),
+              content: uiContent,
               meta: null,
             });
           } else {
@@ -235,10 +246,9 @@ export class Cell {
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;
             // this is provenance, not a substitute for it.
-            const registered = uiResults.take(toolCallId);
-            if (registered) {
+            if (uiContent) {
               uiResults.set(toolCallId, {
-                content: registered.content,
+                content: uiContent,
                 meta: {
                   model_context_folded: true,
                   result_ref: saveOutcome.result_ref,
