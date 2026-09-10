@@ -222,24 +222,33 @@ export type FoldProvenanceField = (typeof FOLD_PROVENANCE_FIELDS)[number];
 
 const FOLD_PROVENANCE_FIELD_SET: ReadonlySet<string> = new Set(FOLD_PROVENANCE_FIELDS);
 
-const DETAIL_FIELD_ALIASES: Record<string, string> = {
-  exitCode: "exit_code",
-  exit_code: "exit_code",
-  bytes: "byte_count",
-  byte_count: "byte_count",
-  truncated: "truncated",
-  count: "count",
-  folded: "model_context_folded",
-  model_context_folded: "model_context_folded",
-  result_ref: "result_ref",
-  storage_path: "storage_path",
-  original_bytes: "original_bytes",
-  stored_bytes: "stored_bytes",
-  skill_name: "skill_name",
-  root_path: "root_path",
-  denied: "denied",
-  error: "error",
-};
+/**
+ * Looked up through a Map, not an object.
+ * 
+ * A plain object answers for every name on Object.prototype, so a tool
+ * returning details named `toString` or `__proto__` got a truthy "alias" —
+ * a function or the prototype itself — and its value was filed under a key
+ * like `[object Object]`. Tool results come from MCP servers too, so the
+ * names are not ours to trust.
+ */
+const DETAIL_FIELD_ALIASES = new Map<string, string>([
+  ["exitCode", "exit_code"],
+  ["exit_code", "exit_code"],
+  ["bytes", "byte_count"],
+  ["byte_count", "byte_count"],
+  ["truncated", "truncated"],
+  ["count", "count"],
+  ["folded", "model_context_folded"],
+  ["model_context_folded", "model_context_folded"],
+  ["result_ref", "result_ref"],
+  ["storage_path", "storage_path"],
+  ["original_bytes", "original_bytes"],
+  ["stored_bytes", "stored_bytes"],
+  ["skill_name", "skill_name"],
+  ["root_path", "root_path"],
+  ["denied", "denied"],
+  ["error", "error"],
+]);
 
 /**
  * Split a pi-agent-core tool result into the neutral wire shape.
@@ -268,14 +277,16 @@ export function unwrapToolResult(result: unknown): {
     return { output: result, output_meta: null };
   }
 
-  const meta: Record<string, unknown> = {};
-  const engineDetails: Record<string, unknown> = {};
+  // Null-prototype: assigning `__proto__` on a normal object sets the
+  // prototype instead of storing a key, which silently loses the value.
+  const meta: Record<string, unknown> = Object.create(null);
+  const engineDetails: Record<string, unknown> = Object.create(null);
   if (wrapper.details && typeof wrapper.details === "object" && !Array.isArray(wrapper.details)) {
     for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
-      const alias = DETAIL_FIELD_ALIASES[key];
+      const alias = DETAIL_FIELD_ALIASES.get(key);
       const displacedKey = key.startsWith("source_") ? key.slice("source_".length) : "";
       const displacedAlias = FOLD_PROVENANCE_FIELD_SET.has(displacedKey)
-        ? DETAIL_FIELD_ALIASES[displacedKey]
+        ? DETAIL_FIELD_ALIASES.get(displacedKey)
         : undefined;
       if (alias) {
         meta[alias] = value;
@@ -300,11 +311,15 @@ export function unwrapToolResult(result: unknown): {
   }
 
   if (Object.keys(engineDetails).length > 0) {
-    meta.engine_details = engineDetails;
+    // Spread back to an ordinary object at the boundary: the null prototype is
+    // how accumulation stays safe, not something callers should have to know.
+    // Spread copies own keys without running setters, so `__proto__` survives
+    // as data rather than becoming a prototype again.
+    meta.engine_details = { ...engineDetails };
   }
 
   return {
     output: wrapper.content ?? null,
-    output_meta: Object.keys(meta).length > 0 ? meta : null,
+    output_meta: Object.keys(meta).length > 0 ? { ...meta } : null,
   };
 }

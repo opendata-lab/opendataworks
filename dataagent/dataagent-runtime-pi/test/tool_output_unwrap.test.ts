@@ -288,3 +288,28 @@ test("an unfolded result's non-object details are kept, not dropped", async () =
   assert.equal(unwrapToolResult({ content: [] }).output_meta, null);
   assert.equal(unwrapToolResult({ content: [], details: null }).output_meta, null);
 });
+
+test("a details key that names something on Object.prototype is not an alias", async () => {
+  // A plain object answers for every inherited name, so DETAIL_FIELD_ALIASES
+  // returned a function for `toString` and the prototype itself for
+  // `__proto__` — both truthy, so the value was filed under a key like
+  // "[object Object]". Tool results come from MCP servers, so these names are
+  // not ours to trust.
+  const { unwrapToolResult } = await import("../src/kernel/event-normalizer.js");
+
+  for (const name of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
+    const meta = unwrapToolResult({
+      content: [],
+      details: JSON.parse(`{"${name}": {"v": 1}}`),
+    }).output_meta!;
+    const engine = meta.engine_details as Record<string, unknown>;
+
+    assert.deepEqual(engine[name], { v: 1 }, `${name} must survive as data`);
+    assert.equal(meta["[object Object]"], undefined);
+    // The value must not have become anyone's prototype.
+    assert.equal(Object.getPrototypeOf(engine), Object.prototype);
+  }
+
+  // And nothing leaked onto every object in the process.
+  assert.equal(({} as Record<string, unknown>).v, undefined);
+});

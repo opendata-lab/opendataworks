@@ -210,6 +210,19 @@ def test_the_two_readers_agree_on_a_matrix_of_wrapper_shapes():
         {"content": [], "details": True},
         {"content": [], "details": None},
         {"content": [{"type": "text", "text": "hi"}]},
+        {"content": [], "details": {"nested": {"a": 1}}},
+        {"content": [], "details": {}},
+        {"details": {"count": 1}},
+        {"content": [], "details": {"engine_details": {"pre": 1}, "count": 2}},
+        {"content": [], "details": {"count": None}},
+        # Names that live on Object.prototype: a plain-object lookup answers for
+        # all of them, so TypeScript filed their values under a garbled key
+        # while Python did not.
+        {"content": [], "details": {"__proto__": {"x": 1}}},
+        {"content": [], "details": {"toString": "t"}},
+        {"content": [], "details": {"constructor": "c"}},
+        {"content": [], "details": {"valueOf": 1}},
+        {"content": [], "details": {"hasOwnProperty": True}},
     ]
 
     module = (runtime / "dist" / "src" / "kernel" / "event-normalizer.js").as_uri()
