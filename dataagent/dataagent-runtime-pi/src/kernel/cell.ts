@@ -27,6 +27,29 @@ import {
 import { CompactionSession } from "../context/compaction-session.js";
 import { UiToolResultRegistry } from "./ui-tool-result-registry.js";
 
+/**
+ * Add fold provenance to a tool's own metadata without losing either.
+ *
+ * The fold has to win the canonical names: a reader following `result_ref` must
+ * reach the stored result, not whatever the tool happened to reference. But
+ * overwriting silently destroys real evidence — fetch_tool_result reports the
+ * source it read in `details.result_ref`, and a replacement that plausible is
+ * one nobody would ever notice. Displaced values keep a `source_` prefix.
+ */
+export function mergeFoldProvenance(
+  toolMeta: Record<string, unknown> | null | undefined,
+  fold: Record<string, unknown>
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...(toolMeta ?? {}) };
+  for (const [key, value] of Object.entries(fold)) {
+    if (key in merged) {
+      merged[`source_${key}`] = merged[key];
+    }
+    merged[key] = value;
+  }
+  return merged;
+}
+
 export type EventSink = (event: NeutralAgentEvent) => void;
 /** Liveness signal during a slow tool. Carries no state the UI renders. */
 export type HeartbeatSink = (detail: Record<string, unknown>) => void;
@@ -248,25 +271,30 @@ export class Cell {
             if (uiOutput) {
               uiResults.set(toolCallId, {
                 output: uiOutput,
-                meta: {
-                  ...(unwrapped.output_meta ?? {}),
+                meta: mergeFoldProvenance(unwrapped.output_meta, {
                   model_context_folded: true,
                   result_ref: saveOutcome.result_ref,
                   original_bytes: saveOutcome.byte_size,
-                },
+                }),
               });
             }
 
             return {
               content: [{ type: "text" as const, text: compactText }, ...preservedBlocks],
-              details: {
-                folded: true,
-                result_ref: saveOutcome.result_ref,
-                storage_path: saveOutcome.relative_path,
-                original_bytes: saveOutcome.byte_size,
-                folded_text_blocks: textBlocks.length,
-                preserved_blocks: nonTextBlockCount,
-              },
+              // Merge rather than replace: past the persistence ceiling nothing
+              // is registered, so this is the only copy the transcript gets and
+              // substituting it dropped every detail the tool reported.
+              details: mergeFoldProvenance(
+                toolResult.details as Record<string, unknown> | undefined,
+                {
+                  folded: true,
+                  result_ref: saveOutcome.result_ref,
+                  storage_path: saveOutcome.relative_path,
+                  original_bytes: saveOutcome.byte_size,
+                  folded_text_blocks: textBlocks.length,
+                  preserved_blocks: nonTextBlockCount,
+                }
+              ),
             };
           } catch (err) {
             logDiagnostic(`afterToolCall fold failed, keeping raw: ${err}`);

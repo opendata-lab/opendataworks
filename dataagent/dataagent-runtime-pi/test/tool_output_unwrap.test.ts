@@ -126,3 +126,66 @@ test("without a registered copy the event result is still persisted", async () =
   assert.equal((payload.output_meta as Record<string, unknown>).exit_code, 0);
   assert.equal(registry.unconsumed, 0, "an unregistered lookup is not a fault");
 });
+
+test("fold provenance takes the canonical names without discarding the tool's", async () => {
+  // fetch_tool_result reports the source it read in details.result_ref. Folding
+  // its output has to claim result_ref for the stored copy — a reader following
+  // it must reach that copy — but overwriting silently swapped one plausible
+  // ref for another, which is the kind of loss nobody notices.
+  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+
+  const merged = mergeFoldProvenance(
+    { result_ref: "res_source", is_tabular: true, original_bytes: 11 },
+    { model_context_folded: true, result_ref: "res_fold", original_bytes: 99 }
+  );
+
+  assert.equal(merged.result_ref, "res_fold", "the fold must own the canonical name");
+  assert.equal(merged.source_result_ref, "res_source", "the tool's ref must survive");
+  assert.equal(merged.original_bytes, 99);
+  assert.equal(merged.source_original_bytes, 11);
+  // Non-colliding keys pass through untouched.
+  assert.equal(merged.is_tabular, true);
+  assert.equal(merged.model_context_folded, true);
+});
+
+test("a tool without colliding metadata gains nothing extra", async () => {
+  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+  const merged = mergeFoldProvenance({ count: 3 }, { model_context_folded: true });
+  assert.deepEqual(merged, { count: 3, model_context_folded: true });
+});
+
+test("folding past the persistence ceiling still reports the tool's details", async () => {
+  // Past the ceiling nothing is registered, so the folded result is the only
+  // copy the transcript gets. Replacing details rather than merging dropped
+  // every detail the tool reported for exactly the largest results.
+  const { mergeFoldProvenance } = await import("../src/kernel/cell.js");
+  const { EventNormalizer } = await import("../src/kernel/event-normalizer.js");
+  const { RunStateMachine } = await import("../src/kernel/run-state-machine.js");
+
+  const foldedResult = {
+    content: [{ type: "text", text: "digest" }],
+    details: mergeFoldProvenance(
+      { exitCode: 0, result_ref: "res_source" },
+      { folded: true, result_ref: "res_fold", original_bytes: 900_000 }
+    ),
+  };
+
+  const normalizer = new EventNormalizer(new RunStateMachine("r", "t", "r"));
+  const events = normalizer.normalize({
+    type: "tool_execution_end",
+    toolCallId: "tc",
+    toolName: "Bash",
+    isError: false,
+    result: foldedResult,
+  } as never);
+
+  const meta = (events.find((e) => e.type === "tool.completed")!.payload as Record<string, unknown>)
+    .output_meta as Record<string, unknown>;
+  // The digest identifies itself, which is why no separate ui_truncated flag
+  // was added.
+  assert.equal(meta.model_context_folded, true);
+  assert.equal(meta.result_ref, "res_fold");
+  // And the tool's own report is still there.
+  assert.equal(meta.exit_code, 0);
+  assert.equal((meta.engine_details as Record<string, unknown>).source_result_ref, "res_source");
+});
