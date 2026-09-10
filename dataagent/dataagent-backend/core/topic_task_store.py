@@ -12,6 +12,7 @@ import pymysql
 
 from config import get_settings
 from core.auth import is_auth_enabled
+from core.task_status import to_downstream_status
 from core.agent_profile_service import (
     DEFAULT_AGENT_ID,
     agent_summary_from_snapshot,
@@ -2097,7 +2098,10 @@ class TopicTaskStore:
         self._ensure_ready()
         error_json = json.dumps(error, ensure_ascii=False, default=_json_default) if error else None
         error_message = str((error or {}).get("message") or "").strip() or None
-        downstream_status = "completed" if task_status == "finished" else ("suspended" if task_status == "suspended" else "failed")
+        # Raises on an unrecognised terminal status instead of defaulting to
+        # "failed". That default is how every successful Pi run reached the
+        # queue as a failure: 'success' simply was not 'finished'.
+        downstream_status = to_downstream_status(task_status)
         conn = self._connect(database=self._schema_name())
         task_affected = 0
         topic_affected = 0

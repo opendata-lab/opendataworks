@@ -87,13 +87,14 @@ async def _run_adapter(monkeypatch, tmp_path: Path, outcome: PiRunOutcome, captu
 
 
 @pytest.mark.asyncio
-async def test_success_outcome_becomes_success_result(monkeypatch, tmp_path: Path):
+async def test_success_outcome_becomes_finished_result(monkeypatch, tmp_path: Path):
+    """finished, not success: engine words must not reach the task row."""
     captured: dict[str, Any] = {}
     result = await _run_adapter(
         monkeypatch, tmp_path, PiRunOutcome(terminal_status="success", answer="趋势结果"), captured
     )
 
-    assert result.task_status == "success"
+    assert result.task_status == "finished"
     assert result.content == "趋势结果"
     assert result.provider_id == "anthropic"
 
@@ -113,13 +114,14 @@ async def test_failure_outcome_becomes_error_result(monkeypatch, tmp_path: Path)
 
 
 @pytest.mark.asyncio
-async def test_cancelled_outcome_becomes_cancelled_result(monkeypatch, tmp_path: Path):
+async def test_cancelled_outcome_becomes_suspended_result(monkeypatch, tmp_path: Path):
+    """suspended is the platform status; cancelled is the engine outcome."""
     captured: dict[str, Any] = {}
     result = await _run_adapter(
         monkeypatch, tmp_path, PiRunOutcome(terminal_status="cancelled", answer="部分"), captured
     )
 
-    assert result.task_status == "cancelled"
+    assert result.task_status == "suspended"
     assert result.content == "部分"
 
 
@@ -241,7 +243,7 @@ async def test_mcp_servers_and_history_forwarded(monkeypatch, tmp_path: Path):
         cancel_reason=_no_cancel,
     )
 
-    assert result.task_status == "success"
+    assert result.task_status == "finished"
     ctx = captured["ctx"]
     assert ctx.prompt == "what tables exist?"
     assert len(ctx.history) == 2
@@ -302,3 +304,23 @@ async def test_governance_settings_flow_from_settings_into_cell_init(monkeypatch
         "max_context_tokens": 12_345,
     }
 
+
+
+@pytest.mark.asyncio
+async def test_pi_terminal_outcomes_use_platform_task_statuses(monkeypatch, tmp_path: Path):
+    """Pi must not return its own vocabulary to the platform.
+
+    'success' and 'cancelled' are engine words. Returning them verbatim put a
+    status in the task row that the SSE terminal set did not recognise, so a
+    finished run left the stream open and the UI spinning, while finish_task's
+    downstream mapping recorded the same run as a failure.
+    """
+    from core.task_status import TERMINAL_TASK_STATUSES
+
+    for outcome_status, expected in (("success", "finished"), ("cancelled", "suspended")):
+        captured: dict[str, Any] = {}
+        result = await _run_adapter(
+            monkeypatch, tmp_path, PiRunOutcome(terminal_status=outcome_status, answer="ok"), captured
+        )
+        assert result.task_status == expected, outcome_status
+        assert result.task_status in TERMINAL_TASK_STATUSES, outcome_status

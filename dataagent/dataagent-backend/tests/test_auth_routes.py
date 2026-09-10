@@ -12,13 +12,6 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
-if "pymysql" not in sys.modules:
-    sys.modules["pymysql"] = types.SimpleNamespace(
-        connect=lambda *args, **kwargs: None,
-        cursors=types.SimpleNamespace(DictCursor=object),
-        connections=types.SimpleNamespace(Connection=object),
-    )
-
 import core.auth as auth
 import api.auth_routes as auth_routes
 from main import app

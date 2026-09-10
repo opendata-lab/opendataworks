@@ -15,6 +15,7 @@ import httpx
 
 from config import get_settings, resolve_runtime_kind, resolve_workspace_scratch_dirs
 from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, normalize_permission_mode
+from core.task_status import from_engine_outcome as task_status_from_engine_outcome
 from core.ask_user_question import (
     ASK_USER_QUESTION_TOOL_NAME,
     is_ask_user_question_tool,
@@ -993,18 +994,13 @@ async def _execute_task_stream_via_pi_runtime(
     # deployment is ever switched back to claude_code.
     session_id = f"pi-{params.topic_id}-{params.task_id}"
 
-    if outcome.terminal_status == "success":
+    # The engine reports its own outcome vocabulary; the platform has a separate
+    # one. Returning 'success'/'cancelled' verbatim put a status in the task row
+    # that neither the SSE terminal set nor the downstream mapping recognised,
+    # so a finished run left the stream open and was queued as a failure.
+    if outcome.terminal_status in {"success", "cancelled"}:
         return TaskExecutionResult(
-            task_status="success",
-            content=outcome.answer,
-            usage=outcome.usage,
-            provider_id=provider_id,
-            model=model,
-            session_id=session_id,
-        )
-    if outcome.terminal_status == "cancelled":
-        return TaskExecutionResult(
-            task_status="cancelled",
+            task_status=task_status_from_engine_outcome(outcome.terminal_status),
             content=outcome.answer,
             usage=outcome.usage,
             provider_id=provider_id,
