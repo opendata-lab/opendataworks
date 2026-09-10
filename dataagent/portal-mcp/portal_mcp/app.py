@@ -554,7 +554,74 @@ def build_mcp_server(service: PortalToolService) -> FastMCP:
             payload["clusterId"] = payload.pop("cluster_id")
         return await service.analyze_sql(payload)
 
+    _inline_tool_schema_refs(mcp)
     return mcp
+
+
+def _resolve_json_pointer(root: dict[str, Any], ref: str) -> Any:
+    """Resolve a local JSON Pointer such as ``#/$defs/TableDdlInput``."""
+    node: Any = root
+    for raw in ref[2:].split("/"):
+        # RFC 6901 escapes: ~1 is "/", ~0 is "~". Order matters.
+        key = raw.replace("~1", "/").replace("~0", "~")
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
+def _inline_refs(schema: Any, root: dict[str, Any], seen: frozenset[str] = frozenset()) -> Any:
+    """Replace local ``$ref`` pointers with their definitions and drop ``$defs``.
+
+    ``seen`` carries the refs already expanded on the current branch so a
+    self-referential model degrades to a plain object instead of recursing
+    forever. Today's portal models are flat, but a future nested one must not
+    hang the server at import time.
+    """
+    if isinstance(schema, list):
+        return [_inline_refs(item, root, seen) for item in schema]
+    if not isinstance(schema, dict):
+        return schema
+
+    ref = schema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/"):
+        if ref in seen:
+            return {"type": "object"}
+        target = _resolve_json_pointer(root, ref)
+        if not isinstance(target, dict):
+            # Leave an unresolvable ref untouched rather than silently
+            # producing a schema that claims fewer constraints than it has.
+            return schema
+        siblings = {key: value for key, value in schema.items() if key != "$ref"}
+        return _inline_refs({**target, **siblings}, root, seen | {ref})
+
+    return {
+        key: _inline_refs(value, root, seen)
+        for key, value in schema.items()
+        if key != "$defs"
+    }
+
+
+def _inline_tool_schema_refs(mcp: FastMCP) -> None:
+    """Publish tool schemas with no ``$ref`` indirection.
+
+    FastMCP derives each tool's schema from its ``params: SomeModel`` signature,
+    which puts the real fields under ``$defs`` and leaves ``properties.params``
+    as a ``$ref``. Some clients rebuild the schema keeping only type/properties/
+    required — pi-ai's non-strict Anthropic adapter does exactly this — which
+    drops ``$defs`` and hands the model a pointer into nothing. The model then
+    cannot see the field names and guesses them (``table_name`` instead of
+    ``table``), and the server rejects the call under ``extra="forbid"``.
+
+    Inlining here keeps every Pydantic guarantee intact — cross-field
+    validators, aliases, ``extra="forbid"`` all still run on the real models —
+    while making the published schema self-contained for every client, not just
+    the one runtime that happens to compensate client-side.
+    """
+    for tool in mcp._tool_manager._tools.values():  # noqa: SLF001 - no public accessor
+        schema = tool.parameters
+        if isinstance(schema, dict) and "$defs" in schema:
+            tool.parameters = _inline_refs(schema, schema)
 
 
 def create_app(

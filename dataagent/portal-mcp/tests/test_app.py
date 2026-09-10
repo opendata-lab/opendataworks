@@ -283,3 +283,80 @@ async def test_query_readonly_forwards_default_limit():
         },
     )
     assert result.structuredContent["kind"] == "query_result"
+
+
+@pytest.mark.anyio
+async def test_published_tool_schemas_contain_no_ref_indirection():
+    """Every published schema must be self-contained.
+
+    FastMCP derives schemas from `params: SomeModel` signatures, which parks the
+    real fields under `$defs` and leaves `properties.params` as a `$ref`.
+    Clients that rebuild the schema keeping only type/properties/required — the
+    pi-ai non-strict Anthropic adapter does — drop `$defs` and hand the model a
+    dangling pointer, so it cannot see field names and guesses them.
+    """
+    import json
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = await mcp.list_tools()
+    assert tools, "expected registered tools"
+
+    offenders = []
+    for tool in tools:
+        text = json.dumps(tool.inputSchema)
+        if '"$ref"' in text or "$defs" in tool.inputSchema:
+            offenders.append(tool.name)
+    assert not offenders, f"tools still publish $ref/$defs indirection: {offenders}"
+
+
+@pytest.mark.anyio
+async def test_inlined_schema_keeps_fields_and_extra_forbid():
+    """Inlining must not weaken what the schema promises."""
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+
+    params = tools["portal_get_table_ddl"].inputSchema["properties"]["params"]
+    assert set(params["properties"]) == {"database", "table", "table_id"}
+    # extra="forbid" survives as additionalProperties:false, which is what stops
+    # a guessed field like table_name from being silently accepted.
+    assert params["additionalProperties"] is False
+    assert params["properties"]["database"]["description"]
+
+
+@pytest.mark.anyio
+async def test_inlining_expands_nested_models():
+    """A nested model must be expanded too, not just the top-level params ref."""
+    import json
+
+    mcp = build_mcp_server(PortalToolService(FakeBackendClient()))
+    tools = {tool.name: tool for tool in await mcp.list_tools()}
+    create_table = tools.get("portal_create_table")
+    if create_table is None:
+        pytest.skip("portal_create_table not registered")
+    assert "$ref" not in json.dumps(create_table.inputSchema)
+
+
+def test_inline_refs_survives_a_self_referential_schema():
+    """A recursive model must degrade, not hang the server at import time."""
+    from portal_mcp.app import _inline_refs
+
+    schema = {
+        "$defs": {"Node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/Node"}}}},
+        "properties": {"root": {"$ref": "#/$defs/Node"}},
+        "type": "object",
+    }
+    out = _inline_refs(schema, schema)
+    assert out["properties"]["root"]["properties"]["child"] == {"type": "object"}
+
+
+def test_inline_refs_unescapes_json_pointer_tokens():
+    """RFC 6901 escapes must be decoded, or a valid pointer silently misses."""
+    from portal_mcp.app import _inline_refs
+
+    schema = {
+        "$defs": {"a/b~c": {"type": "string", "title": "escaped"}},
+        "properties": {"x": {"$ref": "#/$defs/a~1b~0c"}},
+        "type": "object",
+    }
+    out = _inline_refs(schema, schema)
+    assert out["properties"]["x"]["title"] == "escaped"
