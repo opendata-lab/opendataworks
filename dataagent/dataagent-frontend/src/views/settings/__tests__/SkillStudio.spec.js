@@ -163,8 +163,10 @@ describe('SkillStudio', () => {
     expect(wrapper.text()).toContain('dataagent-nl2sql')
     expect(wrapper.text()).toContain('marketing-insights')
     expect(wrapper.text()).toContain('本地导入')
-    expect(wrapper.text()).toContain('已启用')
-    expect(wrapper.text()).toContain('未启用')
+    // The toggle carries the enabled state; a word beside it saying the same
+    // thing was one of five columns competing for the row.
+    expect(wrapper.findAll('.skill-row')).toHaveLength(2)
+    expect(wrapper.findAll('.skill-description')).toHaveLength(2)
     expect(wrapper.text()).not.toContain('当前运行')
     expect(wrapper.text()).not.toContain('最近更新')
     expect(wrapper.text()).not.toContain('2026-04-17')
@@ -309,7 +311,8 @@ describe('SkillStudio', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('查看详情')
+    // The whole row opens the detail view, so a button repeating that is gone.
+    expect(wrapper.findAll('.skill-row').length).toBeGreaterThan(0)
     expect(wrapper.text()).not.toContain('导入 Skill')
     expect(wrapper.text()).not.toContain('下载')
     expect(wrapper.text()).not.toContain('卸载')
@@ -317,5 +320,48 @@ describe('SkillStudio', () => {
     const targetSkill = wrapper.vm.filteredSkills.find((item) => item.folder === 'marketing-insights')
     await wrapper.vm.setSkillEnabled(targetSkill, true)
     expect(apiMocks.updateSkillRuntime).not.toHaveBeenCalled()
+  })
+
+  it('renders refresh button and triggers loadDocuments', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('刷新')
+    await wrapper.vm.loadDocuments()
+    await flushPromises()
+
+    expect(apiMocks.listSkillDocuments).toHaveBeenCalledTimes(2)
+  })
+
+  it('opens import dialog showing detected skills grouped by source with symlink and copy options', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.vm.importDialogVisible).toBe(false)
+    wrapper.vm.openImportDialog()
+    expect(wrapper.vm.importDialogVisible).toBe(true)
+
+    expect(wrapper.vm.detectedGroups.length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.vm.detectedGroups[0].path).toBe('/workspace/skills')
+    expect(wrapper.vm.importMode).toBe('symlink')
+    expect(wrapper.vm.targetLocation).toBe('/dataagent/.claude/skills')
+  })
+
+  it('allows batch selecting and importing detected skills', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    wrapper.vm.openImportDialog()
+    wrapper.vm.toggleAllSelection(true)
+    expect(wrapper.vm.selectedDetectedCount).toBe(4)
+    expect(wrapper.vm.isAllDetectedSelected).toBe(true)
+
+    wrapper.vm.importMode = 'copy'
+    wrapper.vm.targetLocation = '/workspace/skills'
+    await wrapper.vm.confirmBatchImport()
+    await flushPromises()
+
+    expect(messageMocks.success).toHaveBeenCalledWith(expect.stringContaining('拷贝'))
+    expect(wrapper.vm.importDialogVisible).toBe(false)
   })
 })

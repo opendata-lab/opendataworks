@@ -8,6 +8,7 @@ const LEGACY_TAB_TO_PATH = {
   skills: '/skills',
   agents: '/agents',
   models: '/models',
+  mcp: '/mcp',
   widget: '/widget-access'
 }
 
@@ -44,6 +45,7 @@ export const redirectLegacyIntelligentQueryPath = (to) => {
       skills: 'IntelligentQuerySkills',
       agents: 'IntelligentQueryAgents',
       models: 'IntelligentQueryModels',
+      mcp: 'IntelligentQueryMcp',
       widget: 'IntelligentQueryWidget'
     }
     const name = routeNames[segments[0]]
@@ -119,6 +121,12 @@ export const routes = [
         name: 'IntelligentQueryModels',
         component: () => import('@/views/settings/DataAgentConfig.vue'),
         meta: { tab: 'models', title: '模型管理', adminOnly: true }
+      },
+      {
+        path: 'mcp',
+        name: 'IntelligentQueryMcp',
+        component: () => import('@/views/settings/McpConfig.vue'),
+        meta: { tab: 'mcp', title: 'MCP 服务', adminOnly: true }
       },
       {
         path: 'widget-access',

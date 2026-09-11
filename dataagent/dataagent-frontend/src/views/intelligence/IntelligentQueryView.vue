@@ -31,6 +31,10 @@
             <el-icon><Cpu /></el-icon>
             <span>模型管理</span>
           </el-menu-item>
+          <el-menu-item index="mcp">
+            <el-icon><Connection /></el-icon>
+            <span>MCP 服务</span>
+          </el-menu-item>
           <el-menu-item index="widget">
             <el-icon><Monitor /></el-icon>
             <span>Widget 接入</span>
@@ -69,7 +73,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Collection, Cpu, DataBoard, MagicStick, Monitor, TrendCharts, User } from '@element-plus/icons-vue'
+import { Collection, Connection, Cpu, DataBoard, MagicStick, Monitor, TrendCharts, User } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { withAgentContext } from '@/router/agentContext'
 
@@ -91,6 +95,7 @@ const MENU_TO_PATH = {
   skills: '/skills',
   agents: '/agents',
   models: '/models',
+  mcp: '/mcp',
   widget: '/widget-access',
   evaluations: '/evaluations',
   'eval-results': '/evaluation-results'

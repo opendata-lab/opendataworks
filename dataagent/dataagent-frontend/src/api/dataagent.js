@@ -52,6 +52,22 @@ export const dataagentApi = {
     return dataagentRequest.post('/v1/nl2sql-admin/model-detections', data)
   },
 
+  listProviders() {
+    return dataagentRequest.get('/v1/nl2sql-admin/providers')
+  },
+
+  createProvider(data) {
+    return dataagentRequest.post('/v1/nl2sql-admin/providers', data)
+  },
+
+  updateProvider(providerId, data) {
+    return dataagentRequest.put(`/v1/nl2sql-admin/providers/${encodeURIComponent(providerId)}`, data)
+  },
+
+  deleteProvider(providerId) {
+    return dataagentRequest.delete(`/v1/nl2sql-admin/providers/${encodeURIComponent(providerId)}`)
+  },
+
   listSkillDocuments() {
     return dataagentRequest.get('/v1/dataagent/skills/documents')
   },
@@ -92,6 +108,28 @@ export const dataagentApi = {
 
   rollbackSkillDocument(documentId, versionId) {
     return dataagentRequest.post(`/v1/dataagent/skills/documents/${documentId}/versions/${versionId}/rollback`)
+  },
+
+  // ---- MCP Servers ----
+
+  listMcpServers() {
+    return dataagentRequest.get('/v1/dataagent/mcp/servers')
+  },
+
+  createMcpServer(data) {
+    return dataagentRequest.post('/v1/dataagent/mcp/servers', data)
+  },
+
+  updateMcpServer(serverId, data) {
+    return dataagentRequest.put(`/v1/dataagent/mcp/servers/${encodeURIComponent(serverId)}`, data)
+  },
+
+  deleteMcpServer(serverId) {
+    return dataagentRequest.delete(`/v1/dataagent/mcp/servers/${encodeURIComponent(serverId)}`)
+  },
+
+  importMcpServers(data) {
+    return dataagentRequest.post('/v1/dataagent/mcp/servers/import', data)
   },
 
   listAgentProfiles() {

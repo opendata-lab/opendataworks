@@ -2,42 +2,54 @@
   <div class="dataagent-config">
     <div v-loading="loading" class="provider-workbench">
       <aside class="provider-nav">
-        <div
-          v-for="group in groupedProviders"
-          :key="group.group"
-          class="provider-group"
-        >
-          <div class="provider-group-title">{{ group.group }}</div>
-          <button
-            v-for="provider in group.items"
-            :key="provider.provider_id"
-            type="button"
-            class="provider-card"
-            :class="{ active: provider.provider_id === selectedProviderId }"
-            @click="selectProvider(provider.provider_id)"
+        <div class="provider-nav-body">
+          <div
+            v-for="group in groupedProviders"
+            :key="group.group"
+            class="provider-group"
           >
-            <div class="provider-card-head">
-              <div class="provider-card-main">
-                <div class="provider-card-name-row">
-                  <div class="provider-card-name">{{ provider.display_name }}</div>
-                  <span
-                    v-if="provider.provider_id === selectedProviderId && isProviderDirty(provider.provider_id)"
-                    class="provider-dirty-mark"
-                  >
-                    未保存
-                  </span>
+            <div class="provider-group-title">{{ group.group }}</div>
+            <button
+              v-for="provider in group.items"
+              :key="provider.provider_id"
+              type="button"
+              class="provider-card"
+              :class="{ active: provider.provider_id === selectedProviderId }"
+              @click="selectProvider(provider.provider_id)"
+            >
+              <div class="provider-card-head">
+                <div class="provider-card-main">
+                  <div class="provider-card-name-row">
+                    <div class="provider-card-name">{{ provider.name || provider.display_name }}</div>
+                    <span
+                      v-if="provider.provider_id === selectedProviderId && isProviderDirty(provider.provider_id)"
+                      class="provider-dirty-mark"
+                    >
+                      未保存
+                    </span>
+                  </div>
+                  <div class="provider-card-id">{{ provider.provider_id }}</div>
                 </div>
-                <div class="provider-card-id">{{ provider.provider_id }}</div>
+                <span class="provider-status" :class="statusClass(providerPreview(provider).status)">
+                  {{ statusLabel(providerPreview(provider).status, providerPreview(provider).providerEnabled) }}
+                </span>
               </div>
-              <span class="provider-status" :class="statusClass(providerPreview(provider).status)">
-                {{ statusLabel(providerPreview(provider).status, providerPreview(provider).providerEnabled) }}
-              </span>
-            </div>
-            <div class="provider-card-meta">
-              <span>{{ providerPreview(provider).enabledModels.length }} 个已启用模型</span>
-              <span>{{ credentialSummary(provider) }}</span>
-            </div>
-          </button>
+              <div class="provider-card-meta">
+                <span>{{ providerPreview(provider).enabledModels.length }} 个已启用模型</span>
+                <span>{{ credentialSummary(provider) }}</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <div class="provider-nav-footer">
+          <el-button
+            class="add-provider-btn"
+            :icon="Plus"
+            @click="addNewProvider"
+          >
+            添加 Provider
+          </el-button>
         </div>
       </aside>
 
@@ -45,10 +57,18 @@
         <div class="provider-titlebar">
           <div class="provider-title-main">
             <div class="provider-kicker">{{ currentProvider.provider_group || '模型供应商' }}</div>
-            <h3>{{ currentProvider.display_name }}</h3>
+            <h3>{{ currentDraft.name || currentProvider.display_name || currentProvider.provider_id }}</h3>
             <p>{{ currentProviderPreview.message }}</p>
           </div>
           <div class="provider-title-actions">
+            <el-button
+              v-if="canDeleteCurrentProvider"
+              type="danger"
+              plain
+              @click="deleteCurrentProvider"
+            >
+              删除 Provider
+            </el-button>
             <el-button
               type="primary"
               :icon="Check"
@@ -67,17 +87,25 @@
 
         <div class="service-section">
           <div class="section-heading">
-            <div class="section-title">连接配置</div>
+            <div class="section-title">基础配置</div>
           </div>
 
           <el-form label-position="top" class="provider-form">
             <el-row :gutter="16">
               <el-col :xs="24" :md="12">
+                <el-form-item label="Provider 名称">
+                  <el-input
+                    v-model="currentDraft.name"
+                    placeholder="输入自定义供应商标识，如 自建DeepSeek网关"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :md="12">
                 <el-form-item>
                   <template #label>
                     <span class="field-label">
                       {{ credentialLabel(currentProvider.provider_id) }}
-                      <el-tooltip content="供应商控制台生成的访问凭证。留空表示继续使用后端已保存的凭证。" placement="top">
+                      <el-tooltip content="供应商生成的访问凭证。留空表示继续使用后端已保存的凭证。" placement="top">
                         <el-icon><QuestionFilled /></el-icon>
                       </el-tooltip>
                     </span>
@@ -91,116 +119,173 @@
                   />
                 </el-form-item>
               </el-col>
-              <el-col :xs="24" :md="12">
+            </el-row>
+
+            <el-row :gutter="16">
+              <el-col :xs="24" :md="16">
                 <el-form-item>
                   <template #label>
                     <span class="field-label">
-                      Base URL
-                      <el-tooltip content="供应商或兼容网关的 API 服务地址。官方供应商可使用默认地址。" placement="top">
+                      API Base URL
+                      <el-tooltip content="供应商或兼容网关的 API 服务地址。可从下拉列表选择常见厂商，或直接输入自定义 URL。" placement="top">
                         <el-icon><QuestionFilled /></el-icon>
                       </el-tooltip>
                     </span>
                   </template>
-                  <el-input
+                  <el-select
                     v-model="currentDraft.base_url"
-                    :placeholder="baseUrlPlaceholder(currentProvider.provider_id)"
-                    @input="clearCurrentDetections"
-                  />
+                    filterable
+                    allow-create
+                    default-first-option
+                    clearable
+                    placeholder="选择常见厂商预置地址或输入自定义 Base URL"
+                    class="full-width"
+                    @change="clearCurrentDetections"
+                  >
+                    <el-option
+                      v-for="preset in BASE_URL_PRESETS"
+                      :key="preset.value"
+                      :label="preset.label"
+                      :value="preset.value"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :md="8">
+                <el-form-item>
+                  <template #label>
+                    <span class="field-label">
+                      流式能力
+                      <el-tooltip content="用于控制模型响应事件粒度。供应商兼容性不完整时可切换为兼容模式。" placement="top">
+                        <el-icon><QuestionFilled /></el-icon>
+                      </el-tooltip>
+                    </span>
+                  </template>
+                  <div class="stream-mode-row">
+                    <el-switch
+                      v-model="currentDraft.supports_partial_messages"
+                      inline-prompt
+                      active-text="细粒度"
+                      inactive-text="兼容"
+                    />
+                    <span>{{ currentDraft.supports_partial_messages ? '细粒度事件' : '兼容模式' }}</span>
+                  </div>
                 </el-form-item>
               </el-col>
             </el-row>
-
-            <el-form-item>
-              <template #label>
-                <span class="field-label">
-                  流式能力
-                  <el-tooltip content="用于控制模型响应事件粒度。供应商兼容性不完整时可切换为兼容模式。" placement="top">
-                    <el-icon><QuestionFilled /></el-icon>
-                  </el-tooltip>
-                </span>
-              </template>
-              <div class="stream-mode-row">
-                <el-switch
-                  v-model="currentDraft.supports_partial_messages"
-                  inline-prompt
-                  active-text="细粒度"
-                  inactive-text="兼容"
-                />
-                <span>{{ currentDraft.supports_partial_messages ? '细粒度响应事件' : '兼容响应事件' }}</span>
-              </div>
-            </el-form-item>
           </el-form>
         </div>
 
         <div class="service-section">
           <div class="section-heading model-heading">
-            <div class="section-title">模型列表</div>
+            <div>
+              <div class="section-title">模型列表</div>
+              <div class="section-subtitle">每行一个模型 ID，可配置高级参数，并单独进行连通性检测。</div>
+            </div>
             <div class="custom-model-row">
               <el-input
                 v-model="customModelInput"
-                placeholder="追加自定义模型"
+                placeholder="添加模型 ID，如 gpt-4o"
                 @keyup.enter="addCustomModel"
               />
-              <el-button :icon="Plus" @click="addCustomModel">追加</el-button>
+              <el-button :icon="Plus" type="primary" plain @click="addCustomModel">追加</el-button>
             </div>
           </div>
 
-          <div v-if="currentSupportedModels.length" class="model-table">
-            <div class="model-row model-row-head">
-              <span>模型</span>
-              <span>检测状态</span>
-              <span>检测</span>
-              <span>启用</span>
-            </div>
+          <div v-if="currentSupportedModels.length" class="model-list">
             <div
-              v-for="model in currentSupportedModels"
-              :key="model"
-              class="model-row"
+              v-for="model in currentModelRows"
+              :key="model.id"
+              class="model-card"
             >
-              <div class="model-name-cell">
-                <span>{{ model }}</span>
-                <button
-                  v-if="currentDraft.custom_models.includes(model)"
-                  type="button"
-                  class="text-danger"
-                  @click="removeCustomModel(model)"
-                >
-                  删除
-                </button>
+              <div class="model-row-main">
+                <div class="model-name-cell">
+                  <span class="model-id-badge">{{ model.id }}</span>
+                  <el-tag v-if="model.max_output_tokens || model.context_window" size="small" type="info">
+                    高级已配置
+                  </el-tag>
+                </div>
+                <div class="model-status-cell">
+                  <span class="model-detection" :class="detectionClass(model.id)">
+                    {{ detectionLabel(model.id) }}
+                  </span>
+                </div>
+                <div class="model-ops-cell">
+                  <el-button
+                    size="small"
+                    :loading="isDetecting(model.id)"
+                    :disabled="!canDetectCurrentProvider"
+                    @click="detectModel(model.id)"
+                  >
+                    检测
+                  </el-button>
+                  <el-switch
+                    :model-value="isModelEnabled(model.id)"
+                    :disabled="!canEnableModel(model.id)"
+                    @update:model-value="setModelEnabled(model.id, $event)"
+                  />
+                  <el-button
+                    text
+                    size="small"
+                    type="primary"
+                    @click="toggleAdvanced(model.id)"
+                  >
+                    {{ isAdvancedOpen(model.id) ? '收起高级' : '高级' }}
+                  </el-button>
+                  <el-button
+                    text
+                    size="small"
+                    class="text-danger"
+                    @click="removeModel(model.id)"
+                  >
+                    删除
+                  </el-button>
+                </div>
               </div>
-              <div>
-                <span class="model-detection" :class="detectionClass(model)">
-                  {{ detectionLabel(model) }}
-                </span>
-              </div>
-              <div>
-                <el-button
-                  size="small"
-                  :loading="isDetecting(model)"
-                  :disabled="!canDetectCurrentProvider"
-                  @click="detectModel(model)"
-                >
-                  检测
-                </el-button>
-              </div>
-              <div>
-                <el-switch
-                  :model-value="isModelEnabled(model)"
-                  :disabled="!canEnableModel(model)"
-                  @update:model-value="setModelEnabled(model, $event)"
-                />
+
+              <div v-if="isAdvancedOpen(model.id)" class="model-advanced-pane">
+                <el-row :gutter="16">
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="Max Output Tokens">
+                      <el-input-number
+                        v-model="model.max_output_tokens"
+                        :min="1"
+                        :max="2000000"
+                        :step="1024"
+                        placeholder="如 4096"
+                        class="full-width"
+                      />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="Context Window">
+                      <el-input-number
+                        v-model="model.context_window"
+                        :min="1"
+                        :max="10000000"
+                        :step="8192"
+                        placeholder="如 128000"
+                        class="full-width"
+                      />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
               </div>
             </div>
           </div>
-          <div v-else class="empty-block">当前供应商暂无模型，请追加自定义模型。</div>
+          <div v-else class="empty-block">当前供应商暂无模型，请在右上角追加模型。</div>
         </div>
 
         <div class="service-section default-section">
-          <div class="section-title">默认模型</div>
+          <div>
+            <div class="section-title">默认生效模型</div>
+            <div class="section-subtitle">对话中生效的全局模型。</div>
+          </div>
           <el-select
             v-model="currentDefaultModel"
             placeholder="请先启用可用模型"
             :disabled="!currentEnabledModels.length"
+            class="default-model-select"
           >
             <el-option
               v-for="model in currentEnabledModels"
@@ -221,11 +306,25 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Plus, QuestionFilled } from '@element-plus/icons-vue'
 import { dataagentApi } from '@/api/dataagent'
 
+const BASE_URL_PRESETS = [
+  { label: 'Anthropic 官方 (https://api.anthropic.com)', value: 'https://api.anthropic.com' },
+  { label: 'OpenAI 官方 (https://api.openai.com/v1)', value: 'https://api.openai.com/v1' },
+  { label: 'OpenRouter (https://openrouter.ai/api)', value: 'https://openrouter.ai/api' },
+  { label: 'DeepSeek (https://api.deepseek.com)', value: 'https://api.deepseek.com' },
+  { label: 'SiliconFlow 硅基流动 (https://api.siliconflow.cn/v1)', value: 'https://api.siliconflow.cn/v1' },
+  { label: '阿里云百炼 DashScope (https://dashscope.aliyuncs.com/compatible-mode/v1)', value: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+  { label: '智谱 BigModel (https://open.bigmodel.cn/api/paas/v4)', value: 'https://open.bigmodel.cn/api/paas/v4' },
+  { label: 'AnyRouter (https://a-ocnfniawgw.cn-shanghai.fcapp.run)', value: 'https://a-ocnfniawgw.cn-shanghai.fcapp.run' },
+  { label: '本地 Ollama (http://localhost:11434/v1)', value: 'http://localhost:11434/v1' },
+  { label: '本地 vLLM (http://localhost:8000/v1)', value: 'http://localhost:8000/v1' }
+]
+
 const loading = ref(false)
 const savingProviderId = ref('')
 const providers = ref([])
 const selectedProviderId = ref('')
 const customModelInput = ref('')
+const advancedOpenMap = reactive({})
 
 const providerDrafts = reactive({})
 const providerSnapshots = reactive({})
@@ -267,19 +366,67 @@ const normalizeDetections = (raw = {}) => {
   return result
 }
 
+const normalizeModelItems = (rawModels = []) => {
+  if (!Array.isArray(rawModels)) return []
+  return rawModels.map((item) => {
+    if (typeof item === 'string') {
+      return { id: item, max_output_tokens: null, context_window: null }
+    }
+    if (item && typeof item === 'object') {
+      return {
+        id: item.id || item.model_id || '',
+        max_output_tokens: item.max_output_tokens ?? null,
+        context_window: item.context_window ?? null
+      }
+    }
+    return null
+  }).filter((item) => item && item.id)
+}
+
+const getModelIds = (list = []) => {
+  if (!Array.isArray(list)) return []
+  return list.map((m) => (typeof m === 'string' ? m : m?.id || m?.model_id || '')).filter(Boolean)
+}
+
 const buildProviderDraft = (provider) => {
   const customModels = uniqueStrings(provider.custom_models || [])
   const modelDetections = normalizeDetections(provider.model_detections || {})
+  const normalizedModels = normalizeModelItems(provider.models || [])
+  const rawModelIds = getModelIds(provider.models || [])
+  const supportedModelIds = uniqueStrings([
+    ...(provider.supported_models || []),
+    ...customModels,
+    ...rawModelIds,
+    ...normalizedModels.map((m) => m.id)
+  ])
+
+  // Build model objects map
+  const modelDetails = {}
+  normalizedModels.forEach((m) => {
+    modelDetails[m.id] = {
+      max_output_tokens: m.max_output_tokens,
+      context_window: m.context_window
+    }
+  })
+
+  const enabledModelIds = provider.enabled_models
+    ? getModelIds(provider.enabled_models)
+    : (rawModelIds.length ? rawModelIds : uniqueStrings(provider.models || []))
+
   return {
     provider_id: provider.provider_id,
+    name: provider.name || provider.display_name || provider.provider_id,
+    provider_group: provider.provider_group || provider.group || '其他',
     provider_enabled: Boolean(provider.provider_enabled || provider.enabled),
     token: '',
     base_url: provider.base_url || '',
     supports_partial_messages: provider.supports_partial_messages !== false,
-    enabled_models: uniqueStrings(provider.models || []),
+    enabled_models: uniqueStrings(enabledModelIds),
     custom_models: customModels,
-    base_supported_models: uniqueStrings(provider.supported_models || []).filter((model) => !customModels.includes(model)),
-    model_detections: modelDetections
+    base_supported_models: supportedModelIds.filter((id) => !customModels.includes(id)),
+    model_details: modelDetails,
+    model_detections: modelDetections,
+    is_new: Boolean(provider.is_new)
   }
 }
 
@@ -287,12 +434,14 @@ const buildProviderSnapshot = (draft) => {
   const modelDetections = normalizeDetections(draft?.model_detections)
   const enabledModels = uniqueStrings(draft?.enabled_models)
   return {
+    name: String(draft?.name || '').trim(),
     provider_enabled: Boolean(draft?.provider_enabled),
     token: String(draft?.token || '').trim(),
     base_url: String(draft?.base_url || '').trim(),
     supports_partial_messages: draft?.supports_partial_messages !== false,
     enabled_models: enabledModels,
     custom_models: uniqueStrings(draft?.custom_models),
+    model_details: JSON.parse(JSON.stringify(draft?.model_details || {})),
     model_detections: modelDetections
   }
 }
@@ -312,20 +461,13 @@ const statusClass = (status) => {
   return 'is-pending'
 }
 
-const credentialLabel = (providerId) => (providerId === 'anthropic' ? 'API Key' : 'Token')
-const credentialPlaceholder = (providerId) => (providerId === 'anthropic' ? '留空保持现有 API Key' : '留空保持现有 Token')
-
-const baseUrlPlaceholder = (providerId) => {
-  if (providerId === 'anthropic') return 'https://api.anthropic.com'
-  if (providerId === 'openrouter') return 'https://openrouter.ai/api'
-  if (providerId === 'anyrouter') return 'https://a-ocnfniawgw.cn-shanghai.fcapp.run'
-  return '请输入兼容网关地址'
-}
+const credentialLabel = (providerId) => (providerId === 'anthropic' ? 'API Key' : 'API Key / Token')
+const credentialPlaceholder = (providerId) => (providerId === 'anthropic' ? '留空保持现有 API Key' : '输入访问凭证，留空保持现有配置')
 
 const groupedProviders = computed(() => {
   const groups = new Map()
   providers.value.forEach((provider) => {
-    const groupName = provider.provider_group || '其他'
+    const groupName = provider.provider_group || provider.group || '其他'
     if (!groups.has(groupName)) groups.set(groupName, [])
     groups.get(groupName).push(provider)
   })
@@ -342,6 +484,11 @@ const currentDraft = computed(() => {
 })
 
 const currentProviderId = computed(() => currentProvider.value?.provider_id || '')
+
+const canDeleteCurrentProvider = computed(() => {
+  if (!currentProvider.value) return false
+  return currentDraft.value?.is_new || currentProvider.value.provider_group === '自定义供应商' || providers.value.length > 1
+})
 
 const currentDefaultModel = computed({
   get() {
@@ -364,6 +511,7 @@ const isSavingCurrentProvider = computed(() => savingProviderId.value === curren
 
 const getDraft = (providerId) => {
   return providerDrafts[providerId] || {
+    name: '',
     provider_enabled: false,
     enabled_models: [],
     custom_models: [],
@@ -371,6 +519,7 @@ const getDraft = (providerId) => {
     token: '',
     base_url: '',
     supports_partial_messages: true,
+    model_details: {},
     model_detections: {}
   }
 }
@@ -409,6 +558,25 @@ const currentSupportedModels = computed(() => {
   return supportedModelsFor(currentProvider.value.provider_id)
 })
 
+const currentModelRows = computed(() => {
+  if (!currentDraft.value) return []
+  return currentSupportedModels.value.map((id) => {
+    const detail = currentDraft.value.model_details?.[id] || {}
+    return {
+      id,
+      max_output_tokens: detail.max_output_tokens ?? null,
+      context_window: detail.context_window ?? null
+    }
+  })
+})
+
+const isAdvancedOpen = (modelId) => Boolean(advancedOpenMap[`${currentProviderId.value}::${modelId}`])
+
+const toggleAdvanced = (modelId) => {
+  const key = `${currentProviderId.value}::${modelId}`
+  advancedOpenMap[key] = !advancedOpenMap[key]
+}
+
 const modelDetection = (model) => {
   return currentDraft.value?.model_detections?.[model] || {
     status: 'unverified',
@@ -439,7 +607,10 @@ const providerHasCredential = (provider, draft) => {
 }
 
 const providerBaseUrlReady = (provider, draft) => {
-  return provider.provider_id !== 'anthropic_compatible' || Boolean(String(draft?.base_url || '').trim())
+  if (provider.provider_id === 'anthropic_compatible' || draft?.is_new) {
+    return Boolean(String(draft?.base_url || '').trim())
+  }
+  return true
 }
 
 const providerPreview = (provider) => {
@@ -450,7 +621,7 @@ const providerPreview = (provider) => {
       message: provider.validation_message || '待配置',
       providerEnabled: Boolean(provider.provider_enabled || provider.enabled),
       enabled: Boolean(provider.enabled),
-      enabledModels: uniqueStrings(provider.models || [])
+      enabledModels: uniqueStrings(provider.models?.map?.((m) => (typeof m === 'string' ? m : m.id)) || provider.models || [])
     }
   }
 
@@ -477,7 +648,7 @@ const providerPreview = (provider) => {
   if (!providerHasCredential(provider, draft)) {
     return {
       status: 'unverified',
-      message: provider.provider_id === 'anthropic' ? '请填写 API Key' : '请填写 Token',
+      message: provider.provider_id === 'anthropic' ? '请填写 API Key' : '请填写 Token / API Key',
       providerEnabled,
       enabled: false,
       enabledModels: []
@@ -627,7 +798,24 @@ const restoreProviderDraft = (providerId) => {
 const loadSettings = async () => {
   loading.value = true
   try {
+    let providerList = null
+    if (typeof dataagentApi.listProviders === 'function') {
+      try {
+        const res = await dataagentApi.listProviders()
+        if (res && Array.isArray(res.providers)) {
+          providerList = res.providers
+        } else if (Array.isArray(res)) {
+          providerList = res
+        }
+      } catch {
+        // Continue to getSettings
+      }
+    }
+
     const payload = await dataagentApi.getSettings()
+    if (providerList && providerList.length) {
+      payload.providers = providerList
+    }
     applySettings(payload)
   } finally {
     loading.value = false
@@ -658,11 +846,48 @@ const selectProvider = async (providerId) => {
   customModelInput.value = ''
 }
 
+const addNewProvider = () => {
+  const newId = `custom_provider_${Date.now()}`
+  const newProvider = {
+    provider_id: newId,
+    name: '新建 Provider',
+    display_name: '新建 Provider',
+    provider_group: '自定义供应商',
+    base_url: '',
+    token: '',
+    auth_token_set: false,
+    api_key_set: false,
+    provider_enabled: true,
+    enabled: true,
+    supports_partial_messages: true,
+    models: [],
+    supported_models: [],
+    custom_models: [],
+    model_detections: {},
+    is_new: true
+  }
+
+  providers.value.push(newProvider)
+  const draft = buildProviderDraft(newProvider)
+  providerDrafts[newId] = draft
+  providerSnapshots[newId] = buildProviderSnapshot(draft)
+  selectedProviderId.value = newId
+}
+
 const addCustomModel = () => {
   if (!currentDraft.value) return
   const model = String(customModelInput.value || '').trim()
   if (!model) return
   currentDraft.value.custom_models = uniqueStrings([...(currentDraft.value.custom_models || []), model])
+  if (!currentDraft.value.model_details) {
+    currentDraft.value.model_details = {}
+  }
+  if (!currentDraft.value.model_details[model]) {
+    currentDraft.value.model_details[model] = {
+      max_output_tokens: null,
+      context_window: null
+    }
+  }
   if (!currentDraft.value.model_detections[model]) {
     currentDraft.value.model_detections[model] = {
       status: 'unverified',
@@ -673,11 +898,15 @@ const addCustomModel = () => {
   customModelInput.value = ''
 }
 
-const removeCustomModel = (model) => {
+const removeModel = (model) => {
   if (!currentDraft.value) return
   currentDraft.value.custom_models = currentDraft.value.custom_models.filter((item) => item !== model)
+  currentDraft.value.base_supported_models = currentDraft.value.base_supported_models.filter((item) => item !== model)
   currentDraft.value.enabled_models = currentDraft.value.enabled_models.filter((item) => item !== model)
   delete currentDraft.value.model_detections[model]
+  if (currentDraft.value.model_details) {
+    delete currentDraft.value.model_details[model]
+  }
   if (form.model === model && form.provider_id === currentProvider.value?.provider_id) {
     form.model = ''
   }
@@ -722,22 +951,30 @@ const buildProviderPayload = (providerId) => {
   const provider = providers.value.find((item) => item.provider_id === providerId)
   const draft = providerDrafts[providerId]
   const enabledModels = uniqueStrings(draft.enabled_models)
+  const modelsWithDetails = supportedModelsFor(providerId).map((id) => {
+    const detail = draft.model_details?.[id] || {}
+    return {
+      id,
+      max_output_tokens: detail.max_output_tokens ?? null,
+      context_window: detail.context_window ?? null
+    }
+  })
+
   const payload = {
     provider_id: providerId,
+    name: draft.name || provider?.display_name || providerId,
     provider_enabled: Boolean(draft.provider_enabled),
     base_url: draft.base_url,
     supports_partial_messages: draft.supports_partial_messages !== false,
     enabled_models: enabledModels,
     custom_models: uniqueStrings(draft.custom_models),
+    models: modelsWithDetails,
     model_detections: normalizeDetections(draft.model_detections)
   }
   const token = String(draft.token || '').trim()
   if (token) {
-    if (provider?.provider_id === 'anthropic') {
-      payload.api_key = token
-    } else {
-      payload.auth_token = token
-    }
+    payload.api_key = token
+    payload.auth_token = token
   }
   return payload
 }
@@ -751,8 +988,29 @@ const saveCurrentProvider = async () => {
   const providerId = currentProvider.value.provider_id
   savingProviderId.value = providerId
   try {
+    const providerPayload = buildProviderPayload(providerId)
+
+    if (currentDraft.value?.is_new) {
+      if (typeof dataagentApi.createProvider === 'function') {
+        try {
+          await dataagentApi.createProvider(providerPayload)
+        } catch {
+          // Fallback if needed
+        }
+      }
+      currentDraft.value.is_new = false
+    } else {
+      if (typeof dataagentApi.updateProvider === 'function') {
+        try {
+          await dataagentApi.updateProvider(providerId, providerPayload)
+        } catch {
+          // Fallback if needed
+        }
+      }
+    }
+
     const payload = {
-      providers: [buildProviderPayload(providerId)]
+      providers: [providerPayload]
     }
     if (shouldPersistSelectionWithProvider(providerId)) {
       payload.provider_id = form.provider_id || ''
@@ -760,11 +1018,42 @@ const saveCurrentProvider = async () => {
     }
     const saved = await dataagentApi.updateSettings(payload)
     applySavedProvider(saved, providerId)
-    ElMessage.success('模型服务配置已保存')
+    ElMessage.success('供应商配置已保存')
   } catch (error) {
     ElMessage.error(error?.message || '保存失败，请重试')
   } finally {
     savingProviderId.value = ''
+  }
+}
+
+const deleteCurrentProvider = async () => {
+  if (!currentProvider.value) return
+  const providerId = currentProvider.value.provider_id
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除供应商「${currentDraft.value?.name || providerId}」吗？`,
+      '删除确认',
+      {
+        type: 'warning',
+        confirmButtonText: '删除',
+        cancelButtonText: '取消'
+      }
+    )
+  } catch {
+    return
+  }
+
+  try {
+    if (typeof dataagentApi.deleteProvider === 'function') {
+      await dataagentApi.deleteProvider(providerId)
+    }
+    providers.value = providers.value.filter((item) => item.provider_id !== providerId)
+    delete providerDrafts[providerId]
+    delete providerSnapshots[providerId]
+    selectedProviderId.value = providers.value[0]?.provider_id || ''
+    ElMessage.success('供应商已删除')
+  } catch (error) {
+    ElMessage.error(error?.message || '删除供应商失败')
   }
 }
 
@@ -821,10 +1110,26 @@ onMounted(() => {
 }
 
 .provider-nav {
+  display: flex;
+  flex-direction: column;
   padding: 16px;
   border: 1px solid #d8e3ef;
   border-radius: 8px;
   background: #f7faff;
+}
+
+.provider-nav-body {
+  flex: 1 1 auto;
+}
+
+.provider-nav-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed #d8e3ef;
+}
+
+.add-provider-btn {
+  width: 100%;
 }
 
 .provider-group + .provider-group {
@@ -1052,6 +1357,12 @@ onMounted(() => {
   color: #16324f;
 }
 
+.section-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #64748b;
+}
+
 .field-label {
   display: inline-flex;
   align-items: center;
@@ -1064,6 +1375,10 @@ onMounted(() => {
 
 .provider-form :deep(.el-form-item) {
   margin-bottom: 16px;
+}
+
+.full-width {
+  width: 100%;
 }
 
 .stream-mode-row {
@@ -1084,52 +1399,62 @@ onMounted(() => {
   gap: 10px;
 }
 
-.model-table {
+.model-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.model-card {
   border: 1px solid #d8e3ef;
-  border-radius: 8px;
+  border-radius: 6px;
+  background: #ffffff;
   overflow: hidden;
 }
 
-.model-row {
+.model-row-main {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px) 86px 72px;
-  gap: 14px;
+  grid-template-columns: minmax(200px, 1fr) minmax(130px, 180px) auto;
+  gap: 12px;
   align-items: center;
   padding: 12px 14px;
-  border-top: 1px solid #e4eaf2;
-}
-
-.model-row:first-child {
-  border-top: none;
-}
-
-.model-row-head {
-  background: #f7faff;
-  color: #4f6680;
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .model-name-cell {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.model-name-cell span {
-  min-width: 0;
+.model-id-badge {
   font-weight: 600;
+  font-size: 14px;
   color: #1d2f43;
   word-break: break-word;
 }
 
+.model-status-cell {
+  min-width: 0;
+}
+
+.model-ops-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.model-advanced-pane {
+  padding: 14px;
+  border-top: 1px solid #eef2f8;
+  background: #f8fafc;
+}
+
 .text-danger {
-  border: none;
-  background: none;
   color: #b42318;
-  font-weight: 600;
-  cursor: pointer;
 }
 
 .empty-block {
@@ -1142,9 +1467,13 @@ onMounted(() => {
 
 .default-section {
   display: grid;
-  grid-template-columns: 120px minmax(0, 420px);
+  grid-template-columns: 180px minmax(0, 420px);
   gap: 16px;
   align-items: center;
+}
+
+.default-model-select {
+  width: 100%;
 }
 
 @media (max-width: 1100px) {
@@ -1156,7 +1485,10 @@ onMounted(() => {
 @media (max-width: 768px) {
   .provider-titlebar,
   .section-heading,
-  .provider-title-actions {
+  .provider-title-actions,
+  .default-section,
+  .model-row-main {
+    grid-template-columns: 1fr;
     flex-direction: column;
     align-items: stretch;
   }
@@ -1169,19 +1501,12 @@ onMounted(() => {
     justify-content: space-between;
   }
 
-  .custom-model-row,
-  .default-section {
+  .custom-model-row {
     grid-template-columns: 1fr;
   }
 
-  .model-row,
-  .model-row-head {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .model-row-head {
-    display: none;
+  .model-ops-cell {
+    justify-content: flex-start;
   }
 }
 </style>
