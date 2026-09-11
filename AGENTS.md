@@ -247,6 +247,7 @@ When working in this repository, optimize for:
 - The default agent (`agent_default`) has no skills and no MCP servers, so it cannot query data or produce charts. Use `agent_opendataworks`, which carries the portal MCP server and the business-knowledge skills, and start portal-mcp with a reachable `DATAAGENT_PORTAL_MCP_BASE_URL` plus its frontdoor token.
 - The SSE route is `GET /api/v1/nl2sql/tasks/{task_id}/sdk-events/stream`. `/events/stream` returns 404.
 - The task submission body uses `message_type` and `message_content`, not `question`.
+- It also takes `execution_mode`, and omitting it is not neutral: the field defaults to `None`, which resolves to the **interactive** tier (`agent_interactive_timeout_seconds`, 360s). The real frontend sends `"auto"`, which resolves to the background tier (1800s). A probe that leaves it out runs every turn against a budget production never uses, and heavy analytical turns then fail at ~361s for a reason that has nothing to do with what is being tested.
 
 ### Intelligent Query environment defaults
 
