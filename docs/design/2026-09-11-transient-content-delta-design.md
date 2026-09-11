@@ -17,9 +17,14 @@ large JSON rows can exhaust the sort buffer.
 ## Problem
 
 Delta rows are required while a task is running because an SSE client reconnects
-with `after_id` and must replay fragments already emitted. They are redundant
-after the task reaches `finished`, `error`, or `suspended`, because
-`content.completed.data.text` is the complete content used by history replay.
+with `after_id` and must replay fragments already emitted. They are redundant once a task reaches `finished`, because every block closed
+and `content.completed.data.text` then holds the assembled text history replay
+uses.
+
+They are **not** redundant for `error` or `suspended`. A run cut short never
+emits `content.completed` for the block it was in the middle of, so that block's
+text survives only in its deltas — measured on a real timed-out task, the closed
+blocks accounted for 48 of the 138 characters the user had seen.
 
 ## Scope
 
@@ -35,14 +40,17 @@ No frontend replay behavior, event schema, table, TTL service, or
 `TopicTaskStore.finish_task` remains the single terminal persistence path. It
 first commits the task/topic/downstream terminal state. After that commit it
 performs a separate, task-scoped delete of rows whose
-`event_type = 'content.delta'`.
+`event_type = 'content.delta'` — **only when the terminal status is
+`finished`**. Interrupted runs keep their deltas.
 
 The delete is naturally idempotent. It uses a separate connection and is wrapped
 in a best-effort boundary: failures are logged with the task id and never alter
 or roll back the already-committed terminal state.
 
 The data migration deletes existing delta rows in bounded batches ordered by
-primary key. Each batch autocommits, limiting transaction duration and lock
+primary key, joined to `da_agent_task` so it applies the same `finished`
+predicate. Without it a rolling deploy would strip deltas from conversations
+still streaming, which are exactly the rows a reconnecting client replays. Each batch autocommits, limiting transaction duration and lock
 retention. Its downgrade is intentionally empty because deleted stream fragments
 cannot be reconstructed.
 

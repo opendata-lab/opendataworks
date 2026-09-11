@@ -1,4 +1,4 @@
-"""purge persisted content.delta records in bounded batches
+"""purge persisted content.delta records for finished tasks, in bounded batches
 
 Revision ID: 20260911_000024
 Revises: 20260910_000023
