@@ -86,7 +86,11 @@ def test_finish_task_deletes_deltas_only_after_terminal_state_commit(monkeypatch
     task = store.finish_task(task_id="task_1", task_status=terminal_status)
 
     assert task["task_status"] == terminal_status
-    assert cleanup_calls == [("task_1", 1, terminal_status)]
+    if terminal_status == "finished":
+        assert cleanup_calls == [("task_1", 1, terminal_status)]
+    else:
+        # Interrupted: the unclosed block's text survives only in its deltas.
+        assert cleanup_calls == []
     assert connection.closed is True
 
 
@@ -101,11 +105,12 @@ def test_finish_task_keeps_terminal_state_when_delta_delete_fails(monkeypatch, c
     monkeypatch.setattr(store, "_delete_task_content_deltas", fail_delete)
 
     with caplog.at_level(logging.WARNING):
-        task = store.finish_task(task_id="task_2", task_status="error", error={"message": "boom"})
+        # finished, the only status that now reaches cleanup.
+        task = store.finish_task(task_id="task_2", task_status="finished")
 
     assert cleanup_calls == ["task_2"]
     assert connection.commit_count == 1
-    assert task["task_status"] == "error"
+    assert task["task_status"] == "finished"
     assert "task.store.content_delta_delete_failed task_id=task_2" in caplog.text
 
 

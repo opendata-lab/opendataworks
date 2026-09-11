@@ -2215,8 +2215,16 @@ class TopicTaskStore:
         # Deltas are needed for after_id replay only while the run is active.
         # Keep this outside the terminal-state transaction: cleanup is storage
         # hygiene and must never roll back or mask a durable task outcome.
+        # Only a run that ended normally. One cut short never emits
+        # content.completed for the block it was in the middle of, and that
+        # block's text exists nowhere else — a real timed-out task here holds
+        # 138 characters of which the closed blocks account for 48. Keeping
+        # deltas for the minority that were interrupted costs little and avoids
+        # reconstructing the tail later from somewhere else.
         try:
-            deleted_delta_rows = self._delete_task_content_deltas(task_id)
+            deleted_delta_rows = (
+                self._delete_task_content_deltas(task_id) if task_status == "finished" else 0
+            )
             if deleted_delta_rows:
                 logger.info(
                     "task.store.content_deltas_deleted task_id=%s deleted_rows=%s",
