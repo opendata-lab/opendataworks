@@ -154,11 +154,14 @@ describe('IntelligentQueryView', () => {
   it('shows readable menus without a role label for regular users', () => {
     const wrapper = mountView({}, { display_name: 'Alice', role: 'user' })
 
+    // The work is Chat and 智能体; configuration moved behind the gear into
+    // /settings, where SettingsLayout decides what a non-admin may see.
     expect(wrapper.text()).toContain('Chat')
-    expect(wrapper.text()).toContain('Skills')
     expect(wrapper.text()).toContain('智能体')
+    expect(wrapper.text()).not.toContain('Skills')
     expect(wrapper.text()).not.toContain('模型管理')
     expect(wrapper.text()).not.toContain('Widget 接入')
+    expect(wrapper.text()).not.toContain('评测集')
     expect(wrapper.text()).toContain('Alice')
     expect(wrapper.text()).not.toContain('普通用户')
     expect(wrapper.text()).not.toContain('管理员')
