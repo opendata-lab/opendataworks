@@ -41,9 +41,31 @@ def upgrade() -> None:
     with op.get_context().autocommit_block():
         while True:
             result = op.get_bind().exec_driver_sql(
+                # Same predicate the runtime uses: only a task that finished
+                # normally. An active task still needs its deltas for after_id
+                # reconnection, and one cut short keeps them because its last
+                # block never closed — a rolling deploy would otherwise strip
+                # both out from under running conversations.
+                # Same predicate the runtime uses: only a task that finished
+                # normally. An active task still needs its deltas for after_id
+                # reconnection, and one cut short keeps them because its last
+                # block never closed — a rolling deploy would otherwise strip
+                # both out from under running conversations.
+                #
+                # The ids are chosen in a subquery because MySQL rejects
+                # ORDER BY / LIMIT on a multi-table DELETE, and the extra
+                # derived table is what lets it read from the same table it is
+                # deleting from.
                 "DELETE FROM da_agent_sdk_record "
-                "WHERE event_type = 'content.delta' "
-                f"ORDER BY id LIMIT {_DELETE_BATCH_SIZE}"
+                "WHERE id IN ("
+                "  SELECT id FROM ("
+                "    SELECT r.id FROM da_agent_sdk_record r "
+                "    JOIN da_agent_task t ON t.task_id = r.task_id "
+                "    WHERE r.event_type = 'content.delta' "
+                "      AND t.task_status = 'finished' "
+                f"    ORDER BY r.id LIMIT {_DELETE_BATCH_SIZE}"
+                "  ) batch"
+                ")"
             )
             deleted = max(0, int(result.rowcount or 0))
             total_deleted += deleted
