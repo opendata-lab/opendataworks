@@ -330,6 +330,10 @@ class SkillDocumentVersionSummary(BaseModel):
 class SkillDocumentSummary(BaseModel):
     id: int
     folder: str = ""
+    # What the skill is for, from its SKILL.md front matter. Its absence here is
+    # why the list showed last_change_summary instead — a reindex note reading
+    # "发现磁盘文件" on every row, which looked like a description and was not.
+    description: str = ""
     relative_path: str
     file_name: str
     category: str

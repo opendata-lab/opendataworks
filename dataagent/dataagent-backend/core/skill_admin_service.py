@@ -952,7 +952,26 @@ def _document_api_payload(document: dict[str, Any]) -> dict[str, Any]:
     payload["source"] = _skill_source(folder)
     payload["editable"] = True
     payload["enabled"] = _is_skill_enabled(folder)
+    # Every SKILL.md in this repo declares what the skill is for, and none of it
+    # reached the UI: the list had no description field, so the client filled
+    # that column with last_change_summary — the reindex note, identical on
+    # every row ("发现磁盘文件") and looking like content while saying nothing.
+    payload["description"] = _skill_description_from_front_matter(folder)
     return payload
+
+
+def _skill_description_from_front_matter(folder: str) -> str:
+    if not folder:
+        return ""
+    try:
+        skill_md = (resolve_skill_discovery_root_dir() / folder / "SKILL.md").resolve()
+    except Exception:
+        return ""
+    try:
+        return _front_matter_value(skill_md, "description")
+    except ValueError:
+        # Unreadable front matter is not worth failing a list request over.
+        return ""
 
 
 def _settings_path_for_skill_folder(folder: str) -> str:
