@@ -26,6 +26,7 @@
     </div>
 
     <el-table
+      v-if="listLoading || filteredDatasets.length"
       v-loading="listLoading"
       :data="filteredDatasets"
       stripe
@@ -77,11 +78,18 @@
       </el-table-column>
     </el-table>
 
+    <!-- One empty state, not two: el-table renders its own "No Data" whenever
+         it has no rows, so it only appears when there is something to show. -->
     <el-empty
-      v-if="!listLoading && !filteredDatasets.length"
-      :description="searchKeyword ? '没有匹配的评测集' : '暂无评测集，请导入或新建'"
+      v-else
+      :description="searchKeyword ? `没有匹配「${searchKeyword}」的评测集` : '还没有评测集'"
       :image-size="120"
-    />
+    >
+      <template v-if="!searchKeyword" #default>
+        <p class="eval-sets__empty-hint">导入一份 JSONL，或新建一个评测集后在这里管理它的用例。</p>
+        <el-button type="primary" @click="openCreateDialog">新建评测集</el-button>
+      </template>
+    </el-empty>
 
     <el-dialog
       v-model="dialogVisible"
@@ -293,6 +301,12 @@ onMounted(() => { loadDatasets() })
 </script>
 
 <style scoped>
+.eval-sets__empty-hint {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: #64748b;
+}
+
 .eval-sets {
   display: flex;
   flex-direction: column;

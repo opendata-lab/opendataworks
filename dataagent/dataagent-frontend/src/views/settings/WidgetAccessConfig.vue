@@ -2,7 +2,6 @@
   <div v-loading="loading" class="widget-access">
     <header class="page-header">
       <div class="page-header-main">
-        <div class="page-kicker">智能问数 · Widget 接入</div>
         <h2 class="page-title">Widget 接入白名单</h2>
         <p class="page-desc">
           管理允许嵌入智能问数 Widget 的站点。只有列入白名单的 <code>website_id</code> 且来源域名匹配的请求才会被后端接受。
@@ -255,13 +254,6 @@ onMounted(loadSettings)
 
 .page-header-main {
   min-width: 0;
-}
-
-.page-kicker {
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: #2c659b;
 }
 
 .page-title {

@@ -5,7 +5,6 @@
         <img class="v2-agent-welcome-logo" :src="brandLogo" alt="DataAgent">
       </div>
       <h1>欢迎使用 DataAgent</h1>
-      <p>选择适合当前任务的助手，开始数据问答、数据开发或建模工作。</p>
       <AgentSelector
         class="v2-agent-welcome-selector"
         mode="welcome"
