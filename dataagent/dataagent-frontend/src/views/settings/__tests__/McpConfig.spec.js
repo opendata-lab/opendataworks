@@ -156,20 +156,24 @@ describe('McpConfig', () => {
     await flushPromises()
 
     const text = wrapper.text()
-    expect(text).toContain('已配置的 MCP 服务')
-    expect(text).toContain('插件自带的 MCP 服务')
+    expect(text).toContain('已安装 2')
+    expect(text).toContain('插件提供 1')
     expect(text).toContain('filesystem')
     expect(text).toContain('github-remote')
     expect(text).toContain('portal-tools')
     expect(text).toContain('https://mcp.github.com/sse')
     expect(text).toContain('npx -y @modelcontextprotocol/server-filesystem /data')
+    expect(text).toContain('该 MCP 服务器由平台插件提供，运行时身份和配置由平台管理。')
+    expect(wrapper.findAll('.mcp-row')).toHaveLength(3)
+    expect(wrapper.findAll('.mcp-list')).toHaveLength(2)
+    expect(wrapper.find('.mcp-table').exists()).toBe(false)
   })
 
   it('renders OAuth authorization button for servers requiring OAuth and opens alert on click', async () => {
     const wrapper = mountConfig()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('打开授权')
+    expect(wrapper.text()).toContain('授权')
     const oauthServer = wrapper.vm.filteredConfiguredServers.find((s) => s.oauth_required)
     wrapper.vm.handleOAuth(oauthServer)
 
@@ -348,5 +352,24 @@ describe('McpConfig', () => {
     expect(wrapper.vm.filteredConfiguredServers).toHaveLength(0)
     expect(wrapper.vm.filteredPluginServers).toHaveLength(1)
     expect(wrapper.vm.filteredPluginServers[0].name).toBe('portal-tools')
+  })
+
+  it('renders an actionable empty state and opens JSON import directly', async () => {
+    apiMocks.listMcpServers.mockResolvedValue({ configured: [], plugin: [] })
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    const emptyState = wrapper.find('.mcp-empty')
+    expect(emptyState.text()).toContain('尚未安装 MCP 服务器')
+    expect(emptyState.text()).toContain('手动新建服务器，或导入已有配置。')
+    expect(emptyState.text()).toContain('新建 MCP 服务器')
+    expect(emptyState.text()).toContain('导入')
+
+    await emptyState.findAll('button')[1].trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.dialogVisible).toBe(true)
+    expect(wrapper.vm.activeAddMode).toBe('json')
+    expect(wrapper.find('.el-dialog-stub').text()).toContain('导入配置')
   })
 })

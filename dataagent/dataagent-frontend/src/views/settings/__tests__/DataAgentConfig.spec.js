@@ -178,6 +178,19 @@ describe('DataAgentConfig', () => {
     expect(wrapper.text()).not.toContain('配置供应商、检测模型可用性，并选择默认模型。')
   })
 
+  it('renders provider navigation as names with status dots only', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    const providerRows = wrapper.findAll('.provider-card')
+    expect(providerRows).toHaveLength(2)
+    expect(providerRows[0].text()).toBe('OpenRouter')
+    expect(providerRows[1].text()).toBe('AnyRouter')
+    expect(wrapper.findAll('.provider-dot')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('凭证已保存')
+    expect(wrapper.text()).not.toContain('个已启用模型')
+  })
+
   it('allows enabling a model before detection succeeds', async () => {
     const payload = basePayload()
     payload.providers[0].models = []
@@ -215,7 +228,9 @@ describe('DataAgentConfig', () => {
     await flushPromises()
 
     expect(wrapper.vm.currentDraft.enabled_models).toEqual([model])
-    expect(messageMocks.error).toHaveBeenCalledWith('模型检测失败')
+    expect(wrapper.find('.model-error-row').text()).toContain('连接失败：模型检测失败')
+    expect(wrapper.find('.model-error-row').text()).toContain('重新检测')
+    expect(messageMocks.error).not.toHaveBeenCalled()
   })
 
   it('saves only the current provider patch and updates dirty button state', async () => {
@@ -289,11 +304,11 @@ describe('DataAgentConfig', () => {
     const wrapper = mountConfig()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('添加 Provider')
+    expect(wrapper.text()).toContain('添加供应商')
     await wrapper.find('.add-provider-btn').trigger('click')
     await flushPromises()
 
-    expect(wrapper.vm.currentDraft.name).toBe('新建 Provider')
+    expect(wrapper.vm.currentDraft.name).toBe('新建供应商')
     expect(wrapper.vm.currentDraft.is_new).toBe(true)
     expect(wrapper.vm.currentDraft.provider_group).toBe('自定义供应商')
   })
@@ -311,8 +326,13 @@ describe('DataAgentConfig', () => {
 
     wrapper.vm.currentDraft.model_details['deepseek-v3'].max_output_tokens = 8192
     wrapper.vm.currentDraft.model_details['deepseek-v3'].context_window = 65536
-    expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').max_output_tokens).toBe(8192)
-    expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').context_window).toBe(65536)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').details.max_output_tokens).toBe(8192)
+    expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').details.context_window).toBe(65536)
+    expect(wrapper.findAll('.model-card').at(-1).find('.model-context-badge').text()).toBe('66K')
+    expect(wrapper.findAll('.model-card').at(-1).findAll('.model-icon-button')).toHaveLength(3)
+    expect(wrapper.findAll('.model-card').at(-1).text()).toContain('用于对话')
   })
 
   it('creates new provider via createProvider when saving new provider draft', async () => {

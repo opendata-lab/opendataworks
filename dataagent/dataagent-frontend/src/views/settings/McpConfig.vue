@@ -4,14 +4,14 @@
       <div>
         <div class="mcp-config__title">MCP 服务</div>
         <div class="mcp-config__subtitle">
-          管理 Model Context Protocol 服务与扩展（共 {{ totalServerCount }} 个服务）
+          已安装 {{ totalServerCount }} 个服务
         </div>
       </div>
       <div class="mcp-config__actions">
         <el-input
           v-model="searchKeyword"
           clearable
-          placeholder="按服务名、命令或 URL 搜索..."
+          placeholder="搜索 MCP 服务..."
           class="mcp-config__search"
         />
         <el-button :icon="Refresh" @click="loadMcpServers">刷新</el-button>
@@ -20,194 +20,127 @@
           :icon="Plus"
           @click="openAddDialog"
         >
-          添加 MCP 服务
+          新建 MCP 服务
         </el-button>
       </div>
     </div>
 
     <div v-loading="loading" class="mcp-content">
-      <!-- 分组 1：已配置的 MCP 服务 -->
-      <section class="mcp-group-section">
-        <div class="mcp-group-header">
-          <div class="mcp-group-title">
-            <span>已配置的 MCP 服务</span>
-            <el-tag size="small" type="primary" effect="plain">{{ filteredConfiguredServers.length }}</el-tag>
-          </div>
-          <div class="mcp-group-desc">手动添加或本地导入的 MCP 服务。</div>
-        </div>
+      <section class="mcp-section">
+        <div class="mcp-section-title">已安装 <span>{{ filteredConfiguredServers.length }}</span></div>
 
-        <el-table
-          v-if="filteredConfiguredServers.length"
-          :data="filteredConfiguredServers"
-          border
-          class="mcp-table"
-        >
-          <el-table-column prop="name" label="名称" min-width="160">
-            <template #default="{ row }">
-              <div class="server-name-cell">
-                <span class="server-name">{{ row.name }}</span>
-                <el-tag size="small" effect="plain" type="info">
-                  {{ row.scope === 'user' ? '用户' : '工作区' }}
-                </el-tag>
+        <div v-if="filteredConfiguredServers.length" class="mcp-list">
+          <div v-for="server in filteredConfiguredServers" :key="server.server_id" class="mcp-row">
+            <div class="mcp-row__icon" aria-hidden="true">
+              <el-icon><Connection /></el-icon>
+              <span class="mcp-row__dot" :class="{ 'is-enabled': server.enabled }" />
+            </div>
+            <div class="mcp-row__main">
+              <div class="mcp-row__heading">
+                <span class="server-name">{{ server.name }}</span>
+                <span class="server-meta">{{ serverMeta(server) }}</span>
               </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="来源" width="110">
-            <template #default="{ row }">
-              <el-tag size="small" type="primary">已配置</el-tag>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="传输方式" width="110">
-            <template #default="{ row }">
-              <el-tag size="small" effect="plain">{{ (row.transport || 'stdio').toUpperCase() }}</el-tag>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="命令 / 服务 URL" min-width="260">
-            <template #default="{ row }">
-              <code v-if="row.transport === 'stdio'" class="command-code">
-                {{ row.command }} {{ (row.args || []).join(' ') }}
-              </code>
-              <span v-else class="url-text">{{ row.url }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="授权" width="130" align="center">
-            <template #default="{ row }">
+              <p class="mcp-row__description">{{ serverDescription(server) }}</p>
+            </div>
+            <div class="mcp-row__actions">
               <el-button
-                v-if="row.oauth_required"
+                v-if="server.oauth_required"
                 size="small"
                 type="warning"
                 plain
-                @click="handleOAuth(row)"
+                @click="handleOAuth(server)"
               >
-                打开授权
+                授权
               </el-button>
-              <span v-else class="text-muted">无需授权</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="启用" width="90" align="center">
-            <template #default="{ row }">
               <el-switch
-                :model-value="row.enabled"
-                :loading="updatingServerId === row.server_id"
-                @update:model-value="toggleServerEnabled(row, $event)"
+                :model-value="server.enabled"
+                :loading="updatingServerId === server.server_id"
+                :title="server.enabled ? '禁用服务' : '启用服务'"
+                @update:model-value="toggleServerEnabled(server, $event)"
               />
-            </template>
-          </el-table-column>
+              <el-button
+                text
+                :icon="EditPen"
+                title="编辑服务"
+                aria-label="编辑服务"
+                @click="openEditDialog(server)"
+              />
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                title="删除服务"
+                aria-label="删除服务"
+                @click="confirmDeleteServer(server)"
+              />
+            </div>
+          </div>
+        </div>
 
-          <el-table-column label="操作" width="140" align="right">
-            <template #default="{ row }">
-              <el-button text type="primary" size="small" @click="openEditDialog(row)">
-                编辑
-              </el-button>
-              <el-button text type="danger" size="small" @click="confirmDeleteServer(row)">
-                删除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <div v-else-if="!configuredServers.length && !searchKeyword.trim()" class="mcp-empty">
+          <div class="mcp-empty__title">尚未安装 MCP 服务器</div>
+          <p>手动新建服务器，或导入已有配置。</p>
+          <div class="mcp-empty__actions">
+            <el-button type="primary" :icon="Plus" @click="openAddDialog">新建 MCP 服务器</el-button>
+            <el-button :icon="Download" @click="openImportDialog">导入</el-button>
+          </div>
+        </div>
 
-        <el-empty
-          v-else
-          description="暂无已配置的 MCP 服务"
-          :image-size="80"
-        />
+        <div v-else class="mcp-inline-empty">没有匹配的 MCP 服务，请调整搜索词。</div>
       </section>
 
-      <!-- 分组 2：插件自带的 MCP 服务 -->
-      <section class="mcp-group-section">
-        <div class="mcp-group-header">
-          <div class="mcp-group-title">
-            <span>插件自带的 MCP 服务</span>
-            <el-tag size="small" type="info" effect="plain">{{ filteredPluginServers.length }}</el-tag>
-          </div>
-          <div class="mcp-group-desc">由平台插件或内置模块自带的 MCP 服务。</div>
-        </div>
+      <section class="mcp-section">
+        <div class="mcp-section-title">插件提供 <span>{{ filteredPluginServers.length }}</span></div>
 
-        <el-table
-          v-if="filteredPluginServers.length"
-          :data="filteredPluginServers"
-          border
-          class="mcp-table"
-        >
-          <el-table-column prop="name" label="名称" min-width="160">
-            <template #default="{ row }">
-              <div class="server-name-cell">
-                <span class="server-name">{{ row.name }}</span>
-                <el-tag size="small" effect="plain" type="info">系统</el-tag>
+        <div v-if="filteredPluginServers.length" class="mcp-list">
+          <div v-for="server in filteredPluginServers" :key="server.server_id" class="mcp-row">
+            <div class="mcp-row__icon" aria-hidden="true">
+              <el-icon><Connection /></el-icon>
+              <span class="mcp-row__dot" :class="{ 'is-enabled': server.enabled }" />
+            </div>
+            <div class="mcp-row__main">
+              <div class="mcp-row__heading">
+                <span class="server-name">{{ server.name }}</span>
+                <span class="server-meta">{{ serverMeta(server) }}</span>
               </div>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="来源" width="110">
-            <template #default="{ row }">
-              <el-tag size="small" type="info">插件自带</el-tag>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="传输方式" width="110">
-            <template #default="{ row }">
-              <el-tag size="small" effect="plain">{{ (row.transport || 'stdio').toUpperCase() }}</el-tag>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="命令 / 服务 URL" min-width="260">
-            <template #default="{ row }">
-              <code v-if="row.transport === 'stdio'" class="command-code">
-                {{ row.command }} {{ (row.args || []).join(' ') }}
-              </code>
-              <span v-else class="url-text">{{ row.url }}</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="授权" width="130" align="center">
-            <template #default="{ row }">
+              <p class="mcp-row__description">{{ pluginServerDescription(server) }}</p>
+            </div>
+            <div class="mcp-row__actions">
               <el-button
-                v-if="row.oauth_required"
+                v-if="server.oauth_required"
                 size="small"
                 type="warning"
                 plain
-                @click="handleOAuth(row)"
+                @click="handleOAuth(server)"
               >
-                打开授权
+                授权
               </el-button>
-              <span v-else class="text-muted">无需授权</span>
-            </template>
-          </el-table-column>
-
-          <el-table-column label="启用" width="90" align="center">
-            <template #default="{ row }">
               <el-switch
-                :model-value="row.enabled"
-                :loading="updatingServerId === row.server_id"
-                @update:model-value="toggleServerEnabled(row, $event)"
+                :model-value="server.enabled"
+                :loading="updatingServerId === server.server_id"
+                :title="server.enabled ? '禁用服务' : '启用服务'"
+                @update:model-value="toggleServerEnabled(server, $event)"
               />
-            </template>
-          </el-table-column>
-        </el-table>
+            </div>
+          </div>
+        </div>
 
-        <el-empty
-          v-else
-          description="暂无插件自带的 MCP 服务"
-          :image-size="80"
-        />
+        <div v-else class="mcp-inline-empty">
+          {{ searchKeyword.trim() ? '没有匹配的插件服务，请调整搜索词。' : '当前没有插件提供的 MCP 服务。' }}
+        </div>
       </section>
     </div>
 
     <!-- 添加 / 编辑 MCP 服务对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="isEditing ? '编辑 MCP 服务' : '添加 MCP 服务'"
+      :title="isEditing ? '编辑 MCP 服务' : '新建 MCP 服务'"
       width="680px"
       :close-on-click-modal="false"
     >
       <el-tabs v-if="!isEditing" v-model="activeAddMode" class="mcp-dialog-tabs">
         <!-- 模式 1：表单模式 (stdio) -->
-        <el-tab-pane label="表单模式 (stdio)" name="form_stdio">
+        <el-tab-pane label="本地命令（stdio）" name="form_stdio">
           <el-form label-position="top" class="mcp-form">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
@@ -220,17 +153,17 @@
               </el-col>
               <el-col :xs="24" :sm="12">
                 <el-form-item label="服务名称" required>
-                  <el-input v-model="formStdio.name" placeholder="例如: filesystem" />
+                  <el-input v-model="formStdio.name" placeholder="例如：filesystem" />
                 </el-form-item>
               </el-col>
             </el-row>
 
             <el-form-item label="传输类型">
-              <el-tag effect="plain">stdio (标准输入输出)</el-tag>
+              <el-tag effect="plain">stdio（标准输入输出）</el-tag>
             </el-form-item>
 
             <el-form-item label="命令" required>
-              <el-input v-model="formStdio.command" placeholder="例如: npx, uvx, python, node" />
+              <el-input v-model="formStdio.command" placeholder="例如：npx、uvx、python、node" />
             </el-form-item>
 
             <el-form-item label="命令行参数">
@@ -238,12 +171,12 @@
                 v-model="formStdio.argsStr"
                 type="textarea"
                 :rows="3"
-                placeholder="例如: -y @modelcontextprotocol/server-filesystem /path/to/dir (空格或换行分隔)"
+                placeholder="例如：-y @modelcontextprotocol/server-filesystem /path/to/dir（用空格或换行分隔）"
               />
             </el-form-item>
 
             <div class="dynamic-list-block">
-              <div class="dynamic-list-title">环境变量 (可选)</div>
+              <div class="dynamic-list-title">环境变量（可选）</div>
               <div
                 v-for="(item, idx) in formStdio.envList"
                 :key="idx"
@@ -259,7 +192,7 @@
         </el-tab-pane>
 
         <!-- 模式 2：远程服务 (http / sse) -->
-        <el-tab-pane label="远程服务 (http / sse)" name="remote">
+        <el-tab-pane label="远程服务（HTTP / SSE）" name="remote">
           <el-form label-position="top" class="mcp-form">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
@@ -272,24 +205,24 @@
               </el-col>
               <el-col :xs="24" :sm="12">
                 <el-form-item label="服务名称" required>
-                  <el-input v-model="formRemote.name" placeholder="例如: remote-indexer" />
+                  <el-input v-model="formRemote.name" placeholder="例如：remote-indexer" />
                 </el-form-item>
               </el-col>
             </el-row>
 
             <el-form-item label="传输方式" required>
               <el-radio-group v-model="formRemote.transport">
-                <el-radio value="sse">SSE (Server-Sent Events)</el-radio>
+                <el-radio value="sse">SSE（Server-Sent Events）</el-radio>
                 <el-radio value="http">HTTP</el-radio>
               </el-radio-group>
             </el-form-item>
 
             <el-form-item label="服务 URL" required>
-              <el-input v-model="formRemote.url" placeholder="例如: https://mcp.example.com/sse" />
+              <el-input v-model="formRemote.url" placeholder="例如：https://mcp.example.com/sse" />
             </el-form-item>
 
             <div class="dynamic-list-block">
-              <div class="dynamic-list-title">认证与自定义 Headers (可选)</div>
+              <div class="dynamic-list-title">认证与自定义 Header（可选）</div>
               <div
                 v-for="(item, idx) in formRemote.headerList"
                 :key="idx"
@@ -305,7 +238,7 @@
         </el-tab-pane>
 
         <!-- 模式 3：完整配置 (JSON) -->
-        <el-tab-pane label="完整配置 (JSON)" name="json">
+        <el-tab-pane label="导入 JSON" name="json">
           <el-form label-position="top" class="mcp-form">
             <el-form-item label="作用域">
               <el-radio-group v-model="formJson.scope">
@@ -389,7 +322,7 @@
             :loading="submitting"
             @click="handleSubmit"
           >
-            {{ isEditing ? '保存修改' : '确认添加' }}
+            {{ submitButtonLabel }}
           </el-button>
         </div>
       </template>
@@ -400,7 +333,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Connection, Delete, Download, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 import { dataagentApi } from '@/api/dataagent'
 
 const loading = ref(false)
@@ -451,6 +384,10 @@ const editForm = reactive({
 })
 
 const totalServerCount = computed(() => configuredServers.value.length + pluginServers.value.length)
+const submitButtonLabel = computed(() => {
+  if (isEditing.value) return '保存修改'
+  return activeAddMode.value === 'json' ? '导入配置' : '新建服务'
+})
 
 const filterServerList = (list) => {
   const keyword = String(searchKeyword.value || '').trim().toLowerCase()
@@ -465,6 +402,26 @@ const filterServerList = (list) => {
 
 const filteredConfiguredServers = computed(() => filterServerList(configuredServers.value))
 const filteredPluginServers = computed(() => filterServerList(pluginServers.value))
+
+const serverMeta = (server) => {
+  const scope = server.scope === 'user' ? '用户' : '工作区'
+  return `${scope} · ${String(server.transport || 'stdio').toUpperCase()}`
+}
+
+const serverDescription = (server) => {
+  const description = String(server.description || '').trim()
+  if (description) return description
+  if (server.transport === 'stdio') {
+    return `本地命令：${[server.command, ...(server.args || [])].filter(Boolean).join(' ') || '未配置启动命令'}`
+  }
+  return `服务地址：${server.url || '未配置 URL'}`
+}
+
+const pluginServerDescription = (server) => {
+  const description = String(server.description || '').trim()
+  if (description) return description
+  return '该 MCP 服务器由平台插件提供，运行时身份和配置由平台管理。'
+}
 
 const parseArgs = (argsStr) => {
   return String(argsStr || '')
@@ -521,7 +478,16 @@ const loadMcpServers = async () => {
 const openAddDialog = () => {
   isEditing.value = false
   editingServerId.value = ''
+  activeAddMode.value = 'form_stdio'
   resetForms()
+  dialogVisible.value = true
+}
+
+const openImportDialog = () => {
+  isEditing.value = false
+  editingServerId.value = ''
+  resetForms()
+  activeAddMode.value = 'json'
   dialogVisible.value = true
 }
 
@@ -718,10 +684,24 @@ onMounted(async () => {
 </script>
 
 <style scoped>
+/* Hallmark · pre-emit critique: P5 H4 E5 S5 R5 V4 */
+/* Hallmark · macrostructure: Workbench · tone: utilitarian · anchor hue: blue */
 .mcp-config {
+  --mcp-ink: #172033;
+  --mcp-muted: #64748b;
+  --mcp-muted-strong: #475569;
+  --mcp-muted-light: #94a3b8;
+  --mcp-rule: #e2e8f0;
+  --mcp-rule-strong: #cbd5e1;
+  --mcp-paper: #fdfefe;
+  --mcp-paper-muted: #f8fafc;
+  --mcp-paper-hover: #f1f5f9;
+  --mcp-success: #22a861;
+  --mcp-focus: #2563eb;
+  --mcp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 28px;
   min-width: 0;
 }
 
@@ -735,13 +715,13 @@ onMounted(async () => {
 .mcp-config__title {
   font-size: 18px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--mcp-ink);
 }
 
 .mcp-config__subtitle {
   margin-top: 6px;
   font-size: 13px;
-  color: #64748b;
+  color: var(--mcp-muted);
   line-height: 1.6;
 }
 
@@ -761,71 +741,159 @@ onMounted(async () => {
 .mcp-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 28px;
 }
 
-.mcp-group-section {
+.mcp-section {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
-.mcp-group-header {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.mcp-group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.mcp-section-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--mcp-ink);
 }
 
-.mcp-group-desc {
+.mcp-section-title span {
+  margin-left: 4px;
   font-size: 12px;
-  color: #64748b;
+  font-weight: 500;
+  color: var(--mcp-muted);
 }
 
-.mcp-table {
+.mcp-list {
+  min-width: 0;
+  border-top: 1px solid var(--mcp-rule);
+}
+
+.mcp-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 11px 8px;
+  border-bottom: 1px solid var(--mcp-rule);
+  transition: background 150ms var(--mcp-ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mcp-row:hover {
+    background: var(--mcp-paper-muted);
+  }
+}
+
+.mcp-row__icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: var(--mcp-paper-hover);
+  color: var(--mcp-muted-strong);
+  font-size: 19px;
+}
+
+.mcp-row__dot {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  border: 2px solid var(--mcp-paper);
+  border-radius: 50%;
+  background: var(--mcp-muted-light);
+}
+
+.mcp-row__dot.is-enabled {
+  background: var(--mcp-success);
+}
+
+.mcp-row__main {
   min-width: 0;
 }
 
-.server-name-cell {
+.mcp-row__heading {
+  min-width: 0;
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
-  flex-wrap: wrap;
 }
 
 .server-name {
+  min-width: 0;
+  overflow: hidden;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--mcp-ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.command-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+.server-meta {
+  flex: 0 0 auto;
+  color: var(--mcp-muted-light);
   font-size: 12px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: #f1f5f9;
-  color: #0f172a;
-  word-break: break-all;
 }
 
-.url-text {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 12px;
-  color: #2563eb;
-  word-break: break-all;
+.mcp-row__description {
+  margin: 4px 0 0;
+  overflow: hidden;
+  color: var(--mcp-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.text-muted {
-  font-size: 12px;
-  color: #94a3b8;
+.mcp-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.mcp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 210px;
+  padding: 32px 20px;
+  border: 1px dashed var(--mcp-rule-strong);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.mcp-empty__title {
+  color: var(--mcp-ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.mcp-empty p {
+  margin: 8px 0 16px;
+  color: var(--mcp-muted);
+  font-size: 13px;
+}
+
+.mcp-empty__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-inline-empty {
+  padding: 22px 8px;
+  border-top: 1px solid var(--mcp-rule);
+  border-bottom: 1px solid var(--mcp-rule);
+  color: var(--mcp-muted);
+  font-size: 13px;
+  text-align: center;
 }
 
 .mcp-dialog-tabs {
@@ -842,15 +910,15 @@ onMounted(async () => {
   gap: 8px;
   margin-top: 12px;
   padding: 12px;
-  border: 1px dashed #cbd5e1;
+  border: 1px dashed var(--mcp-rule-strong);
   border-radius: 6px;
-  background: #f8fafc;
+  background: var(--mcp-paper-muted);
 }
 
 .dynamic-list-title {
   font-size: 13px;
   font-weight: 600;
-  color: #334155;
+  color: var(--mcp-muted-strong);
 }
 
 .dynamic-list-row {
@@ -862,14 +930,14 @@ onMounted(async () => {
 
 .json-tips {
   font-size: 12px;
-  color: #64748b;
+  color: var(--mcp-muted);
   margin-bottom: 8px;
   line-height: 1.5;
 }
 
 .json-tips code {
   font-family: monospace;
-  background: #e2e8f0;
+  background: var(--mcp-rule);
   padding: 1px 4px;
   border-radius: 3px;
 }
@@ -894,8 +962,32 @@ onMounted(async () => {
     width: 100%;
   }
 
+  .mcp-row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+
+  .mcp-row__actions {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .mcp-empty__actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .mcp-empty__actions :deep(.el-button) {
+    white-space: nowrap;
+  }
+
   .dynamic-list-row {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mcp-row {
+    transition-duration: 0ms;
   }
 }
 </style>
