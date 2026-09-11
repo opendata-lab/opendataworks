@@ -871,27 +871,8 @@ def _recover_partial_content(
     return ""
 
 
-# Error codes a run can end on with useful work already produced. Timeouts and a
-# lost cell are cut short by us, not by the model deciding it is done — whatever
-# it had written is still worth showing.
-RECOVERABLE_TERMINAL_ERROR_CODES = frozenset(
-    {"PI_RUN_TIMEOUT", "PI_RUN_IDLE_TIMEOUT", "PI_RUN_INCOMPLETE", "CELL_LOSS"}
-)
-
-
 def _is_recoverable_timeout_reason(reason: str) -> bool:
-    """Whether a failure left partial work worth keeping.
-
-    Matched on the error code, not on the message text. This used to test for
-    the substring "超时", which meant a Chinese message from the SDK path
-    recovered while PI_RUN_TIMEOUT — the code the engine production actually
-    runs emits — never did, and any tool whose own error text happened to
-    contain that word was treated as a recoverable timeout.
-    """
-    text = str(reason or "")
-    if any(code in text for code in RECOVERABLE_TERMINAL_ERROR_CODES):
-        return True
-    return "超时" in text or "timed out" in text.lower() or "timeout" in text.lower()
+    return "超时" in str(reason or "")
 
 
 def _collect_exception_parts(error: Exception) -> list[str]:

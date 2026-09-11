@@ -48,7 +48,6 @@ from core.agent_runtime import (
     _is_recoverable_timeout_reason,
     _normalize_provider_id,
     _recover_partial_content,
-    RECOVERABLE_TERMINAL_ERROR_CODES,
     _resolve_max_turns,
     _resolve_sdk_permission_mode,
     _result_subtype_to_reason,
@@ -1007,34 +1006,11 @@ async def _execute_task_stream_via_pi_runtime(
             model=model,
             session_id=session_id,
         )
-    # A run we cut short is not the same as a run that failed. The SDK path has
-    # always rescued the text a timed-out turn had already produced and returned
-    # it as an answer; Pi marked the same situation an error, so the engine
-    # production runs was the one that threw away a half-written report and
-    # showed a red failure instead.
-    error_code = outcome.error_code or "pi_runtime_error"
-    if error_code in RECOVERABLE_TERMINAL_ERROR_CODES:
-        recovered = _recover_partial_content(
-            question=params.question,
-            main_text=outcome.answer or "",
-            blocks={},
-            reason=outcome.error_message or error_code,
-        )
-        if recovered:
-            return TaskExecutionResult(
-                task_status="finished",
-                content=recovered,
-                usage=outcome.usage,
-                provider_id=provider_id,
-                model=model,
-                session_id=session_id,
-            )
-
     return TaskExecutionResult(
         task_status="error",
         content=outcome.answer or outcome.error_message,
         usage=outcome.usage,
-        error={"code": error_code, "message": outcome.error_message},
+        error={"code": outcome.error_code or "pi_runtime_error", "message": outcome.error_message},
         provider_id=provider_id,
         model=model,
         session_id=session_id,
