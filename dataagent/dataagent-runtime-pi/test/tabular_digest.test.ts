@@ -67,7 +67,7 @@ test("extractDigest extracts schema, sample rows, and numerical stats from tabul
   }
 
   const jsonStr = formatDigestText(digest);
-  assert.ok(jsonStr.includes("dataagent_folded_result"));
+  assert.ok(jsonStr.startsWith("<persisted-output>"));
   assert.ok(jsonStr.length < 5000); // Compact representation remains well bounded
 });
 
@@ -141,4 +141,47 @@ test("ordinary large output is not mistaken for structured output", () => {
   assert.equal(isRenderableStructuredOutput(JSON.stringify({ rows: [1, 2, 3] })), false);
   assert.equal(isRenderableStructuredOutput(JSON.stringify([{ kind: "chart_spec" }])), false);
   assert.equal(isRenderableStructuredOutput("not json at all"), false);
+});
+
+test("a column named like a prototype member is not dropped from its own digest", () => {
+  // Column names come from query results. Writing `__proto__` into an ordinary
+  // accumulator set its prototype instead of storing anything, so the digest
+  // listed the column and then omitted it from both stats and preview — it
+  // described data the model was never shown.
+  const rows = JSON.parse('[{"__proto__": 7, "x": 2}, {"__proto__": 8, "x": 3}]');
+  const digest = extractDigest(JSON.stringify(rows), { resultRef: "r", toolName: "t" });
+  assert.equal(digest.is_tabular, true);
+  if (!digest.is_tabular) return;
+
+  const declared = digest.columns.map((c) => c.name);
+  assert.ok(declared.includes("__proto__"));
+  // Every column it declares, it must also describe.
+  for (const name of declared) {
+    assert.ok(
+      Object.hasOwn(digest.column_stats ?? {}, name),
+      `${name} is declared but has no stats`
+    );
+  }
+  const first = digest.preview_head![0];
+  assert.equal(Object.getOwnPropertyDescriptor(first, "__proto__")?.value, 7);
+  assert.equal(Object.getPrototypeOf(first), Object.prototype);
+  assert.equal(({} as Record<string, unknown>).x, undefined);
+});
+
+test("the digest tells the model to keep the folding to itself", () => {
+  // The notice explains why it is showing a sample, and the model repeated that
+  // explanation to the user: a real answer ended with "此前工作流全量与执行日志明细
+  // 结果因上下文限制被折叠". Internal plumbing reached the transcript because
+  // nothing told the model it was internal.
+  const rows = Array.from({ length: 400 }, (_, i) => ({ id: i, name: `n-${i}` }));
+  const tabular = extractDigest(JSON.stringify(rows), { resultRef: "r1", toolName: "t" });
+  const text = extractDigest("x".repeat(50_000), { resultRef: "r2", toolName: "t" });
+
+  for (const digest of [tabular, text]) {
+    const notice = digest.notice;
+    // Still has to say what it needs the model to do.
+    assert.match(notice, /fetch_tool_result/);
+    // And that this is not for the reader.
+    assert.match(notice, /never mention it/);
+  }
 });

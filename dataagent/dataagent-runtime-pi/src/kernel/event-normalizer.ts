@@ -15,6 +15,7 @@
 import type { AgentEvent as PiAgentEvent } from "@earendil-works/pi-agent-core";
 import type { NeutralAgentEvent } from "../protocol/frames.js";
 import type { RunStateMachine } from "./run-state-machine.js";
+import type { UiToolResult } from "./ui-tool-result-registry.js";
 import { redact } from "../observability/redaction.js";
 
 interface PiUsage {
@@ -57,7 +58,7 @@ export class EventNormalizer {
      * event's own result is persisted, which is the pre-decoupling behaviour.
      */
     private readonly uiResults?: {
-      take(toolCallId: string): { content: unknown; meta: Record<string, unknown> | null } | null;
+      take(toolCallId: string): UiToolResult | null;
     }
   ) {}
 
@@ -158,7 +159,7 @@ export class EventNormalizer {
         // charts and tables from history.
         const uiCopy = this.uiResults?.take(String(piEvent.toolCallId ?? "")) ?? null;
         const { output, output_meta } = uiCopy
-          ? { output: uiCopy.content, output_meta: uiCopy.meta }
+          ? { output: uiCopy.output, output_meta: uiCopy.meta }
           : unwrapToolResult(piEvent.result);
         events.push(
           this.sm.createEvent("tool.completed", {
@@ -197,23 +198,27 @@ export class EventNormalizer {
 }
 
 /** Public output_meta fields, in the snake_case the wire contract uses. */
-const DETAIL_FIELD_ALIASES: Record<string, string> = {
-  exitCode: "exit_code",
-  exit_code: "exit_code",
-  bytes: "byte_count",
-  byte_count: "byte_count",
-  truncated: "truncated",
-  count: "count",
-  folded: "model_context_folded",
-  model_context_folded: "model_context_folded",
-  result_ref: "result_ref",
-  storage_path: "storage_path",
-  original_bytes: "original_bytes",
-  skill_name: "skill_name",
-  root_path: "root_path",
-  denied: "denied",
-  error: "error",
-};
+const DETAIL_FIELD_ALIASES = new Map<string, string>([
+  ["exitCode", "exit_code"],
+  ["exit_code", "exit_code"],
+  ["bytes", "byte_count"],
+  ["byte_count", "byte_count"],
+  ["truncated", "truncated"],
+  ["count", "count"],
+  ["folded", "model_context_folded"],
+  ["model_context_folded", "model_context_folded"],
+  ["result_ref", "result_ref"],
+  ["storage_path", "storage_path"],
+  ["original_bytes", "original_bytes"],
+  // Fold provenance arrives nested, so it cannot collide with a tool's own
+  // fields and needs no arbitration.
+  ["dataagent_fold", "fold"],
+  ["stored_bytes", "stored_bytes"],
+  ["skill_name", "skill_name"],
+  ["root_path", "root_path"],
+  ["denied", "denied"],
+  ["error", "error"],
+]);
 
 /**
  * Split a pi-agent-core tool result into the neutral wire shape.
@@ -236,17 +241,28 @@ export function unwrapToolResult(result: unknown): {
     return { output: result ?? null, output_meta: null };
   }
 
-  const wrapper = result as { content?: unknown; details?: unknown };
-  if (!("content" in wrapper) && !("details" in wrapper)) {
-    // Already a plain payload (a platform object carrying `kind`, say).
+  const wrapper = result as { content?: unknown; details?: unknown; kind?: unknown };
+  // A platform structured output carries `kind` at the top level and is already
+  // the payload. The comment here always said so, but the condition only caught
+  // it when the payload had neither field — one that happened to carry `content`
+  // was taken apart, and the Python reader kept it whole, so the same record
+  // meant two things.
+  //
+  // Object.hasOwn, not `in`: `in` answers for inherited names too.
+  const isLegacyWrapper =
+    (Object.hasOwn(wrapper, "content") || Object.hasOwn(wrapper, "details")) &&
+    !Object.hasOwn(wrapper, "kind");
+  if (!isLegacyWrapper) {
     return { output: result, output_meta: null };
   }
 
-  const meta: Record<string, unknown> = {};
-  const engineDetails: Record<string, unknown> = {};
+  // Null-prototype: assigning `__proto__` on a normal object sets the
+  // prototype instead of storing a key, which silently loses the value.
+  const meta: Record<string, unknown> = Object.create(null);
+  const engineDetails: Record<string, unknown> = Object.create(null);
   if (wrapper.details && typeof wrapper.details === "object" && !Array.isArray(wrapper.details)) {
     for (const [key, value] of Object.entries(wrapper.details as Record<string, unknown>)) {
-      const alias = DETAIL_FIELD_ALIASES[key];
+      const alias = DETAIL_FIELD_ALIASES.get(key);
       if (alias) {
         meta[alias] = value;
       } else {
@@ -256,12 +272,23 @@ export function unwrapToolResult(result: unknown): {
       }
     }
   }
+  if (wrapper.details != null && !(typeof wrapper.details === "object" && !Array.isArray(wrapper.details))) {
+    // Same rule the fold path uses: details are typed as anything, and a string
+    // or a number is evidence too. Dropping it here while the Python reader
+    // kept it made one record mean different things on the two sides.
+    engineDetails.raw_details = wrapper.details;
+  }
+
   if (Object.keys(engineDetails).length > 0) {
-    meta.engine_details = engineDetails;
+    // Spread back to an ordinary object at the boundary: the null prototype is
+    // how accumulation stays safe, not something callers should have to know.
+    // Spread copies own keys without running setters, so `__proto__` survives
+    // as data rather than becoming a prototype again.
+    meta.engine_details = { ...engineDetails };
   }
 
   return {
     output: wrapper.content ?? null,
-    output_meta: Object.keys(meta).length > 0 ? meta : null,
+    output_meta: Object.keys(meta).length > 0 ? { ...meta } : null,
   };
 }

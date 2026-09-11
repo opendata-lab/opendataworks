@@ -116,3 +116,58 @@ describe('ResultDataTable', () => {
     expect(wrapper.find('.result-table-notice').text()).toContain('截断')
   })
 })
+
+describe('columns named after Object.prototype members', () => {
+  // A result column can be called `constructor` — a manufacturer, a builder —
+  // and every per-column cache here was a plain object, so the lookup answered
+  // with something inherited instead of nothing. Sorting saw a truthy value and
+  // treated the column as numeric, the text filter read as
+  // "function Object() { [native code] }", and opening the value filter threw
+  // because Object.prototype is not iterable.
+  const protoColumns = ['constructor', 'toString', '__proto__']
+  const protoRows = [
+    { constructor: 'zeta', toString: 'b', __proto__: 'c' },
+    { constructor: 'alpha', toString: 'a', __proto__: 'd' }
+  ].map((row) => JSON.parse(JSON.stringify(row)))
+
+  it('renders a missing cell as NULL, not as an inherited function', () => {
+    // Reading row['constructor'] on a row that lacks the column answers with
+    // Object's constructor, so the NULL check passed it through and the cell
+    // rendered "function Object() { [native code] }".
+    const sparse = [JSON.parse('{"toString": "only this one"}')]
+    const wrapper = mountTable({ columns: protoColumns, rows: sparse })
+
+    const text = wrapper.find('tbody tr').text()
+    expect(text).not.toContain('native code')
+    expect(wrapper.find('.result-table-null').exists()).toBe(true)
+  })
+
+  it('sorts them as text rather than mistaking them for numbers', async () => {
+    const wrapper = mountTable({ columns: protoColumns, rows: protoRows })
+    await wrapper.findAll('thead th')[1].trigger('click')
+
+    expect(bodyCellTexts(wrapper, 1)).toEqual(['alpha', 'zeta'])
+  })
+
+  it('starts with an empty text filter, not an inherited function', () => {
+    const wrapper = mountTable({ columns: protoColumns, rows: protoRows })
+    const inputs = wrapper.findAll('.result-table-filter-text')
+
+    for (const input of inputs) {
+      expect(input.element.value).toBe('')
+    }
+  })
+
+  it('opens the value filter without throwing', async () => {
+    const wrapper = mountTable({ columns: protoColumns, rows: protoRows })
+    const toggles = wrapper.findAll('.result-table-filter-btn')
+    expect(toggles.length).toBeGreaterThan(0)
+
+    await toggles[0].trigger('click')
+    const boxes = wrapper.findAll('.result-table-filter-option input[type="checkbox"]')
+    expect(boxes.length).toBeGreaterThan(0)
+    await boxes[0].setValue(true)
+
+    expect(wrapper.findAll('tbody tr').length).toBeGreaterThan(0)
+  })
+})

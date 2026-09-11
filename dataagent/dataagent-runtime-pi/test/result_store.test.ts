@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { saveToolResult, fetchToolResultSlice } from "../src/context/result-store.js";
+import { saveToolResult, fetchToolResultSlice, searchToolResult } from "../src/context/result-store.js";
 
 function tempWorkspace(): string {
   return path.join(os.tmpdir(), `pi-result-store-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -206,4 +206,43 @@ test("non-tabular text still round-trips through the whole-file path", async () 
   assert.equal(page.is_tabular, false);
   assert.match((page as any).content, /plain log line/);
   await fs.rm(ws, { recursive: true, force: true });
+});
+
+test("search finds rows without paging or re-running the query", async () => {
+  // Paging helps only when the agent knows where to look. When it does not, it
+  // has re-run the query instead — one probe turn issued fifteen SQL calls
+  // rather than read back what it had already fetched.
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "odw-search-"));
+
+  const rows = Array.from({ length: 300 }, (_, i) => ({
+    id: i,
+    name: i === 217 ? "needle-workflow" : `filler-${i}`,
+  }));
+  const saved = await saveToolResult(root, JSON.stringify(rows));
+
+  const found = await searchToolResult(root, saved.result_ref, "needle-workflow");
+  assert.equal(found.match_count, 1);
+  assert.equal(found.hits[0].index, 217, "the row index must let the agent page from there");
+  assert.equal((found.hits[0].row as Record<string, unknown>).name, "needle-workflow");
+  assert.equal(found.is_tabular, true);
+  assert.equal(found.total_scanned, 300, "the header line is not data");
+});
+
+test("search reports that it capped rather than implying it found exactly the cap", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "odw-search2-"));
+
+  const rows = Array.from({ length: 120 }, (_, i) => ({ id: i, tag: "common" }));
+  const saved = await saveToolResult(root, JSON.stringify(rows));
+
+  const found = await searchToolResult(root, saved.result_ref, "common", { limit: 5 });
+  assert.equal(found.hits.length, 5);
+  assert.equal(found.match_count, 120, "the real count must survive the cap");
+  assert.equal(found.truncated, true);
+});
+
+test("an empty query is refused rather than matching everything", async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "odw-search3-"));
+  const saved = await saveToolResult(root, JSON.stringify([{ id: 1 }]));
+
+  await assert.rejects(() => searchToolResult(root, saved.result_ref, "   "), /must not be empty/);
 });

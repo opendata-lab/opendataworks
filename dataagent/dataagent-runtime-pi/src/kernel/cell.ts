@@ -11,7 +11,7 @@ import type { AgentEvent as PiAgentEvent, StreamFn } from "@earendil-works/pi-ag
 import type { Api, Model, Usage } from "@earendil-works/pi-ai";
 import type { CellInitPayload, NeutralAgentEvent } from "../protocol/frames.js";
 import { RunStateMachine } from "./run-state-machine.js";
-import { EventNormalizer } from "./event-normalizer.js";
+import { EventNormalizer, unwrapToolResult } from "./event-normalizer.js";
 import { WorkspaceBoundaryEnforcer, type BoundaryPolicy } from "../policy/workspace-boundary-enforcer.js";
 import { createTools } from "../tools/tool-registry.js";
 import { connectMcpServers, type McpBridgeResult } from "../mcp/portal-mcp-client.js";
@@ -20,12 +20,39 @@ import { saveToolResult } from "../context/result-store.js";
 import {
   shouldFold,
   extractDigest,
+  DEFAULT_FOLD_THRESHOLD_BYTES,
   formatDigestText,
-  isRenderableStructuredOutput,
   STRUCTURED_OUTPUT_MAX_BYTES,
 } from "../context/tabular-digest.js";
 import { CompactionSession } from "../context/compaction-session.js";
 import { UiToolResultRegistry } from "./ui-tool-result-registry.js";
+
+/**
+ * Attach fold provenance without touching anything the tool wrote.
+ *
+ * The fold used to claim top-level names like `result_ref`, which collides with
+ * what a tool reports about itself — fetch_tool_result names the source it read
+ * that way. Displacing the loser under a `source_` prefix worked but needed a
+ * closed field list, an alias rule, and a mirror of both in Python, all to
+ * arbitrate a collision. Nesting the fold's own fields cannot collide at all.
+ */
+export function withFoldProvenance(
+  toolDetails: unknown,
+  fold: Record<string, unknown>
+): Record<string, unknown> {
+  const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+  // A tool's details are typed as anything. Spreading a string would turn it
+  // into numeric keys and a number into nothing, so keep it whole instead.
+  const base = isPlainObject(toolDetails)
+    ? { ...toolDetails }
+    : toolDetails != null
+      ? { raw_details: toolDetails }
+      : {};
+
+  return { ...base, dataagent_fold: fold };
+}
 
 export type EventSink = (event: NeutralAgentEvent) => void;
 /** Liveness signal during a slow tool. Carries no state the UI renders. */
@@ -165,7 +192,7 @@ export class Cell {
         // reusing a prefix built from another conversation would be wrong.
         transformContext: async (messages) => compaction.transform(messages),
         afterToolCall: async (context) => {
-          const foldThreshold = init.governance_settings?.max_inline_result_bytes ?? 16 * 1024;
+          const foldThreshold = init.governance_settings?.max_inline_result_bytes ?? DEFAULT_FOLD_THRESHOLD_BYTES;
           const toolResult = context.result;
           if (!toolResult || !Array.isArray(toolResult.content)) {
             return undefined;
@@ -191,13 +218,23 @@ export class Cell {
           // outputs no longer need a fold exemption paid for in tokens.
           const toolCallId = String(context.toolCall?.id ?? "");
           const uiBytes = Buffer.byteLength(rawText, "utf8");
-          if (uiBytes <= STRUCTURED_OUTPUT_MAX_BYTES) {
-            uiResults.set(toolCallId, {
+          // Unwrap here rather than storing the raw wrapper, so a registered
+          // copy and the normalizer's own fallback produce the same shape. It
+          // also keeps the tool's own details: registering content alone
+          // silently dropped them for exactly the large results this registry
+          // exists to protect, and the fold provenance below then looked like
+          // the whole story.
+          const unwrapped = unwrapToolResult(toolResult);
+          // Held locally so the fold below can attach provenance without a
+          // take/set round-trip.
+          const uiOutput =
+            uiBytes <= STRUCTURED_OUTPUT_MAX_BYTES
               // Copy the array: sharing it would let the fold below mutate what
               // the UI is about to persist.
-              content: toolResult.content.map((block) => ({ ...block })),
-              meta: null,
-            });
+              ? toolResult.content.map((block) => ({ ...block }))
+              : null;
+          if (uiOutput) {
+            uiResults.set(toolCallId, { output: uiOutput, meta: unwrapped.output_meta });
           } else {
             // Past the persistence ceiling the transcript keeps the digest too.
             // Saying so beats handing the renderer a digest silently, which
@@ -232,31 +269,40 @@ export class Cell {
               (block: { type?: string }) => block && block.type !== "text"
             );
 
+            // One merge, one shape. The registry built provenance after
+            // unwrapping and the returned details before it, so the same
+            // source_result_ref sat at the top of output_meta for a small
+            // result and inside engine_details for a large one. Where a field
+            // lives must not depend on how big the result was.
+            //
+            // Merging rather than replacing also matters past the persistence
+            // ceiling: nothing is registered there, so this is the only copy
+            // the transcript gets.
+            const foldedDetails = withFoldProvenance(toolResult.details, {
+              result_ref: saveOutcome.result_ref,
+              storage_path: saveOutcome.relative_path,
+              // What was folded, not what it compacted to: a tabular result is
+              // rewritten to JSONL on the way to disk, so the stored size
+              // understates the payload this digest stands in for.
+              original_bytes: uiBytes,
+              stored_bytes: saveOutcome.byte_size,
+              folded_text_blocks: textBlocks.length,
+              preserved_blocks: nonTextBlockCount,
+            });
+
             // Record on the UI copy that the model saw a digest, and where the
             // full result lives. The transcript still holds the whole payload;
             // this is provenance, not a substitute for it.
-            const registered = uiResults.take(toolCallId);
-            if (registered) {
+            if (uiOutput) {
               uiResults.set(toolCallId, {
-                content: registered.content,
-                meta: {
-                  model_context_folded: true,
-                  result_ref: saveOutcome.result_ref,
-                  original_bytes: saveOutcome.byte_size,
-                },
+                output: uiOutput,
+                meta: unwrapToolResult({ content: uiOutput, details: foldedDetails }).output_meta,
               });
             }
 
             return {
               content: [{ type: "text" as const, text: compactText }, ...preservedBlocks],
-              details: {
-                folded: true,
-                result_ref: saveOutcome.result_ref,
-                storage_path: saveOutcome.relative_path,
-                original_bytes: saveOutcome.byte_size,
-                folded_text_blocks: textBlocks.length,
-                preserved_blocks: nonTextBlockCount,
-              },
+              details: foldedDetails,
             };
           } catch (err) {
             logDiagnostic(`afterToolCall fold failed, keeping raw: ${err}`);
@@ -367,8 +413,10 @@ export class Cell {
       this.agent = null;
       // Whatever was never consumed goes now, on every exit path — a run that
       // failed or was cancelled mid-tool would otherwise leave results behind.
-      if (uiResults.misses > 0) {
-        logDiagnostic(`ui result registry: ${uiResults.misses} miss(es) during this run`);
+      if (uiResults.unconsumed > 0) {
+        // Registered but never claimed: the afterToolCall/tool_execution_end
+        // pairing is broken, which is the one asymmetry worth logging.
+        logDiagnostic(`ui result registry: ${uiResults.unconsumed} unconsumed copy/copies`);
       }
       uiResults.clear();
       if (mcpBridge) {

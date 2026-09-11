@@ -17,7 +17,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { WorkspaceBoundaryEnforcer } from "../policy/workspace-boundary-enforcer.js";
 import { createSkillTool, type SkillEntry } from "../skills/skill-loader.js";
-import { createFetchToolResultTool } from "./fetch-tool-result.js";
+import { createFetchToolResultTool, createSearchToolResultTool } from "./fetch-tool-result.js";
 
 const MAX_OUTPUT_CHARS = 100 * 1024;
 const MAX_READ_BYTES = 64 * 1024;
@@ -88,6 +88,8 @@ export interface ShellResult {
   stdout: string;
   stderr: string;
   timedOut: boolean;
+  /** Bytes emitted after the per-stream capture limits had been reached. */
+  droppedBytes: number;
 }
 
 export function buildShellEnv(
@@ -124,19 +126,30 @@ export async function runShell(
       env: options.env,
     });
 
-    let stdout = "";
-    let stderr = "";
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let droppedBytes = 0;
     let timedOut = false;
 
     child.stdout.on("data", (chunk: Buffer) => {
-      if (stdout.length < MAX_OUTPUT_CHARS) {
-        stdout += chunk.toString("utf8");
+      const remaining = Math.max(0, MAX_OUTPUT_CHARS - stdoutBytes);
+      if (remaining > 0) {
+        const captured = chunk.subarray(0, remaining);
+        stdoutChunks.push(captured);
+        stdoutBytes += captured.length;
       }
+      droppedBytes += Math.max(0, chunk.length - remaining);
     });
     child.stderr.on("data", (chunk: Buffer) => {
-      if (stderr.length < MAX_OUTPUT_CHARS) {
-        stderr += chunk.toString("utf8");
+      const remaining = Math.max(0, MAX_OUTPUT_CHARS - stderrBytes);
+      if (remaining > 0) {
+        const captured = chunk.subarray(0, remaining);
+        stderrChunks.push(captured);
+        stderrBytes += captured.length;
       }
+      droppedBytes += Math.max(0, chunk.length - remaining);
     });
 
     const timer = setTimeout(() => {
@@ -150,7 +163,13 @@ export async function runShell(
     child.on("close", (code) => {
       clearTimeout(timer);
       options.signal?.removeEventListener("abort", onAbort);
-      resolve({ exitCode: code, stdout, stderr, timedOut });
+      resolve({
+        exitCode: code,
+        stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+        stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        timedOut,
+        droppedBytes,
+      });
     });
     child.on("error", (err) => {
       clearTimeout(timer);
@@ -170,6 +189,21 @@ export async function runShell(
 // which makes `params` concrete inside execute instead of unknown.
 const READ_SCHEMA = Type.Object({
   file_path: Type.String({ description: "Absolute or workspace-relative file path." }),
+  offset: Type.Optional(
+    Type.Integer({
+      description: "Byte offset to start reading from. Defaults to 0.",
+      default: 0,
+      minimum: 0,
+    })
+  ),
+  limit: Type.Optional(
+    Type.Integer({
+      description: `Maximum bytes to return (default and max ${MAX_READ_BYTES}).`,
+      default: MAX_READ_BYTES,
+      minimum: 1,
+      maximum: MAX_READ_BYTES,
+    })
+  ),
 });
 const LS_SCHEMA = Type.Object({
   path: Type.String({ description: "Absolute or workspace-relative directory path." }),
@@ -197,15 +231,29 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
       if (stat.isDirectory()) {
         throw new Error(`Cannot read '${params.file_path}': it is a directory`);
       }
+      const offset = params.offset ?? 0;
+      const limit = Math.min(params.limit ?? MAX_READ_BYTES, MAX_READ_BYTES);
       const handle = await fs.open(resolved, "r");
       try {
-        const size = Math.min(stat.size, MAX_READ_BYTES);
+        const size = Math.min(Math.max(0, stat.size - offset), limit);
         const buffer = Buffer.alloc(size);
-        const { bytesRead } = await handle.read(buffer, 0, size, 0);
+        const { bytesRead } =
+          size > 0 ? await handle.read(buffer, 0, size, offset) : { bytesRead: 0 };
+        const end = offset + bytesRead;
+        const truncated = end < stat.size;
         const text = buffer.subarray(0, bytesRead).toString("utf8");
+        const visibleText = truncated
+          ? `${text}\n\n[Read truncated: returned byte range [${offset}, ${end}) of ${stat.size} total bytes. ` +
+            `Do not treat this as the complete file. Continue with Read(file_path=${JSON.stringify(params.file_path)}, offset=${end}).]`
+          : text;
         return {
-          content: [{ type: "text" as const, text }],
-          details: { truncated: stat.size > MAX_READ_BYTES, bytes: bytesRead },
+          content: [{ type: "text" as const, text: visibleText }],
+          details: {
+            truncated,
+            bytes: bytesRead,
+            offset,
+            total_bytes: stat.size,
+          },
         };
       } finally {
         await handle.close();
@@ -255,17 +303,24 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
         throw new Error(`Bash command exceeded ${Math.round(timeoutMs / 1000)}s and was killed`);
       }
       const output = (result.stdout + (result.stderr ? `\n${result.stderr}` : "")).trim();
+      const truncationNotice =
+        result.droppedBytes > 0
+          ? `\n\n[Output truncated: ${result.droppedBytes} bytes were discarded after the capture limit and cannot be recovered. ` +
+            `Narrow the command output with filters, head, or tail, or redirect it to a file and then use Read. ` +
+            `Do not treat the output above as complete.]`
+          : "";
+      const visibleOutput = `${output || "(no output)"}${truncationNotice}`;
       if (result.exitCode !== 0) {
         // Carry the output in the message: createErrorToolResult keeps only the
         // error text, so returning it normally would lose the very output the
         // model needs in order to understand the failure.
         throw new Error(
-          `Bash command exited with code ${String(result.exitCode)}\n${output || "(no output)"}`
+          `Bash command exited with code ${String(result.exitCode)}\n${visibleOutput}`
         );
       }
       return {
-        content: [{ type: "text" as const, text: output || "(no output)" }],
-        details: { exitCode: result.exitCode },
+        content: [{ type: "text" as const, text: visibleOutput }],
+        details: { exitCode: result.exitCode, droppedBytes: result.droppedBytes },
       };
     },
   };
@@ -275,6 +330,7 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
     lsTool,
     bashTool,
     createFetchToolResultTool(workspaceRoot) as never,
+    createSearchToolResultTool(workspaceRoot) as never,
   ];
 
   if (options.skills && options.skills.length > 0) {

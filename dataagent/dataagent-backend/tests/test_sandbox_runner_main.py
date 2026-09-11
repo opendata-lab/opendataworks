@@ -231,7 +231,12 @@ def test_sandbox_runner_container_command_mounts_only_topic_workspace(monkeypatc
     # The workspace boundary hook runs in the child, so its scratch allow-list has
     # to be forwarded or the child silently denies /tmp despite the tmpfs mount.
     assert "DATAAGENT_WORKSPACE_SCRATCH_DIRS=/tmp" in env_values
-    assert "DATAAGENT_RUNTIME_KIND=claude_code" in env_values
+    # Against the resolver, not a literal: the child has to run whichever engine
+    # the deployment selected, and pinning the name here made an unrelated
+    # mounting test fail when the default moved to Pi.
+    from config import resolve_runtime_kind
+
+    assert f"DATAAGENT_RUNTIME_KIND={resolve_runtime_kind(get_settings())}" in env_values
     assert not any(value.startswith("PWD=") for value in env_values)
     assert not any(value.startswith("DATAAGENT_WORKSPACE_DIR=") for value in env_values)
     assert not any(value.startswith("DATAAGENT_WORKSPACE_PREPARED=") for value in env_values)

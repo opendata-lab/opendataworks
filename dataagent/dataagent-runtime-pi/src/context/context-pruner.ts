@@ -10,6 +10,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { stripRenderedPreview } from "./tabular-digest.js";
 import { logDiagnostic } from "../protocol/channel.js";
 
 export interface ContextPrunerOptions {
@@ -144,18 +145,11 @@ export function pruneContext(
         if (Array.isArray(toolMsg.content)) {
           let modified = false;
           const newContent = toolMsg.content.map((block: any) => {
-            if (block.type === "text" && typeof block.text === "string" && block.text.includes('"_type": "dataagent_folded_result"')) {
-              try {
-                const parsed = JSON.parse(block.text);
-                if (parsed._type === "dataagent_folded_result" && (parsed.preview_head || parsed.preview_tail)) {
-                  delete parsed.preview_head;
-                  delete parsed.preview_tail;
-                  parsed.notice = `[Folded in historical turn. Full rows preserved in ResultStore: '${parsed.result_ref}'.]`;
-                  modified = true;
-                  return { type: "text" as const, text: JSON.stringify(parsed) };
-                }
-              } catch {
-                // pass
+            if (block.type === "text" && typeof block.text === "string") {
+              const stripped = stripRenderedPreview(block.text);
+              if (stripped) {
+                modified = true;
+                return { type: "text" as const, text: stripped };
               }
             }
             return block;
@@ -231,12 +225,23 @@ function enforceBudget(
       continue;
     }
     const before = messageBytes(out[i]);
+    const foldedRef = msg.details?.dataagent_fold?.result_ref;
+    const directRef = msg.details?.result_ref;
+    const resultRef =
+      typeof foldedRef === "string" && foldedRef.length > 0
+        ? foldedRef
+        : typeof directRef === "string" && directRef.length > 0
+          ? directRef
+          : null;
+    const evictionText = resultRef
+      ? `[Output evicted to stay within the context budget. Retrieve the saved result with fetch_tool_result(result_ref=${JSON.stringify(resultRef)}).]`
+      : "[Output evicted to stay within the context budget. This content was not saved and is no longer recoverable; re-run the original tool if it is needed again.]";
     const stripped = {
       ...msg,
       content: [
         {
           type: "text" as const,
-          text: "[Output evicted to stay within the context budget. Re-run the tool or use fetch_tool_result if this data is needed again.]",
+          text: evictionText,
         },
       ],
     } as AgentMessage;

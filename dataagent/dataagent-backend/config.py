@@ -105,9 +105,9 @@ class Settings(BaseSettings):
     # dataagent_sandbox_mode: that one picks the isolation topology (in-process
     # vs. child container), this one picks the engine inside whichever topology
     # was selected. Deployment-level only; never resolved per request.
-    #   claude_code   -> claude-agent-sdk (default, current behaviour)
-    #   pi_agent_core -> Node Pi Cell over stdio (dataagent-runtime-pi)
-    dataagent_runtime_kind: str = "claude_code"
+    #   pi_agent_core -> Node Pi Cell over stdio (default, dataagent-runtime-pi)
+    #   claude_code   -> claude-agent-sdk
+    dataagent_runtime_kind: str = "pi_agent_core"
     # Node binary and built Pi Cell entrypoint used when runtime kind is
     # pi_agent_core. Empty values fall back to `node` on PATH and the in-repo
     # dataagent-runtime-pi build output.
@@ -117,6 +117,11 @@ class Settings(BaseSettings):
     # The three context_* names mirror the ``governance_settings`` wire contract
     # consumed by the Cell (src/protocol/frames.ts); keep them in lockstep.
     dataagent_run_idle_timeout_seconds: int = 300
+    # Only reached when a task carries no timeout of its own, which a real task
+    # always does: task_submission_service sets it from
+    # agent_interactive_timeout_seconds (360) or agent_background_timeout_seconds
+    # (1800), and task_executor prefers that over this. Tuning this number alone
+    # changes nothing for an actual run — raise the interactive or background one.
     dataagent_run_total_timeout_seconds: int = 600
     dataagent_context_max_inline_result_bytes: int = 16 * 1024
     dataagent_context_protect_tail_turns: int = 6
@@ -220,7 +225,11 @@ def resolve_sql_read_timeout_seconds(cfg: Settings, execution_mode) -> int:
 
 
 SUPPORTED_RUNTIME_KINDS = ("claude_code", "pi_agent_core")
-DEFAULT_RUNTIME_KIND = "claude_code"
+# Pi is what production runs, in the child-container topology. The default used
+# to be claude_code, which meant a deployment that set nothing ran the engine
+# nobody was using — and a local smoke that forgot the variable silently
+# verified the wrong path.
+DEFAULT_RUNTIME_KIND = "pi_agent_core"
 
 
 def resolve_runtime_kind(cfg: Settings) -> str:

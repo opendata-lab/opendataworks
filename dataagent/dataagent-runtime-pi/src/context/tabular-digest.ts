@@ -139,7 +139,11 @@ export function extractDigest(
     // fully in memory, so a prefix bought nothing while reporting a max of 99
     // for a dataset whose real max sat in row 101 — a wrong number is worse
     // than a slow one when the model reasons numerically on it.
-    const columnStats: Record<string, ColumnStat> = {};
+    // Null-prototype: column names come from query results, and assigning
+    // `__proto__` to an ordinary object sets its prototype instead of storing a
+    // stat — the digest then advertised a column it had silently dropped from
+    // both stats and preview.
+    const columnStats: Record<string, ColumnStat> = Object.create(null);
 
     for (const col of columns) {
       const isNum = col.type === "INTEGER" || col.type === "DECIMAL";
@@ -170,7 +174,11 @@ export function extractDigest(
       `To protect the context window from token overflow, only a sample of ${sampleCount} rows (head 5 + tail 5) ` +
       `is displayed. The actual dataset contains ${totalRows} rows in storage (ref: '${resultRef}'). ` +
       `Do NOT assume the total count is ${sampleCount}. ` +
-      `If you need specific rows or column slices, call tool 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)'.]`;
+      `If you need specific rows or column slices, call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)'; ` +
+      `to find rows without knowing where they are, call 'search_result(result_ref="${resultRef}", query="...")'. ` +
+      `Prefer either over re-running the query that produced this — the full result is already here. ` +
+      `This sampling is internal plumbing: never mention it, the ref, or the context window in your answer — ` +
+      `the reader asked about their data, not about how it reached you.]`;
 
     return {
       _type: "dataagent_folded_result",
@@ -181,7 +189,7 @@ export function extractDigest(
       columns,
       preview_head: previewHead,
       preview_tail: previewTail,
-      column_stats: columnStats,
+      column_stats: { ...columnStats },
       notice,
     };
   }
@@ -196,7 +204,11 @@ export function extractDigest(
   const notice =
     `[SYSTEM NOTICE: Output exceeded size limit (${totalChars} characters). ` +
     `Full content has been preserved in ResultStore (ref: '${resultRef}'). ` +
-    `Showing truncated preview. Call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)' to read more.]`;
+    `Showing truncated preview. Call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)' to read more, ` +
+    `or 'search_result(result_ref="${resultRef}", query="...")' to locate part of it. ` +
+    `Prefer either over re-running the tool that produced this — the full output is already here. ` +
+    `This truncation is internal plumbing: never mention it, the ref, or the context window in your answer — ` +
+    `the reader asked about their data, not about how it reached you.]`;
 
   return {
     _type: "dataagent_folded_result",
@@ -210,8 +222,68 @@ export function extractDigest(
   };
 }
 
+/**
+ * Render a digest as the block the model actually reads.
+ *
+ * This used to be JSON.stringify, which left the model to dig the instructions
+ * out of a `notice` field buried in an object — and in practice it re-ran the
+ * query instead of following the ref. State the three things plainly: why the
+ * output is not here, where it is, and how to get the part it wants.
+ */
 export function formatDigestText(digest: CompactResultDigest): string {
-  return JSON.stringify(digest, null, 2);
+  // Derived rather than carried: saveToolResult writes every result to exactly
+  // this path, so threading it through the digest would only create a second
+  // place for it to be wrong.
+  const storedPath = (ref: string) => `.dataagent/results/${ref}.json`;
+  const lines: string[] = ["<persisted-output>"];
+
+  if (digest.is_tabular) {
+    lines.push(
+      `Output too large to inline: ${digest.total_rows} rows.`,
+      `Full result saved to: ${storedPath(digest.result_ref)}`
+    );
+  } else {
+    lines.push(
+      `Output too large to inline: ${digest.total_chars} characters.`,
+      `Full output saved to: ${storedPath(digest.result_ref)}`
+    );
+  }
+
+  lines.push(
+    "",
+    `Read a slice:  fetch_tool_result(result_ref="${digest.result_ref}", offset=0, limit=20)`,
+    `Find rows:     search_result(result_ref="${digest.result_ref}", query="...")`,
+    "",
+    "Prefer either over re-running the tool that produced this — the full result is already saved.",
+    "This block is internal plumbing: never mention it, the ref, or the size limit in your answer.",
+    ""
+  );
+
+  if (digest.is_tabular) {
+    const columns = digest.columns.map((c) => `${c.name} (${c.type})`).join(", ");
+    lines.push(`Columns: ${columns}`, "");
+    lines.push(`Preview (first ${digest.preview_head.length} of ${digest.total_rows} rows):`);
+    for (const row of digest.preview_head) {
+      lines.push(JSON.stringify(row));
+    }
+    if (digest.preview_tail?.length) {
+      lines.push(`Preview (last ${digest.preview_tail.length} rows):`);
+      for (const row of digest.preview_tail) {
+        lines.push(JSON.stringify(row));
+      }
+    }
+    if (digest.column_stats && Object.keys(digest.column_stats).length > 0) {
+      lines.push("", `Column stats: ${JSON.stringify(digest.column_stats)}`);
+    }
+  } else {
+    lines.push("Preview (start):", digest.preview_head);
+    if (digest.preview_tail) {
+      lines.push("Preview (end):", digest.preview_tail);
+    }
+  }
+
+  lines.push("</persisted-output>");
+  return lines.join("\n");
 }
 
 const MAX_CELL_CHARS = 200;
@@ -221,7 +293,7 @@ function capRowCells(row: Record<string, unknown>): Record<string, unknown> {
   if (!row || typeof row !== "object") {
     return row;
   }
-  const capped: Record<string, unknown> = {};
+  const capped: Record<string, unknown> = Object.create(null);
   for (const [key, value] of Object.entries(row)) {
     if (typeof value === "string" && value.length > MAX_CELL_CHARS) {
       capped[key] = `${value.slice(0, MAX_CELL_CHARS)}…[+${value.length - MAX_CELL_CHARS} chars, use fetch_tool_result]`;
@@ -229,7 +301,7 @@ function capRowCells(row: Record<string, unknown>): Record<string, unknown> {
       capped[key] = value;
     }
   }
-  return capped;
+  return { ...capped };
 }
 
 
@@ -256,4 +328,32 @@ export function isRenderableStructuredOutput(text: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Opening line of a rendered digest; also how other passes recognise one. */
+export const PERSISTED_OUTPUT_OPEN = "<persisted-output>";
+
+/**
+ * Drop the preview rows from an already-rendered digest, keeping the part that
+ * tells the model where the result is and how to read it.
+ *
+ * Used when a folded result scrolls into history: the samples earned their
+ * tokens on the turn they arrived, not several turns later. Lives here so the
+ * shape is known in one place — the pruner used to match on the old JSON layout
+ * itself, which is what made changing that layout break it silently.
+ */
+export function stripRenderedPreview(text: string): string | null {
+  if (!text.startsWith(PERSISTED_OUTPUT_OPEN)) {
+    return null;
+  }
+  const lines = text.split("\n");
+  const firstPreview = lines.findIndex((line) => line.startsWith("Preview ("));
+  if (firstPreview < 0) {
+    return null;
+  }
+  return [
+    ...lines.slice(0, firstPreview),
+    "Preview dropped: this result arrived in an earlier turn. Read it back with fetch_tool_result or search_result.",
+    "</persisted-output>",
+  ].join("\n");
 }

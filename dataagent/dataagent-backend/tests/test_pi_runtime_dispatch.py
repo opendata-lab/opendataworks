@@ -16,8 +16,19 @@ from core.pi_runtime import PiRunOutcome  # noqa: E402
 from core.task_executor import TaskExecutionInput  # noqa: E402
 
 
-def test_runtime_kind_defaults_to_claude_code():
-    assert resolve_runtime_kind(Settings()) == "claude_code"
+def test_runtime_kind_defaults_to_pi():
+    """Pi is what production runs; a deployment that sets nothing gets it.
+
+    The default was claude_code long after Pi became the path in use, so a
+    deployment that configured nothing ran the engine nobody wanted, and a local
+    smoke that forgot the variable verified the wrong engine and still looked
+    healthy.
+    """
+    assert resolve_runtime_kind(Settings()) == "pi_agent_core"
+
+
+def test_runtime_kind_accepts_claude_code_explicitly():
+    assert resolve_runtime_kind(Settings(dataagent_runtime_kind="claude_code")) == "claude_code"
 
 
 def test_runtime_kind_accepts_pi_agent_core():
@@ -27,8 +38,8 @@ def test_runtime_kind_accepts_pi_agent_core():
 
 def test_unknown_runtime_kind_falls_back_instead_of_raising():
     """A typo in one env var must not take the whole backend down."""
-    assert resolve_runtime_kind(Settings(dataagent_runtime_kind="pi-agent-core")) == "claude_code"
-    assert resolve_runtime_kind(Settings(dataagent_runtime_kind="")) == "claude_code"
+    assert resolve_runtime_kind(Settings(dataagent_runtime_kind="pi-agent-core")) == "pi_agent_core"
+    assert resolve_runtime_kind(Settings(dataagent_runtime_kind="")) == "pi_agent_core"
 
 
 class _FakeStore:

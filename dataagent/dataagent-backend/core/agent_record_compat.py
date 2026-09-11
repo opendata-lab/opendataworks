@@ -29,6 +29,10 @@ _DETAIL_FIELD_ALIASES = {
     "result_ref": "result_ref",
     "storage_path": "storage_path",
     "original_bytes": "original_bytes",
+    # Fold provenance arrives nested, so it cannot collide with a tool's own
+    # fields and needs no arbitration.
+    "dataagent_fold": "fold",
+    "stored_bytes": "stored_bytes",
     "skill_name": "skill_name",
     "root_path": "root_path",
     "denied": "denied",
@@ -68,6 +72,11 @@ def normalize_tool_output(data: dict[str, Any]) -> dict[str, Any]:
                 meta[alias] = value
             else:
                 engine_details[key] = value
+    elif details is not None:
+        # Mirrors the TypeScript rule: a tool's details are typed as anything,
+        # and a string or list is evidence too. Keep it whole rather than
+        # dropping it for not being a mapping.
+        engine_details["raw_details"] = details
     if engine_details:
         meta["engine_details"] = engine_details
 

@@ -227,12 +227,27 @@ When working in this repository, optimize for:
     - `SESSION_MYSQL_DATABASE=dataagent`
     - `REDIS_HOST=127.0.0.1`
     - `REDIS_PORT=6379`
+    - `SKILLS_ROOT_DIR=<repo>/dataagent/.claude/skills` — required; skill discovery raises without it
+    - `DATAAGENT_HOST_ROOT=<repo>` — topic workspaces are created under this path as `topic_<id>/workspace`; they are gitignored, and can be deleted once the smoke is done
   - run `alembic upgrade head` in `dataagent/dataagent-backend`
   - ensure `da_agent_settings` in `dataagent` contains a valid provider selection and runtime DB config before starting services
   - start `uvicorn main:app`
   - do not start a separate `worker_main.py`; the task coordinator is started inside `main.py`
   - drive the smoke through real HTTP requests, not mocked store calls
   - do not stop at `/api/v1/nl2sql/health`; also verify `POST /api/v1/nl2sql/topics` succeeds, because `health` can be green while topic/task-store MySQL access is still broken
+
+### Intelligent Query runtime engine selection
+
+- `DATAAGENT_RUNTIME_KIND` picks the engine and defaults to `pi_agent_core`, which is what production runs. It defaulted to `claude_code` until 2026-09-11; a smoke run from before then that did not set it exercised the Claude SDK path no matter what had changed in `dataagent-runtime-pi`, and still looked healthy.
+- To smoke the Claude SDK engine instead, set `DATAAGENT_RUNTIME_KIND=claude_code`.
+- For the Pi engine, point `DATAAGENT_RUNTIME_PI_DIR` at `<repo>/dataagent/dataagent-runtime-pi` when running outside a container.
+- Production runs Pi in the child-container topology (`DATAAGENT_SANDBOX_MODE`), which spawns the same `core/pi_runtime.py` inside the container — so a local Pi smoke exercises the same engine code, but not the container hop itself.
+- Build the runtime first (`npm run build` in `dataagent-runtime-pi`); the backend spawns the compiled output, so TypeScript edits do not take effect until it is rebuilt.
+- Confirm which engine actually ran before trusting the result: `da_agent_sdk_record.engine_kind` is `pi_agent_core` for Pi records, and the backend log shows `claude_agent_sdk._internal.transport.subprocess_cli` for the Claude path.
+- The default agent (`agent_default`) has no skills and no MCP servers, so it cannot query data or produce charts. Use `agent_opendataworks`, which carries the portal MCP server and the business-knowledge skills, and start portal-mcp with a reachable `DATAAGENT_PORTAL_MCP_BASE_URL` plus its frontdoor token.
+- The SSE route is `GET /api/v1/nl2sql/tasks/{task_id}/sdk-events/stream`. `/events/stream` returns 404.
+- The task submission body uses `message_type` and `message_content`, not `question`.
+- It also takes `execution_mode`, and omitting it is not neutral: the field defaults to `None`, which resolves to the **interactive** tier (`agent_interactive_timeout_seconds`, 360s). The real frontend sends `"auto"`, which resolves to the background tier (1800s). A probe that leaves it out runs every turn against a budget production never uses, and heavy analytical turns then fail at ~361s for a reason that has nothing to do with what is being tested.
 
 ### Intelligent Query environment defaults
 

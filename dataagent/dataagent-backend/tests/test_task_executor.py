@@ -57,6 +57,23 @@ class _SdkRecordStore:
         self.records.append(kwargs)
 
 
+@pytest.fixture(autouse=True)
+def _pin_sdk_engine():
+    """These tests drive the claude_code engine, so say so instead of inheriting.
+
+    They passed for as long as claude_code was the default. When production's
+    engine became the default they all routed to Pi, which is not what any of
+    them is about — a whole file silently testing the wrong path is the same
+    failure the default change was made to prevent.
+    """
+    original = get_settings().dataagent_runtime_kind
+    update_settings({"dataagent_runtime_kind": "claude_code"})
+    try:
+        yield
+    finally:
+        update_settings({"dataagent_runtime_kind": original})
+
+
 def _build_gate(monkeypatch, decision, *, mode="default"):
     writer = _RecordingWriter()
     store = _RecordingStore()
@@ -1395,6 +1412,10 @@ def test_execute_task_stream_injects_portal_mcp_servers(monkeypatch, tmp_path: P
         task_executor,
         "get_settings",
         lambda: SimpleNamespace(
+            # A fake settings object has to name its engine: resolve_runtime_kind
+            # falls back to the default for a missing attribute, and the default
+            # is Pi.
+            dataagent_runtime_kind="claude_code",
             claude_model="",
             agent_timeout_seconds=60,
                 agent_background_max_turns=40,

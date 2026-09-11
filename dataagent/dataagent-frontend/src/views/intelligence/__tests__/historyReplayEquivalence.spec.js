@@ -80,3 +80,81 @@ describe('history replay', () => {
     expect(state.errorText).toBeTruthy()
   })
 })
+
+describe('history replay — record kinds the old hydrator dropped', () => {
+  const wrap = (seq, record_type, data, event_type = null) => ({
+    seq_id: seq, record_type, event_type, data,
+  })
+
+  it('replays question_request, which block hydration dropped silently', () => {
+    // The old hydrator recognised four kinds and ignored the rest, so a run
+    // that asked the user something replayed as if it never had.
+    const records = [
+      wrap(1, 'agent_event', { topic_id: 't' }, 'run.started'),
+      wrap(2, 'agent_event', { turn_id: 'turn-1' }, 'turn.started'),
+      wrap(3, 'question_request', {
+        request_id: 'q1', question: '选择数据库', options: ['a', 'b'],
+      }),
+    ]
+    const live = createChatState()
+    for (const r of records) processV2Record(live, r)
+    const replayed = buildV2StateFromStoredRecords({ records, status: 'success' })
+
+    expect(replayed.blocks.map((b) => b.type)).toEqual(live.blocks.map((b) => b.type))
+  })
+
+  it('replays the permission request/decision pair', () => {
+    const records = [
+      wrap(1, 'agent_event', { topic_id: 't' }, 'run.started'),
+      wrap(2, 'permission_request', {
+        request_id: 'p1', tool_name: 'Bash', risk_level: 'high', title: '执行命令',
+      }),
+      wrap(3, 'permission_decision', { request_id: 'p1', decision: 'approved' }),
+    ]
+    const live = createChatState()
+    for (const r of records) processV2Record(live, r)
+    const replayed = buildV2StateFromStoredRecords({ records, status: 'success' })
+
+    expect(replayed.blocks.map((b) => [b.type, b.decision]))
+      .toEqual(live.blocks.map((b) => [b.type, b.decision]))
+  })
+
+  it('tolerates an orphan tool.completed with no matching start', () => {
+    // A crash between start and completion leaves one behind; dropping the
+    // whole replay over it would lose the rest of the conversation.
+    const records = [
+      wrap(1, 'agent_event', { topic_id: 't' }, 'run.started'),
+      wrap(2, 'agent_event', { turn_id: 'turn-1' }, 'turn.started'),
+      wrap(3, 'agent_event', { tool_call_id: 'ghost', output: 'x', is_error: false }, 'tool.completed'),
+      wrap(4, 'agent_event', { turn_id: 'turn-1', content_id: 'c-0', kind: 'answer', delta: '继续' }, 'content.delta'),
+    ]
+    const replayed = buildV2StateFromStoredRecords({ records, status: 'success' })
+    expect(replayed.blocks.some((b) => b.content === '继续')).toBe(true)
+  })
+
+  it('tolerates content arriving without a turn.started', () => {
+    const records = [
+      wrap(1, 'agent_event', { topic_id: 't' }, 'run.started'),
+      wrap(2, 'agent_event', { turn_id: 'turn-1', content_id: 'c-0', kind: 'answer', delta: '无 turn' }, 'content.delta'),
+    ]
+    const live = createChatState()
+    for (const r of records) processV2Record(live, r)
+    const replayed = buildV2StateFromStoredRecords({ records, status: 'success' })
+    expect(replayed.blocks.map((b) => b.content)).toEqual(live.blocks.map((b) => b.content))
+  })
+
+  it('carries usage through replay', () => {
+    const records = [
+      wrap(1, 'agent_event', { topic_id: 't' }, 'run.started'),
+      wrap(2, 'agent_event', { turn_id: 'turn-1' }, 'turn.started'),
+      wrap(3, 'agent_event', {
+        turn_id: 'turn-1', usage: { input_tokens: 10, output_tokens: 5 },
+      }, 'usage.updated'),
+      wrap(4, 'agent_event', { terminal_status: 'success' }, 'run.completed'),
+    ]
+    const live = createChatState()
+    for (const r of records) processV2Record(live, r)
+    const replayed = buildV2StateFromStoredRecords({ records, status: 'success' })
+    expect(replayed.usage).toEqual(live.usage)
+  })
+})

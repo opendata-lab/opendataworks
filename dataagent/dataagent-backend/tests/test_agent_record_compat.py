@@ -65,3 +65,114 @@ def test_unknown_details_are_namespaced_not_dropped():
 def test_a_string_output_passes_through():
     """The SDK path stores a plain string and must not be touched."""
     assert normalize_tool_output({"output": "plain"})["output"] == "plain"
+
+
+def test_details_that_are_not_a_mapping_are_kept_whole():
+    """Mirrors the TypeScript rule so neither side silently discards evidence."""
+    normalized = normalize_tool_output(
+        {"output": {"content": [], "details": "plain text"}}
+    )
+
+    assert normalized["output_meta"]["engine_details"]["raw_details"] == "plain text"
+
+
+def test_the_two_readers_agree_on_a_matrix_of_wrapper_shapes():
+    """Differential test, because separate suites hid a real divergence.
+
+    Both sides had tests for non-object details and both passed, yet the fold
+    path kept them and the plain unwrap dropped them — so one record meant two
+    things depending on which reader saw it. Comparing outputs directly is the
+    only check that would have caught it.
+    """
+    import json
+    import os
+    import subprocess
+    from pathlib import Path
+
+    runtime = Path(__file__).resolve().parents[2] / "dataagent-runtime-pi"
+    built = runtime / "dist" / "src" / "kernel" / "event-normalizer.js"
+
+    # Build when the output is missing or older than any source. dist/ is
+    # gitignored, so trusting its presence meant this test skipped on a clean
+    # checkout and compared stale JavaScript against current Python everywhere
+    # else — a guard that reports nothing is worse than one that is red.
+    sources = list((runtime / "src").rglob("*.ts"))
+    assert sources, "pi runtime sources are missing"
+    newest = max(path.stat().st_mtime for path in sources)
+    if not built.exists() or built.stat().st_mtime < newest:
+        build = subprocess.run(
+            ["npm", "run", "build"],
+            cwd=runtime,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        assert build.returncode == 0, (
+            "the pi runtime must build for the two readers to be compared:\n"
+            f"{build.stdout}\n{build.stderr}"
+        )
+    assert built.exists(), f"build produced no {built}"
+
+    cases = [
+        {"content": [], "details": {"exitCode": 0}},
+        {"content": [], "details": {"result_ref": "a"}},
+        {"content": [], "details": {"count": 1, "dataagent_fold": {"result_ref": "b"}}},
+        {"content": [], "details": {"source_error": "x", "source_count": 1}},
+        {"content": [], "details": {"result_ref": "own", "dataagent_fold": {"result_ref": "fold"}}},
+        {"content": [], "details": {"stored_bytes": 4, "original_bytes": 9}},
+        {"content": [], "details": "plain text"},
+        {"content": [], "details": [1, 2]},
+        {"content": [], "details": 42},
+        {"content": [], "details": True},
+        {"content": [], "details": None},
+        {"content": [{"type": "text", "text": "hi"}]},
+        {"content": [], "details": {"nested": {"a": 1}}},
+        {"content": [], "details": {}},
+        {"details": {"count": 1}},
+        {"content": [], "details": {"engine_details": {"pre": 1}, "count": 2}},
+        {"content": [], "details": {"count": None}},
+        # Names that live on Object.prototype: a plain-object lookup answers for
+        # all of them, so TypeScript filed their values under a garbled key
+        # while Python did not.
+        {"content": [], "details": {"__proto__": {"x": 1}}},
+        {"content": [], "details": {"toString": "t"}},
+        {"content": [], "details": {"constructor": "c"}},
+        {"content": [], "details": {"valueOf": 1}},
+        {"content": [], "details": {"hasOwnProperty": True}},
+        # A platform structured output carries kind at the top level. The one
+        # that also has a content field is the case the two readers disagreed
+        # on, and comparing only output_meta would have missed it.
+        {"kind": "sql_execution", "content": "unrelated", "details": {"count": 1}},
+        {"kind": "sql_execution", "content": "unrelated"},
+        {"kind": "chart_spec", "details": {"count": 1}},
+        {"kind": "query_result", "rows": [1, 2]},
+    ]
+
+    module = (runtime / "dist" / "src" / "kernel" / "event-normalizer.js").as_uri()
+    script = (
+        f"const {{unwrapToolResult}} = await import({module!r});"
+        "console.log(JSON.stringify(JSON.parse(process.env.CASES)"
+        ".map((c) => { const r = unwrapToolResult(c);"
+        " return [r.output, r.output_meta]; })));"
+    )
+    completed = subprocess.run(
+        ["node", "--input-type=module", "-e", script],
+        cwd=runtime,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        env={**os.environ, "CASES": json.dumps(cases)},
+    )
+    assert completed.returncode == 0, completed.stderr
+    ts_metas = json.loads(completed.stdout)
+
+    py_pairs = []
+    for case in cases:
+        normalized = normalize_tool_output({"output": case})
+        py_pairs.append([normalized.get("output"), normalized.get("output_meta")])
+
+    for case, ts_pair, py_pair in zip(cases, ts_metas, py_pairs):
+        assert ts_pair == py_pair, (
+            f"readers disagree on {case!r}:\n  TS  output/meta = {ts_pair!r}\n"
+            f"  PY  output/meta = {py_pair!r}"
+        )

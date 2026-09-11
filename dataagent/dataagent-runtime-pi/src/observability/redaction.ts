@@ -43,10 +43,14 @@ export function redact<T>(value: T, depth = 0): T {
   if (Array.isArray(value)) {
     return value.map((item) => redact(item, depth + 1)) as unknown as T;
   }
-  const result: Record<string, unknown> = {};
+  // Null-prototype accumulator: keys come from tool output, and assigning
+  // `__proto__` to an ordinary object sets its prototype instead of storing
+  // anything — redaction would drop the value on the floor. Spread restores an
+  // ordinary object without running setters.
+  const result: Record<string, unknown> = Object.create(null);
   for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
     const lowered = key.toLowerCase();
     result[key] = SECRET_KEY_HINTS.some((hint) => lowered.includes(hint)) ? REDACTED : redact(item, depth + 1);
   }
-  return result as unknown as T;
+  return { ...result } as unknown as T;
 }

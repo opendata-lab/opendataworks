@@ -195,6 +195,44 @@ test("maxContextTokens evicts old tool output instead of being ignored", async (
   assert.deepEqual(callIds(bounded), callIds(messages), "tool calls must be preserved");
 });
 
+test("budget eviction only suggests fetch_tool_result when that result has a ref", () => {
+  const bulk = "x".repeat(12_000);
+  const messages: any[] = [
+    { role: "user", content: "start" },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "without-ref", name: "small_tool", arguments: {} }],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "without-ref",
+      content: [{ type: "text", text: bulk }],
+    },
+    {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "with-ref", name: "large_tool", arguments: {} }],
+    },
+    {
+      role: "toolResult",
+      toolCallId: "with-ref",
+      content: [{ type: "text", text: bulk }],
+      details: { dataagent_fold: { result_ref: "res_saved_123" } },
+    },
+    { role: "user", content: "tail" },
+    { role: "assistant", content: "tail answer" },
+  ];
+
+  const pruned = pruneContext(messages, { protectTailCount: 2, maxContextTokens: 1 });
+  const withoutRef = pruned.find((message: any) => message.toolCallId === "without-ref") as any;
+  const withRef = pruned.find((message: any) => message.toolCallId === "with-ref") as any;
+  const withoutRefText = withoutRef.content[0].text;
+  const withRefText = withRef.content[0].text;
+
+  assert.match(withoutRefText, /not saved and is no longer recoverable/);
+  assert.doesNotMatch(withoutRefText, /fetch_tool_result/);
+  assert.match(withRefText, /fetch_tool_result\(result_ref="res_saved_123"\)/);
+});
+
 test("a failed retry does not supersede an earlier successful result", async () => {
   const messages: any[] = [
     { role: "user", content: "问题" },
