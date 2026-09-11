@@ -18,27 +18,35 @@
           <el-icon><MagicStick /></el-icon>
           <span>Chat</span>
         </el-menu-item>
-        <el-menu-item index="skills">
-          <el-icon><Collection /></el-icon>
-          <span>Skills</span>
-        </el-menu-item>
         <el-menu-item index="agents">
           <el-icon><User /></el-icon>
           <span>智能体</span>
         </el-menu-item>
+
+        <!-- Configuration is not day-to-day work. Six of the eight entries here
+             were things an operator touches when setting the platform up and
+             then rarely again, sitting between Chat and the agents it is used
+             with. They live under 设置 now, grouped by what they configure. -->
         <template v-if="authStore.isAdmin">
-          <el-menu-item index="models">
-            <el-icon><Cpu /></el-icon>
-            <span>模型管理</span>
+          <div class="intelligent-query-menu__group">设置</div>
+          <el-menu-item index="skills">
+            <el-icon><Collection /></el-icon>
+            <span>Skills</span>
           </el-menu-item>
           <el-menu-item index="mcp">
             <el-icon><Connection /></el-icon>
             <span>MCP 服务</span>
           </el-menu-item>
+          <el-menu-item index="models">
+            <el-icon><Cpu /></el-icon>
+            <span>模型管理</span>
+          </el-menu-item>
           <el-menu-item index="widget">
             <el-icon><Monitor /></el-icon>
             <span>Widget 接入</span>
           </el-menu-item>
+
+          <div class="intelligent-query-menu__group">评测</div>
           <el-menu-item index="evaluations">
             <el-icon><DataBoard /></el-icon>
             <span>评测集</span>
@@ -48,6 +56,10 @@
             <span>评测结果</span>
           </el-menu-item>
         </template>
+        <el-menu-item v-else index="skills">
+          <el-icon><Collection /></el-icon>
+          <span>Skills</span>
+        </el-menu-item>
       </el-menu>
       <div v-if="authStore.enabled && authStore.currentUser" class="intelligent-query-user">
         <el-dropdown trigger="click" @command="handleUserCommand">
@@ -161,6 +173,15 @@ const handleMenuSelect = (index) => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* A quiet label, not a menu entry: it groups the items below it and must not
+   look clickable itself. */
+.intelligent-query-menu__group {
+  padding: 16px 20px 6px;
+  font-size: 12px;
+  color: #94a3b8;
+  letter-spacing: 0.04em;
 }
 
 .intelligent-query-menu {

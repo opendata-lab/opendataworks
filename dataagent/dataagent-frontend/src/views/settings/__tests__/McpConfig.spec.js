@@ -84,7 +84,6 @@ const basePayload = () => ({
       server_id: 'srv-filesystem',
       name: 'filesystem',
       source: 'configured',
-      scope: 'workspace',
       transport: 'stdio',
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-filesystem', '/data'],
@@ -98,7 +97,6 @@ const basePayload = () => ({
       server_id: 'srv-github-remote',
       name: 'github-remote',
       source: 'configured',
-      scope: 'user',
       transport: 'sse',
       command: '',
       args: [],
@@ -114,7 +112,6 @@ const basePayload = () => ({
       server_id: 'srv-portal-internal',
       name: 'portal-tools',
       source: 'plugin',
-      scope: 'workspace',
       transport: 'stdio',
       command: 'python',
       args: ['-m', 'opendataworks.mcp_portal'],
@@ -226,7 +223,6 @@ describe('McpConfig', () => {
     expect(wrapper.vm.activeAddMode).toBe('form_stdio')
 
     wrapper.vm.formStdio.name = 'my-sqlite'
-    wrapper.vm.formStdio.scope = 'workspace'
     wrapper.vm.formStdio.command = 'uvx'
     wrapper.vm.formStdio.argsStr = 'mcp-server-sqlite --db-path /tmp/test.db'
     wrapper.vm.formStdio.envList = [{ key: 'SQLITE_MODE', value: 'ro' }]
@@ -236,7 +232,6 @@ describe('McpConfig', () => {
 
     expect(apiMocks.createMcpServer).toHaveBeenCalledWith({
       name: 'my-sqlite',
-      scope: 'workspace',
       source: 'configured',
       transport: 'stdio',
       command: 'uvx',
@@ -256,7 +251,6 @@ describe('McpConfig', () => {
     wrapper.vm.openAddDialog()
     wrapper.vm.activeAddMode = 'remote'
     wrapper.vm.formRemote.name = 'slack-remote'
-    wrapper.vm.formRemote.scope = 'user'
     wrapper.vm.formRemote.transport = 'http'
     wrapper.vm.formRemote.url = 'https://mcp.slack.com/http'
     wrapper.vm.formRemote.headerList = [{ key: 'X-Token', value: 'secret' }]
@@ -266,7 +260,6 @@ describe('McpConfig', () => {
 
     expect(apiMocks.createMcpServer).toHaveBeenCalledWith({
       name: 'slack-remote',
-      scope: 'user',
       source: 'configured',
       transport: 'http',
       url: 'https://mcp.slack.com/http',
@@ -296,7 +289,6 @@ describe('McpConfig', () => {
     await flushPromises()
 
     expect(apiMocks.importMcpServers).toHaveBeenCalledWith({
-      scope: 'workspace',
       mcpServers: {
         git: {
           command: 'uvx',
@@ -326,7 +318,6 @@ describe('McpConfig', () => {
 
     expect(apiMocks.createMcpServer).toHaveBeenCalledWith({
       name: 'redis-mcp',
-      scope: 'workspace',
       source: 'configured',
       transport: 'stdio',
       command: 'npx',

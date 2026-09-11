@@ -144,14 +144,6 @@
           <el-form label-position="top" class="mcp-form">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
-                <el-form-item label="作用域" required>
-                  <el-radio-group v-model="formStdio.scope">
-                    <el-radio value="workspace">工作区</el-radio>
-                    <el-radio value="user">用户</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
                 <el-form-item label="服务名称" required>
                   <el-input v-model="formStdio.name" placeholder="例如：filesystem" />
                 </el-form-item>
@@ -196,14 +188,6 @@
           <el-form label-position="top" class="mcp-form">
             <el-row :gutter="16">
               <el-col :xs="24" :sm="12">
-                <el-form-item label="作用域" required>
-                  <el-radio-group v-model="formRemote.scope">
-                    <el-radio value="workspace">工作区</el-radio>
-                    <el-radio value="user">用户</el-radio>
-                  </el-radio-group>
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
                 <el-form-item label="服务名称" required>
                   <el-input v-model="formRemote.name" placeholder="例如：remote-indexer" />
                 </el-form-item>
@@ -240,12 +224,6 @@
         <!-- 模式 3：完整配置 (JSON) -->
         <el-tab-pane label="导入 JSON" name="json">
           <el-form label-position="top" class="mcp-form">
-            <el-form-item label="作用域">
-              <el-radio-group v-model="formJson.scope">
-                <el-radio value="workspace">工作区</el-radio>
-                <el-radio value="user">用户</el-radio>
-              </el-radio-group>
-            </el-form-item>
 
             <el-form-item label="JSON 配置内容">
               <div class="json-tips">
@@ -274,14 +252,6 @@
       <div v-else class="edit-form-wrapper">
         <el-form label-position="top">
           <el-row :gutter="16">
-            <el-col :xs="24" :sm="12">
-              <el-form-item label="作用域">
-                <el-radio-group v-model="editForm.scope">
-                  <el-radio value="workspace">工作区</el-radio>
-                  <el-radio value="user">用户</el-radio>
-                </el-radio-group>
-              </el-form-item>
-            </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item label="服务名称">
                 <el-input v-model="editForm.name" />
@@ -351,7 +321,6 @@ const activeAddMode = ref('form_stdio')
 
 // 模式 1: stdio
 const formStdio = reactive({
-  scope: 'workspace',
   name: '',
   command: '',
   argsStr: '',
@@ -360,7 +329,6 @@ const formStdio = reactive({
 
 // 模式 2: remote
 const formRemote = reactive({
-  scope: 'workspace',
   name: '',
   transport: 'sse',
   url: '',
@@ -369,13 +337,11 @@ const formRemote = reactive({
 
 // 模式 3: json
 const formJson = reactive({
-  scope: 'workspace',
   rawJson: ''
 })
 
 // 编辑模式表单
 const editForm = reactive({
-  scope: 'workspace',
   name: '',
   transport: 'stdio',
   command: '',
@@ -404,8 +370,7 @@ const filteredConfiguredServers = computed(() => filterServerList(configuredServ
 const filteredPluginServers = computed(() => filterServerList(pluginServers.value))
 
 const serverMeta = (server) => {
-  const scope = server.scope === 'user' ? '用户' : '工作区'
-  return `${scope} · ${String(server.transport || 'stdio').toUpperCase()}`
+  return String(server.transport || 'stdio').toUpperCase()
 }
 
 const serverDescription = (server) => {
@@ -444,19 +409,14 @@ const objToList = (obj = {}) => {
 }
 
 const resetForms = () => {
-  formStdio.scope = 'workspace'
   formStdio.name = ''
   formStdio.command = ''
   formStdio.argsStr = ''
   formStdio.envList = []
-
-  formRemote.scope = 'workspace'
   formRemote.name = ''
   formRemote.transport = 'sse'
   formRemote.url = ''
   formRemote.headerList = []
-
-  formJson.scope = 'workspace'
   formJson.rawJson = ''
 }
 
@@ -494,7 +454,6 @@ const openImportDialog = () => {
 const openEditDialog = (server) => {
   isEditing.value = true
   editingServerId.value = server.server_id
-  editForm.scope = server.scope || 'workspace'
   editForm.name = server.name || ''
   editForm.transport = server.transport || 'stdio'
   editForm.command = server.command || ''
@@ -571,7 +530,6 @@ const handleSubmit = async () => {
     if (isEditing.value) {
       const payload = {
         name: editForm.name,
-        scope: editForm.scope,
         transport: editForm.transport,
         command: editForm.command,
         args: parseArgs(editForm.argsStr),
@@ -596,7 +554,6 @@ const handleSubmit = async () => {
       }
       const payload = {
         name: formStdio.name.trim(),
-        scope: formStdio.scope,
         source: 'configured',
         transport: 'stdio',
         command: formStdio.command.trim(),
@@ -618,7 +575,6 @@ const handleSubmit = async () => {
       }
       const payload = {
         name: formRemote.name.trim(),
-        scope: formRemote.scope,
         source: 'configured',
         transport: formRemote.transport,
         url: formRemote.url.trim(),
@@ -643,14 +599,13 @@ const handleSubmit = async () => {
 
       // 接受 {"mcpServers": {...}} 或 {"server-name": {...}} 格式
       if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
-        await dataagentApi.importMcpServers({ scope: formJson.scope, ...parsed })
+        await dataagentApi.importMcpServers({ ...parsed })
       } else {
         const firstKey = Object.keys(parsed)[0]
         const serverConfig = parsed[firstKey]
         if (serverConfig && typeof serverConfig === 'object' && (serverConfig.command || serverConfig.url)) {
           const payload = {
             name: firstKey,
-            scope: formJson.scope,
             source: 'configured',
             transport: serverConfig.transport || (serverConfig.command ? 'stdio' : 'sse'),
             command: serverConfig.command || '',
@@ -663,7 +618,7 @@ const handleSubmit = async () => {
           }
           await dataagentApi.createMcpServer(payload)
         } else {
-          await dataagentApi.importMcpServers({ scope: formJson.scope, mcpServers: parsed })
+          await dataagentApi.importMcpServers({ mcpServers: parsed })
         }
       }
       ElMessage.success('MCP 配置已导入')
