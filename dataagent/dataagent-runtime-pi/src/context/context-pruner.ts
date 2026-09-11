@@ -225,12 +225,23 @@ function enforceBudget(
       continue;
     }
     const before = messageBytes(out[i]);
+    const foldedRef = msg.details?.dataagent_fold?.result_ref;
+    const directRef = msg.details?.result_ref;
+    const resultRef =
+      typeof foldedRef === "string" && foldedRef.length > 0
+        ? foldedRef
+        : typeof directRef === "string" && directRef.length > 0
+          ? directRef
+          : null;
+    const evictionText = resultRef
+      ? `[Output evicted to stay within the context budget. Retrieve the saved result with fetch_tool_result(result_ref=${JSON.stringify(resultRef)}).]`
+      : "[Output evicted to stay within the context budget. This content was not saved and is no longer recoverable; re-run the original tool if it is needed again.]";
     const stripped = {
       ...msg,
       content: [
         {
           type: "text" as const,
-          text: "[Output evicted to stay within the context budget. Re-run the tool or use fetch_tool_result if this data is needed again.]",
+          text: evictionText,
         },
       ],
     } as AgentMessage;
