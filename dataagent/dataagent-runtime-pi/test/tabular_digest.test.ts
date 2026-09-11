@@ -67,7 +67,7 @@ test("extractDigest extracts schema, sample rows, and numerical stats from tabul
   }
 
   const jsonStr = formatDigestText(digest);
-  assert.ok(jsonStr.includes("dataagent_folded_result"));
+  assert.ok(jsonStr.startsWith("<persisted-output>"));
   assert.ok(jsonStr.length < 5000); // Compact representation remains well bounded
 });
 

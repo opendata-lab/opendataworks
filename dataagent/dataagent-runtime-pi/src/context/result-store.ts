@@ -47,6 +47,23 @@ export interface TextSliceResult {
 
 export type FetchSliceResult = TabularSliceResult | TextSliceResult;
 
+export interface SearchHit {
+  /** Row index for a tabular result, line number for text. */
+  index: number;
+  row?: Record<string, unknown>;
+  line?: string;
+}
+
+export interface SearchResult {
+  result_ref: string;
+  is_tabular: boolean;
+  query: string;
+  total_scanned: number;
+  match_count: number;
+  truncated: boolean;
+  hits: SearchHit[];
+}
+
 const RESULTS_DIR = path.join(".dataagent", "results");
 const SAFE_REF_PATTERN = /^[a-zA-Z0-9_-]+$/;
 const DEFAULT_LIMIT = 20;
@@ -336,4 +353,90 @@ function projectColumns(
     }
   }
   return { ...filtered };
+}
+
+/**
+ * Find rows or lines in a stored result without reading it back in full.
+ *
+ * Paging with offset and limit only helps when the agent knows roughly where to
+ * look. When it does not, the cheaper move has been to re-run the query — one
+ * turn in a probe issued fifteen SQL calls rather than page through what it had
+ * already fetched — which costs a round trip to the database and the tokens to
+ * read the answer again. Scanning is line-oriented like the slice reader, so a
+ * large result never lands in memory whole.
+ */
+export async function searchToolResult(
+  workspaceRoot: string,
+  resultRef: string,
+  query: string,
+  options?: { limit?: number }
+): Promise<SearchResult> {
+  if (!SAFE_REF_PATTERN.test(resultRef)) {
+    throw new Error(`Invalid result_ref: '${resultRef}'`);
+  }
+  const needle = String(query ?? "").trim();
+  if (!needle) {
+    throw new Error("query must not be empty");
+  }
+
+  const absolutePath = await resolveContainedPath(workspaceRoot, resultRef);
+  const limit = Math.min(MAX_LIMIT, Math.max(1, options?.limit ?? DEFAULT_LIMIT));
+  const lowered = needle.toLowerCase();
+
+  let header: JsonlHeader | null;
+  try {
+    header = await readHeader(absolutePath);
+  } catch {
+    throw new Error(`Result '${resultRef}' not found in storage (path: ${RESULTS_DIR}/${resultRef}.json)`);
+  }
+
+  const hits: SearchHit[] = [];
+  let scanned = 0;
+  let matches = 0;
+
+  const stream = createReadStream(absolutePath, { encoding: "utf8" });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  try {
+    let lineNumber = -1;
+    for await (const line of rl) {
+      lineNumber += 1;
+      // The first line of a tabular file is the header, not data.
+      if (header && lineNumber === 0) {
+        continue;
+      }
+      scanned += 1;
+      if (!line.toLowerCase().includes(lowered)) {
+        continue;
+      }
+      matches += 1;
+      if (hits.length >= limit) {
+        continue;
+      }
+      const index = header ? lineNumber - 1 : lineNumber;
+      if (header) {
+        try {
+          hits.push({ index, row: JSON.parse(line) as Record<string, unknown> });
+        } catch {
+          hits.push({ index, line });
+        }
+      } else {
+        hits.push({ index, line });
+      }
+    }
+  } finally {
+    rl.close();
+    stream.destroy();
+  }
+
+  return {
+    result_ref: resultRef,
+    is_tabular: Boolean(header),
+    query: needle,
+    total_scanned: scanned,
+    match_count: matches,
+    // Counting past the cap costs nothing and tells the agent whether to narrow
+    // the query rather than guess why it got exactly `limit` hits.
+    truncated: matches > hits.length,
+    hits,
+  };
 }

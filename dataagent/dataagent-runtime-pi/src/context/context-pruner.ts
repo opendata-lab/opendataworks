@@ -10,6 +10,7 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { stripRenderedPreview } from "./tabular-digest.js";
 import { logDiagnostic } from "../protocol/channel.js";
 
 export interface ContextPrunerOptions {
@@ -144,18 +145,11 @@ export function pruneContext(
         if (Array.isArray(toolMsg.content)) {
           let modified = false;
           const newContent = toolMsg.content.map((block: any) => {
-            if (block.type === "text" && typeof block.text === "string" && block.text.includes('"_type": "dataagent_folded_result"')) {
-              try {
-                const parsed = JSON.parse(block.text);
-                if (parsed._type === "dataagent_folded_result" && (parsed.preview_head || parsed.preview_tail)) {
-                  delete parsed.preview_head;
-                  delete parsed.preview_tail;
-                  parsed.notice = `[Folded in historical turn. Full rows preserved in ResultStore: '${parsed.result_ref}'.]`;
-                  modified = true;
-                  return { type: "text" as const, text: JSON.stringify(parsed) };
-                }
-              } catch {
-                // pass
+            if (block.type === "text" && typeof block.text === "string") {
+              const stripped = stripRenderedPreview(block.text);
+              if (stripped) {
+                modified = true;
+                return { type: "text" as const, text: stripped };
               }
             }
             return block;
