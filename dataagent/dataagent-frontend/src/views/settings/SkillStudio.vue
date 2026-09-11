@@ -2,8 +2,7 @@
   <div class="skill-studio">
     <div class="skill-studio__toolbar">
       <div>
-        <div class="skill-studio__title">Skill 列表</div>
-        <div class="skill-studio__subtitle">{{ enabledSummary }}</div>
+        <div class="skill-studio__title">Skill <span>{{ skillItems.length }}</span></div>
       </div>
       <div class="skill-studio__actions">
         <el-input
@@ -25,6 +24,7 @@
     </div>
 
     <div v-loading="listLoading" class="skill-table-wrapper">
+      <div class="skill-studio__section-title">已启用 <span>{{ enabledSkillCount }}</span></div>
       <div v-if="filteredSkills.length" class="skill-list">
         <div
           v-for="skill in filteredSkills"
@@ -277,10 +277,6 @@ const filteredSkills = computed(() => {
   })
 })
 
-const enabledSummary = computed(() => {
-  return `已启用 ${enabledSkillCount.value} / 共 ${skillItems.value.length}`
-})
-
 const emptyDescription = computed(() => (
   String(searchKeyword.value || '').trim()
     ? '没有匹配的 Skill'
@@ -518,11 +514,17 @@ onMounted(async () => {
   color: #0f172a;
 }
 
-.skill-studio__subtitle {
-  margin-top: 6px;
-  font-size: 13px;
+.skill-studio__title span,
+.skill-studio__section-title span {
   color: #64748b;
-  line-height: 1.6;
+  font-weight: 500;
+}
+
+.skill-studio__section-title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
 }
 
 .skill-studio__actions {

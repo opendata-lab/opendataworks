@@ -192,11 +192,26 @@ def test_resolve_claude_cli_path_supports_env_alias(monkeypatch):
     assert resolve_claude_cli_path(SimpleNamespace(claude_cli_path="")) == "/tmp/from-alias"
 
 
-def test_build_portal_mcp_servers_uses_streamable_http_with_data_scope():
+def test_build_portal_mcp_servers_uses_registry_http_with_data_scope(monkeypatch):
+    class FakeRegistry:
+        def list_mcp_servers(self):
+            return [
+                {
+                    "server_id": "portal",
+                    "name": "Portal MCP",
+                    "source": "plugin",
+                    "transport": "http",
+                    "url": "http://registry-portal:8801/mcp/",
+                    "headers": {"X-Portal-MCP-Token": "registry-token"},
+                    "enabled": True,
+                }
+            ]
+
+    monkeypatch.setattr("core.mcp_admin_service.get_runtime_registry_store", lambda: FakeRegistry())
     cfg = SimpleNamespace(
         dataagent_portal_mcp_enabled=True,
-        dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp/",
-        dataagent_portal_mcp_token="portal-token",
+        dataagent_portal_mcp_base_url="http://environment-must-not-win:8801/mcp/",
+        dataagent_portal_mcp_token="environment-token",
         dataagent_portal_mcp_token_header_name="X-Portal-MCP-Token",
     )
 
@@ -214,10 +229,10 @@ def test_build_portal_mcp_servers_uses_streamable_http_with_data_scope():
     assert actual == {
         "portal": {
             "type": "http",
-            "url": "http://portal-mcp:8801/mcp/",
+            "url": "http://registry-portal:8801/mcp/",
             "headers": {
                 "X-Agent-Data-Scope": "eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19",
-                "X-Portal-MCP-Token": "portal-token",
+                "X-Portal-MCP-Token": "registry-token",
             },
         }
     }
@@ -240,33 +255,59 @@ def test_build_system_prompt_includes_authorized_data_scope():
     assert "cluster_id=3, source_type=DORIS, database=ads_user" in prompt
 
 
-def test_build_portal_mcp_servers_returns_empty_when_disabled_or_incomplete():
-    disabled = SimpleNamespace(
-        dataagent_portal_mcp_enabled=False,
-        dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp",
-        dataagent_portal_mcp_token="portal-token",
-    )
-    missing_token = SimpleNamespace(
-        dataagent_portal_mcp_enabled=True,
-        dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp",
-        dataagent_portal_mcp_token="",
-    )
+def test_build_portal_mcp_servers_returns_empty_when_registry_row_is_disabled_or_missing(monkeypatch):
+    class FakeRegistry:
+        rows = []
 
-    assert agent_runtime._build_portal_mcp_servers(disabled) == {}
-    assert agent_runtime._build_portal_mcp_servers(missing_token) == {}
+        def list_mcp_servers(self):
+            return list(self.rows)
 
-
-def test_build_portal_mcp_servers_adds_streamable_http_mount_slash():
+    registry = FakeRegistry()
+    monkeypatch.setattr("core.mcp_admin_service.get_runtime_registry_store", lambda: registry)
     cfg = SimpleNamespace(
         dataagent_portal_mcp_enabled=True,
-        dataagent_portal_mcp_base_url="http://portal-mcp:8801/mcp",
-        dataagent_portal_mcp_token="portal-token",
+        dataagent_portal_mcp_base_url="http://environment-must-not-fallback:8801/mcp",
+        dataagent_portal_mcp_token="environment-token",
+    )
+
+    assert agent_runtime._build_portal_mcp_servers(cfg) == {}
+
+    registry.rows = [
+        {
+            "server_id": "portal",
+            "transport": "http",
+            "url": "http://registry-portal:8801/mcp",
+            "headers": {"X-Portal-MCP-Token": "registry-token"},
+            "enabled": False,
+        }
+    ]
+    assert agent_runtime._build_portal_mcp_servers(cfg) == {}
+
+
+def test_build_portal_mcp_servers_adds_streamable_http_mount_slash(monkeypatch):
+    class FakeRegistry:
+        def list_mcp_servers(self):
+            return [
+                {
+                    "server_id": "portal",
+                    "transport": "http",
+                    "url": "http://registry-portal:8801/mcp",
+                    "headers": {"X-Portal-MCP-Token": "registry-token"},
+                    "enabled": True,
+                }
+            ]
+
+    monkeypatch.setattr("core.mcp_admin_service.get_runtime_registry_store", lambda: FakeRegistry())
+    cfg = SimpleNamespace(
+        dataagent_portal_mcp_enabled=True,
+        dataagent_portal_mcp_base_url="http://environment-must-not-win:8801/mcp",
+        dataagent_portal_mcp_token="environment-token",
         dataagent_portal_mcp_token_header_name="X-Portal-MCP-Token",
     )
 
     actual = agent_runtime._build_portal_mcp_servers(cfg)
 
-    assert actual["portal"]["url"] == "http://portal-mcp:8801/mcp/"
+    assert actual["portal"]["url"] == "http://registry-portal:8801/mcp/"
 
 
 def test_build_allowed_tools_includes_portal_mcp_tools_once():

@@ -10,6 +10,7 @@ from typing import Any
 import pymysql
 
 from config import get_settings
+from core.mcp_admin_service import available_mcp_servers as list_available_mcp_servers
 from core.agent_visibility import normalize_agent_visibility
 from core.data_scope import normalize_data_scope
 
@@ -176,20 +177,11 @@ def _validate_preset_questions(value: Any) -> list[str]:
 
 
 def available_mcp_servers() -> list[dict[str, Any]]:
-    cfg = get_settings()
-    configured = bool(
-        getattr(cfg, "dataagent_portal_mcp_enabled", True)
-        and str(getattr(cfg, "dataagent_portal_mcp_base_url", "") or "").strip()
-        and str(getattr(cfg, "dataagent_portal_mcp_token", "") or "").strip()
-    )
-    return [
-        {
-            "id": PORTAL_MCP_SERVER_ID,
-            "name": "Portal MCP",
-            "enabled": configured,
-            "tool_names": list(PORTAL_MCP_TOOL_NAMES),
-        }
-    ]
+    servers = list_available_mcp_servers()
+    for server in servers:
+        if server.get("id") == PORTAL_MCP_SERVER_ID:
+            server["tool_names"] = list(PORTAL_MCP_TOOL_NAMES)
+    return servers
 
 
 def available_mcp_server_ids() -> set[str]:

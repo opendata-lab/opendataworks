@@ -25,6 +25,7 @@ from core.provider_runtime import (
     safe_base_url_for_log,
 )
 from core.skill_admin_store import get_skill_admin_store
+from core.runtime_registry_store import get_runtime_registry_store
 from core.skill_discovery import (
     resolve_agent_project_cwd,
     resolve_skill_discovery_root_dir,
@@ -53,6 +54,7 @@ DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS = (
     PLATFORM_TOOLS_SKILL_FOLDER,
 )
 SKILL_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+PROVIDER_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
 PROVIDER_DEFINITIONS: dict[str, dict[str, Any]] = {
     "anthropic": {
@@ -131,6 +133,13 @@ def current_settings_payload() -> dict[str, Any]:
     except Exception as exc:
         logger.warning("Failed to load admin settings from store: %s", exc)
         db_payload = {}
+    provider_rows = get_runtime_registry_store().list_providers()
+    if provider_rows:
+        # Registry rows are authoritative. The copy in raw_json is retained only
+        # as rollback data for versions predating the registry migration.
+        db_payload["provider_settings"] = {
+            str(row.get("provider_id") or ""): row for row in provider_rows if row.get("provider_id")
+        }
     return _merge_settings_payload(runtime, db_payload)
 
 
@@ -166,7 +175,7 @@ def _now_iso() -> str:
 
 def _normalize_provider_id(provider_id: str | None, *, allow_empty: bool = False) -> str:
     value = str(provider_id or "").strip().lower()
-    if value in SUPPORTED_PROVIDER_SET:
+    if PROVIDER_ID_RE.match(value):
         return value
     return "" if allow_empty else DEFAULT_PROVIDER_ID
 
@@ -271,13 +280,24 @@ def _normalize_model_detections(raw: Any) -> dict[str, dict[str, str]]:
 
 
 def _provider_definition(provider_id: str) -> dict[str, Any]:
-    return dict(PROVIDER_DEFINITIONS.get(provider_id) or PROVIDER_DEFINITIONS[DEFAULT_PROVIDER_ID])
+    if provider_id in PROVIDER_DEFINITIONS:
+        return dict(PROVIDER_DEFINITIONS[provider_id])
+    return {
+        "display_name": provider_id,
+        "provider_group": "自定义供应商",
+        "default_base_url": "",
+        "default_model": "",
+        "supported_models": [],
+    }
 
 
 def _default_provider_settings(provider_id: str) -> dict[str, Any]:
     definition = _provider_definition(provider_id)
     return {
         "provider_id": provider_id,
+        "provider_type": provider_id if provider_id in SUPPORTED_PROVIDER_SET else "anthropic_compatible",
+        "display_name": str(definition.get("display_name") or provider_id),
+        "provider_group": str(definition.get("provider_group") or ""),
         "provider_enabled": False,
         "api_key": "",
         "auth_token": "",
@@ -285,6 +305,7 @@ def _default_provider_settings(provider_id: str) -> dict[str, Any]:
         "supports_partial_messages": provider_id != "anthropic_compatible",
         "enabled_models": [],
         "custom_models": [],
+        "models": [],
         "model_detections": {},
         "validation_status": "unverified",
         "validation_message": "供应商未启用",
@@ -325,7 +346,7 @@ def _legacy_provider_settings(payload: dict[str, Any] | None) -> dict[str, dict[
 
     legacy = {pid: _default_provider_settings(pid) for pid in SUPPORTED_PROVIDERS}
     if provider_id:
-        target = legacy[provider_id]
+        target = legacy.setdefault(provider_id, _default_provider_settings(provider_id))
         if api_key:
             target["api_key"] = api_key
         if auth_token:
@@ -339,7 +360,8 @@ def _legacy_provider_settings(payload: dict[str, Any] | None) -> dict[str, dict[
 
 def _enabled_provider_ids(provider_settings: dict[str, dict[str, Any]]) -> list[str]:
     enabled: list[str] = []
-    for provider_id in SUPPORTED_PROVIDERS:
+    ordered_ids = [*SUPPORTED_PROVIDERS, *sorted(set(provider_settings) - SUPPORTED_PROVIDER_SET)]
+    for provider_id in ordered_ids:
         entry = provider_settings.get(provider_id)
         if entry and bool(entry.get("enabled")):
             enabled.append(provider_id)
@@ -352,6 +374,10 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
     if previous:
         base.update(dict(previous))
     base.update(dict(payload or {}))
+
+    provider_type = str(base.get("provider_type") or "").strip().lower()
+    if provider_type not in SUPPORTED_PROVIDER_SET:
+        provider_type = provider_id if provider_id in SUPPORTED_PROVIDER_SET else "anthropic_compatible"
 
     provider_enabled_raw = None
     for source in (payload, previous):
@@ -368,11 +394,28 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
     provider_enabled = bool(provider_enabled_raw)
     requested_enabled_models = _string_list(base.get("enabled_models") or base.get("models"))
     custom_models = _string_list(base.get("custom_models"))
+    raw_models = base.get("models") if isinstance(base.get("models"), list) else []
+    models: list[dict[str, Any]] = []
+    for raw_model in raw_models:
+        if isinstance(raw_model, dict):
+            model_id = str(raw_model.get("id") or raw_model.get("model_id") or "").strip()
+            if not model_id:
+                continue
+            models.append({
+                "id": model_id,
+                "max_output_tokens": raw_model.get("max_output_tokens"),
+                "context_window": raw_model.get("context_window"),
+            })
+        else:
+            model_id = str(raw_model or "").strip()
+            if model_id:
+                models.append({"id": model_id, "max_output_tokens": None, "context_window": None})
     model_detections = _normalize_model_detections(base.get("model_detections"))
     supported_models = _string_list(
         list(definition.get("supported_models") or [])
         + custom_models
         + requested_enabled_models
+        + [str(item.get("id") or "") for item in models]
         + list(model_detections.keys())
     )
     enabled_models = requested_enabled_models
@@ -382,7 +425,7 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
     supports_partial_messages = bool(base.get("supports_partial_messages", provider_id != "anthropic_compatible"))
 
     status, message = _compute_provider_validation(
-        provider_id,
+        provider_type,
         provider_enabled=provider_enabled,
         api_key=api_key,
         auth_token=auth_token,
@@ -398,6 +441,9 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
 
     return {
         "provider_id": provider_id,
+        "provider_type": provider_type,
+        "display_name": str(base.get("name") or base.get("display_name") or definition.get("display_name") or provider_id).strip()[:128],
+        "provider_group": str(base.get("provider_group") or definition.get("provider_group") or "").strip()[:64],
         "provider_enabled": provider_enabled,
         "api_key": api_key,
         "auth_token": auth_token,
@@ -405,6 +451,7 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
         "supports_partial_messages": supports_partial_messages,
         "enabled_models": enabled_models,
         "custom_models": custom_models,
+        "models": models,
         "supported_models": supported_models,
         "model_detections": model_detections,
         "validation_status": status,
@@ -415,7 +462,7 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
 
 
 def _compute_provider_validation(
-    provider_id: str,
+    provider_type: str,
     *,
     provider_enabled: bool,
     api_key: str,
@@ -425,11 +472,11 @@ def _compute_provider_validation(
 ) -> tuple[str, str]:
     if not provider_enabled:
         return ("unverified", "供应商未启用")
-    token_ready = bool(api_key) if provider_id == "anthropic" else bool(auth_token or api_key)
-    if provider_id == "anthropic_compatible" and not str(base_url or "").strip():
+    token_ready = bool(api_key) if provider_type == "anthropic" else bool(auth_token or api_key)
+    if provider_type == "anthropic_compatible" and not str(base_url or "").strip():
         return ("unverified", "请填写兼容网关地址")
     if not token_ready:
-        if provider_id == "anthropic":
+        if provider_type == "anthropic":
             return ("unverified", "请填写 API Key")
         return ("unverified", "请填写 Token")
     if not enabled_models:
@@ -443,8 +490,12 @@ def _merge_provider_settings(
     *,
     legacy_payload: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    merged: dict[str, dict[str, Any]] = _legacy_provider_settings(legacy_payload)
-    for provider_id in SUPPORTED_PROVIDERS:
+    # Once provider rows exist they are the complete registry. Only synthesize
+    # the four historical definitions while bootstrapping an empty registry.
+    merged: dict[str, dict[str, Any]] = (
+        {} if current else _legacy_provider_settings(legacy_payload)
+    )
+    for provider_id in set(current or {}):
         if current and provider_id in current:
             merged[provider_id] = _normalize_provider_entry(provider_id, current[provider_id], merged.get(provider_id))
 
@@ -474,6 +525,14 @@ def _merge_provider_settings(
             current_entry["custom_models"] = _string_list(update.get("custom_models"))
         if "model_detections" in update:
             current_entry["model_detections"] = _normalize_model_detections(update.get("model_detections"))
+        if "models" in update:
+            current_entry["models"] = list(update.get("models") or [])
+        if "name" in update or "display_name" in update:
+            current_entry["display_name"] = str(update.get("name") or update.get("display_name") or "").strip()
+        if "provider_group" in update:
+            current_entry["provider_group"] = str(update.get("provider_group") or "").strip()
+        if "provider_type" in update:
+            current_entry["provider_type"] = str(update.get("provider_type") or "").strip()
         if update.get("enabled") is False:
             current_entry["enabled_models"] = []
 
@@ -481,7 +540,7 @@ def _merge_provider_settings(
 
     return {
         provider_id: _normalize_provider_entry(provider_id, merged.get(provider_id) or {}, None)
-        for provider_id in SUPPORTED_PROVIDERS
+        for provider_id in [*SUPPORTED_PROVIDERS, *sorted(set(merged) - SUPPORTED_PROVIDER_SET)]
     }
 
 
@@ -515,7 +574,7 @@ def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any
     widget_allowed_sites = _normalize_widget_allowed_sites(base.get("widget_allowed_sites"))
 
     provider_id = _normalize_provider_id(base.get("provider_id"), allow_empty=True)
-    if not provider_id:
+    if not provider_id or provider_id not in provider_settings:
         enabled_provider_ids = _enabled_provider_ids(provider_settings)
         provider_id = enabled_provider_ids[0] if enabled_provider_ids else ""
 
@@ -595,8 +654,8 @@ def runtime_patch_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
 
 def validate_settings_payload(payload: dict[str, Any]):
     provider_id = str(payload.get("provider_id") or "").strip().lower()
-    if provider_id and provider_id not in SUPPORTED_PROVIDER_SET:
-        raise ValueError("provider_id must be one of anthropic/openrouter/anyrouter/anthropic_compatible")
+    if provider_id and not PROVIDER_ID_RE.match(provider_id):
+        raise ValueError("provider_id must match A-Za-z0-9._- and be at most 64 characters")
 
     raw_skills_dir = str(payload.get("skills_output_dir") or "").replace("\\", "/")
     if raw_skills_dir and "/.claude/skills/" not in raw_skills_dir and not raw_skills_dir.startswith(".claude/skills/"):
@@ -709,7 +768,7 @@ async def _run_model_detection(
 async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
     provider_id = _normalize_provider_id(payload.get("provider_id"), allow_empty=True)
     if not provider_id:
-        raise ValueError("provider_id must be one of anthropic/openrouter/anyrouter/anthropic_compatible")
+        raise ValueError("provider_id must match A-Za-z0-9._- and be at most 64 characters")
 
     model = str(payload.get("model") or "").strip()
     if not model:
@@ -717,7 +776,10 @@ async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
 
     current = current_settings_payload()
     provider_settings = _coerce_provider_settings(current.get("provider_settings"))
+    if provider_id not in provider_settings:
+        raise ValueError("provider not found")
     current_entry = _normalize_provider_entry(provider_id, provider_settings.get(provider_id) or {})
+    provider_type = str(current_entry.get("provider_type") or "anthropic_compatible")
 
     api_key = str(payload.get("api_key") or current_entry.get("api_key") or "").strip()
     auth_token = str(payload.get("auth_token") or current_entry.get("auth_token") or "").strip()
@@ -729,7 +791,7 @@ async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
     )
 
     preflight_message = _detection_preflight(
-        provider_id,
+        provider_type,
         api_key=api_key,
         auth_token=auth_token,
         base_url=base_url,
@@ -739,7 +801,7 @@ async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
         result = _model_detection_result("failed", preflight_message, provider_id=provider_id, model=model)
     else:
         status, message = await _run_model_detection(
-            provider_id=provider_id,
+            provider_id=provider_type,
             model=model,
             api_key=api_key,
             auth_token=auth_token,
@@ -758,34 +820,50 @@ def bootstrap_admin_settings() -> dict[str, Any]:
     db_payload = store.load_settings_record() or {}
     merged = _merge_settings_payload(runtime, db_payload)
     validate_settings_payload(merged)
+    registry = get_runtime_registry_store()
+    registry.init_schema()
+    if not registry.list_providers():
+        for provider in _coerce_provider_settings(merged.get("provider_settings")).values():
+            normalized = _normalize_provider_entry(str(provider.get("provider_id") or ""), provider)
+            registry.save_provider(normalized)
+        merged = current_settings_payload()
     update_settings(runtime_patch_from_payload(merged))
 
     if not db_payload:
         store.save_settings_record(merged)
-        persisted = merged
-    else:
-        persisted = store.load_settings_record() or merged
-    return _merge_settings_payload(runtime, persisted)
+    return current_settings_payload()
 
 
 def persist_admin_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    provider_patch = _coerce_provider_settings(payload.get("provider_settings") or payload.get("providers"))
+    for provider_id, entry in provider_patch.items():
+        save_provider_config({"provider_id": provider_id, **dict(entry)}, create=False)
+
     current = current_settings_payload()
-    merged = _merge_settings_payload(current, payload)
+    settings_patch = {key: value for key, value in payload.items() if key not in {"provider_settings", "providers"}}
+    merged = _merge_settings_payload(current, settings_patch)
     validate_settings_payload(merged)
 
     update_settings(runtime_patch_from_payload(merged))
     store = get_skill_admin_store()
     saved = store.save_settings_record(merged)
-    resolved = _merge_settings_payload(_runtime_settings_payload(), saved)
-    return resolved | {"updated_at": saved.get("updated_at", "")}
+    return current_settings_payload() | {"updated_at": saved.get("updated_at", "")}
 
 
-def list_provider_configs(*, payload: dict[str, Any] | None = None, enabled_only: bool = False) -> list[dict[str, Any]]:
+def list_provider_configs(
+    *,
+    payload: dict[str, Any] | None = None,
+    enabled_only: bool = False,
+    runtime_only: bool = False,
+) -> list[dict[str, Any]]:
     resolved = payload or current_settings_payload()
     provider_settings = _coerce_provider_settings(resolved.get("provider_settings"))
     configs: list[dict[str, Any]] = []
 
-    for provider_id in SUPPORTED_PROVIDERS:
+    ordered_ids = [*SUPPORTED_PROVIDERS, *sorted(set(provider_settings) - SUPPORTED_PROVIDER_SET)]
+    for provider_id in ordered_ids:
+        if provider_id not in provider_settings:
+            continue
         definition = _provider_definition(provider_id)
         item = _normalize_provider_entry(provider_id, provider_settings.get(provider_id) or {})
         if enabled_only and not item.get("enabled"):
@@ -793,12 +871,19 @@ def list_provider_configs(*, payload: dict[str, Any] | None = None, enabled_only
         configs.append(
             {
                 "provider_id": provider_id,
-                "display_name": str(definition.get("display_name") or provider_id),
-                "provider_group": str(definition.get("provider_group") or ""),
+                "provider_type": str(item.get("provider_type") or "anthropic_compatible"),
+                "display_name": str(item.get("display_name") or definition.get("display_name") or provider_id),
+                "name": str(item.get("display_name") or definition.get("display_name") or provider_id),
+                "provider_group": str(item.get("provider_group") or definition.get("provider_group") or ""),
                 "base_url": str(item.get("base_url") or ""),
                 "api_key_set": bool(item.get("api_key")),
                 "auth_token_set": bool(item.get("auth_token")),
-                "models": list(item.get("enabled_models") or []),
+                "models": (
+                    list(item.get("enabled_models") or [])
+                    if runtime_only or not item.get("models")
+                    else list(item.get("models") or [])
+                ),
+                "enabled_models": list(item.get("enabled_models") or []),
                 "supported_models": list(item.get("supported_models") or []),
                 "custom_models": list(item.get("custom_models") or []),
                 "model_detections": dict(item.get("model_detections") or {}),
@@ -820,7 +905,7 @@ def list_provider_configs(*, payload: dict[str, Any] | None = None, enabled_only
 
 def resolved_chat_settings_payload() -> dict[str, Any]:
     resolved = current_settings_payload()
-    providers = list_provider_configs(payload=resolved, enabled_only=True)
+    providers = list_provider_configs(payload=resolved, enabled_only=True, runtime_only=True)
     default_provider_id = _normalize_provider_id(resolved.get("provider_id"), allow_empty=True)
     if not any(item["provider_id"] == default_provider_id for item in providers):
         default_provider_id = providers[0]["provider_id"] if providers else ""
@@ -847,6 +932,50 @@ def resolved_chat_settings_payload() -> dict[str, Any]:
     }
 
 
+def save_provider_config(payload: dict[str, Any], *, create: bool) -> dict[str, Any]:
+    provider_id = _normalize_provider_id(payload.get("provider_id"), allow_empty=True)
+    if not provider_id:
+        raise ValueError("provider_id must match A-Za-z0-9._- and be at most 64 characters")
+    store = get_runtime_registry_store()
+    existing = store.get_provider(provider_id)
+    if create and existing:
+        raise ValueError("provider_id already exists")
+    if not create and not existing:
+        raise KeyError("provider not found")
+    if create and not str(payload.get("name") or payload.get("display_name") or "").strip():
+        raise ValueError("name is required")
+
+    current_map = {provider_id: existing} if existing else {}
+    merged_map = _merge_provider_settings(current_map, {provider_id: payload}, legacy_payload={})
+    normalized = merged_map[provider_id]
+    saved = store.save_provider(normalized)
+    return saved
+
+
+def delete_provider_config(provider_id: str) -> None:
+    normalized_id = _normalize_provider_id(provider_id, allow_empty=True)
+    if not normalized_id:
+        raise KeyError("provider not found")
+    store = get_runtime_registry_store()
+    if not store.get_provider(normalized_id):
+        raise KeyError("provider not found")
+    settings_before_delete = current_settings_payload()
+    was_current = str(settings_before_delete.get("provider_id") or "") == normalized_id
+    store.delete_provider(normalized_id)
+
+    if not was_current:
+        return
+    settings = current_settings_payload()
+    candidates = list_provider_configs(payload=settings, enabled_only=True, runtime_only=True)
+    next_provider = candidates[0] if candidates else None
+    next_provider_id = str((next_provider or {}).get("provider_id") or "")
+    next_models = list((next_provider or {}).get("models") or [])
+    persist_admin_settings({
+        "provider_id": next_provider_id,
+        "model": str(next_models[0] if next_models else ""),
+    })
+
+
 def resolve_runtime_provider_selection(provider_id: str | None, model: str | None) -> dict[str, Any]:
     resolved = current_settings_payload()
     provider_settings = _coerce_provider_settings(resolved.get("provider_settings"))
@@ -870,6 +999,7 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
 
     return {
         "provider_id": normalized_provider_id,
+        "provider_type": str(provider.get("provider_type") or "anthropic_compatible"),
         "model": selected_model,
         "api_key": str(provider.get("api_key") or ""),
         "auth_token": str(provider.get("auth_token") or ""),

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from typing import Any
+
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from core.auth import AuthIdentity, is_auth_enabled, require_admin, require_user, resolve_identity
@@ -25,10 +27,19 @@ from core.skill_admin_service import (
     list_documents,
     list_provider_configs,
     persist_admin_settings,
+    save_provider_config,
+    delete_provider_config,
     rollback_document,
     save_document_content,
     uninstall_skill,
     update_skill_runtime,
+)
+from core.mcp_admin_service import (
+    create_mcp_server,
+    delete_mcp_server,
+    import_mcp_servers,
+    list_mcp_servers,
+    update_mcp_server,
 )
 from core.skill_discovery import resolve_skills_root_dir
 from core.slash_command_cache import get_agent_slash_commands
@@ -52,7 +63,13 @@ from models.schemas import (
     AgentSlashCommandsResponse,
     ModelDetectionRequest,
     ModelDetectionResponse,
+    McpServerCreateRequest,
+    McpServerListResponse,
+    McpServerUpdateRequest,
     ProviderConfig,
+    ProviderCreateRequest,
+    ProviderListResponse,
+    ProviderUpdateRequest,
     SkillDocumentCompareRequest,
     SkillDocumentCompareResponse,
     SkillDocumentDetail,
@@ -151,6 +168,90 @@ async def create_model_detection(request: ModelDetectionRequest):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ModelDetectionResponse.model_validate(result)
+
+
+@settings_router.get("/providers", response_model=ProviderListResponse)
+async def get_providers():
+    return ProviderListResponse(providers=_provider_catalog())
+
+
+@settings_router.post("/providers")
+async def create_provider(request: ProviderCreateRequest):
+    try:
+        saved = save_provider_config(request.model_dump(exclude_none=True, exclude_unset=True), create=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"provider_id": str(saved.get("provider_id") or "")}
+
+
+@settings_router.put("/providers/{provider_id}")
+async def update_provider(provider_id: str, request: ProviderUpdateRequest):
+    try:
+        save_provider_config(
+            {"provider_id": provider_id, **request.model_dump(exclude_none=True, exclude_unset=True)},
+            create=False,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@settings_router.delete("/providers/{provider_id}")
+async def delete_provider(provider_id: str):
+    try:
+        delete_provider_config(provider_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@skills_router.get("/mcp/servers", response_model=McpServerListResponse)
+async def get_mcp_servers():
+    return McpServerListResponse.model_validate(list_mcp_servers())
+
+
+@skills_router.post("/mcp/servers")
+async def create_mcp_server_endpoint(request: McpServerCreateRequest):
+    try:
+        server_id = create_mcp_server(request.model_dump(exclude_none=True, exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"server_id": server_id}
+
+
+@skills_router.patch("/mcp/servers/{server_id}")
+async def update_mcp_server_endpoint(server_id: str, request: McpServerUpdateRequest):
+    try:
+        update_mcp_server(server_id, request.model_dump(exclude_none=True, exclude_unset=True))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@skills_router.delete("/mcp/servers/{server_id}")
+async def delete_mcp_server_endpoint(server_id: str):
+    try:
+        delete_mcp_server(server_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@skills_router.post("/mcp/servers/import")
+async def import_mcp_servers_endpoint(payload: dict[str, Any] = Body(...)):
+    try:
+        imported = import_mcp_servers(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"imported": imported}
 
 
 @settings_router.get("/topics", response_model=AdminWidgetTopicPage)

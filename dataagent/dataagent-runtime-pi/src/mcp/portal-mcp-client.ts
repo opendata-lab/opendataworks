@@ -1,6 +1,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
+import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Type } from "@earendil-works/pi-ai";
 import { logDiagnostic } from "../protocol/channel.js";
 import type { McpServerConfig } from "../protocol/frames.js";
@@ -8,6 +9,35 @@ import type { McpServerConfig } from "../protocol/frames.js";
 export interface McpBridgeResult {
   tools: unknown[];
   close: () => Promise<void>;
+}
+
+export function createMcpTransport(server: McpServerConfig) {
+  if (server.type === "stdio") {
+    if (!server.command) {
+      throw new Error(`MCP stdio server '${server.name}' is missing command`);
+    }
+    return new StdioClientTransport({
+      command: server.command,
+      args: server.args || [],
+      env: server.env && Object.keys(server.env).length
+        ? { ...getDefaultEnvironment(), ...server.env }
+        : undefined,
+    });
+  }
+  if (!server.url) {
+    throw new Error(`MCP remote server '${server.name}' is missing URL`);
+  }
+  const url = new URL(server.url);
+  const headers = server.headers || {};
+  if (server.type === "sse") {
+    return new SSEClientTransport(url, {
+      eventSourceInit: { headers } as never,
+      requestInit: { headers },
+    });
+  }
+  return new StreamableHTTPClientTransport(url, {
+    requestInit: { headers },
+  });
 }
 
 export function resolveRef(ref: string, rootSchema: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -164,25 +194,8 @@ export async function connectMcpServers(
   const timeoutMs = options?.connectTimeoutMs ?? 10_000;
 
   for (const server of servers || []) {
-    if (!server.url) {
-      continue;
-    }
-
     try {
-      const url = new URL(server.url);
-      const headers = server.headers || {};
-
-      let transport;
-      if (server.type === "sse") {
-        transport = new SSEClientTransport(url, {
-          eventSourceInit: { headers } as never,
-          requestInit: { headers },
-        });
-      } else {
-        transport = new StreamableHTTPClientTransport(url, {
-          requestInit: { headers },
-        });
-      }
+      const transport = createMcpTransport(server);
 
       const client = new Client(
         { name: "opendataworks-pi-cell", version: "0.1.0" },

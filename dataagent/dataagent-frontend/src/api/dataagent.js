@@ -121,7 +121,7 @@ export const dataagentApi = {
   },
 
   updateMcpServer(serverId, data) {
-    return dataagentRequest.put(`/v1/dataagent/mcp/servers/${encodeURIComponent(serverId)}`, data)
+    return dataagentRequest.patch(`/v1/dataagent/mcp/servers/${encodeURIComponent(serverId)}`, data)
   },
 
   deleteMcpServer(serverId) {

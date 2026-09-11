@@ -159,7 +159,8 @@ describe('SkillStudio', () => {
     await flushPromises()
 
     expect(wrapper.vm.filteredSkills).toHaveLength(2)
-    expect(wrapper.vm.enabledSummary).toBe('已启用 1 / 共 2')
+    expect(wrapper.find('.skill-studio__title').text()).toBe('Skill 2')
+    expect(wrapper.find('.skill-studio__section-title').text()).toBe('已启用 1')
     expect(wrapper.text()).toContain('dataagent-nl2sql')
     expect(wrapper.text()).toContain('marketing-insights')
     expect(wrapper.text()).toContain('本地导入')

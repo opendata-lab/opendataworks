@@ -386,7 +386,24 @@ def test_bootstrap_admin_settings_persists_blank_provider_and_model(monkeypatch)
             captured["saved"] = dict(payload)
             return dict(payload)
 
+    class FakeRegistry:
+        def __init__(self):
+            self.providers = {}
+
+        def init_schema(self):
+            return None
+
+        def list_providers(self):
+            return list(self.providers.values())
+
+        def save_provider(self, payload):
+            self.providers[payload["provider_id"]] = dict(payload)
+            return dict(payload)
+
+    registry = FakeRegistry()
+
     monkeypatch.setattr(skill_admin_service, "get_skill_admin_store", lambda: FakeStore())
+    monkeypatch.setattr(skill_admin_service, "get_runtime_registry_store", lambda: registry)
     monkeypatch.setattr(
         skill_admin_service,
         "get_settings",
@@ -420,6 +437,30 @@ def test_bootstrap_admin_settings_persists_blank_provider_and_model(monkeypatch)
     assert resolved["model"] == ""
 
 
+def test_current_settings_does_not_fallback_when_provider_registry_is_unavailable(monkeypatch):
+    class FakeSettingsStore:
+        def load_settings_record(self):
+            return {
+                "provider_id": "anthropic_compatible",
+                "provider_settings": {
+                    "anthropic_compatible": {
+                        "provider_enabled": True,
+                        "enabled_models": ["legacy-model"],
+                    }
+                },
+            }
+
+    class BrokenRegistry:
+        def list_providers(self):
+            raise RuntimeError("registry unavailable")
+
+    monkeypatch.setattr(skill_admin_service, "get_skill_admin_store", lambda: FakeSettingsStore())
+    monkeypatch.setattr(skill_admin_service, "get_runtime_registry_store", lambda: BrokenRegistry())
+
+    with pytest.raises(RuntimeError, match="registry unavailable"):
+        skill_admin_service.current_settings_payload()
+
+
 def test_resolve_runtime_provider_selection_returns_partial_capability(monkeypatch):
     monkeypatch.setattr(
         skill_admin_service,
@@ -445,6 +486,44 @@ def test_resolve_runtime_provider_selection_returns_partial_capability(monkeypat
     assert resolved["provider_id"] == "anthropic_compatible"
     assert resolved["model"] == "claude-sonnet-4.5"
     assert resolved["supports_partial_messages"] is False
+
+
+def test_delete_current_provider_persists_fallback_selection(monkeypatch):
+    captured = {}
+
+    class FakeRegistry:
+        def get_provider(self, provider_id):
+            return {"provider_id": provider_id} if provider_id == "current" else None
+
+        def delete_provider(self, provider_id):
+            captured["deleted"] = provider_id
+            return True
+
+    payloads = iter(
+        [
+            {"provider_id": "current", "model": "old-model"},
+            {"provider_id": "fallback", "model": "fallback-model"},
+        ]
+    )
+    monkeypatch.setattr(skill_admin_service, "get_runtime_registry_store", lambda: FakeRegistry())
+    monkeypatch.setattr(skill_admin_service, "current_settings_payload", lambda: next(payloads))
+    monkeypatch.setattr(
+        skill_admin_service,
+        "list_provider_configs",
+        lambda **kwargs: [{"provider_id": "fallback", "models": ["fallback-model"]}],
+    )
+    monkeypatch.setattr(
+        skill_admin_service,
+        "persist_admin_settings",
+        lambda payload: captured.setdefault("settings", dict(payload)),
+    )
+
+    skill_admin_service.delete_provider_config("current")
+
+    assert captured == {
+        "deleted": "current",
+        "settings": {"provider_id": "fallback", "model": "fallback-model"},
+    }
 
 
 def test_resolve_runtime_provider_selection_requires_enabled_provider(monkeypatch):

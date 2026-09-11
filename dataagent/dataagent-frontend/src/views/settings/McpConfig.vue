@@ -117,9 +117,8 @@
               </el-button>
               <el-switch
                 :model-value="server.enabled"
-                :loading="updatingServerId === server.server_id"
+                disabled
                 :title="server.enabled ? '禁用服务' : '启用服务'"
-                @update:model-value="toggleServerEnabled(server, $event)"
               />
             </div>
           </div>

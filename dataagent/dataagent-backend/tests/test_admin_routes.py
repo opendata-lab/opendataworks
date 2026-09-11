@@ -136,6 +136,64 @@ def test_model_detection_route_contract(monkeypatch):
     assert captured["payload"]["supports_partial_messages"] is False
 
 
+def test_mcp_registry_routes_contract(monkeypatch):
+    captured = {}
+    row = {
+        "server_id": "srv_demo",
+        "name": "demo",
+        "source": "configured",
+        "transport": "http",
+        "url": "https://mcp.example.test/v1",
+        "headers": {},
+        "command": "",
+        "args": [],
+        "env": {},
+        "enabled": True,
+        "oauth_required": False,
+        "tool_count": 0,
+        "description": "",
+    }
+    def _create_mcp(payload):
+        captured["created"] = payload
+        return "srv_demo"
+
+    monkeypatch.setattr(admin_routes, "list_mcp_servers", lambda: {"configured": [row], "plugin": []})
+    monkeypatch.setattr(admin_routes, "create_mcp_server", _create_mcp)
+    monkeypatch.setattr(
+        admin_routes,
+        "update_mcp_server",
+        lambda server_id, payload: captured.setdefault("updated", (server_id, payload)),
+    )
+    monkeypatch.setattr(
+        admin_routes,
+        "delete_mcp_server",
+        lambda server_id: captured.setdefault("deleted", server_id),
+    )
+    monkeypatch.setattr(
+        admin_routes,
+        "import_mcp_servers",
+        lambda payload: captured.setdefault("imported_payload", payload) and 1,
+    )
+    client = TestClient(app)
+
+    assert client.get("/api/v1/dataagent/mcp/servers").json()["configured"][0]["server_id"] == "srv_demo"
+    created = client.post(
+        "/api/v1/dataagent/mcp/servers",
+        json={"name": "demo", "transport": "http", "url": "https://mcp.example.test/v1"},
+    )
+    assert created.status_code == 200
+    assert created.json() == {"server_id": "srv_demo"}
+    assert client.patch("/api/v1/dataagent/mcp/servers/srv_demo", json={"enabled": False}).json() == {"ok": True}
+    assert client.delete("/api/v1/dataagent/mcp/servers/srv_demo").json() == {"ok": True}
+    imported = client.post(
+        "/api/v1/dataagent/mcp/servers/import",
+        json={"mcpServers": {"demo": {"command": "npx"}}},
+    )
+    assert imported.json() == {"imported": 1}
+    assert captured["updated"] == ("srv_demo", {"enabled": False})
+    assert captured["deleted"] == "srv_demo"
+
+
 def test_skill_document_routes_contract(monkeypatch):
     summary = {
         "id": 1,

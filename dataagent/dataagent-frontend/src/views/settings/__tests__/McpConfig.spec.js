@@ -164,6 +164,11 @@ describe('McpConfig', () => {
     expect(wrapper.findAll('.mcp-row')).toHaveLength(3)
     expect(wrapper.findAll('.mcp-list')).toHaveLength(2)
     expect(wrapper.find('.mcp-table').exists()).toBe(false)
+    const switches = wrapper.findAll('.el-switch-stub')
+    expect(switches).toHaveLength(3)
+    expect(switches[0].attributes('disabled')).toBeUndefined()
+    expect(switches[1].attributes('disabled')).toBeUndefined()
+    expect(switches[2].attributes('disabled')).toBeDefined()
   })
 
   it('renders OAuth authorization button for servers requiring OAuth and opens alert on click', async () => {
