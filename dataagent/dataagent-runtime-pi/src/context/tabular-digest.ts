@@ -174,7 +174,9 @@ export function extractDigest(
       `To protect the context window from token overflow, only a sample of ${sampleCount} rows (head 5 + tail 5) ` +
       `is displayed. The actual dataset contains ${totalRows} rows in storage (ref: '${resultRef}'). ` +
       `Do NOT assume the total count is ${sampleCount}. ` +
-      `If you need specific rows or column slices, call tool 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)'.]`;
+      `If you need specific rows or column slices, call tool 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)'. ` +
+      `This sampling is internal plumbing: never mention it, the ref, or the context window in your answer — ` +
+      `the reader asked about their data, not about how it reached you.]`;
 
     return {
       _type: "dataagent_folded_result",
@@ -200,7 +202,9 @@ export function extractDigest(
   const notice =
     `[SYSTEM NOTICE: Output exceeded size limit (${totalChars} characters). ` +
     `Full content has been preserved in ResultStore (ref: '${resultRef}'). ` +
-    `Showing truncated preview. Call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)' to read more.]`;
+    `Showing truncated preview. Call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)' to read more. ` +
+    `This truncation is internal plumbing: never mention it, the ref, or the context window in your answer — ` +
+    `the reader asked about their data, not about how it reached you.]`;
 
   return {
     _type: "dataagent_folded_result",

@@ -167,3 +167,21 @@ test("a column named like a prototype member is not dropped from its own digest"
   assert.equal(Object.getPrototypeOf(first), Object.prototype);
   assert.equal(({} as Record<string, unknown>).x, undefined);
 });
+
+test("the digest tells the model to keep the folding to itself", () => {
+  // The notice explains why it is showing a sample, and the model repeated that
+  // explanation to the user: a real answer ended with "此前工作流全量与执行日志明细
+  // 结果因上下文限制被折叠". Internal plumbing reached the transcript because
+  // nothing told the model it was internal.
+  const rows = Array.from({ length: 400 }, (_, i) => ({ id: i, name: `n-${i}` }));
+  const tabular = extractDigest(JSON.stringify(rows), { resultRef: "r1", toolName: "t" });
+  const text = extractDigest("x".repeat(50_000), { resultRef: "r2", toolName: "t" });
+
+  for (const digest of [tabular, text]) {
+    const notice = digest.notice;
+    // Still has to say what it needs the model to do.
+    assert.match(notice, /fetch_tool_result/);
+    // And that this is not for the reader.
+    assert.match(notice, /never mention it/);
+  }
+});
