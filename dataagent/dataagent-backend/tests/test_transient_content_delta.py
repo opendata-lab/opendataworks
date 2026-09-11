@@ -213,8 +213,14 @@ def test_migration_deletes_in_autocommitted_bounded_batches(monkeypatch):
 
     assert context.entered == 1
     assert len(bind.statements) == 3
-    assert all("WHERE event_type = 'content.delta'" in sql for sql in bind.statements)
-    assert all("ORDER BY id LIMIT 5000" in sql for sql in bind.statements)
+    # Behaviour, not wording: every batch must target content.delta, keep the
+    # bound, and spare tasks that have not finished normally. Asserting the
+    # literal broke when the predicate gained its task_status join, which is the
+    # part that actually matters.
+    for sql in bind.statements:
+        assert "content.delta" in sql
+        assert "t.task_status = 'finished'" in sql
+        assert f"LIMIT {migration._DELETE_BATCH_SIZE}" in sql
 
 
 def test_migration_downgrade_is_intentionally_empty(monkeypatch):
