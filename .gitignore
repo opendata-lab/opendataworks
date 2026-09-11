@@ -122,3 +122,9 @@ website/.vitepress/cache/
 
 # Vite local cache (generated at project root during frontend dev/test)
 .vite/
+
+# Agent topic workspaces. DATAAGENT_HOST_ROOT decides where these land, and the
+# local smoke in AGENTS.md points it at the repository — so a smoke run must not
+# be able to leave committable directories behind.
+/topic_*/
+dataagent/dataagent-backend/scratch/

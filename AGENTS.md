@@ -228,7 +228,7 @@ When working in this repository, optimize for:
     - `REDIS_HOST=127.0.0.1`
     - `REDIS_PORT=6379`
     - `SKILLS_ROOT_DIR=<repo>/dataagent/.claude/skills` — required; skill discovery raises without it
-    - `DATAAGENT_HOST_ROOT=<repo>`
+    - `DATAAGENT_HOST_ROOT=<repo>` — topic workspaces are created under this path as `topic_<id>/workspace`; they are gitignored, and can be deleted once the smoke is done
   - run `alembic upgrade head` in `dataagent/dataagent-backend`
   - ensure `da_agent_settings` in `dataagent` contains a valid provider selection and runtime DB config before starting services
   - start `uvicorn main:app`
