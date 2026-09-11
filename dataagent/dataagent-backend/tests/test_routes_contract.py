@@ -939,6 +939,55 @@ def test_sdk_events_stream_reads_persisted_records_in_seq_order(monkeypatch):
         assert events[0]["data"]["delta"]["text"] == "hello"
 
 
+def test_running_task_reconnect_replays_content_delta_after_id(monkeypatch):
+    client, store, _coordinator, _submit_calls = _build_client(monkeypatch)
+    with client:
+        topic_id = client.post("/api/v1/nl2sql/topics", json={"title": "Delta reconnect"}).json()["topic_id"]
+        delivered = client.post(
+            "/api/v1/nl2sql/tasks/deliver-message",
+            json={"topic_id": topic_id, "content": "stream delta"},
+        ).json()
+        task_id = delivered["task_id"]
+        store.tasks[task_id]["task_status"] = "running"
+        store.append_sdk_record(
+            task_id=task_id,
+            topic_id=topic_id,
+            turn_index=1,
+            record_type="agent_event",
+            event_type="content.delta",
+            data={"turn_id": "turn-1", "content_id": "c-0", "kind": "answer", "delta": "first"},
+        )
+        store.append_sdk_record(
+            task_id=task_id,
+            topic_id=topic_id,
+            turn_index=1,
+            record_type="agent_event",
+            event_type="content.delta",
+            data={"turn_id": "turn-1", "content_id": "c-0", "kind": "answer", "delta": "second"},
+        )
+
+        async def finish_after_running_poll(_seconds):
+            store.tasks[task_id]["task_status"] = "finished"
+
+        monkeypatch.setattr(routes.anyio, "sleep", finish_after_running_poll)
+
+        with client.stream(
+            "GET",
+            f"/api/v1/nl2sql/tasks/{task_id}/sdk-events/stream",
+            params={"after_id": 1},
+        ) as response:
+            events = [
+                json.loads(line.removeprefix("data: "))
+                for line in response.iter_lines()
+                if line.startswith("data: ")
+            ]
+
+        assert response.status_code == 200
+        assert [(event["seq_id"], event["event_type"], event["data"]["delta"]) for event in events] == [
+            (2, "content.delta", "second"),
+        ]
+
+
 def test_permission_decision_endpoint(monkeypatch):
     client, store, coordinator, _submit_calls = _build_client(monkeypatch)
     with client:

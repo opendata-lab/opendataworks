@@ -2212,6 +2212,23 @@ class TopicTaskStore:
             bool(source_schedule_log_id),
             downstream_status,
         )
+        # Deltas are needed for after_id replay only while the run is active.
+        # Keep this outside the terminal-state transaction: cleanup is storage
+        # hygiene and must never roll back or mask a durable task outcome.
+        try:
+            deleted_delta_rows = self._delete_task_content_deltas(task_id)
+            if deleted_delta_rows:
+                logger.info(
+                    "task.store.content_deltas_deleted task_id=%s deleted_rows=%s",
+                    task_id,
+                    deleted_delta_rows,
+                )
+        except Exception:
+            logger.warning(
+                "task.store.content_delta_delete_failed task_id=%s",
+                task_id,
+                exc_info=True,
+            )
         return self.get_task(task_id)
 
     def request_task_cancel(self, task_id: str, context: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -2380,6 +2397,32 @@ class TopicTaskStore:
             conn.commit()
         finally:
             conn.close()
+
+    def _delete_task_content_deltas(self, task_id: str) -> int:
+        """Delete transient text fragments after a task reaches terminal state.
+
+        The predicate is task-scoped and therefore safe to retry. Callers must
+        invoke it only after committing the terminal status so a cleanup failure
+        cannot affect task correctness.
+        """
+        self._ensure_ready()
+        conn = self._connect(database=self._schema_name())
+        deleted_rows = 0
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    DELETE FROM da_agent_sdk_record
+                    WHERE task_id = %s
+                      AND event_type = 'content.delta'
+                    """,
+                    (task_id,),
+                )
+                deleted_rows = max(0, int(cur.rowcount or 0))
+            conn.commit()
+        finally:
+            conn.close()
+        return deleted_rows
 
     def list_sdk_records(
         self,
