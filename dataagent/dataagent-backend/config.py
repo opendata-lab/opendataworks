@@ -117,6 +117,11 @@ class Settings(BaseSettings):
     # The three context_* names mirror the ``governance_settings`` wire contract
     # consumed by the Cell (src/protocol/frames.ts); keep them in lockstep.
     dataagent_run_idle_timeout_seconds: int = 300
+    # Only reached when a task carries no timeout of its own, which a real task
+    # always does: task_submission_service sets it from
+    # agent_interactive_timeout_seconds (360) or agent_background_timeout_seconds
+    # (1800), and task_executor prefers that over this. Tuning this number alone
+    # changes nothing for an actual run — raise the interactive or background one.
     dataagent_run_total_timeout_seconds: int = 600
     dataagent_context_max_inline_result_bytes: int = 16 * 1024
     dataagent_context_protect_tail_turns: int = 6
