@@ -150,6 +150,13 @@ const handleSelect = (index) => {
 .settings-content {
   flex: 1;
   min-width: 0;
+  padding: 24px;
   overflow: auto;
+}
+
+@media (max-width: 768px) {
+  .settings-content {
+    padding: 16px;
+  }
 }
 </style>

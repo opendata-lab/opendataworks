@@ -51,8 +51,8 @@ const stubs = {
   'el-empty': { template: '<div class="el-empty-stub"><slot /></div>' },
 
   'el-dialog': {
-    props: ['modelValue', 'title'],
-    template: '<div v-if="modelValue" class="el-dialog-stub"><h3>{{ title }}</h3><slot /><slot name="footer" /></div>'
+    props: ['modelValue', 'title', 'width', 'top'],
+    template: '<div v-if="modelValue" class="el-dialog-stub" :data-width="width" :data-top="top"><h3>{{ title }}</h3><slot /><slot name="footer" /></div>'
   },
   'el-tabs': {
     props: ['modelValue'],
@@ -153,7 +153,8 @@ describe('McpConfig', () => {
     await flushPromises()
 
     const text = wrapper.text()
-    expect(text).toContain('已安装 2')
+    expect(text).toContain('共 3 个服务')
+    expect(text).toContain('自定义服务 2')
     expect(text).toContain('插件提供 1')
     expect(text).toContain('filesystem')
     expect(text).toContain('github-remote')
@@ -161,14 +162,14 @@ describe('McpConfig', () => {
     expect(text).toContain('https://mcp.github.com/sse')
     expect(text).toContain('npx -y @modelcontextprotocol/server-filesystem /data')
     expect(text).toContain('该 MCP 服务器由平台插件提供，运行时身份和配置由平台管理。')
+    expect(text).toContain('平台托管 · 已启用')
     expect(wrapper.findAll('.mcp-row')).toHaveLength(3)
     expect(wrapper.findAll('.mcp-list')).toHaveLength(2)
     expect(wrapper.find('.mcp-table').exists()).toBe(false)
     const switches = wrapper.findAll('.el-switch-stub')
-    expect(switches).toHaveLength(3)
+    expect(switches).toHaveLength(2)
     expect(switches[0].attributes('disabled')).toBeUndefined()
     expect(switches[1].attributes('disabled')).toBeUndefined()
-    expect(switches[2].attributes('disabled')).toBeDefined()
   })
 
   it('renders OAuth authorization button for servers requiring OAuth and opens alert on click', async () => {
@@ -224,8 +225,11 @@ describe('McpConfig', () => {
     await flushPromises()
 
     wrapper.vm.openAddDialog()
+    await wrapper.vm.$nextTick()
     expect(wrapper.vm.dialogVisible).toBe(true)
     expect(wrapper.vm.activeAddMode).toBe('form_stdio')
+    expect(wrapper.find('.el-dialog-stub').attributes('data-width')).toBe('min(680px, calc(100vw - 32px))')
+    expect(wrapper.find('.el-dialog-stub').attributes('data-top')).toBe('16px')
 
     wrapper.vm.formStdio.name = 'my-sqlite'
     wrapper.vm.formStdio.command = 'uvx'
@@ -356,7 +360,7 @@ describe('McpConfig', () => {
     await flushPromises()
 
     const emptyState = wrapper.find('.mcp-empty')
-    expect(emptyState.text()).toContain('尚未安装 MCP 服务器')
+    expect(emptyState.text()).toContain('尚未添加自定义 MCP 服务')
     expect(emptyState.text()).toContain('手动新建服务器，或导入已有配置。')
     expect(emptyState.text()).toContain('新建 MCP 服务器')
     expect(emptyState.text()).toContain('导入')

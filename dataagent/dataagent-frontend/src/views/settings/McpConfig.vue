@@ -4,7 +4,7 @@
       <div>
         <div class="mcp-config__title">MCP 服务</div>
         <div class="mcp-config__subtitle">
-          已安装 {{ totalServerCount }} 个服务
+          共 {{ totalServerCount }} 个服务
         </div>
       </div>
       <div class="mcp-config__actions">
@@ -27,7 +27,7 @@
 
     <div v-loading="loading" class="mcp-content">
       <section class="mcp-section">
-        <div class="mcp-section-title">已安装 <span>{{ filteredConfiguredServers.length }}</span></div>
+        <div class="mcp-section-title">自定义服务 <span>{{ filteredConfiguredServers.length }}</span></div>
 
         <div v-if="filteredConfiguredServers.length" class="mcp-list">
           <div v-for="server in filteredConfiguredServers" :key="server.server_id" class="mcp-row">
@@ -77,8 +77,12 @@
           </div>
         </div>
 
-        <div v-else-if="!configuredServers.length && !searchKeyword.trim()" class="mcp-empty">
-          <div class="mcp-empty__title">尚未安装 MCP 服务器</div>
+        <div
+          v-else-if="!configuredServers.length && !searchKeyword.trim()"
+          class="mcp-empty"
+          :class="{ 'is-compact': pluginServers.length }"
+        >
+          <div class="mcp-empty__title">尚未添加自定义 MCP 服务</div>
           <p>手动新建服务器，或导入已有配置。</p>
           <div class="mcp-empty__actions">
             <el-button type="primary" :icon="Plus" @click="openAddDialog">新建 MCP 服务器</el-button>
@@ -115,11 +119,13 @@
               >
                 授权
               </el-button>
-              <el-switch
-                :model-value="server.enabled"
-                disabled
-                :title="server.enabled ? '禁用服务' : '启用服务'"
-              />
+              <span
+                class="mcp-managed-status"
+                :class="{ 'is-enabled': server.enabled }"
+                :title="server.enabled ? '平台托管，当前已启用' : '平台托管，当前未启用'"
+              >
+                平台托管 · {{ server.enabled ? '已启用' : '未启用' }}
+              </span>
             </div>
           </div>
         </div>
@@ -134,7 +140,9 @@
     <el-dialog
       v-model="dialogVisible"
       :title="isEditing ? '编辑 MCP 服务' : '新建 MCP 服务'"
-      width="680px"
+      width="min(680px, calc(100vw - 32px))"
+      top="16px"
+      class="mcp-dialog"
       :close-on-click-modal="false"
     >
       <el-tabs v-if="!isEditing" v-model="activeAddMode" class="mcp-dialog-tabs">
@@ -811,6 +819,25 @@ onMounted(async () => {
   flex: 0 0 auto;
 }
 
+.mcp-managed-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--mcp-rule-strong);
+  border-radius: 999px;
+  background: var(--mcp-paper-muted);
+  color: var(--mcp-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.mcp-managed-status.is-enabled {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+}
+
 .mcp-empty {
   display: flex;
   flex-direction: column;
@@ -833,6 +860,11 @@ onMounted(async () => {
   margin: 8px 0 16px;
   color: var(--mcp-muted);
   font-size: 13px;
+}
+
+.mcp-empty.is-compact {
+  min-height: 140px;
+  padding-block: 24px;
 }
 
 .mcp-empty__actions {
@@ -903,6 +935,20 @@ onMounted(async () => {
 
 .edit-form-wrapper {
   padding-top: 8px;
+}
+
+:global(.mcp-dialog.el-dialog) {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 32px);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+:global(.mcp-dialog .el-dialog__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 @media (max-width: 768px) {

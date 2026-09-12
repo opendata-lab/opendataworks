@@ -1,5 +1,23 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
+
+// Routing tests only exercise URL contracts. Keep lazy page imports lightweight
+// so component transform time cannot consume the per-test timeout.
+vi.mock('@/views/LoginView.vue', () => ({ default: { template: '<div>login</div>' } }))
+vi.mock('@/views/intelligence/IntelligentQueryView.vue', () => ({ default: { template: '<div><router-view /></div>' } }))
+vi.mock('@/views/intelligence/NL2SqlChatV2.vue', () => ({ default: { template: '<div>chat</div>' } }))
+vi.mock('@/views/intelligence/AgentStudio.vue', () => ({ default: { template: '<div>agents</div>' } }))
+vi.mock('@/views/intelligence/AgentDetailView.vue', () => ({ default: { template: '<div>agent</div>' } }))
+vi.mock('@/views/settings/SettingsLayout.vue', () => ({ default: { template: '<div><router-view /></div>' } }))
+vi.mock('@/views/settings/SkillStudio.vue', () => ({ default: { template: '<div>skills</div>' } }))
+vi.mock('@/views/settings/SkillDetailView.vue', () => ({ default: { template: '<div>skill</div>' } }))
+vi.mock('@/views/settings/McpConfig.vue', () => ({ default: { template: '<div>mcp</div>' } }))
+vi.mock('@/views/settings/DataAgentConfig.vue', () => ({ default: { template: '<div>models</div>' } }))
+vi.mock('@/views/settings/WidgetAccessConfig.vue', () => ({ default: { template: '<div>widget</div>' } }))
+vi.mock('@/views/evaluation/EvaluationSetsView.vue', () => ({ default: { template: '<div>evaluations</div>' } }))
+vi.mock('@/views/evaluation/EvaluationSetDetailView.vue', () => ({ default: { template: '<div>evaluation</div>' } }))
+vi.mock('@/views/evaluation/EvaluationResultsView.vue', () => ({ default: { template: '<div>results</div>' } }))
+vi.mock('@/views/evaluation/EvaluationRunDetailView.vue', () => ({ default: { template: '<div>result</div>' } }))
 
 import { routes } from '../index'
 
@@ -33,10 +51,10 @@ describe('DataAgent page routing', () => {
 
   it.each([
     ['/chat', 'IntelligentQueryChat'],
-    ['/skills', 'IntelligentQuerySkills'],
+    ['/settings/skills', 'IntelligentQuerySkills'],
     ['/agents', 'IntelligentQueryAgents'],
-    ['/models', 'IntelligentQueryModels'],
-    ['/widget-access', 'IntelligentQueryWidget']
+    ['/settings/models', 'IntelligentQueryModels'],
+    ['/settings/widget-access', 'IntelligentQueryWidget']
   ])('resolves canonical route %s', async (path, name) => {
     const route = await resolveTo(path)
     expect(route.path).toBe(path)
@@ -50,12 +68,12 @@ describe('DataAgent page routing', () => {
     })
 
     expect(router.resolve('/chat').href).toBe('/dataagent/chat')
-    expect(router.resolve('/skills/marketing-insights').href).toBe('/dataagent/skills/marketing-insights')
+    expect(router.resolve('/settings/skills/marketing-insights').href).toBe('/dataagent/settings/skills/marketing-insights')
   })
 
   it('migrates a legacy ?tab= link and drops only the tab param', async () => {
     const route = await resolveTo('/intelligent-query?tab=skills&source=bookmark#recent')
-    expect(route.path).toBe('/skills')
+    expect(route.path).toBe('/settings/skills')
     expect(route.query.tab).toBeUndefined()
     expect(route.query).toEqual({ source: 'bookmark' })
     expect(route.hash).toBe('#recent')
@@ -69,9 +87,9 @@ describe('DataAgent page routing', () => {
 
   it.each([
     ['/intelligent-query/chat', '/chat', 'IntelligentQueryChat'],
-    ['/intelligent-query/skills', '/skills', 'IntelligentQuerySkills'],
+    ['/intelligent-query/skills', '/settings/skills', 'IntelligentQuerySkills'],
     ['/intelligent-query/agents', '/agents', 'IntelligentQueryAgents'],
-    ['/intelligent-query/models', '/models', 'IntelligentQueryModels']
+    ['/intelligent-query/models', '/settings/models', 'IntelligentQueryModels']
   ])('migrates legacy page %s to %s', async (legacyPath, canonicalPath, name) => {
     const route = await resolveTo(legacyPath)
     expect(route.path).toBe(canonicalPath)
@@ -80,7 +98,7 @@ describe('DataAgent page routing', () => {
 
   it('removes the legacy /nl2sql implementation term from the final URL', async () => {
     const route = await resolveTo('/nl2sql?tab=skills')
-    expect(route.path).toBe('/skills')
+    expect(route.path).toBe('/settings/skills')
     expect(route.query.tab).toBeUndefined()
   })
 
@@ -91,9 +109,9 @@ describe('DataAgent page routing', () => {
   })
 
   it('resolves canonical detail routes', async () => {
-    const route = await resolveTo('/skills/marketing-insights')
+    const route = await resolveTo('/settings/skills/marketing-insights')
     expect(route.name).toBe('IntelligentQuerySkillDetail')
-    expect(route.path).toBe('/skills/marketing-insights')
+    expect(route.path).toBe('/settings/skills/marketing-insights')
     expect(route.params.folder).toBe('marketing-insights')
   })
 
@@ -108,8 +126,18 @@ describe('DataAgent page routing', () => {
 
   it('maps the legacy widget page to the non-conflicting readable route', async () => {
     const route = await resolveTo('/intelligent-query/widget')
-    expect(route.path).toBe('/widget-access')
+    expect(route.path).toBe('/settings/widget-access')
     expect(route.name).toBe('IntelligentQueryWidget')
+  })
+
+  it.each([
+    ['/skills', '/settings/skills'],
+    ['/skills/marketing-insights', '/settings/skills/marketing-insights'],
+    ['/models', '/settings/models'],
+    ['/widget-access', '/settings/widget-access']
+  ])('keeps the old settings URL %s working via %s', async (legacyPath, canonicalPath) => {
+    const route = await resolveTo(legacyPath)
+    expect(route.path).toBe(canonicalPath)
   })
 
   it('falls back safely when an unknown legacy child route is requested', async () => {
