@@ -21,6 +21,7 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/views/LoginView.vue', () => ({ default: { template: '<div>login</div>' } }))
 vi.mock('@/views/intelligence/IntelligentQueryView.vue', () => ({ default: { template: '<div><router-view /></div>' } }))
 vi.mock('@/views/intelligence/NL2SqlChatV2.vue', () => ({ default: { template: '<div>chat</div>' } }))
+vi.mock('@/views/settings/SettingsLayout.vue', () => ({ default: { template: '<div><router-view /></div>' } }))
 vi.mock('@/views/settings/SkillStudio.vue', () => ({ default: { template: '<div>skills</div>' } }))
 vi.mock('@/views/settings/SkillDetailView.vue', () => ({ default: { template: '<div>skill</div>' } }))
 vi.mock('@/views/intelligence/AgentStudio.vue', () => ({ default: { template: '<div>agents</div>' } }))
@@ -72,7 +73,7 @@ describe('auth router guard', () => {
     authState.enabled = true
     authState.currentUser = { display_name: 'alice', role: 'user' }
     authState.isAdmin = false
-    const route = await navigate('/models')
+    const route = await navigate('/settings/models')
     expect(route.path).toBe('/chat')
   })
 
@@ -80,12 +81,12 @@ describe('auth router guard', () => {
     authState.enabled = true
     authState.currentUser = { display_name: 'alice', role: 'user' }
     authState.isAdmin = false
-    const route = await navigate('/models?agent_id=agent_sales')
+    const route = await navigate('/settings/models?agent_id=agent_sales')
     expect(route.path).toBe('/chat')
     expect(route.query.agent_id).toBe('agent_sales')
   })
 
-  it.each(['/skills', '/skills/demo', '/agents', '/agents/agent_1'])(
+  it.each(['/settings/skills', '/settings/skills/demo', '/agents', '/agents/agent_1'])(
     'lets non-admin users access readable route %s',
     async (path) => {
       authState.enabled = true
@@ -108,8 +109,8 @@ describe('auth router guard', () => {
     authState.enabled = true
     authState.currentUser = { display_name: 'admin', role: 'admin' }
     authState.isAdmin = true
-    const route = await navigate('/models')
-    expect(route.path).toBe('/models')
+    const route = await navigate('/settings/models')
+    expect(route.path).toBe('/settings/models')
   })
 
   it('bounces a logged-in user away from /login', async () => {
@@ -122,8 +123,8 @@ describe('auth router guard', () => {
   it('returns a logged-in user to the full redirect including agent_id', async () => {
     authState.enabled = true
     authState.currentUser = { display_name: 'alice', role: 'user' }
-    const route = await navigate('/login?redirect=%2Fskills%3Fagent_id%3Dagent_sales')
-    expect(route.path).toBe('/skills')
+    const route = await navigate('/login?redirect=%2Fsettings%2Fskills%3Fagent_id%3Dagent_sales')
+    expect(route.path).toBe('/settings/skills')
     expect(route.query.agent_id).toBe('agent_sales')
   })
 })

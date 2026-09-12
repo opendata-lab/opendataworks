@@ -19,7 +19,8 @@ from core.provider_runtime import normalize_provider_id as _normalize_provider_i
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
 from core.agent_profile_service import normalize_permission_mode
 from core.permission_gate import WRITE_TOOL_NAMES, plan_denies_tool, requires_confirmation
-from core.data_scope import encode_scope_header, normalize_data_scope
+from core.data_scope import normalize_data_scope
+from core.mcp_admin_service import resolve_runtime_mcp_servers
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
     resolve_builtin_skill_root_dir,
@@ -719,45 +720,11 @@ def _build_portal_mcp_servers(
     mcp_server_ids: list[str] | tuple[str, ...] | None = None,
     agent_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    selected = _dedupe_strings(mcp_server_ids)
-    if mcp_server_ids is not None and PORTAL_MCP_SERVER_NAME not in selected:
-        return {}
-    enabled = bool(getattr(cfg, "dataagent_portal_mcp_enabled", True))
-    if not enabled:
-        return {}
-
-    raw_url = str(getattr(cfg, "dataagent_portal_mcp_base_url", "") or "").strip()
-    token = str(getattr(cfg, "dataagent_portal_mcp_token", "") or "").strip()
-    if not raw_url or not token:
-        return {}
-
-    header_name = (
-        str(getattr(cfg, "dataagent_portal_mcp_token_header_name", "") or "").strip()
-        or "X-Portal-MCP-Token"
-    )
-    headers = {
-        header_name: token,
-    }
-    if agent_snapshot is not None:
-        headers["X-Agent-Data-Scope"] = encode_scope_header((agent_snapshot or {}).get("data_scope") or {})
-
-    # portal-mcp is mounted as a Starlette sub-app; /mcp redirects to /mcp/, and
-    # Streamable HTTP clients may not follow POST redirects.
-    url = raw_url.rstrip("/") + "/"
-    # portal-mcp is a remote service, so use the protocol's native Streamable HTTP
-    # transport. Claude Code 2.1.142+ honors MCP_TOOL_TIMEOUT for the HTTP request
-    # ceiling. The server is stateless, so subsequent calls do not depend on a
-    # logical MCP session surviving; an interrupted in-flight call still fails
-    # instead of being retried implicitly. Keep one transport path instead of
-    # duplicating JSON-RPC/SSE semantics in a local stdio bridge. See the
-    # Streamable HTTP design document.
-    return {
-        PORTAL_MCP_SERVER_NAME: {
-            "type": "http",
-            "url": url,
-            "headers": headers,
-        }
-    }
+    # Kept under the historical name because both runtime engines import it.
+    # ``cfg`` is deliberately unused: environment variables are an upgrade input
+    # handled by bootstrap_portal_mcp_server, never a runtime fallback.
+    del cfg
+    return resolve_runtime_mcp_servers(mcp_server_ids, agent_snapshot=agent_snapshot)
 
 
 def _build_allowed_tools(

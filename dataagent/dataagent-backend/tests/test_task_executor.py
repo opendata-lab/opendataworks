@@ -1428,6 +1428,20 @@ def test_execute_task_stream_injects_portal_mcp_servers(monkeypatch, tmp_path: P
             dataagent_portal_mcp_token_header_name="X-Portal-MCP-Token",
         ),
     )
+
+    class FakeRegistry:
+        def list_mcp_servers(self):
+            return [
+                {
+                    "server_id": "portal",
+                    "transport": "http",
+                    "url": "http://registry-portal:8801/mcp",
+                    "headers": {"X-Portal-MCP-Token": "registry-token"},
+                    "enabled": True,
+                }
+            ]
+
+    monkeypatch.setattr("core.mcp_admin_service.get_runtime_registry_store", lambda: FakeRegistry())
     monkeypatch.setattr(
         task_executor,
         "resolve_runtime_provider_selection",
@@ -1460,9 +1474,9 @@ def test_execute_task_stream_injects_portal_mcp_servers(monkeypatch, tmp_path: P
     assert result.session_id == "sdk-session-mcp"
     portal_server = ClaudeAgentOptions.last_kwargs["mcp_servers"]["portal"]
     assert portal_server["type"] == "http"
-    assert portal_server["url"] == "http://portal-mcp:8801/mcp/"
+    assert portal_server["url"] == "http://registry-portal:8801/mcp/"
     assert portal_server["headers"] == {
-        "X-Portal-MCP-Token": "portal-token"
+        "X-Portal-MCP-Token": "registry-token"
     }
     assert "mcp__portal__portal_search_tables" in ClaudeAgentOptions.last_kwargs["allowed_tools"]
     assert "mcp__portal__portal_query_readonly" in ClaudeAgentOptions.last_kwargs["allowed_tools"]

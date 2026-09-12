@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     skills_root_dir: str = ""
     skills_output_dir: str = "../.claude/skills/opendataworks-business-knowledge"
     dataagent_upload_max_bytes: int = 20 * 1024 * 1024
+    # Legacy portal MCP deployment input. Startup imports these values only when
+    # the registry has no portal row; task execution reads da_mcp_server only.
     dataagent_portal_mcp_enabled: bool = True
     dataagent_portal_mcp_base_url: str = ""
     dataagent_portal_mcp_token: str = ""

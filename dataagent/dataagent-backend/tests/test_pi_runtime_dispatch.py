@@ -216,6 +216,20 @@ async def test_mcp_servers_and_history_forwarded(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(cfg, "dataagent_portal_mcp_base_url", "http://portal-mcp:8801/mcp")
     monkeypatch.setattr(cfg, "dataagent_portal_mcp_token", "test-token")
 
+    class FakeRegistry:
+        def list_mcp_servers(self):
+            return [
+                {
+                    "server_id": "portal",
+                    "transport": "http",
+                    "url": "http://registry-portal:8801/mcp",
+                    "headers": {"X-Portal-MCP-Token": "registry-token"},
+                    "enabled": True,
+                }
+            ]
+
+    monkeypatch.setattr("core.mcp_admin_service.get_runtime_registry_store", lambda: FakeRegistry())
+
     store = _FakeStore()
     monkeypatch.setattr(task_executor, "get_topic_task_store", lambda: store)
     monkeypatch.setattr("core.pi_runtime.resolve_cell_command", lambda cfg=None: ["/bin/true"])
@@ -261,8 +275,8 @@ async def test_mcp_servers_and_history_forwarded(monkeypatch, tmp_path: Path):
     assert ctx.history[0]["content"] == "hello"
     assert len(ctx.mcp_servers) == 1
     assert ctx.mcp_servers[0]["name"] == "portal"
-    assert ctx.mcp_servers[0]["url"] == "http://portal-mcp:8801/mcp/"
-    assert ctx.mcp_servers[0]["headers"]["X-Portal-MCP-Token"] == "test-token"
+    assert ctx.mcp_servers[0]["url"] == "http://registry-portal:8801/mcp/"
+    assert ctx.mcp_servers[0]["headers"]["X-Portal-MCP-Token"] == "registry-token"
     assert len(ctx.skills) == 1
     assert ctx.skills[0]["name"] == "test-skill"
 

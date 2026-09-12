@@ -64,8 +64,11 @@ export interface NeutralAgentEvent {
 export interface McpServerConfig {
   name: string;
   type?: string;
-  url: string;
+  url?: string;
   headers?: Record<string, string>;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
 }
 
 export interface GovernanceSettings {

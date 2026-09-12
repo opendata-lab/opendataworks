@@ -152,6 +152,10 @@ class MessageScheduleLogsQueryRequest(BaseModel):
 
 class ProviderSettingsUpdate(BaseModel):
     provider_id: str
+    provider_type: Optional[str] = None
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    provider_group: Optional[str] = None
     enabled: Optional[bool] = None
     provider_enabled: Optional[bool] = None
     enabled_models: List[str] = Field(default_factory=list)
@@ -161,6 +165,7 @@ class ProviderSettingsUpdate(BaseModel):
     base_url: Optional[str] = None
     supports_partial_messages: Optional[bool] = None
     model_detections: Optional[Dict[str, "ModelDetectionState"]] = None
+    models: Optional[List[Any]] = None
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -191,12 +196,15 @@ class ModelDetectionState(BaseModel):
 
 class ProviderConfig(BaseModel):
     provider_id: str
+    provider_type: str = "anthropic_compatible"
+    name: str = ""
     display_name: str
     provider_group: str = ""
     base_url: str = ""
     api_key_set: bool = False
     auth_token_set: bool = False
-    models: List[str] = Field(default_factory=list)
+    models: List[Any] = Field(default_factory=list)
+    enabled_models: List[str] = Field(default_factory=list)
     supported_models: List[str] = Field(default_factory=list)
     custom_models: List[str] = Field(default_factory=list)
     default_model: str = ""
@@ -206,6 +214,81 @@ class ProviderConfig(BaseModel):
     validation_status: str = "unverified"
     validation_message: str = ""
     model_detections: Dict[str, ModelDetectionState] = Field(default_factory=dict)
+
+
+class ProviderCreateRequest(ProviderSettingsUpdate):
+    pass
+
+
+class ProviderUpdateRequest(BaseModel):
+    provider_type: Optional[str] = None
+    name: Optional[str] = None
+    display_name: Optional[str] = None
+    provider_group: Optional[str] = None
+    enabled: Optional[bool] = None
+    provider_enabled: Optional[bool] = None
+    enabled_models: Optional[List[str]] = None
+    custom_models: Optional[List[str]] = None
+    api_key: Optional[str] = None
+    auth_token: Optional[str] = None
+    base_url: Optional[str] = None
+    supports_partial_messages: Optional[bool] = None
+    model_detections: Optional[Dict[str, "ModelDetectionState"]] = None
+    models: Optional[List[Any]] = None
+
+
+class ProviderListResponse(BaseModel):
+    providers: List[ProviderConfig] = Field(default_factory=list)
+
+
+class McpServerConfig(BaseModel):
+    server_id: str
+    name: str
+    source: str
+    transport: str
+    url: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    env: Dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    oauth_required: bool = False
+    tool_count: int = 0
+    description: str = ""
+
+
+class McpServerCreateRequest(BaseModel):
+    server_id: Optional[str] = None
+    name: str
+    transport: str
+    url: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    env: Dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+    oauth_required: bool = False
+    tool_count: int = 0
+    description: str = ""
+
+
+class McpServerUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    transport: Optional[str] = None
+    url: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+    command: Optional[str] = None
+    args: Optional[List[str]] = None
+    env: Optional[Dict[str, str]] = None
+    enabled: Optional[bool] = None
+    oauth_required: Optional[bool] = None
+    tool_count: Optional[int] = None
+    description: Optional[str] = None
+
+
+class McpServerListResponse(BaseModel):
+    configured: List[McpServerConfig] = Field(default_factory=list)
+    plugin: List[McpServerConfig] = Field(default_factory=list)
 
 
 class ModelDetectionRequest(BaseModel):
@@ -330,6 +413,10 @@ class SkillDocumentVersionSummary(BaseModel):
 class SkillDocumentSummary(BaseModel):
     id: int
     folder: str = ""
+    # What the skill is for, from its SKILL.md front matter. Its absence here is
+    # why the list showed last_change_summary instead — a reindex note reading
+    # "发现磁盘文件" on every row, which looked like a description and was not.
+    description: str = ""
     relative_path: str
     file_name: str
     category: str

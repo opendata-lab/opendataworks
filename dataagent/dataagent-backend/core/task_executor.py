@@ -937,6 +937,9 @@ async def _execute_task_stream_via_pi_runtime(
             "url": conf.get("url"),
             "type": conf.get("type", "http"),
             "headers": conf.get("headers", {}),
+            "command": conf.get("command"),
+            "args": conf.get("args", []),
+            "env": conf.get("env", {}),
         }
         for name, conf in (raw_mcp_servers or {}).items()
     ]

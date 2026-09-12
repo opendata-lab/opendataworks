@@ -18,45 +18,36 @@
           <el-icon><MagicStick /></el-icon>
           <span>Chat</span>
         </el-menu-item>
-        <el-menu-item index="skills">
-          <el-icon><Collection /></el-icon>
-          <span>Skills</span>
-        </el-menu-item>
         <el-menu-item index="agents">
           <el-icon><User /></el-icon>
           <span>智能体</span>
         </el-menu-item>
-        <template v-if="authStore.isAdmin">
-          <el-menu-item index="models">
-            <el-icon><Cpu /></el-icon>
-            <span>模型管理</span>
-          </el-menu-item>
-          <el-menu-item index="widget">
-            <el-icon><Monitor /></el-icon>
-            <span>Widget 接入</span>
-          </el-menu-item>
-          <el-menu-item index="evaluations">
-            <el-icon><DataBoard /></el-icon>
-            <span>评测集</span>
-          </el-menu-item>
-          <el-menu-item index="eval-results">
-            <el-icon><TrendCharts /></el-icon>
-            <span>评测结果</span>
-          </el-menu-item>
-        </template>
       </el-menu>
-      <div v-if="authStore.enabled && authStore.currentUser" class="intelligent-query-user">
-        <el-dropdown trigger="click" @command="handleUserCommand">
-          <span class="intelligent-query-user__trigger">
-            <el-icon><User /></el-icon>
-            <span class="intelligent-query-user__name">{{ authStore.currentUser.display_name }}</span>
-          </span>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="logout">退出登录</el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+      <div class="intelligent-query-footer">
+        <div v-if="authStore.enabled && authStore.currentUser" class="intelligent-query-user">
+          <el-dropdown trigger="click" @command="handleUserCommand">
+            <span class="intelligent-query-user__trigger">
+              <el-icon><User /></el-icon>
+              <span class="intelligent-query-user__name">{{ authStore.currentUser.display_name }}</span>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
+        <!-- Configuration lives behind this, in its own view. It is set up once
+             and rarely revisited, so it does not belong beside the work. -->
+        <button
+          type="button"
+          class="intelligent-query-settings-btn"
+          title="设置"
+          aria-label="设置"
+          @click="router.push('/settings')"
+        >
+          <el-icon><Setting /></el-icon>
+        </button>
       </div>
     </aside>
 
@@ -69,7 +60,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Collection, Cpu, DataBoard, MagicStick, Monitor, TrendCharts, User } from '@element-plus/icons-vue'
+import { MagicStick, Setting, User } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { withAgentContext } from '@/router/agentContext'
 
@@ -91,6 +82,7 @@ const MENU_TO_PATH = {
   skills: '/skills',
   agents: '/agents',
   models: '/models',
+  mcp: '/mcp',
   widget: '/widget-access',
   evaluations: '/evaluations',
   'eval-results': '/evaluation-results'
@@ -168,6 +160,35 @@ const handleMenuSelect = (index) => {
 .intelligent-query-menu :deep(.el-menu-item) {
   height: 44px;
   line-height: 44px;
+}
+
+.intelligent-query-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.intelligent-query-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.intelligent-query-settings-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 
 .intelligent-query-user {

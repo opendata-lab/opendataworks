@@ -3,7 +3,6 @@
     <header class="agent-studio-head">
       <div>
         <h2>智能体</h2>
-        <p>浏览不同数据问答场景的 Skills、工具与提示词配置。</p>
       </div>
       <el-button v-if="canManage" type="primary" :icon="Plus" :loading="creating" @click="handleCreate">新建智能体</el-button>
     </header>

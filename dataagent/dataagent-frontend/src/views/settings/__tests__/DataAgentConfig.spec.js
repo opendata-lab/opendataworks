@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const apiMocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
-  detectModel: vi.fn()
+  detectModel: vi.fn(),
+  listProviders: vi.fn(),
+  createProvider: vi.fn(),
+  updateProvider: vi.fn(),
+  deleteProvider: vi.fn()
 }))
 
 const messageMocks = vi.hoisted(() => ({
@@ -116,10 +120,17 @@ describe('DataAgentConfig', () => {
     apiMocks.getSettings.mockReset()
     apiMocks.updateSettings.mockReset()
     apiMocks.detectModel.mockReset()
+    apiMocks.listProviders.mockReset()
+    apiMocks.createProvider.mockReset()
+    apiMocks.updateProvider.mockReset()
+    apiMocks.deleteProvider.mockReset()
     messageMocks.success.mockReset()
     messageMocks.error.mockReset()
     messageBoxMocks.confirm.mockReset()
 
+    apiMocks.createProvider.mockResolvedValue({ provider_id: 'custom_1' })
+    apiMocks.updateProvider.mockResolvedValue({ ok: true })
+    apiMocks.deleteProvider.mockResolvedValue({ ok: true })
     apiMocks.getSettings.mockResolvedValue(basePayload())
     apiMocks.updateSettings.mockImplementation(async (payload) => {
       const current = basePayload()
@@ -167,6 +178,19 @@ describe('DataAgentConfig', () => {
     expect(wrapper.text()).not.toContain('配置供应商、检测模型可用性，并选择默认模型。')
   })
 
+  it('renders provider navigation as names with status dots only', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    const providerRows = wrapper.findAll('.provider-card')
+    expect(providerRows).toHaveLength(2)
+    expect(providerRows[0].text()).toBe('OpenRouter')
+    expect(providerRows[1].text()).toBe('AnyRouter')
+    expect(wrapper.findAll('.provider-dot')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain('凭证已保存')
+    expect(wrapper.text()).not.toContain('个已启用模型')
+  })
+
   it('allows enabling a model before detection succeeds', async () => {
     const payload = basePayload()
     payload.providers[0].models = []
@@ -204,7 +228,9 @@ describe('DataAgentConfig', () => {
     await flushPromises()
 
     expect(wrapper.vm.currentDraft.enabled_models).toEqual([model])
-    expect(messageMocks.error).toHaveBeenCalledWith('模型检测失败')
+    expect(wrapper.find('.model-error-row').text()).toContain('连接失败：模型检测失败')
+    expect(wrapper.find('.model-error-row').text()).toContain('重新检测')
+    expect(messageMocks.error).not.toHaveBeenCalled()
   })
 
   it('saves only the current provider patch and updates dirty button state', async () => {
@@ -272,5 +298,71 @@ describe('DataAgentConfig', () => {
     expect(wrapper.vm.form.model).toBe('anthropic/claude-sonnet-4.5')
     expect(wrapper.vm.isProviderDirty('openrouter')).toBe(true)
     expect(before.model_detections['anthropic/claude-sonnet-4.5'].status).toBe('verified')
+  })
+
+  it('renders add provider button and appends a new draft provider on click', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('添加供应商')
+    await wrapper.find('.add-provider-btn').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.vm.currentDraft.name).toBe('新建供应商')
+    expect(wrapper.vm.currentDraft.is_new).toBe(true)
+    expect(wrapper.vm.currentDraft.provider_group).toBe('自定义供应商')
+  })
+
+  it('allows configuring custom model with max_output_tokens and context_window', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    wrapper.vm.customModelInput = 'deepseek-v3'
+    wrapper.vm.addCustomModel()
+    expect(wrapper.vm.currentSupportedModels).toContain('deepseek-v3')
+
+    wrapper.vm.toggleAdvanced('deepseek-v3')
+    expect(wrapper.vm.isAdvancedOpen('deepseek-v3')).toBe(true)
+
+    wrapper.vm.currentDraft.model_details['deepseek-v3'].max_output_tokens = 8192
+    wrapper.vm.currentDraft.model_details['deepseek-v3'].context_window = 65536
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').details.max_output_tokens).toBe(8192)
+    expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').details.context_window).toBe(65536)
+    expect(wrapper.findAll('.model-card').at(-1).find('.model-context-badge').text()).toBe('66K')
+    expect(wrapper.findAll('.model-card').at(-1).findAll('.model-icon-button')).toHaveLength(3)
+    expect(wrapper.findAll('.model-card').at(-1).text()).toContain('用于对话')
+  })
+
+  it('creates new provider via createProvider when saving new provider draft', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    wrapper.vm.addNewProvider()
+    wrapper.vm.currentDraft.name = '我的自建私有模型'
+    wrapper.vm.currentDraft.base_url = 'https://api.deepseek.com'
+    wrapper.vm.currentDraft.token = 'sk-custom-token'
+
+    await wrapper.vm.saveCurrentProvider()
+    await flushPromises()
+
+    expect(apiMocks.createProvider).toHaveBeenCalledTimes(1)
+    expect(apiMocks.createProvider.mock.calls[0][0].name).toBe('我的自建私有模型')
+    expect(apiMocks.createProvider.mock.calls[0][0].base_url).toBe('https://api.deepseek.com')
+    expect(wrapper.vm.currentDraft.is_new).toBe(false)
+  })
+
+  it('deletes provider via deleteProvider api after confirmation', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    messageBoxMocks.confirm.mockResolvedValue('confirm')
+    await wrapper.vm.deleteCurrentProvider()
+    await flushPromises()
+
+    expect(messageBoxMocks.confirm).toHaveBeenCalledTimes(1)
+    expect(apiMocks.deleteProvider).toHaveBeenCalledWith('openrouter')
+    expect(messageMocks.success).toHaveBeenCalledWith('供应商已删除')
   })
 })

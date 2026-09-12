@@ -11,6 +11,7 @@
 - 主应用 `frontend` 不再编译智能问数页面源码；入口 `/intelligent-query` 通过远程 `OpenDataWorksWidget` JS 以内嵌模式加载 DataAgent 问答页。
 - 独立 `dataagent-frontend` 使用面向用户的页面路径：`/chat`、`/skills`、`/agents`、`/models`、`/widget-access`；`/intelligent-query`、`/intelligent-query/*` 与 `/nl2sql` 仅作为旧链接兼容入口。
 - `dataagent-frontend` 是模型、Skills、智能体、Widget 接入配置等 DataAgent 管理 UI 的归属目录，并负责构建 `/widget/opendataworks-widget.bundle.js`。本地联调时，若需要 portal 正确加载 widget，需在 `dataagent-frontend` 目录下先执行一次 `npm run build:widget`，后续 widget 源码有改动时同样需要重新执行。
+- MCP 服务与模型供应商分别持久化在 `da_mcp_server`、`da_model_provider` registry；runtime 只读 registry。`DATAAGENT_PORTAL_MCP_*` 仅在首次升级且 `portal` 行不存在时用于一次性导入，不是运行时 fallback。
 - 原 Java `dataagent-backend` 模块已删除。
 - 通用问数 SQL 方法、表字段发现策略、SQL 前检查和结果收口已收敛到 `dataagent-backend/prompts/data_agent_system_prompt.md`，不再由独立通用问数 skill 承载。
 - `dataagent/.claude/skills/opendataworks-business-knowledge` 是随仓库发布的业务知识 skill，负责 OpenDataWorks 平台术语、本体、指标口径、别名、歧义消解和业务规则例外；它不提供 SQL 验证或执行脚本。

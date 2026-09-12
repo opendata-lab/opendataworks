@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { connectMcpServers } from "../src/mcp/portal-mcp-client.js";
+import { connectMcpServers, createMcpTransport } from "../src/mcp/portal-mcp-client.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 test("connectMcpServers returns empty tools when servers list is empty or undefined", async () => {
   const result1 = await connectMcpServers(undefined);
@@ -27,6 +28,25 @@ test("connectMcpServers handles unreachable server gracefully without crashing",
 
   assert.deepEqual(result.tools, []);
   await result.close();
+});
+
+test("createMcpTransport builds stdio transport from persisted command contract", () => {
+  const transport = createMcpTransport({
+    name: "filesystem",
+    type: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/data"],
+    env: { DIR_ROOT: "/data" },
+  });
+
+  assert.ok(transport instanceof StdioClientTransport);
+});
+
+test("createMcpTransport rejects incomplete stdio config", () => {
+  assert.throws(
+    () => createMcpTransport({ name: "broken", type: "stdio" }),
+    /missing command/
+  );
 });
 
 import {

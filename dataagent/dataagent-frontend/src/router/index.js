@@ -8,6 +8,7 @@ const LEGACY_TAB_TO_PATH = {
   skills: '/skills',
   agents: '/agents',
   models: '/models',
+  mcp: '/mcp',
   widget: '/widget-access'
 }
 
@@ -44,6 +45,7 @@ export const redirectLegacyIntelligentQueryPath = (to) => {
       skills: 'IntelligentQuerySkills',
       agents: 'IntelligentQueryAgents',
       models: 'IntelligentQueryModels',
+      mcp: 'IntelligentQueryMcp',
       widget: 'IntelligentQueryWidget'
     }
     const name = routeNames[segments[0]]
@@ -91,6 +93,28 @@ export const routes = [
         meta: { tab: 'chat-v2', title: '智能问数' }
       },
       {
+        path: 'agents',
+        name: 'IntelligentQueryAgents',
+        component: () => import('@/views/intelligence/AgentStudio.vue'),
+        meta: { tab: 'agents', title: '智能体' }
+      },
+      {
+        path: 'agents/:agentId',
+        name: 'IntelligentQueryAgentDetail',
+        component: () => import('@/views/intelligence/AgentDetailView.vue'),
+        meta: { tab: 'agents', title: '智能体详情' }
+      }
+    ]
+  },
+  {
+    path: '/settings',
+    component: () => import('@/views/settings/SettingsLayout.vue'),
+    children: [
+      {
+        path: '',
+        redirect: '/settings/skills'
+      },
+      {
         path: 'skills',
         name: 'IntelligentQuerySkills',
         component: () => import('@/views/settings/SkillStudio.vue'),
@@ -103,16 +127,10 @@ export const routes = [
         meta: { tab: 'skills', title: 'Skill 详情' }
       },
       {
-        path: 'agents',
-        name: 'IntelligentQueryAgents',
-        component: () => import('@/views/intelligence/AgentStudio.vue'),
-        meta: { tab: 'agents', title: '智能体' }
-      },
-      {
-        path: 'agents/:agentId',
-        name: 'IntelligentQueryAgentDetail',
-        component: () => import('@/views/intelligence/AgentDetailView.vue'),
-        meta: { tab: 'agents', title: '智能体详情' }
+        path: 'mcp',
+        name: 'IntelligentQueryMcp',
+        component: () => import('@/views/settings/McpConfig.vue'),
+        meta: { tab: 'mcp', title: 'MCP 服务', adminOnly: true }
       },
       {
         path: 'models',
@@ -152,6 +170,15 @@ export const routes = [
       }
     ]
   },
+  // Settings moved under /settings; keep the old paths working so links and
+  // bookmarks from before the move still land somewhere sensible.
+  { path: '/skills', redirect: '/settings/skills' },
+  { path: '/skills/:folder', redirect: (to) => `/settings/skills/${to.params.folder}` },
+  { path: '/mcp', redirect: '/settings/mcp' },
+  { path: '/models', redirect: '/settings/models' },
+  { path: '/widget-access', redirect: '/settings/widget-access' },
+  { path: '/evaluations', redirect: '/settings/evaluations' },
+  { path: '/evaluation-results', redirect: '/settings/evaluation-results' },
   {
     path: '/intelligent-query',
     redirect: redirectLegacyTab
