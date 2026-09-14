@@ -11,7 +11,16 @@
 - [x] 让模型检测和追问建议复用统一 HTTP 协议调用。
 - [x] 清空无法可靠迁移的旧供应商注册记录，并更新部署说明。
 - [x] 补 Python、TypeScript 与跨进程契约回归测试。
-- [ ] 完成真实 HTTP 任务 smoke 并记录环境与结果。
+- [x] 完成真实 HTTP 任务 smoke 并记录环境与结果。
+
+## 验证记录
+
+- Python：项目 `.venv-py313`，全量 `pytest -q` 为 713 passed。
+- Pi runtime：Node 22.19.0，`npm test` 为 146 passed。
+- 前端：Node 20.19.0，供应商配置与智能体详情测试合计 19 passed。
+- 数据库迁移：Podman MySQL `127.0.0.1:3306`，会话库 `dataagent`；升级后确认 4 条旧供应商记录全部删除，迁移版本为 `20260914_add_api_format`。
+- 真实 HTTP smoke：复用 Podman Redis `127.0.0.1:6379` 和真实模型凭据，临时显式配置 `/v1/messages` 后通过 `POST /api/v1/nl2sql/tasks` 以 `execution_mode=auto` 提交；状态从 `waiting/running` 进入 `finished`，SDK 事件与 SSE 终止事件可读取，最终 assistant 消息持久化为 `smoke-ok`，记录的 `engine_kind` 为 `pi_agent_core`。
+- 清理：smoke topic 与临时供应商配置已删除；供应商表保持迁移后的空表状态。
 
 ## 发布与回退
 
