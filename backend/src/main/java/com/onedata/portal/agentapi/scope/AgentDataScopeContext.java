@@ -23,8 +23,19 @@ public final class AgentDataScopeContext {
     }
 
     public static void setEncodedScope(String encodedScope) {
+        if (!StringUtils.hasText(encodedScope)) {
+            ACTIVE.set(false);
+            ENCODED_SCOPE.remove();
+            return;
+        }
+        List<DataScopeItem> scopes = parseScopes(encodedScope);
+        if (scopes.isEmpty()) {
+            ACTIVE.set(false);
+            ENCODED_SCOPE.remove();
+            return;
+        }
         ACTIVE.set(true);
-        ENCODED_SCOPE.set(encodedScope == null ? "" : encodedScope.trim());
+        ENCODED_SCOPE.set(encodedScope.trim());
     }
 
     public static boolean isActive() {
@@ -117,7 +128,10 @@ public final class AgentDataScopeContext {
     }
 
     private static List<DataScopeItem> currentScopes() {
-        String encoded = ENCODED_SCOPE.get();
+        return parseScopes(ENCODED_SCOPE.get());
+    }
+
+    private static List<DataScopeItem> parseScopes(String encoded) {
         if (!StringUtils.hasText(encoded)) {
             return Collections.emptyList();
         }
