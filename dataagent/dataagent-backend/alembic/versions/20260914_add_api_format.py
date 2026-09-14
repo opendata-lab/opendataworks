@@ -15,6 +15,10 @@ def upgrade() -> None:
         AFTER provider_type
         """
     )
+    # provider_type and api_format describe different protocol contracts, so
+    # existing rows cannot be migrated safely by copying or guessing values.
+    # Reset the small provider registry and require an explicit reconfiguration.
+    op.execute("DELETE FROM da_model_provider")
 
 
 def downgrade() -> None:
