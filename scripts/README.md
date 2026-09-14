@@ -33,7 +33,21 @@ Build the project using scripts in `build/`.
 ```bash
 # Build images (multi-arch, including main frontend, DataAgent frontend, DataAgent backend, and DataAgent runner)
 bash scripts/build/build-multiarch.sh
+
+# Use a pip mirror for Python image build layers
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
+PIP_TRUSTED_HOST=mirrors.aliyun.com \
+bash scripts/build/build-images.sh
+
+# Or configure the multi-arch quick build
+cp scripts/build/docker-build.env.example scripts/build/docker-build.env
+bash scripts/build/build-quick.sh
 ```
+
+`PIP_INDEX_URL` and `PIP_TRUSTED_HOST` are build-only settings and are not
+persisted as runtime environment variables. Do not put credentials or tokens in
+the mirror URL. Prefer HTTPS; set `PIP_TRUSTED_HOST` only when the internal
+mirror requires it.
 
 ### DataAgent Builtin Evaluation
 Run the stdlib-only evaluation suite through its Docker image:
