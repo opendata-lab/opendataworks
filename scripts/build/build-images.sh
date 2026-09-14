@@ -43,6 +43,14 @@ REDIS_IMAGE="redis:7.2-alpine"
 OUTPUT_DIR="$REPO_ROOT/deploy/docker-images"
 mkdir -p "$OUTPUT_DIR"
 
+PIP_BUILD_ARGS=()
+if [ -n "${PIP_INDEX_URL:-}" ]; then
+    PIP_BUILD_ARGS+=(--build-arg "PIP_INDEX_URL=$PIP_INDEX_URL")
+fi
+if [ -n "${PIP_TRUSTED_HOST:-}" ]; then
+    PIP_BUILD_ARGS+=(--build-arg "PIP_TRUSTED_HOST=$PIP_TRUSTED_HOST")
+fi
+
 echo "📦 步骤 1/8: 构建前端镜像 (AMD64 架构)..."
 cd "$REPO_ROOT/frontend"
 $CONTAINER_CMD build --platform linux/amd64 -t $FRONTEND_IMAGE .
@@ -68,6 +76,7 @@ echo ""
 echo "📦 步骤 4/8: 构建 DataAgent 后端镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_BACKEND_IMAGE \
+  "${PIP_BUILD_ARGS[@]}" \
   -f dataagent/dataagent-backend/Dockerfile \
   .
 echo "✅ DataAgent 后端镜像构建完成"
@@ -76,6 +85,7 @@ echo ""
 echo "📦 步骤 5/8: 构建 DataAgent Runner 镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_RUNNER_IMAGE \
+  "${PIP_BUILD_ARGS[@]}" \
   -f dataagent/dataagent-backend/Dockerfile.runner \
   .
 echo "✅ DataAgent Runner 镜像构建完成"
@@ -92,6 +102,7 @@ echo ""
 echo "📦 步骤 7/8: 构建 DataAgent DeepEval 评测镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE \
+  "${PIP_BUILD_ARGS[@]}" \
   -f tools/dataagent-evals/deepeval/Dockerfile \
   .
 echo "✅ DataAgent DeepEval 评测镜像构建完成"
@@ -100,6 +111,7 @@ echo ""
 echo "📦 步骤 8/8: 构建 Portal MCP 镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $PORTAL_MCP_IMAGE \
+  "${PIP_BUILD_ARGS[@]}" \
   -f dataagent/portal-mcp/Dockerfile \
   .
 echo "✅ Portal MCP 镜像构建完成"

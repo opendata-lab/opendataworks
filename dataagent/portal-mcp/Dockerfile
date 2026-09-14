@@ -6,10 +6,13 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app/portal-mcp
 
 COPY dataagent/portal-mcp/requirements.txt /tmp/requirements.txt
+ARG PIP_INDEX_URL
+ARG PIP_TRUSTED_HOST
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -r /tmp/requirements.txt
+    && PIP_INDEX_URL="${PIP_INDEX_URL}" PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" \
+       pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY dataagent/portal-mcp /app/portal-mcp
 

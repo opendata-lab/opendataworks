@@ -23,6 +23,10 @@ fi
 # 加载配置
 source "$CONFIG_FILE"
 
+# source 只会创建 shell 变量；显式导出后，子构建脚本才能读取 pip 镜像配置。
+export PIP_INDEX_URL="${PIP_INDEX_URL:-}"
+export PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST:-}"
+
 # 检查必需变量
 if [ -z "$DOCKER_USERNAME" ] || [ -z "$DOCKER_PASSWORD" ]; then
     echo "❌ 配置文件中缺少 DOCKER_USERNAME 或 DOCKER_PASSWORD"

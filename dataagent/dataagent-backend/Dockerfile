@@ -20,10 +20,13 @@ ENV DATAAGENT_RUNTIME_ROOT=/dataagent_runtime
 WORKDIR /opt/dataagent-backend
 
 COPY dataagent/dataagent-backend/requirements.txt /tmp/requirements.txt
+ARG PIP_INDEX_URL
+ARG PIP_TRUSTED_HOST
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN PIP_INDEX_URL="${PIP_INDEX_URL}" PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" \
+    pip install --no-cache-dir -r /tmp/requirements.txt
 RUN mkdir -p /dataagent_runtime /app/.claude/skills && chmod 1777 /dataagent_runtime
 
 # Node runtime + built Pi Cell. Both images are debian bookworm, so the node

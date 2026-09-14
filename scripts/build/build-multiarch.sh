@@ -214,6 +214,14 @@ else
     fi
 fi
 
+PYTHON_BUILD_ARGS=()
+if [ -n "${PIP_INDEX_URL:-}" ]; then
+    PYTHON_BUILD_ARGS+=(--build-arg "PIP_INDEX_URL=$PIP_INDEX_URL")
+fi
+if [ -n "${PIP_TRUSTED_HOST:-}" ]; then
+    PYTHON_BUILD_ARGS+=(--build-arg "PIP_TRUSTED_HOST=$PIP_TRUSTED_HOST")
+fi
+
 echo "========================================="
 echo "  构建配置"
 echo "========================================="
@@ -229,6 +237,7 @@ echo "构建 DataAgent Runner: $BUILD_DATAAGENT_RUNNER"
 echo "构建 DataAgent builtin 评测: $BUILD_DATAAGENT_EVALS_BUILTIN"
 echo "构建 DataAgent DeepEval 评测: $BUILD_DATAAGENT_EVALS_DEEPEVAL"
 echo "构建 Portal MCP: $BUILD_PORTAL_MCP"
+[ -n "${PIP_INDEX_URL:-}" ] && echo "Pip 镜像源: $PIP_INDEX_URL"
 echo "========================================="
 echo ""
 
@@ -306,7 +315,7 @@ if [ "$BUILD_DATAAGENT_BACKEND" = true ]; then
     echo "平台: $PLATFORMS"
 
     cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS \
+    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
         -t $DATAAGENT_BACKEND_IMAGE:$VERSION \
         -t $DATAAGENT_BACKEND_IMAGE:latest \
         --file dataagent/dataagent-backend/Dockerfile \
@@ -326,7 +335,7 @@ if [ "$BUILD_DATAAGENT_RUNNER" = true ]; then
     echo "平台: $PLATFORMS"
 
     cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS \
+    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
         -t $DATAAGENT_RUNNER_IMAGE:$VERSION \
         -t $DATAAGENT_RUNNER_IMAGE:latest \
         --file dataagent/dataagent-backend/Dockerfile.runner \
@@ -346,7 +355,7 @@ if [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ]; then
     echo "平台: $PLATFORMS"
 
     cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS \
+    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
         -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION \
         -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE:latest \
         --file tools/dataagent-evals/deepeval/Dockerfile \
@@ -386,7 +395,7 @@ if [ "$BUILD_PORTAL_MCP" = true ]; then
     echo "平台: $PLATFORMS"
 
     cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS \
+    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
         -t $PORTAL_MCP_IMAGE:$VERSION \
         -t $PORTAL_MCP_IMAGE:latest \
         --file dataagent/portal-mcp/Dockerfile \
