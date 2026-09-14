@@ -1,7 +1,7 @@
 # DataAgent 数据范围解耦与通用智能体定位实施计划
 
-**日期:** 2026-09-14  
-**主题:** agent-data-scope-decoupling  
+**日期:** 2026-09-14
+**主题:** agent-data-scope-decoupling
 **对应设计文档:** `docs/design/2026-09-14-agent-data-scope-decoupling-design.md`
 
 ---
@@ -22,8 +22,11 @@
 ### 任务 3：Java 后端数据范围上下文优化
 - [ ] 修改 `backend/src/main/java/com/onedata/portal/agentapi/scope/AgentDataScopeContext.java`：
   - 在 `setEncodedScope(String encodedScope)` 中，当 `encodedScope` 为空或解析出范围为空列表时，设置 `ACTIVE.set(false)`；仅当解析出非空有效范围项时才设置 `ACTIVE.set(true)`。
+  - 对存在但无法解析或结构非法的请求头保持范围校验激活，并使用空授权集合拒绝访问。
 - [ ] 更新 `backend/src/test/java/com/onedata/portal/agentapi/BackendAgentQueryServiceTest.java`：
   - 添加验证未设置数据范围或空范围头时，允许查询正常进行。
+- [ ] 新增 `backend/src/test/java/com/onedata/portal/agentapi/scope/AgentDataScopeContextTest.java`：
+  - 覆盖未配置、显式空范围、合法非空范围以及非法请求头 fail-closed。
 
 ### 任务 4：前端提示文案优化
 - [ ] 修改 `dataagent/dataagent-frontend/src/views/intelligence/AgentDetailView.vue`：
@@ -31,7 +34,7 @@
   - 增加对数据范围限定于平台 Portal MCP 的提示。
 
 ### 任务 5：验证与回归
-- [ ] 运行 Java 单元测试：`mvn test -pl backend -am -Dtest=BackendAgentQueryServiceTest -DfailIfNoTests=false`。
+- [ ] 运行 Java 单元测试：`mvn test -pl backend -am -Dtest=BackendAgentQueryServiceTest,AgentDataScopeContextTest -DfailIfNoTests=false`。
 - [ ] 运行 Python 单元测试：`pytest` 覆盖 `test_agent_runtime.py`、`test_readonly_query_proxy.py`、`test_odw_cli.py`。
 - [ ] 运行平台 tools 技能相关回归测试。
 

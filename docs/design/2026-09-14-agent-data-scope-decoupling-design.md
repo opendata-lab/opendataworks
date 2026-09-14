@@ -1,7 +1,7 @@
 # DataAgent 数据范围解耦与通用智能体定位设计
 
-**日期:** 2026-09-14  
-**主题:** agent-data-scope-decoupling  
+**日期:** 2026-09-14
+**主题:** agent-data-scope-decoupling
 **目标:** 修复 DataAgent 在未配置数据范围时阻断元数据、数据和日志访问的问题，明确数据范围仅针对 OpenDataWorks 平台 Portal MCP，调整智能体定位为支持多 MCP 协同的通用数据与分析智能体。
 
 ---
@@ -64,9 +64,10 @@
 
 ### 3. Java 平台后端 (`backend`)
 - **`AgentDataScopeContext.java`**：
-  - `setEncodedScope(String encodedScope)`：
+   - `setEncodedScope(String encodedScope)`：
     - 解析 `encodedScope`，若为空或解析出的 `allowed_scopes` 为空列表，设置 `ACTIVE.set(false)` 并清空上下文。
     - 仅当解析出至少一个有效范围时才设置 `ACTIVE.set(true)`。
+    - 请求头存在但 Base64、JSON 或范围项结构非法时，保持过滤激活但使用空授权集合，确保请求 fail-closed；非法请求头不能退化成“未配置范围”。
   - 效果：当请求未携带 Header 或 Header 为空范围时，`isActive()` 为 false，所有元数据检索、DDL、查询放行；当携带非空有效范围时，严格按范围校验与过滤。
 
 ### 4. 前端展示 (`dataagent-frontend`)
@@ -81,3 +82,4 @@
 - **已有配置了明确数据范围的智能体**：行为完全保持不变，依然受到严格的数据库级别的隔离与限制。
 - **新建或未配置数据范围的智能体**：不再进入“完全死锁”状态，而是能够正常调用所有启用的工具与 MCP，正常执行问数与日志排查。
 - **第三方 MCP**：不再受到平台数据范围逻辑的干扰。
+- **非法范围请求头**：按零授权处理并拒绝平台数据访问，避免解析异常导致权限校验被绕过。
