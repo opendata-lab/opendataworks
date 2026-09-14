@@ -57,6 +57,15 @@ const stubs = {
     template: '<select :disabled="disabled"><slot /></select>'
   },
   'el-option': { template: '<option />' },
+  'el-dialog': {
+    props: ['modelValue', 'title'],
+    template: '<div v-if="modelValue" class="el-dialog-stub"><h3>{{ title }}</h3><slot /><slot name="footer" /></div>'
+  },
+  'el-input-number': {
+    props: ['modelValue'],
+    emits: ['update:modelValue'],
+    template: '<input type="number" :value="modelValue" @input="$emit(\'update:modelValue\', Number($event.target.value))" />'
+  },
   'el-tooltip': { template: '<span><slot /></span>' },
   'el-icon': { template: '<i><slot /></i>' },
   QuestionFilled: { template: '<i />' }
@@ -310,29 +319,73 @@ describe('DataAgentConfig', () => {
 
     expect(wrapper.vm.currentDraft.name).toBe('新建供应商')
     expect(wrapper.vm.currentDraft.is_new).toBe(true)
-    expect(wrapper.vm.currentDraft.provider_group).toBe('自定义供应商')
+    expect(wrapper.vm.currentDraft.api_format).toBe('/v1/messages')
   })
 
-  it('allows configuring custom model with max_output_tokens and context_window', async () => {
+  it('allows adding model via dialog with max_output_tokens and context_window', async () => {
     const wrapper = mountConfig()
     await flushPromises()
 
-    wrapper.vm.customModelInput = 'deepseek-v3'
-    wrapper.vm.addCustomModel()
-    expect(wrapper.vm.currentSupportedModels).toContain('deepseek-v3')
+    wrapper.vm.openAddModelDialog()
+    expect(wrapper.vm.modelDialogVisible).toBe(true)
+    expect(wrapper.vm.modelDialogMode).toBe('add')
 
-    wrapper.vm.toggleAdvanced('deepseek-v3')
-    expect(wrapper.vm.isAdvancedOpen('deepseek-v3')).toBe(true)
-
-    wrapper.vm.currentDraft.model_details['deepseek-v3'].max_output_tokens = 8192
-    wrapper.vm.currentDraft.model_details['deepseek-v3'].context_window = 65536
+    wrapper.vm.modelDialogForm.id = 'deepseek-v3'
+    wrapper.vm.modelDialogForm.max_output_tokens = 8192
+    wrapper.vm.modelDialogForm.context_window = 65536
+    wrapper.vm.saveModelDialog()
     await wrapper.vm.$nextTick()
 
+    expect(wrapper.vm.currentSupportedModels).toContain('deepseek-v3')
     expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').details.max_output_tokens).toBe(8192)
     expect(wrapper.vm.currentModelRows.find((m) => m.id === 'deepseek-v3').details.context_window).toBe(65536)
     expect(wrapper.findAll('.model-card').at(-1).find('.model-context-badge').text()).toBe('66K')
     expect(wrapper.findAll('.model-card').at(-1).findAll('.model-icon-button')).toHaveLength(3)
-    expect(wrapper.findAll('.model-card').at(-1).text()).toContain('用于对话')
+  })
+
+  it('prevents json string like {"id":"..."} when adding model', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    wrapper.vm.openAddModelDialog()
+    wrapper.vm.modelDialogForm.id = '{"id":"qwen-max"}'
+    wrapper.vm.saveModelDialog()
+
+    expect(wrapper.vm.currentSupportedModels).toContain('qwen-max')
+    expect(wrapper.vm.currentSupportedModels).not.toContain('{"id":"qwen-max"}')
+  })
+
+  it('allows editing model via dialog', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    wrapper.vm.openEditModelDialog('anthropic/claude-sonnet-4.5')
+    expect(wrapper.vm.modelDialogVisible).toBe(true)
+    expect(wrapper.vm.modelDialogMode).toBe('edit')
+    expect(wrapper.vm.modelDialogForm.id).toBe('anthropic/claude-sonnet-4.5')
+
+    wrapper.vm.modelDialogForm.context_window = 200000
+    wrapper.vm.modelDialogForm.max_output_tokens = 16000
+    wrapper.vm.saveModelDialog()
+
+    expect(wrapper.vm.currentDraft.model_details['anthropic/claude-sonnet-4.5'].context_window).toBe(200000)
+    expect(wrapper.vm.currentDraft.model_details['anthropic/claude-sonnet-4.5'].max_output_tokens).toBe(16000)
+  })
+
+  it('supports api_format field in provider settings', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    expect(wrapper.vm.currentDraft.api_format).toBe('/v1/messages')
+    wrapper.vm.currentDraft.api_format = '/v1/chat/completions'
+    expect(wrapper.vm.currentProviderDirty).toBe(true)
+
+    await wrapper.vm.saveCurrentProvider()
+    await flushPromises()
+
+    expect(apiMocks.updateSettings).toHaveBeenCalled()
+    const lastCall = apiMocks.updateSettings.mock.calls.at(-1)[0]
+    expect(lastCall.providers[0].api_format).toBe('/v1/chat/completions')
   })
 
   it('creates new provider via createProvider when saving new provider draft', async () => {

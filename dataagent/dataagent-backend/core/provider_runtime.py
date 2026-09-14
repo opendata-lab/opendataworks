@@ -3,18 +3,11 @@ from __future__ import annotations
 from urllib.parse import urlparse, urlunparse
 
 
-def normalize_provider_id(raw: str | None, base_url: str | None = None) -> str:
+def normalize_api_format(raw: str | None) -> str:
     value = str(raw or "").strip().lower()
-    if value in {"anthropic", "openrouter", "anyrouter", "anthropic_compatible"}:
-        return value
-    base = str(base_url or "").lower()
-    if "openrouter.ai" in base:
-        return "openrouter"
-    if "anyrouter" in base or ".fcapp.run" in base:
-        return "anyrouter"
-    if base:
-        return "anthropic_compatible"
-    return "anthropic"
+    if value in {"/v1/chat/completions", "openai", "openrouter", "anyrouter", "anthropic_compatible"}:
+        return "/v1/chat/completions"
+    return "/v1/messages"
 
 
 def safe_base_url_for_log(raw_url: str | None) -> str:
@@ -36,31 +29,15 @@ def safe_base_url_for_log(raw_url: str | None) -> str:
     return text.split("?", 1)[0].split("#", 1)[0][:200]
 
 
-def build_provider_env(provider_id: str, *, api_key: str, auth_token: str, base_url: str) -> dict[str, str]:
-    if provider_id == "openrouter":
-        return {
-            "ANTHROPIC_AUTH_TOKEN": str(auth_token or api_key).strip(),
-            "ANTHROPIC_API_KEY": "",
-            "ANTHROPIC_BASE_URL": str(base_url or "https://openrouter.ai/api").strip(),
-            "DISABLE_PROMPT_CACHING": "",
-        }
-
-    if provider_id == "anyrouter":
-        return {
-            "ANTHROPIC_AUTH_TOKEN": str(auth_token or api_key).strip(),
-            "ANTHROPIC_API_KEY": "",
-            "ANTHROPIC_BASE_URL": str(base_url or "https://a-ocnfniawgw.cn-shanghai.fcapp.run").strip(),
-            "DISABLE_PROMPT_CACHING": "",
-        }
-
-    if provider_id == "anthropic_compatible":
+def build_provider_env(api_format: str, *, api_key: str, auth_token: str, base_url: str) -> dict[str, str]:
+    raw = str(api_format or "").strip().lower()
+    if normalize_api_format(api_format) == "/v1/chat/completions":
         return {
             "ANTHROPIC_AUTH_TOKEN": str(auth_token or api_key).strip(),
             "ANTHROPIC_API_KEY": "",
             "ANTHROPIC_BASE_URL": str(base_url or "").strip(),
-            "DISABLE_PROMPT_CACHING": "1",
+            "DISABLE_PROMPT_CACHING": "1" if raw == "anthropic_compatible" else "",
         }
-
     return {
         "ANTHROPIC_AUTH_TOKEN": "",
         "ANTHROPIC_API_KEY": str(api_key or "").strip(),

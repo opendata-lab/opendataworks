@@ -111,6 +111,92 @@ def test_import_validates_entire_payload_before_writing(monkeypatch):
     assert registry.rows == {}
 
 
+def test_normalize_mcp_server_supports_type_and_transport_standard_values():
+    http_srv = mcp_admin_service.normalize_mcp_server(
+        {"name": "my-http", "type": "http", "url": "http://example.test/mcp"}
+    )
+    assert http_srv["transport"] == "http"
+    assert http_srv["url"] == "http://example.test/mcp"
+    assert http_srv["command"] == ""
+
+    sse_srv = mcp_admin_service.normalize_mcp_server(
+        {"name": "my-sse", "type": "sse", "url": "https://example.test/sse"}
+    )
+    assert sse_srv["transport"] == "sse"
+    assert sse_srv["url"] == "https://example.test/sse"
+
+    stdio_srv = mcp_admin_service.normalize_mcp_server(
+        {"name": "my-stdio", "type": "stdio", "command": "python", "args": ["server.py"]}
+    )
+    assert stdio_srv["transport"] == "stdio"
+    assert stdio_srv["command"] == "python"
+    assert stdio_srv["url"] == ""
+
+
+def test_normalize_mcp_server_rejects_unsupported_or_remote_transport():
+    with pytest.raises(ValueError, match="不支持的 MCP 传输类型 'remote'"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "test-remote", "type": "remote", "url": "http://example.test/mcp"}
+        )
+
+    with pytest.raises(ValueError, match="不支持的 MCP 传输类型 'remote'"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "test-remote", "transport": "remote", "url": "http://example.test/mcp"}
+        )
+
+    with pytest.raises(ValueError, match="不支持的 MCP 传输类型 'websocket'"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "test-ws", "transport": "websocket", "url": "ws://example.test/ws"}
+        )
+
+
+def test_normalize_mcp_server_rejects_missing_transport_without_command():
+    with pytest.raises(ValueError, match="缺少 MCP 传输类型"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "no-transport", "url": "http://example.test/mcp"}
+        )
+
+
+def test_normalize_mcp_server_validates_url_format():
+    with pytest.raises(ValueError, match="是以 http:// 或 https:// 开头的合法地址"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "bad-scheme", "transport": "http", "url": "ftp://example.test"}
+        )
+
+    with pytest.raises(ValueError, match="是以 http:// 或 https:// 开头的合法地址"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "not-url", "transport": "sse", "url": "not-a-valid-url"}
+        )
+
+    with pytest.raises(ValueError, match="缺少有效的主机地址"):
+        mcp_admin_service.normalize_mcp_server(
+            {"name": "no-host", "transport": "http", "url": "http://"}
+        )
+
+
+def test_import_mcp_servers_with_type_http_round_trip(monkeypatch):
+    registry = FakeRegistry()
+    monkeypatch.setattr(mcp_admin_service, "get_runtime_registry_store", lambda: registry)
+
+    imported = mcp_admin_service.import_mcp_servers(
+        {
+            "mcpServers": {
+                "custom-http": {
+                    "type": "http",
+                    "url": "http://192.168.1.100:8000/mcp/",
+                    "headers": {"Authorization": "Bearer token123"},
+                }
+            }
+        }
+    )
+    assert imported == 1
+    assert "srv_custom-http" in registry.rows
+    server = registry.rows["srv_custom-http"]
+    assert server["transport"] == "http"
+    assert server["url"] == "http://192.168.1.100:8000/mcp/"
+    assert server["headers"] == {"Authorization": "Bearer token123"}
+
+
 def test_runtime_resolution_uses_selected_enabled_rows_and_preserves_transport(monkeypatch):
     registry = FakeRegistry(
         [

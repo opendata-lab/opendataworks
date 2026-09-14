@@ -46,7 +46,6 @@ from core.agent_runtime import (
     _extract_block,
     _format_exception_reason,
     _is_recoverable_timeout_reason,
-    _normalize_provider_id,
     _recover_partial_content,
     _resolve_max_turns,
     _resolve_sdk_permission_mode,
@@ -1029,10 +1028,8 @@ async def _execute_task_stream_local(
 ) -> TaskExecutionResult:
     cfg = get_settings()
     runtime_target = resolve_runtime_provider_selection(params.provider_id, params.model)
-    provider_id = _normalize_provider_id(runtime_target.get("provider_id"), runtime_target.get("base_url"))
-    supports_partial_messages = bool(
-        runtime_target.get("supports_partial_messages", provider_id != "anthropic_compatible")
-    )
+    provider_id = str(runtime_target.get("provider_id") or "")
+    supports_partial_messages = bool(runtime_target.get("supports_partial_messages", True))
     model = str(runtime_target.get("model") or cfg.claude_model or "").strip()
     if not model:
         model = _default_model_for_provider(provider_id)
@@ -1063,7 +1060,7 @@ async def _execute_task_stream_local(
     system_prompt = _build_system_prompt(params.database_hint, skill_runtime, agent_snapshot)
 
     env_payload = _build_provider_env(
-        provider_id,
+        str(runtime_target.get("api_format") or runtime_target.get("provider_id") or "/v1/messages"),
         api_key=str(runtime_target.get("api_key") or ""),
         auth_token=str(runtime_target.get("auth_token") or ""),
         base_url=str(runtime_target.get("base_url") or ""),

@@ -10,7 +10,7 @@ from typing import Any
 import anyio
 
 from config import get_settings
-from core.provider_runtime import build_provider_env, normalize_provider_id, safe_base_url_for_log
+from core.provider_runtime import build_provider_env, safe_base_url_for_log
 from core.skill_admin_service import resolve_runtime_provider_selection
 from core.skill_discovery import resolve_agent_project_cwd
 from core.claude_cli import resolve_claude_cli_path
@@ -248,10 +248,10 @@ async def _default_model_runner(
 
     cfg = get_settings()
     runtime_target = resolve_runtime_provider_selection(provider_id, model)
-    resolved_provider_id = normalize_provider_id(runtime_target.get("provider_id"), runtime_target.get("base_url"))
+    resolved_provider_id = str(runtime_target.get("provider_id") or "")
     resolved_model = str(runtime_target.get("model") or "").strip()
     provider_env = build_provider_env(
-        resolved_provider_id,
+        str(runtime_target.get("api_format") or "/v1/messages"),
         api_key=str(runtime_target.get("api_key") or ""),
         auth_token=str(runtime_target.get("auth_token") or ""),
         base_url=str(runtime_target.get("base_url") or ""),

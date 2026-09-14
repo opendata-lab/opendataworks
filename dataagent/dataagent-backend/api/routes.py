@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
 from config import get_settings
 from core.agent_profile_service import DEFAULT_AGENT_ID, build_agent_snapshot, get_agent_profile
+from core.provider_runtime import normalize_api_format
 from core.task_status import TERMINAL_TASK_STATUSES
 from core.agent_visibility import agent_visible_to
 from core.auth import AuthIdentity, is_auth_enabled, resolve_identity
@@ -252,6 +253,7 @@ async def api_runtime_config():
         providers.append(
             RuntimeProviderConfig(
                 provider_id=str(item.get("provider_id") or ""),
+                api_format=normalize_api_format(item.get("api_format")),
                 display_name=str(item.get("display_name") or ""),
                 provider_group=str(item.get("provider_group") or ""),
                 models=list(item.get("models") or []),
