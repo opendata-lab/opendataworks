@@ -16,9 +16,20 @@
         </template>
       </el-menu>
 
-      <div v-if="authStore.enabled && authStore.currentUser" class="settings-user">
-        <el-icon><User /></el-icon>
-        <span class="settings-user__name">{{ authStore.currentUser.display_name }}</span>
+      <div v-if="authStore.enabled && authStore.currentUser" class="settings-footer">
+        <div class="settings-user">
+          <el-dropdown trigger="click" @command="handleUserCommand">
+            <span class="settings-user__trigger">
+              <el-icon><User /></el-icon>
+              <span class="settings-user__name">{{ authStore.currentUser.display_name }}</span>
+            </span>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </div>
     </aside>
 
@@ -84,34 +95,47 @@ const handleSelect = (index) => {
     }
   }
 }
+
+const handleUserCommand = async (command) => {
+  if (command !== 'logout') return
+  const agentId = String(route.query?.agent_id || '').trim()
+  const redirect = route.fullPath || (agentId ? `/chat?agent_id=${encodeURIComponent(agentId)}` : '/chat')
+  await authStore.logout()
+  router.push({ path: '/login', query: { redirect } })
+}
 </script>
 
 <style scoped>
 .settings-layout {
   display: flex;
   height: 100%;
-  background: #f8fafc;
+  background: #f4f7fb;
 }
 
 .settings-sidebar {
   display: flex;
   flex-direction: column;
-  width: 220px;
+  width: 208px;
   flex-shrink: 0;
   background: #ffffff;
-  border-right: 1px solid #e2e8f0;
+  border-right: 1px solid #dbe3ef;
 }
 
 .settings-back {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 18px 20px;
+  height: 69px;
+  padding: 0 16px;
   border: none;
+  border-bottom: 1px solid #eef2f8;
   background: transparent;
   font-size: 14px;
+  font-weight: 500;
   color: #64748b;
   cursor: pointer;
+  box-sizing: border-box;
+  transition: color 150ms ease;
 }
 
 .settings-back:hover {
@@ -119,8 +143,16 @@ const handleSelect = (index) => {
 }
 
 .settings-menu {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;
   border-right: none;
+  padding: 8px 0;
+  overflow-y: auto;
+}
+
+.settings-menu :deep(.el-menu-item) {
+  height: 44px;
+  line-height: 44px;
 }
 
 /* A label, not an entry: it groups what follows and must not read as clickable. */
@@ -131,20 +163,35 @@ const handleSelect = (index) => {
   letter-spacing: 0.04em;
 }
 
+.settings-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .settings-user {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.settings-user__trigger {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid #e2e8f0;
-  font-size: 13px;
-  color: #475569;
+  cursor: pointer;
+  color: #1f2d3d;
+  font-size: 14px;
 }
 
 .settings-user__name {
+  min-width: 0;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .settings-content {
@@ -155,6 +202,16 @@ const handleSelect = (index) => {
 }
 
 @media (max-width: 768px) {
+  .settings-layout {
+    flex-direction: column;
+  }
+
+  .settings-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #dbe3ef;
+  }
+
   .settings-content {
     padding: 16px;
   }

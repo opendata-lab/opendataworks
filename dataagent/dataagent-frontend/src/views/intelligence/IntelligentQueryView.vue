@@ -183,6 +183,7 @@ const handleMenuSelect = (index) => {
   background: transparent;
   color: #64748b;
   cursor: pointer;
+  flex-shrink: 0;
   transition: background 150ms ease, color 150ms ease;
 }
 
@@ -192,9 +193,8 @@ const handleMenuSelect = (index) => {
 }
 
 .intelligent-query-user {
-  flex: 0 0 auto;
-  padding: 12px 16px;
-  border-top: 1px solid #eef2f8;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .intelligent-query-user__trigger {

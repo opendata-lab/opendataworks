@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-const authState = { enabled: true, isAdmin: true, currentUser: { display_name: 'tester' } }
+const logout = vi.fn()
+const authState = { enabled: true, isAdmin: true, currentUser: { display_name: 'tester' }, logout }
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => authState }))
 
 const push = vi.fn()
@@ -16,6 +17,9 @@ const stubs = {
   'el-icon': { template: '<i><slot /></i>' },
   'el-menu': { template: '<div><slot /></div>' },
   'el-menu-item': { props: ['index'], template: '<button><slot /></button>' },
+  'el-dropdown': { template: '<div><slot /><slot name="dropdown" /></div>' },
+  'el-dropdown-menu': { template: '<div><slot /></div>' },
+  'el-dropdown-item': { template: '<div><slot /></div>' },
   'router-view': { template: '<div />' }
 }
 
@@ -57,5 +61,16 @@ describe('SettingsLayout', () => {
     await wrapper.find('.settings-back').trigger('click')
 
     expect(push).toHaveBeenCalledWith('/chat')
+  })
+
+  it('renders user in the footer and supports logout', async () => {
+    const wrapper = mountLayout()
+    const userTrigger = wrapper.find('.settings-user__trigger')
+    expect(userTrigger.exists()).toBe(true)
+    expect(userTrigger.text()).toContain('tester')
+
+    await wrapper.vm.handleUserCommand('logout')
+    expect(logout).toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/chat' } })
   })
 })
