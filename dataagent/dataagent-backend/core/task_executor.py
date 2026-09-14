@@ -886,6 +886,7 @@ async def _execute_task_stream_via_pi_runtime(
     params: TaskExecutionInput,
     *,
     provider_id: str,
+    api_format: str,
     model: str,
     system_prompt: str,
     skill_runtime: dict[str, Any],
@@ -961,6 +962,7 @@ async def _execute_task_stream_via_pi_runtime(
         task_id=params.task_id,
         topic_id=params.topic_id,
         provider_id=provider_id,
+        api_format=api_format,
         model=model,
         system_prompt=system_prompt,
         messages=messages,
@@ -1029,6 +1031,7 @@ async def _execute_task_stream_local(
     cfg = get_settings()
     runtime_target = resolve_runtime_provider_selection(params.provider_id, params.model)
     provider_id = str(runtime_target.get("provider_id") or "")
+    api_format = str(runtime_target.get("api_format") or "/v1/messages")
     supports_partial_messages = bool(runtime_target.get("supports_partial_messages", True))
     model = str(runtime_target.get("model") or cfg.claude_model or "").strip()
     if not model:
@@ -1060,7 +1063,7 @@ async def _execute_task_stream_local(
     system_prompt = _build_system_prompt(params.database_hint, skill_runtime, agent_snapshot)
 
     env_payload = _build_provider_env(
-        str(runtime_target.get("api_format") or runtime_target.get("provider_id") or "/v1/messages"),
+        api_format,
         api_key=str(runtime_target.get("api_key") or ""),
         auth_token=str(runtime_target.get("auth_token") or ""),
         base_url=str(runtime_target.get("base_url") or ""),
@@ -1097,6 +1100,7 @@ async def _execute_task_stream_local(
         return await _execute_task_stream_via_pi_runtime(
             params,
             provider_id=provider_id,
+            api_format=api_format,
             model=model,
             system_prompt=system_prompt,
             skill_runtime=skill_runtime,
@@ -1105,6 +1109,17 @@ async def _execute_task_stream_local(
             provider_env=env_payload,
             agent_snapshot=agent_snapshot,
             cancel_reason=_cancel_reason,
+        )
+
+    if api_format != "/v1/messages":
+        reason = "claude_code runtime 仅支持 /v1/messages；请使用 pi_agent_core 运行 /v1/chat/completions"
+        sdk_writer.append_error(code="unsupported_api_format", message=reason)
+        return TaskExecutionResult(
+            task_status="error",
+            content=reason,
+            error={"code": "unsupported_api_format", "message": reason},
+            provider_id=provider_id,
+            model=model,
         )
 
     try:

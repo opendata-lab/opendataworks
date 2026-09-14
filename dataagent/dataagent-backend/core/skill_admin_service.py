@@ -15,19 +15,15 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import anyio
-
 from config import get_settings, update_settings
-from core.claude_cli import resolve_claude_cli_path
 from core.provider_runtime import (
-    build_provider_env,
     normalize_api_format,
+    request_model_text,
     safe_base_url_for_log,
 )
 from core.skill_admin_store import get_skill_admin_store
 from core.runtime_registry_store import get_runtime_registry_store
 from core.skill_discovery import (
-    resolve_agent_project_cwd,
     resolve_skill_discovery_root_dir,
     resolve_skills_root_dir,
 )
@@ -245,8 +241,7 @@ def _provider_definition(provider_id: str) -> dict[str, Any]:
 
 def _default_provider_settings(provider_id: str) -> dict[str, Any]:
     definition = _provider_definition(provider_id)
-    legacy = str(provider_id or "").strip().lower()
-    default_format = "/v1/chat/completions" if legacy in {"openrouter", "anyrouter", "anthropic_compatible", "openai", "/v1/chat/completions"} else "/v1/messages"
+    default_format = "/v1/messages"
     return {
         "provider_id": provider_id,
         "provider_type": default_format,
@@ -329,7 +324,7 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
         base.update(dict(previous))
     base.update(dict(payload or {}))
 
-    api_format = normalize_api_format(base.get("api_format") or base.get("provider_type") or provider_id)
+    api_format = normalize_api_format(base.get("api_format"))
     provider_type = api_format
 
     provider_enabled_raw = None
@@ -432,6 +427,8 @@ def _compute_provider_validation(
         if fmt == "/v1/messages":
             return ("unverified", "请填写 API Key")
         return ("unverified", "请填写 Token")
+    if not str(base_url or "").strip():
+        return ("unverified", "请填写 API Base URL")
     if not enabled_models:
         return ("unverified", "请启用至少一个模型")
     return ("verified", "模型服务已可用")
@@ -646,6 +643,8 @@ def _detection_preflight(
     token_ready = bool(auth_token or api_key)
     if not token_ready:
         return "API 密钥缺失" if fmt == "/v1/messages" else "Token 缺失"
+    if not str(base_url or "").strip():
+        return "API Base URL 缺失"
     return ""
 
 
@@ -659,22 +658,8 @@ async def _run_model_detection(
     base_url: str,
     supports_partial_messages: bool,
 ) -> tuple[str, str]:
-    try:
-        from claude_agent_sdk import ClaudeAgentOptions, query as claude_query
-    except ImportError as exc:
-        return "failed", f"claude-agent-sdk 未安装: {_short_error(exc)}"
-
-    provider_env = build_provider_env(
-        api_format,
-        api_key=api_key,
-        auth_token=auth_token,
-        base_url=base_url,
-    )
-    runtime_env = dict(os.environ)
-    runtime_env.update(provider_env)
-    cli_path = resolve_claude_cli_path(get_settings())
     logger.info(
-        "model_detection.start provider=%s api_format=%s model=%s base_url=%s supports_partial_messages=%s auth_token_set=%s api_key_set=%s cli_path_set=%s",
+        "model_detection.start provider=%s api_format=%s model=%s base_url=%s supports_partial_messages=%s auth_token_set=%s api_key_set=%s",
         provider_id,
         api_format,
         model,
@@ -682,40 +667,19 @@ async def _run_model_detection(
         supports_partial_messages,
         bool(str(auth_token or "").strip()),
         bool(str(api_key or "").strip()),
-        bool(cli_path),
     )
-    options_kwargs = dict(
-        system_prompt="你是模型服务连通性检测程序。只需用最短文本回答检测请求。",
-        model=model,
-        cwd=str(resolve_agent_project_cwd()),
-        setting_sources=["project"],
-        max_turns=1,
-        allowed_tools=[],
-        mcp_servers={},
-        include_partial_messages=supports_partial_messages,
-        max_buffer_size=max(1024 * 1024, int(get_settings().agent_max_buffer_size_bytes)),
-        env=runtime_env,
-        stderr=lambda line: logger.error(
-            "model_detection.stderr provider=%s model=%s %s",
-            provider_id,
-            model,
-            str(line or "").rstrip(),
-        ),
-    )
-    if cli_path:
-        options_kwargs["cli_path"] = cli_path
-    options = ClaudeAgentOptions(**options_kwargs)
-
     try:
-        with anyio.fail_after(MODEL_DETECTION_TIMEOUT_SECONDS):
-            async for msg in claude_query(prompt="请直接回复 model-service-ok。", options=options):
-                if type(msg).__name__ == "ResultMessage":
-                    subtype = str(getattr(msg, "subtype", "") or "")
-                    if subtype.startswith("error"):
-                        return "failed", "模型服务返回异常"
+        await request_model_text(
+            api_format=api_format,
+            base_url=base_url,
+            api_key=api_key,
+            auth_token=auth_token,
+            model=model,
+            prompt="请直接回复 model-service-ok。",
+            timeout_seconds=MODEL_DETECTION_TIMEOUT_SECONDS,
+            max_output_tokens=32,
+        )
         return "verified", "模型检测通过"
-    except TimeoutError:
-        return "failed", f"模型检测超时（{MODEL_DETECTION_TIMEOUT_SECONDS}s）"
     except Exception as exc:
         return "failed", f"模型检测失败: {_short_error(exc)}"
 
@@ -957,6 +921,7 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
     return {
         "provider_id": normalized_provider_id,
         "provider_type": str(provider.get("provider_type") or "anthropic_compatible"),
+        "api_format": normalize_api_format(provider.get("api_format")),
         "model": selected_model,
         "api_key": str(provider.get("api_key") or ""),
         "auth_token": str(provider.get("auth_token") or ""),

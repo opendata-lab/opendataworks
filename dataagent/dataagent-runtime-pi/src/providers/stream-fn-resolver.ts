@@ -1,5 +1,5 @@
 /**
- * Resolve a StreamFn and Model for the provider the control plane selected.
+ * Resolve a StreamFn and Model for the API format selected by the control plane.
  *
  * main.ts must construct the kernel *with* a resolved StreamFn. A kernel built
  * without one throws on the first run, which is a failure that only shows up in
@@ -28,43 +28,18 @@ interface ProviderProfile {
 }
 
 /**
- * Providers this Cell can drive. Anthropic-compatible and OpenAI-compatible
- * cover every provider DataAgent currently configures; a genuinely new API
- * shape belongs here as a new entry rather than as a special case elsewhere.
+ * Protocol routing is keyed only by api_format. provider_id remains an opaque
+ * registry identity, so adding a custom provider never requires a code change.
  */
-const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
-  anthropic: {
+const API_FORMAT_PROFILES: Record<string, ProviderProfile> = {
+  "/v1/messages": {
     api: "anthropic-messages" as Api,
     streams: anthropicMessagesApi,
     defaultBaseUrl: "https://api.anthropic.com",
     apiKeyEnvVars: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
     baseUrlEnvVars: ["ANTHROPIC_BASE_URL"],
   },
-  anthropic_compatible: {
-    api: "anthropic-messages" as Api,
-    streams: anthropicMessagesApi,
-    defaultBaseUrl: "https://api.anthropic.com",
-    apiKeyEnvVars: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
-    baseUrlEnvVars: ["ANTHROPIC_BASE_URL"],
-  },
-  // The Python side always overwrites ANTHROPIC_BASE_URL/AUTH_TOKEN from the
-  // selected provider before spawning this Cell (build_provider_env), so the
-  // gateway needs no default URL of its own — only the Anthropic API shape.
-  anyrouter: {
-    api: "anthropic-messages" as Api,
-    streams: anthropicMessagesApi,
-    defaultBaseUrl: "https://api.anthropic.com",
-    apiKeyEnvVars: ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"],
-    baseUrlEnvVars: ["ANTHROPIC_BASE_URL"],
-  },
-  openai: {
-    api: "openai-completions" as Api,
-    streams: openAICompletionsApi,
-    defaultBaseUrl: "https://api.openai.com/v1",
-    apiKeyEnvVars: ["OPENAI_API_KEY"],
-    baseUrlEnvVars: ["OPENAI_BASE_URL"],
-  },
-  openai_compatible: {
+  "/v1/chat/completions": {
     api: "openai-completions" as Api,
     streams: openAICompletionsApi,
     defaultBaseUrl: "https://api.openai.com/v1",
@@ -73,7 +48,7 @@ const PROVIDER_PROFILES: Record<string, ProviderProfile> = {
   },
 };
 
-export class ProviderNotSupportedError extends Error {}
+export class ApiFormatNotSupportedError extends Error {}
 export class ProviderCredentialsMissingError extends Error {}
 
 function firstEnv(names: string[]): string | undefined {
@@ -86,20 +61,20 @@ function firstEnv(names: string[]): string | undefined {
   return undefined;
 }
 
-export function resolveProviderProfile(providerId: string): ProviderProfile {
-  const key = String(providerId || "").trim().toLowerCase();
-  const profile = PROVIDER_PROFILES[key];
+export function resolveApiFormatProfile(apiFormat: string): ProviderProfile {
+  const key = String(apiFormat || "").trim().toLowerCase();
+  const profile = API_FORMAT_PROFILES[key];
   if (!profile) {
-    const supported = Object.keys(PROVIDER_PROFILES).join(", ");
-    throw new ProviderNotSupportedError(
-      `Pi 运行时不支持 provider '${providerId}'；当前支持：${supported}`
+    const supported = Object.keys(API_FORMAT_PROFILES).join(", ");
+    throw new ApiFormatNotSupportedError(
+      `Pi 运行时不支持 api_format '${apiFormat}'；当前支持：${supported}`
     );
   }
   return profile;
 }
 
-export function resolveModel(providerId: string, modelId: string): Model<Api> {
-  const profile = resolveProviderProfile(providerId);
+export function resolveModel(providerId: string, modelId: string, apiFormat: string): Model<Api> {
+  const profile = resolveApiFormatProfile(apiFormat);
   const baseUrl = firstEnv(profile.baseUrlEnvVars) ?? profile.defaultBaseUrl;
 
   return {
@@ -116,8 +91,12 @@ export function resolveModel(providerId: string, modelId: string): Model<Api> {
   } as unknown as Model<Api>;
 }
 
-export function resolveStreamFn(providerId: string, cacheRetention?: string): StreamFn {
-  const profile = resolveProviderProfile(providerId);
+export function resolveStreamFn(
+  providerId: string,
+  apiFormat: string,
+  cacheRetention?: string
+): StreamFn {
+  const profile = resolveApiFormatProfile(apiFormat);
   const apiKey = firstEnv(profile.apiKeyEnvVars);
   if (!apiKey) {
     throw new ProviderCredentialsMissingError(
@@ -168,10 +147,11 @@ export function toPiCacheRetention(
 export function resolveRuntimeModel(
   providerId: string,
   modelId: string,
+  apiFormat: string,
   cacheRetention?: string
 ): ResolvedRuntimeModel {
   return {
-    model: resolveModel(providerId, modelId),
-    streamFn: resolveStreamFn(providerId, cacheRetention),
+    model: resolveModel(providerId, modelId, apiFormat),
+    streamFn: resolveStreamFn(providerId, apiFormat, cacheRetention),
   };
 }

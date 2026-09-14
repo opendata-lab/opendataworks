@@ -461,19 +461,20 @@ def test_current_settings_does_not_fallback_when_provider_registry_is_unavailabl
         skill_admin_service.current_settings_payload()
 
 
-def test_resolve_runtime_provider_selection_returns_partial_capability(monkeypatch):
+def test_resolve_runtime_provider_selection_returns_api_format_and_partial_capability(monkeypatch):
     monkeypatch.setattr(
         skill_admin_service,
         "current_settings_payload",
         lambda: {
-            "provider_id": "anthropic_compatible",
+            "provider_id": "custom_gateway",
             "model": "claude-sonnet-4.5",
             "provider_settings": {
-                "anthropic_compatible": {
-                    "provider_id": "anthropic_compatible",
+                "custom_gateway": {
+                    "provider_id": "custom_gateway",
                     "provider_enabled": True,
                     "auth_token": "relay-token",
                     "base_url": "https://relay.example.invalid",
+                    "api_format": "/v1/chat/completions",
                     "enabled_models": ["claude-sonnet-4.5"],
                     "model_detections": {},
                     "supports_partial_messages": False,
@@ -482,8 +483,9 @@ def test_resolve_runtime_provider_selection_returns_partial_capability(monkeypat
         },
     )
 
-    resolved = skill_admin_service.resolve_runtime_provider_selection("anthropic_compatible", "claude-sonnet-4.5")
-    assert resolved["provider_id"] == "anthropic_compatible"
+    resolved = skill_admin_service.resolve_runtime_provider_selection("custom_gateway", "claude-sonnet-4.5")
+    assert resolved["provider_id"] == "custom_gateway"
+    assert resolved["api_format"] == "/v1/chat/completions"
     assert resolved["model"] == "claude-sonnet-4.5"
     assert resolved["supports_partial_messages"] is False
 
@@ -548,21 +550,11 @@ def test_resolve_runtime_provider_selection_requires_enabled_provider(monkeypatc
 def test_detect_model_availability_returns_verified_detection(monkeypatch):
     captured = {}
 
-    class FakeOptions:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
+    async def fake_request_model_text(**kwargs):
+        captured.update(kwargs)
+        return "model-service-ok"
 
-    async def fake_query(prompt, options):
-        captured["prompt"] = prompt
-        captured["options"] = options.kwargs
-        yield types.SimpleNamespace(subtype="")
-
-    monkeypatch.setitem(
-        sys.modules,
-        "claude_agent_sdk",
-        types.SimpleNamespace(ClaudeAgentOptions=FakeOptions, query=fake_query),
-    )
-    monkeypatch.setattr(skill_admin_service, "resolve_agent_project_cwd", lambda: Path("/tmp"))
+    monkeypatch.setattr(skill_admin_service, "request_model_text", fake_request_model_text)
     monkeypatch.setattr(
         skill_admin_service,
         "current_settings_payload",
@@ -573,6 +565,7 @@ def test_detect_model_availability_returns_verified_detection(monkeypatch):
                 "openrouter": {
                     "provider_id": "openrouter",
                     "provider_enabled": True,
+                    "api_format": "/v1/chat/completions",
                     "auth_token": "saved-token",
                     "base_url": "https://openrouter.ai/api",
                     "enabled_models": [],
@@ -592,7 +585,9 @@ def test_detect_model_availability_returns_verified_detection(monkeypatch):
     )
 
     assert result["status"] == "verified"
-    assert captured["options"]["model"] == "anthropic/claude-sonnet-4.5"
+    assert captured["model"] == "anthropic/claude-sonnet-4.5"
+    assert captured["api_format"] == "/v1/chat/completions"
+    assert captured["base_url"] == "https://openrouter.ai/api"
 
 
 def test_detect_model_availability_returns_failed_without_token(monkeypatch):
@@ -606,6 +601,7 @@ def test_detect_model_availability_returns_failed_without_token(monkeypatch):
                 "openrouter": {
                     "provider_id": "openrouter",
                     "provider_enabled": True,
+                    "api_format": "/v1/chat/completions",
                     "auth_token": "",
                     "base_url": "https://openrouter.ai/api",
                     "enabled_models": [],

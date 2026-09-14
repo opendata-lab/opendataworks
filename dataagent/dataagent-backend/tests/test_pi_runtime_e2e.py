@@ -46,6 +46,7 @@ def _context(tmp_path: Path, provider_id: str, model_id: str) -> PiRunContext:
         task_id="task-e2e-1",
         topic_id="topic-e2e",
         provider_id=provider_id,
+        api_format="/v1/messages",
         model=model_id,
         system_prompt="你是 OpenDataWorks 的数据助手。",
         messages=[{"role": "user", "content": "你好"}],

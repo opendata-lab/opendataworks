@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import anyio
 
@@ -14,43 +13,27 @@ from core import followup_suggestions
 from core.followup_suggestions import generate_followup_suggestions
 
 
-def test_default_model_runner_uses_bounded_ten_turn_budget(monkeypatch, tmp_path):
-    class FakeOptions:
-        last_kwargs = None
+def test_default_model_runner_uses_api_format_http_contract(monkeypatch):
+    captured = {}
 
-        def __init__(self, **kwargs):
-            FakeOptions.last_kwargs = kwargs
+    async def fake_request_model_text(**kwargs):
+        captured.update(kwargs)
+        return '{"suggestions":["查看异常波动对应的明细"]}'
 
-    class AssistantMessage:
-        content = '{"suggestions":["查看异常波动对应的明细"]}'
-
-    class ResultMessage:
-        subtype = "success"
-        result = ""
-
-    async def fake_query(*, prompt, options):
-        yield AssistantMessage()
-        yield ResultMessage()
-
-    monkeypatch.setitem(
-        sys.modules,
-        "claude_agent_sdk",
-        SimpleNamespace(ClaudeAgentOptions=FakeOptions, query=fake_query),
-    )
+    monkeypatch.setattr(followup_suggestions, "request_model_text", fake_request_model_text)
     monkeypatch.setattr(
         followup_suggestions,
         "resolve_runtime_provider_selection",
         lambda provider_id, model: {
             "provider_id": provider_id,
             "model": model,
-            "api_key": "",
+            "api_format": "/v1/chat/completions",
+            "api_key": "secret",
             "auth_token": "",
-            "base_url": "",
+            "base_url": "https://gateway.example/v1",
             "supports_partial_messages": False,
         },
     )
-    monkeypatch.setattr(followup_suggestions, "resolve_agent_project_cwd", lambda: tmp_path)
-    monkeypatch.setattr(followup_suggestions, "resolve_claude_cli_path", lambda _cfg: None)
 
     async def run():
         return await followup_suggestions._default_model_runner(  # noqa: SLF001
@@ -63,7 +46,10 @@ def test_default_model_runner_uses_bounded_ten_turn_budget(monkeypatch, tmp_path
     result = anyio.run(run)
 
     assert result == '{"suggestions":["查看异常波动对应的明细"]}'
-    assert FakeOptions.last_kwargs["max_turns"] == 10
+    assert captured["api_format"] == "/v1/chat/completions"
+    assert captured["base_url"] == "https://gateway.example/v1"
+    assert captured["model"] == "anthropic/claude-sonnet-4.5"
+    assert captured["timeout_seconds"] == 3
 
 
 def test_generate_followup_suggestions_parses_and_normalizes_model_json():
