@@ -1101,6 +1101,7 @@ def test_execute_task_stream_uses_message_level_sdk_text_when_partial_disabled(m
         "resolve_runtime_provider_selection",
         lambda provider_id, model: {
             "provider_id": "anthropic_compatible",
+            "api_format": "/v1/messages",
             "model": model,
             "api_key": "",
             "auth_token": "token",
@@ -1120,7 +1121,7 @@ def test_execute_task_stream_uses_message_level_sdk_text_when_partial_disabled(m
     assert result.task_status == "finished"
     assert result.content == "最终回答"
     assert ClaudeAgentOptions.last_kwargs["include_partial_messages"] is False
-    assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == "1"
+    assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
     assert emitted == []
 
 

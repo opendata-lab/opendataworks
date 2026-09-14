@@ -69,7 +69,16 @@ def _params(**overrides: Any) -> TaskExecutionInput:
     return TaskExecutionInput(**defaults)
 
 
-async def _run_adapter(monkeypatch, tmp_path: Path, outcome: PiRunOutcome, captured: dict[str, Any]):
+async def _run_adapter(
+    monkeypatch,
+    tmp_path: Path,
+    outcome: PiRunOutcome,
+    captured: dict[str, Any],
+    *,
+    provider_id: str = "anthropic",
+    api_format: str = "/v1/messages",
+    provider_env: dict[str, str] | None = None,
+):
     store = _FakeStore()
     monkeypatch.setattr(task_executor, "get_topic_task_store", lambda: store)
     monkeypatch.setattr("core.pi_runtime.resolve_cell_command", lambda cfg=None: ["/bin/true"])
@@ -85,13 +94,14 @@ async def _run_adapter(monkeypatch, tmp_path: Path, outcome: PiRunOutcome, captu
 
     return await task_executor._execute_task_stream_via_pi_runtime(
         _params(),
-        provider_id="anthropic",
+        provider_id=provider_id,
+        api_format=api_format,
         model="test-model",
         system_prompt="sys",
         skill_runtime={"enabled_roots": {}},
         project_cwd=tmp_path,
         runtime_env={"DATAAGENT_PYTHON_BIN": sys.executable},
-        provider_env={"ANTHROPIC_API_KEY": "sk-x"},
+        provider_env=provider_env or {"ANTHROPIC_API_KEY": "sk-x"},
         agent_snapshot=None,
         cancel_reason=_no_cancel,
     )
@@ -108,6 +118,33 @@ async def test_success_outcome_becomes_finished_result(monkeypatch, tmp_path: Pa
     assert result.task_status == "finished"
     assert result.content == "趋势结果"
     assert result.provider_id == "anthropic"
+    assert captured["ctx"].api_format == "/v1/messages"
+    assert captured["ctx"].to_init_payload()["model"]["api_format"] == "/v1/messages"
+
+
+@pytest.mark.asyncio
+async def test_custom_provider_openai_format_reaches_pi_init_unchanged(monkeypatch, tmp_path: Path):
+    captured: dict[str, Any] = {}
+    result = await _run_adapter(
+        monkeypatch,
+        tmp_path,
+        PiRunOutcome(terminal_status="success", answer="ok"),
+        captured,
+        provider_id="company_gateway",
+        api_format="/v1/chat/completions",
+        provider_env={
+            "OPENAI_API_KEY": "sk-x",
+            "OPENAI_BASE_URL": "https://gateway.example/api/v1",
+        },
+    )
+
+    assert result.task_status == "finished"
+    assert result.provider_id == "company_gateway"
+    assert captured["ctx"].to_init_payload()["model"] == {
+        "provider_id": "company_gateway",
+        "api_format": "/v1/chat/completions",
+        "model_id": "test-model",
+    }
 
 
 @pytest.mark.asyncio
@@ -191,6 +228,7 @@ async def test_missing_pi_runtime_reports_error_instead_of_raising(monkeypatch, 
     result = await task_executor._execute_task_stream_via_pi_runtime(
         _params(),
         provider_id="anthropic",
+        api_format="/v1/messages",
         model="test-model",
         system_prompt="sys",
         skill_runtime={"enabled_roots": {}},
@@ -258,6 +296,7 @@ async def test_mcp_servers_and_history_forwarded(monkeypatch, tmp_path: Path):
     result = await task_executor._execute_task_stream_via_pi_runtime(
         params,
         provider_id="anthropic",
+        api_format="/v1/messages",
         model="test-model",
         system_prompt="sys",
         skill_runtime={"enabled_roots": {"test-skill": "/skills/test"}},

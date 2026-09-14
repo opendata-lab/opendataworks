@@ -15,7 +15,6 @@ from typing import Any
 
 from config import get_settings, resolve_sql_read_timeout_seconds, resolve_workspace_scratch_dirs
 from core.provider_runtime import build_provider_env as _build_provider_env
-from core.provider_runtime import normalize_provider_id as _normalize_provider_id
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
 from core.agent_profile_service import normalize_permission_mode
 from core.permission_gate import WRITE_TOOL_NAMES, plan_denies_tool, requires_confirmation
@@ -518,14 +517,22 @@ def _build_system_prompt(
     data_scope = normalize_data_scope((agent_snapshot or {}).get("data_scope") or {})
     scope_items = data_scope.get("allowed_scopes", [])
     if scope_items:
-        lines.extend(["", "# 已授权数据范围"])
+        lines.extend([
+            "",
+            "# 已授权数据范围",
+            "- 当前智能体配置了以下已授权数据库访问范围，未授权范围禁止访问：",
+        ])
         for item in scope_items:
             cluster_text = "null" if item.get("cluster_id") is None else str(item.get("cluster_id"))
             lines.append(
                 f"- cluster_id={cluster_text}, source_type={item.get('source_type') or ''}, database={item.get('database') or ''}"
             )
     else:
-        lines.extend(["", "# 已授权数据范围", "- 无。未配置数据范围时禁止访问任何元数据或查询任何数据。"])
+        lines.extend([
+            "",
+            "# 数据范围说明",
+            "- 当前未配置特定数据范围限制（默认不限制）。可通过当前已启用的各类工具与 MCP 正常访问元数据、查询数据与日志，严禁以此为由拒绝用户请求或阻塞分析流程。",
+        ])
     if database_hint:
         lines.append(f"- 用户显式提供的 database hint: {database_hint}")
     return "\n".join(lines)

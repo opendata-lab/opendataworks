@@ -176,7 +176,7 @@ class RuntimeRegistryStore:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT provider_id, provider_type, display_name, provider_group, base_url,
+                    SELECT provider_id, provider_type, api_format, display_name, provider_group, base_url,
                            api_key, auth_token, provider_enabled, supports_partial_messages,
                            enabled_models_json, custom_models_json, models_json, model_detections_json,
                            validation_status, validation_message, validated_at, created_at, updated_at
@@ -196,7 +196,7 @@ class RuntimeRegistryStore:
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    SELECT provider_id, provider_type, display_name, provider_group, base_url,
+                    SELECT provider_id, provider_type, api_format, display_name, provider_group, base_url,
                            api_key, auth_token, provider_enabled, supports_partial_messages,
                            enabled_models_json, custom_models_json, models_json, model_detections_json,
                            validation_status, validation_message, validated_at, created_at, updated_at
@@ -217,13 +217,13 @@ class RuntimeRegistryStore:
                 cur.execute(
                     """
                     INSERT INTO da_model_provider (
-                        provider_id, provider_type, display_name, provider_group, base_url,
+                        provider_id, provider_type, api_format, display_name, provider_group, base_url,
                         api_key, auth_token, provider_enabled, supports_partial_messages,
                         enabled_models_json, custom_models_json, models_json, model_detections_json,
                         validation_status, validation_message, validated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
-                        provider_type = VALUES(provider_type), display_name = VALUES(display_name),
+                        provider_type = VALUES(provider_type), api_format = VALUES(api_format), display_name = VALUES(display_name),
                         provider_group = VALUES(provider_group), base_url = VALUES(base_url),
                         api_key = VALUES(api_key), auth_token = VALUES(auth_token),
                         provider_enabled = VALUES(provider_enabled),
@@ -236,7 +236,10 @@ class RuntimeRegistryStore:
                         updated_at = CURRENT_TIMESTAMP
                     """,
                     (
-                        payload["provider_id"], payload["provider_type"], payload["display_name"],
+                        payload["provider_id"],
+                        payload["provider_type"],
+                        str(payload.get("api_format") or "/v1/messages"),
+                        payload["display_name"],
                         payload.get("provider_group", ""), payload.get("base_url", ""),
                         payload.get("api_key", ""), payload.get("auth_token", ""),
                         int(bool(payload.get("provider_enabled"))),
@@ -297,6 +300,7 @@ class RuntimeRegistryStore:
         return {
             "provider_id": str(row.get("provider_id") or ""),
             "provider_type": str(row.get("provider_type") or "anthropic_compatible"),
+            "api_format": str(row.get("api_format") or "/v1/messages"),
             "display_name": str(row.get("display_name") or row.get("provider_id") or ""),
             "provider_group": str(row.get("provider_group") or ""),
             "base_url": str(row.get("base_url") or ""),

@@ -43,6 +43,7 @@ def _context(tmp_path: Path, **overrides: Any) -> PiRunContext:
         task_id="task-1",
         topic_id="topic-1",
         provider_id="anthropic",
+        api_format="/v1/messages",
         model="test-model",
         system_prompt="sys",
         messages=[{"role": "user", "content": "hi"}],
@@ -98,6 +99,7 @@ async def test_happy_path_streams_events_and_reports_success(tmp_path: Path):
         assert init["type"] == "cell.init", init
         # The init payload is the run spec itself, not a wrapper around it.
         assert init["payload"]["model"]["model_id"] == "test-model"
+        assert init["payload"]["model"]["api_format"] == "/v1/messages"
         assert init["payload"]["system_prompt"] == "sys"
         assert init["payload"]["limits"]["total_timeout_seconds"] == 10
         send("cell.ready", {"manifest": {"runtime_kind": "pi_agent_core"}})

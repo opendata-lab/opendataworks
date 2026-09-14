@@ -3,30 +3,23 @@
     <div v-loading="loading" class="provider-workbench">
       <aside class="provider-nav">
         <div class="provider-nav-body">
-          <div
-            v-for="group in groupedProviders"
-            :key="group.group"
-            class="provider-group"
+          <button
+            v-for="provider in providers"
+            :key="provider.provider_id"
+            type="button"
+            class="provider-card"
+            :class="{ active: provider.provider_id === selectedProviderId }"
+            @click="selectProvider(provider.provider_id)"
           >
-            <div class="provider-group-title">{{ group.group }}</div>
-            <button
-              v-for="provider in group.items"
-              :key="provider.provider_id"
-              type="button"
-              class="provider-card"
-              :class="{ active: provider.provider_id === selectedProviderId }"
-              @click="selectProvider(provider.provider_id)"
-            >
-              <div class="provider-card-head">
-                <div class="provider-card-name">{{ provider.name || provider.display_name }}</div>
-                <span
-                  class="provider-dot"
-                  :class="statusClass(providerPreview(provider).status)"
-                  :title="statusLabel(providerPreview(provider).status, providerPreview(provider).providerEnabled)"
-                />
-              </div>
-            </button>
-          </div>
+            <div class="provider-card-head">
+              <div class="provider-card-name">{{ providerDrafts[provider.provider_id]?.name || provider.display_name }}</div>
+              <span
+                class="provider-dot"
+                :class="statusClass(providerPreview(provider).status)"
+                :title="statusLabel(providerPreview(provider).status, providerPreview(provider).providerEnabled)"
+              />
+            </div>
+          </button>
         </div>
 
         <div class="provider-nav-footer">
@@ -122,30 +115,34 @@
                   <template #label>
                     <span class="field-label">
                       API Base URL
-                      <el-tooltip content="供应商或兼容网关的 API 服务地址。可从下拉列表选择常见厂商，或直接输入自定义 URL。" placement="top">
+                      <el-tooltip content="供应商或兼容网关的 API 服务地址。" placement="top">
                         <el-icon><QuestionFilled /></el-icon>
                       </el-tooltip>
                     </span>
                   </template>
-                  <el-select
+                  <el-input
                     v-model="currentDraft.base_url"
-                    filterable
-                    allow-create
-                    default-first-option
+                    placeholder="https://api.example.com/v1"
                     clearable
-                    placeholder="选择预置地址，或输入自定义 Base URL"
+                    @input="clearCurrentDetections"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :md="8">
+                <el-form-item label="API 格式">
+                  <el-select
+                    v-model="currentDraft.api_format"
                     class="full-width"
                     @change="clearCurrentDetections"
                   >
-                    <el-option
-                      v-for="preset in BASE_URL_PRESETS"
-                      :key="preset.value"
-                      :label="preset.label"
-                      :value="preset.value"
-                    />
+                    <el-option label="Anthropic Messages (/v1/messages)" value="/v1/messages" />
+                    <el-option label="OpenAI Chat Completions (/v1/chat/completions)" value="/v1/chat/completions" />
                   </el-select>
                 </el-form-item>
               </el-col>
+            </el-row>
+
+            <el-row :gutter="16">
               <el-col :xs="24" :md="8">
                 <el-form-item>
                   <template #label>
@@ -174,14 +171,14 @@
           <div class="section-heading model-heading">
             <div>
               <div class="section-title">模型列表</div>
-              <div class="section-subtitle">连接检测和高级参数都在对应模型行内处理。</div>
+              <div class="section-subtitle">添加模型后可在聊天中使用。</div>
             </div>
             <div class="model-toolbar">
               <div class="default-model-control">
                 <span>默认模型</span>
                 <el-select
                   v-model="currentDefaultModel"
-                  placeholder="请先启用模型"
+                  placeholder="请先添加模型"
                   :disabled="!currentEnabledModels.length"
                   class="default-model-select"
                 >
@@ -193,14 +190,7 @@
                   />
                 </el-select>
               </div>
-              <div class="custom-model-row">
-                <el-input
-                  v-model="customModelInput"
-                  placeholder="模型 ID，例如：gpt-4o"
-                  @keyup.enter="addCustomModel"
-                />
-                <el-button :icon="Plus" plain @click="addCustomModel">添加</el-button>
-              </div>
+              <el-button :icon="Plus" plain @click="openAddModelDialog">添加模型</el-button>
             </div>
           </div>
 
@@ -209,7 +199,6 @@
               v-for="model in currentModelRows"
               :key="model.id"
               class="model-card"
-              :class="{ 'is-disabled': !isModelEnabled(model.id) }"
             >
               <div class="model-row-main">
                 <div class="model-name-cell">
@@ -236,9 +225,9 @@
                     :icon="EditPen"
                     size="small"
                     class="model-icon-button"
-                    :title="isAdvancedOpen(model.id) ? '收起模型设置' : '编辑模型设置'"
-                    :aria-label="isAdvancedOpen(model.id) ? '收起模型设置' : '编辑模型设置'"
-                    @click="toggleAdvanced(model.id)"
+                    title="编辑模型"
+                    aria-label="编辑模型"
+                    @click="openEditModelDialog(model.id)"
                   />
                   <el-button
                     text
@@ -264,54 +253,55 @@
                   重新检测
                 </el-button>
               </div>
-
-              <div v-if="isAdvancedOpen(model.id)" class="model-advanced-pane">
-                <el-row :gutter="16">
-                  <el-col :xs="24">
-                    <div class="model-enabled-control">
-                      <div>
-                        <div class="model-enabled-title">用于对话</div>
-                        <div class="model-enabled-desc">关闭后，该模型不会出现在默认模型和对话选择中。</div>
-                      </div>
-                      <el-switch
-                        :model-value="isModelEnabled(model.id)"
-                        :disabled="!canEnableModel(model.id)"
-                        @update:model-value="setModelEnabled(model.id, $event)"
-                      />
-                    </div>
-                  </el-col>
-                  <el-col :xs="24" :sm="12">
-                    <el-form-item label="Max Output Tokens">
-                      <el-input-number
-                        v-model="model.details.max_output_tokens"
-                        :min="1"
-                        :max="2000000"
-                        :step="1024"
-                        placeholder="如 4096"
-                        class="full-width"
-                      />
-                    </el-form-item>
-                  </el-col>
-                  <el-col :xs="24" :sm="12">
-                    <el-form-item label="Context Window">
-                      <el-input-number
-                        v-model="model.details.context_window"
-                        :min="1"
-                        :max="10000000"
-                        :step="8192"
-                        placeholder="如 128000"
-                        class="full-width"
-                      />
-                    </el-form-item>
-                  </el-col>
-                </el-row>
-              </div>
             </div>
           </div>
-          <div v-else class="empty-block">还没有模型。输入模型 ID 后点击「添加」。</div>
+          <div v-else class="empty-block">当前没有配置模型，添加模型后可在聊天中使用。</div>
         </div>
       </section>
     </div>
+
+    <!-- 添加/编辑模型弹窗 -->
+    <el-dialog
+      v-model="modelDialogVisible"
+      :title="modelDialogMode === 'add' ? '添加模型' : '编辑模型'"
+      width="520px"
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <el-form label-position="top">
+        <el-form-item label="模型 ID">
+          <el-input
+            v-model="modelDialogForm.id"
+            placeholder="模型 ID"
+            :disabled="modelDialogMode === 'edit'"
+          />
+        </el-form-item>
+        <el-form-item label="上下文窗口">
+          <el-input-number
+            v-model="modelDialogForm.context_window"
+            :min="1"
+            :max="10000000"
+            :step="8192"
+            placeholder="1000000"
+            class="full-width"
+          />
+        </el-form-item>
+        <el-form-item label="最大输出 Token">
+          <el-input-number
+            v-model="modelDialogForm.max_output_tokens"
+            :min="1"
+            :max="2000000"
+            :step="1024"
+            placeholder="128000"
+            class="full-width"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="modelDialogVisible = false">取消</el-button>
+        <el-button type="primary" :disabled="!modelDialogForm.id?.trim()" @click="saveModelDialog">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -321,25 +311,20 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Check, Connection, Delete, EditPen, Plus, QuestionFilled } from '@element-plus/icons-vue'
 import { dataagentApi } from '@/api/dataagent'
 
-const BASE_URL_PRESETS = [
-  { label: 'Anthropic 官方（https://api.anthropic.com）', value: 'https://api.anthropic.com' },
-  { label: 'OpenAI 官方（https://api.openai.com/v1）', value: 'https://api.openai.com/v1' },
-  { label: 'OpenRouter（https://openrouter.ai/api）', value: 'https://openrouter.ai/api' },
-  { label: 'DeepSeek（https://api.deepseek.com）', value: 'https://api.deepseek.com' },
-  { label: 'SiliconFlow 硅基流动（https://api.siliconflow.cn/v1）', value: 'https://api.siliconflow.cn/v1' },
-  { label: '阿里云百炼 DashScope（https://dashscope.aliyuncs.com/compatible-mode/v1）', value: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-  { label: '智谱 BigModel（https://open.bigmodel.cn/api/paas/v4）', value: 'https://open.bigmodel.cn/api/paas/v4' },
-  { label: 'AnyRouter（https://a-ocnfniawgw.cn-shanghai.fcapp.run）', value: 'https://a-ocnfniawgw.cn-shanghai.fcapp.run' },
-  { label: '本地 Ollama（http://localhost:11434/v1）', value: 'http://localhost:11434/v1' },
-  { label: '本地 vLLM（http://localhost:8000/v1）', value: 'http://localhost:8000/v1' }
-]
-
 const loading = ref(false)
 const savingProviderId = ref('')
 const providers = ref([])
 const selectedProviderId = ref('')
-const customModelInput = ref('')
 const providerNameInput = ref(null)
+
+// 模型弹窗
+const modelDialogVisible = ref(false)
+const modelDialogMode = ref('add')
+const modelDialogForm = reactive({
+  id: '',
+  context_window: 1000000,
+  max_output_tokens: 128000
+})
 const advancedOpenMap = reactive({})
 
 const providerDrafts = reactive({})
@@ -354,11 +339,26 @@ const savedSelection = reactive({
   model: ''
 })
 
+const customModelInput = ref('')
+
 const uniqueStrings = (values = []) => {
   const result = []
   const seen = new Set()
   values.forEach((value) => {
-    const text = String(value || '').trim()
+    let text = ''
+    if (typeof value === 'object' && value !== null) {
+      text = String(value.id || value.model_id || '').trim()
+    } else {
+      text = String(value || '').trim()
+      if (text.startsWith('{') && text.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(text)
+          if (parsed && typeof parsed === 'object') {
+            text = String(parsed.id || parsed.model_id || '').trim()
+          }
+        } catch {}
+      }
+    }
     if (!text || seen.has(text)) return
     seen.add(text)
     result.push(text)
@@ -386,11 +386,40 @@ const normalizeModelItems = (rawModels = []) => {
   if (!Array.isArray(rawModels)) return []
   return rawModels.map((item) => {
     if (typeof item === 'string') {
-      return { id: item, max_output_tokens: null, context_window: null }
+      let trimmed = item.trim()
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (parsed && typeof parsed === 'object') {
+            const parsedId = String(parsed.id || parsed.model_id || '').trim()
+            if (parsedId) {
+              return {
+                id: parsedId,
+                max_output_tokens: parsed.max_output_tokens ?? null,
+                context_window: parsed.context_window ?? null
+              }
+            }
+          }
+        } catch {}
+      }
+      return { id: trimmed, max_output_tokens: null, context_window: null }
     }
     if (item && typeof item === 'object') {
+      let id = item.id || item.model_id || ''
+      if (typeof id === 'object' && id !== null) {
+        id = id.id || id.model_id || ''
+      }
+      id = String(id || '').trim()
+      if (id.startsWith('{') && id.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(id)
+          if (parsed && typeof parsed === 'object') {
+            id = String(parsed.id || parsed.model_id || '').trim()
+          }
+        } catch {}
+      }
       return {
-        id: item.id || item.model_id || '',
+        id,
         max_output_tokens: item.max_output_tokens ?? null,
         context_window: item.context_window ?? null
       }
@@ -401,7 +430,37 @@ const normalizeModelItems = (rawModels = []) => {
 
 const getModelIds = (list = []) => {
   if (!Array.isArray(list)) return []
-  return list.map((m) => (typeof m === 'string' ? m : m?.id || m?.model_id || '')).filter(Boolean)
+  return list.map((m) => {
+    if (typeof m === 'string') {
+      let trimmed = m.trim()
+      if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (parsed && typeof parsed === 'object') {
+            return String(parsed.id || parsed.model_id || '').trim()
+          }
+        } catch {}
+      }
+      return trimmed
+    }
+    if (m && typeof m === 'object') {
+      let id = m.id || m.model_id || ''
+      if (typeof id === 'object' && id !== null) {
+        id = id.id || id.model_id || ''
+      }
+      let strId = String(id || '').trim()
+      if (strId.startsWith('{') && strId.endsWith('}')) {
+        try {
+          const parsed = JSON.parse(strId)
+          if (parsed && typeof parsed === 'object') {
+            return String(parsed.id || parsed.model_id || '').trim()
+          }
+        } catch {}
+      }
+      return strId
+    }
+    return ''
+  }).filter(Boolean)
 }
 
 const buildProviderDraft = (provider) => {
@@ -437,10 +496,13 @@ const buildProviderDraft = (provider) => {
     ? getModelIds(provider.enabled_models)
     : (rawModelIds.length ? rawModelIds : uniqueStrings(provider.models || []))
 
+  const apiFormat = provider.api_format === '/v1/chat/completions' ? '/v1/chat/completions' : '/v1/messages'
+
   return {
     provider_id: provider.provider_id,
     name: provider.name || provider.display_name || provider.provider_id,
-    provider_group: provider.provider_group || provider.group || '其他',
+    provider_group: provider.provider_group || provider.group || '',
+    api_format: apiFormat,
     provider_enabled: Boolean(provider.provider_enabled || provider.enabled),
     token: '',
     base_url: provider.base_url || '',
@@ -459,6 +521,7 @@ const buildProviderSnapshot = (draft) => {
   const enabledModels = uniqueStrings(draft?.enabled_models)
   return {
     name: String(draft?.name || '').trim(),
+    api_format: draft?.api_format || '/v1/messages',
     provider_enabled: Boolean(draft?.provider_enabled),
     token: String(draft?.token || '').trim(),
     base_url: String(draft?.base_url || '').trim(),
@@ -485,8 +548,8 @@ const statusClass = (status) => {
   return 'is-pending'
 }
 
-const credentialLabel = (providerId) => (providerId === 'anthropic' ? 'API Key' : 'API Key / Token')
-const credentialPlaceholder = (providerId) => (providerId === 'anthropic' ? '留空保持现有 API Key' : '输入访问凭证，留空保持现有配置')
+const credentialLabel = (providerId) => (currentDraft.value?.api_format === '/v1/chat/completions' ? 'API Key / Token' : 'API Key')
+const credentialPlaceholder = (providerId) => (currentDraft.value?.api_format === '/v1/chat/completions' ? '输入 API Key / Token，留空保持现有配置' : '输入 API Key，留空保持现有配置')
 
 const groupedProviders = computed(() => {
   const groups = new Map()
@@ -511,7 +574,7 @@ const currentProviderId = computed(() => currentProvider.value?.provider_id || '
 
 const canDeleteCurrentProvider = computed(() => {
   if (!currentProvider.value) return false
-  return currentDraft.value?.is_new || currentProvider.value.provider_group === '自定义供应商' || providers.value.length > 1
+  return currentDraft.value?.is_new || providers.value.length > 1
 })
 
 const currentDefaultModel = computed({
@@ -879,7 +942,8 @@ const addNewProvider = () => {
     provider_id: newId,
     name: '新建供应商',
     display_name: '新建供应商',
-    provider_group: '自定义供应商',
+    provider_group: '',
+    api_format: '/v1/messages',
     base_url: '',
     token: '',
     auth_token_set: false,
@@ -901,27 +965,77 @@ const addNewProvider = () => {
   selectedProviderId.value = newId
 }
 
-const addCustomModel = () => {
+const openAddModelDialog = () => {
+  modelDialogMode.value = 'add'
+  modelDialogForm.id = ''
+  modelDialogForm.context_window = 1000000
+  modelDialogForm.max_output_tokens = 128000
+  modelDialogVisible.value = true
+}
+
+const openEditModelDialog = (modelId) => {
+  modelDialogMode.value = 'edit'
+  const details = currentDraft.value?.model_details?.[modelId] || {}
+  modelDialogForm.id = modelId
+  modelDialogForm.context_window = details.context_window ?? 1000000
+  modelDialogForm.max_output_tokens = details.max_output_tokens ?? 128000
+  modelDialogVisible.value = true
+}
+
+const saveModelDialog = () => {
   if (!currentDraft.value) return
-  const model = String(customModelInput.value || '').trim()
-  if (!model) return
-  currentDraft.value.custom_models = uniqueStrings([...(currentDraft.value.custom_models || []), model])
+  let modelId = String(modelDialogForm.id || '').trim()
+  if (modelId.startsWith('{') && modelId.endsWith('}')) {
+    try {
+      const parsed = JSON.parse(modelId)
+      if (parsed && typeof parsed === 'object') {
+        modelId = String(parsed.id || parsed.model_id || '').trim()
+      }
+    } catch {}
+  }
+  if (!modelId) return
+
+  if (modelDialogMode.value === 'add') {
+    currentDraft.value.custom_models = uniqueStrings([...(currentDraft.value.custom_models || []), modelId])
+    currentDraft.value.enabled_models = uniqueStrings([...(currentDraft.value.enabled_models || []), modelId])
+  }
+
   if (!currentDraft.value.model_details) {
     currentDraft.value.model_details = {}
   }
-  if (!currentDraft.value.model_details[model]) {
-    currentDraft.value.model_details[model] = {
-      max_output_tokens: null,
-      context_window: null
-    }
+  currentDraft.value.model_details[modelId] = {
+    max_output_tokens: modelDialogForm.max_output_tokens ?? null,
+    context_window: modelDialogForm.context_window ?? null
   }
-  if (!currentDraft.value.model_detections[model]) {
-    currentDraft.value.model_detections[model] = {
+
+  if (!currentDraft.value.model_detections) {
+    currentDraft.value.model_detections = {}
+  }
+  if (!currentDraft.value.model_detections[modelId]) {
+    currentDraft.value.model_detections[modelId] = {
       status: 'unverified',
       message: '待检测',
       checked_at: ''
     }
   }
+
+  if (!form.model && currentDraft.value.provider_id === currentProvider.value?.provider_id) {
+    form.model = modelId
+    form.provider_id = currentDraft.value.provider_id
+  }
+
+  modelDialogVisible.value = false
+}
+
+const addCustomModel = () => {
+  if (!currentDraft.value) return
+  const model = String(customModelInput.value || '').trim()
+  if (!model) return
+  modelDialogForm.id = model
+  modelDialogMode.value = 'add'
+  modelDialogForm.context_window = 1000000
+  modelDialogForm.max_output_tokens = 128000
+  saveModelDialog()
   customModelInput.value = ''
 }
 
@@ -948,11 +1062,12 @@ const detectModel = async (model) => {
     const payload = {
       provider_id: currentProvider.value.provider_id,
       model,
+      api_format: currentDraft.value.api_format || '/v1/messages',
       base_url: currentDraft.value.base_url,
       supports_partial_messages: currentDraft.value.supports_partial_messages !== false
     }
     if (token) {
-      if (currentProvider.value.provider_id === 'anthropic') {
+      if (currentDraft.value.api_format === '/v1/messages') {
         payload.api_key = token
       } else {
         payload.auth_token = token
@@ -989,6 +1104,7 @@ const buildProviderPayload = (providerId) => {
   const payload = {
     provider_id: providerId,
     name: draft.name || provider?.display_name || providerId,
+    api_format: draft.api_format || '/v1/messages',
     provider_enabled: Boolean(draft.provider_enabled),
     base_url: draft.base_url,
     supports_partial_messages: draft.supports_partial_messages !== false,

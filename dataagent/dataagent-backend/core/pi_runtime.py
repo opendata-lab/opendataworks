@@ -60,6 +60,7 @@ class PiRunContext:
     task_id: str
     topic_id: str
     provider_id: str
+    api_format: str
     model: str
     system_prompt: str
     messages: list[dict[str, str]]
@@ -103,7 +104,11 @@ class PiRunContext:
             "messages": self.messages,
             "history": history_val,
             "prompt": prompt_val,
-            "model": {"provider_id": self.provider_id, "model_id": self.model},
+            "model": {
+                "provider_id": self.provider_id,
+                "api_format": self.api_format,
+                "model_id": self.model,
+            },
             "workspace": {"project_cwd": str(self.project_cwd)},
             "boundary_policy": self.boundary_policy,
             "skills": self.skills,

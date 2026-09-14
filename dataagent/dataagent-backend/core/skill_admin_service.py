@@ -15,27 +15,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import anyio
-
 from config import get_settings, update_settings
-from core.claude_cli import resolve_claude_cli_path
 from core.provider_runtime import (
-    build_provider_env,
-    normalize_provider_id as normalize_runtime_provider_id,
+    normalize_api_format,
+    request_model_text,
     safe_base_url_for_log,
 )
 from core.skill_admin_store import get_skill_admin_store
 from core.runtime_registry_store import get_runtime_registry_store
 from core.skill_discovery import (
-    resolve_agent_project_cwd,
     resolve_skill_discovery_root_dir,
     resolve_skills_root_dir,
 )
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_PROVIDERS = ("anthropic", "openrouter", "anyrouter", "anthropic_compatible")
-SUPPORTED_PROVIDER_SET = set(SUPPORTED_PROVIDERS)
 MANAGED_FILE_SUFFIXES = {".json", ".md", ".markdown", ".py"}
 DEFAULT_PROVIDER_ID = "openrouter"
 MODEL_DETECTION_TIMEOUT_SECONDS = 30
@@ -55,49 +49,6 @@ DEFAULT_ENABLED_BUILTIN_SKILL_FOLDERS = (
 )
 SKILL_FOLDER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 PROVIDER_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
-
-PROVIDER_DEFINITIONS: dict[str, dict[str, Any]] = {
-    "anthropic": {
-        "display_name": "Anthropic",
-        "provider_group": "官方模型",
-        "default_base_url": "https://api.anthropic.com",
-        "default_model": "claude-sonnet-4-20250514",
-        "supported_models": [
-            "claude-opus-4-6",
-            "claude-sonnet-4-20250514",
-            "claude-3-7-sonnet-20250219",
-        ],
-    },
-    "openrouter": {
-        "display_name": "OpenRouter",
-        "provider_group": "聚合路由",
-        "default_base_url": "https://openrouter.ai/api",
-        "default_model": "anthropic/claude-sonnet-4.5",
-        "supported_models": [
-            "anthropic/claude-sonnet-4.5",
-            "anthropic/claude-sonnet-4.6",
-            "anthropic/claude-opus-4.1",
-        ],
-    },
-    "anyrouter": {
-        "display_name": "AnyRouter",
-        "provider_group": "聚合路由",
-        "default_base_url": "https://a-ocnfniawgw.cn-shanghai.fcapp.run",
-        "default_model": "claude-opus-4-6",
-        "supported_models": [
-            "claude-opus-4-6",
-            "claude-sonnet-4-20250514",
-            "claude-3-7-sonnet-20250219",
-        ],
-    },
-    "anthropic_compatible": {
-        "display_name": "Anthropic Compatible",
-        "provider_group": "自定义接入",
-        "default_base_url": "",
-        "default_model": "",
-        "supported_models": [],
-    },
-}
 
 RUNTIME_SETTING_KEYS = {
     "provider_id",
@@ -280,11 +231,8 @@ def _normalize_model_detections(raw: Any) -> dict[str, dict[str, str]]:
 
 
 def _provider_definition(provider_id: str) -> dict[str, Any]:
-    if provider_id in PROVIDER_DEFINITIONS:
-        return dict(PROVIDER_DEFINITIONS[provider_id])
     return {
         "display_name": provider_id,
-        "provider_group": "自定义供应商",
         "default_base_url": "",
         "default_model": "",
         "supported_models": [],
@@ -293,23 +241,24 @@ def _provider_definition(provider_id: str) -> dict[str, Any]:
 
 def _default_provider_settings(provider_id: str) -> dict[str, Any]:
     definition = _provider_definition(provider_id)
+    default_format = "/v1/messages"
     return {
         "provider_id": provider_id,
-        "provider_type": provider_id if provider_id in SUPPORTED_PROVIDER_SET else "anthropic_compatible",
+        "provider_type": default_format,
+        "api_format": default_format,
         "display_name": str(definition.get("display_name") or provider_id),
-        "provider_group": str(definition.get("provider_group") or ""),
+        "provider_group": "",
         "provider_enabled": False,
         "api_key": "",
         "auth_token": "",
-        "base_url": str(definition.get("default_base_url") or ""),
-        "supports_partial_messages": provider_id != "anthropic_compatible",
+        "base_url": "",
+        "supports_partial_messages": True,
         "enabled_models": [],
         "custom_models": [],
         "models": [],
         "model_detections": {},
         "validation_status": "unverified",
-        "validation_message": "供应商未启用",
-        "validated_at": "",
+        "validation_message": "",
     }
 
 
@@ -344,7 +293,7 @@ def _legacy_provider_settings(payload: dict[str, Any] | None) -> dict[str, dict[
     auth_token = str(data.get("anthropic_auth_token") or "").strip()
     base_url = str(data.get("anthropic_base_url") or "").strip()
 
-    legacy = {pid: _default_provider_settings(pid) for pid in SUPPORTED_PROVIDERS}
+    legacy = {}
     if provider_id:
         target = legacy.setdefault(provider_id, _default_provider_settings(provider_id))
         if api_key:
@@ -360,7 +309,7 @@ def _legacy_provider_settings(payload: dict[str, Any] | None) -> dict[str, dict[
 
 def _enabled_provider_ids(provider_settings: dict[str, dict[str, Any]]) -> list[str]:
     enabled: list[str] = []
-    ordered_ids = [*SUPPORTED_PROVIDERS, *sorted(set(provider_settings) - SUPPORTED_PROVIDER_SET)]
+    ordered_ids = sorted(provider_settings.keys())
     for provider_id in ordered_ids:
         entry = provider_settings.get(provider_id)
         if entry and bool(entry.get("enabled")):
@@ -375,9 +324,8 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
         base.update(dict(previous))
     base.update(dict(payload or {}))
 
-    provider_type = str(base.get("provider_type") or "").strip().lower()
-    if provider_type not in SUPPORTED_PROVIDER_SET:
-        provider_type = provider_id if provider_id in SUPPORTED_PROVIDER_SET else "anthropic_compatible"
+    api_format = normalize_api_format(base.get("api_format"))
+    provider_type = api_format
 
     provider_enabled_raw = None
     for source in (payload, previous):
@@ -422,10 +370,10 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
     base_url = str(base.get("base_url") or definition.get("default_base_url") or "").strip()
     api_key = str(base.get("api_key") or "").strip()
     auth_token = str(base.get("auth_token") or "").strip()
-    supports_partial_messages = bool(base.get("supports_partial_messages", provider_id != "anthropic_compatible"))
+    supports_partial_messages = bool(base.get("supports_partial_messages", True))
 
     status, message = _compute_provider_validation(
-        provider_type,
+        api_format,
         provider_enabled=provider_enabled,
         api_key=api_key,
         auth_token=auth_token,
@@ -442,6 +390,7 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
     return {
         "provider_id": provider_id,
         "provider_type": provider_type,
+        "api_format": api_format,
         "display_name": str(base.get("name") or base.get("display_name") or definition.get("display_name") or provider_id).strip()[:128],
         "provider_group": str(base.get("provider_group") or definition.get("provider_group") or "").strip()[:64],
         "provider_enabled": provider_enabled,
@@ -462,7 +411,7 @@ def _normalize_provider_entry(provider_id: str, payload: dict[str, Any], previou
 
 
 def _compute_provider_validation(
-    provider_type: str,
+    api_format: str,
     *,
     provider_enabled: bool,
     api_key: str,
@@ -472,13 +421,14 @@ def _compute_provider_validation(
 ) -> tuple[str, str]:
     if not provider_enabled:
         return ("unverified", "供应商未启用")
-    token_ready = bool(api_key) if provider_type == "anthropic" else bool(auth_token or api_key)
-    if provider_type == "anthropic_compatible" and not str(base_url or "").strip():
-        return ("unverified", "请填写兼容网关地址")
+    fmt = normalize_api_format(api_format)
+    token_ready = bool(auth_token or api_key)
     if not token_ready:
-        if provider_type == "anthropic":
+        if fmt == "/v1/messages":
             return ("unverified", "请填写 API Key")
         return ("unverified", "请填写 Token")
+    if not str(base_url or "").strip():
+        return ("unverified", "请填写 API Base URL")
     if not enabled_models:
         return ("unverified", "请启用至少一个模型")
     return ("verified", "模型服务已可用")
@@ -533,6 +483,8 @@ def _merge_provider_settings(
             current_entry["provider_group"] = str(update.get("provider_group") or "").strip()
         if "provider_type" in update:
             current_entry["provider_type"] = str(update.get("provider_type") or "").strip()
+        if "api_format" in update:
+            current_entry["api_format"] = str(update.get("api_format") or "").strip()
         if update.get("enabled") is False:
             current_entry["enabled_models"] = []
 
@@ -540,7 +492,7 @@ def _merge_provider_settings(
 
     return {
         provider_id: _normalize_provider_entry(provider_id, merged.get(provider_id) or {}, None)
-        for provider_id in [*SUPPORTED_PROVIDERS, *sorted(set(merged) - SUPPORTED_PROVIDER_SET)]
+        for provider_id in sorted(merged.keys())
     }
 
 
@@ -678,7 +630,7 @@ def _model_detection_result(status: str, message: str, *, provider_id: str, mode
 
 
 def _detection_preflight(
-    provider_id: str,
+    api_format: str,
     *,
     api_key: str,
     auth_token: str,
@@ -687,80 +639,47 @@ def _detection_preflight(
 ) -> str:
     if not model:
         return "请选择模型"
-    if provider_id == "anthropic_compatible" and not str(base_url or "").strip():
-        return "Base URL 缺失"
-    token_ready = bool(api_key) if provider_id == "anthropic" else bool(auth_token or api_key)
+    fmt = normalize_api_format(api_format)
+    token_ready = bool(auth_token or api_key)
     if not token_ready:
-        return "API 密钥缺失" if provider_id == "anthropic" else "Token 缺失"
+        return "API 密钥缺失" if fmt == "/v1/messages" else "Token 缺失"
+    if not str(base_url or "").strip():
+        return "API Base URL 缺失"
     return ""
 
 
 async def _run_model_detection(
     *,
-    provider_id: str,
+    provider_id: str = "",
+    api_format: str,
     model: str,
     api_key: str,
     auth_token: str,
     base_url: str,
     supports_partial_messages: bool,
 ) -> tuple[str, str]:
-    try:
-        from claude_agent_sdk import ClaudeAgentOptions, query as claude_query
-    except ImportError as exc:
-        return "failed", f"claude-agent-sdk 未安装: {_short_error(exc)}"
-
-    normalized_provider = normalize_runtime_provider_id(provider_id, base_url)
-    provider_env = build_provider_env(
-        normalized_provider,
-        api_key=api_key,
-        auth_token=auth_token,
-        base_url=base_url,
-    )
-    runtime_env = dict(os.environ)
-    runtime_env.update(provider_env)
-    cli_path = resolve_claude_cli_path(get_settings())
     logger.info(
-        "model_detection.start provider=%s model=%s base_url=%s supports_partial_messages=%s auth_token_set=%s api_key_set=%s cli_path_set=%s",
+        "model_detection.start provider=%s api_format=%s model=%s base_url=%s supports_partial_messages=%s auth_token_set=%s api_key_set=%s",
         provider_id,
+        api_format,
         model,
         safe_base_url_for_log(base_url),
         supports_partial_messages,
         bool(str(auth_token or "").strip()),
         bool(str(api_key or "").strip()),
-        bool(cli_path),
     )
-    options_kwargs = dict(
-        system_prompt="你是模型服务连通性检测程序。只需用最短文本回答检测请求。",
-        model=model,
-        cwd=str(resolve_agent_project_cwd()),
-        setting_sources=["project"],
-        max_turns=1,
-        allowed_tools=[],
-        mcp_servers={},
-        include_partial_messages=supports_partial_messages,
-        max_buffer_size=max(1024 * 1024, int(get_settings().agent_max_buffer_size_bytes)),
-        env=runtime_env,
-        stderr=lambda line: logger.error(
-            "model_detection.stderr provider=%s model=%s %s",
-            provider_id,
-            model,
-            str(line or "").rstrip(),
-        ),
-    )
-    if cli_path:
-        options_kwargs["cli_path"] = cli_path
-    options = ClaudeAgentOptions(**options_kwargs)
-
     try:
-        with anyio.fail_after(MODEL_DETECTION_TIMEOUT_SECONDS):
-            async for msg in claude_query(prompt="请直接回复 model-service-ok。", options=options):
-                if type(msg).__name__ == "ResultMessage":
-                    subtype = str(getattr(msg, "subtype", "") or "")
-                    if subtype.startswith("error"):
-                        return "failed", "模型服务返回异常"
+        await request_model_text(
+            api_format=api_format,
+            base_url=base_url,
+            api_key=api_key,
+            auth_token=auth_token,
+            model=model,
+            prompt="请直接回复 model-service-ok。",
+            timeout_seconds=MODEL_DETECTION_TIMEOUT_SECONDS,
+            max_output_tokens=32,
+        )
         return "verified", "模型检测通过"
-    except TimeoutError:
-        return "failed", f"模型检测超时（{MODEL_DETECTION_TIMEOUT_SECONDS}s）"
     except Exception as exc:
         return "failed", f"模型检测失败: {_short_error(exc)}"
 
@@ -779,7 +698,7 @@ async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
     if provider_id not in provider_settings:
         raise ValueError("provider not found")
     current_entry = _normalize_provider_entry(provider_id, provider_settings.get(provider_id) or {})
-    provider_type = str(current_entry.get("provider_type") or "anthropic_compatible")
+    api_format = normalize_api_format(payload.get("api_format") or current_entry.get("api_format"))
 
     api_key = str(payload.get("api_key") or current_entry.get("api_key") or "").strip()
     auth_token = str(payload.get("auth_token") or current_entry.get("auth_token") or "").strip()
@@ -787,11 +706,11 @@ async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
     supports_partial_messages = (
         bool(payload.get("supports_partial_messages"))
         if payload.get("supports_partial_messages") is not None
-        else bool(current_entry.get("supports_partial_messages", provider_id != "anthropic_compatible"))
+        else bool(current_entry.get("supports_partial_messages", True))
     )
 
     preflight_message = _detection_preflight(
-        provider_type,
+        api_format,
         api_key=api_key,
         auth_token=auth_token,
         base_url=base_url,
@@ -801,7 +720,8 @@ async def detect_model_availability(payload: dict[str, Any]) -> dict[str, str]:
         result = _model_detection_result("failed", preflight_message, provider_id=provider_id, model=model)
     else:
         status, message = await _run_model_detection(
-            provider_id=provider_type,
+            provider_id=provider_id,
+            api_format=api_format,
             model=model,
             api_key=api_key,
             auth_token=auth_token,
@@ -860,7 +780,7 @@ def list_provider_configs(
     provider_settings = _coerce_provider_settings(resolved.get("provider_settings"))
     configs: list[dict[str, Any]] = []
 
-    ordered_ids = [*SUPPORTED_PROVIDERS, *sorted(set(provider_settings) - SUPPORTED_PROVIDER_SET)]
+    ordered_ids = sorted(provider_settings.keys())
     for provider_id in ordered_ids:
         if provider_id not in provider_settings:
             continue
@@ -871,7 +791,8 @@ def list_provider_configs(
         configs.append(
             {
                 "provider_id": provider_id,
-                "provider_type": str(item.get("provider_type") or "anthropic_compatible"),
+                "provider_type": str(item.get("provider_type") or "anthropic"),
+                "api_format": normalize_api_format(item.get("api_format")),
                 "display_name": str(item.get("display_name") or definition.get("display_name") or provider_id),
                 "name": str(item.get("display_name") or definition.get("display_name") or provider_id),
                 "provider_group": str(item.get("provider_group") or definition.get("provider_group") or ""),
@@ -893,13 +814,13 @@ def list_provider_configs(
                 ),
                 "enabled": bool(item.get("enabled")),
                 "provider_enabled": bool(item.get("provider_enabled")),
-                "supports_partial_messages": bool(item.get("supports_partial_messages", provider_id != "anthropic_compatible")),
+                "supports_partial_messages": bool(item.get("supports_partial_messages", True)),
                 "validation_status": str(item.get("validation_status") or "unverified"),
                 "validation_message": str(item.get("validation_message") or ""),
             }
         )
 
-    configs.sort(key=lambda item: (item["provider_group"], item["display_name"]))
+    configs.sort(key=lambda item: item["display_name"])
     return configs
 
 
@@ -1000,6 +921,7 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
     return {
         "provider_id": normalized_provider_id,
         "provider_type": str(provider.get("provider_type") or "anthropic_compatible"),
+        "api_format": normalize_api_format(provider.get("api_format")),
         "model": selected_model,
         "api_key": str(provider.get("api_key") or ""),
         "auth_token": str(provider.get("auth_token") or ""),

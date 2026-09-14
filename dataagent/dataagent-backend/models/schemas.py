@@ -153,6 +153,7 @@ class MessageScheduleLogsQueryRequest(BaseModel):
 class ProviderSettingsUpdate(BaseModel):
     provider_id: str
     provider_type: Optional[str] = None
+    api_format: Optional[str] = None
     name: Optional[str] = None
     display_name: Optional[str] = None
     provider_group: Optional[str] = None
@@ -197,6 +198,7 @@ class ModelDetectionState(BaseModel):
 class ProviderConfig(BaseModel):
     provider_id: str
     provider_type: str = "anthropic_compatible"
+    api_format: str = "/v1/messages"
     name: str = ""
     display_name: str
     provider_group: str = ""
@@ -222,6 +224,7 @@ class ProviderCreateRequest(ProviderSettingsUpdate):
 
 class ProviderUpdateRequest(BaseModel):
     provider_type: Optional[str] = None
+    api_format: Optional[str] = None
     name: Optional[str] = None
     display_name: Optional[str] = None
     provider_group: Optional[str] = None
@@ -323,6 +326,7 @@ class SettingsResponse(BaseModel):
 
 class RuntimeProviderConfig(BaseModel):
     provider_id: str
+    api_format: str = "/v1/messages"
     display_name: str
     provider_group: str = ""
     models: List[str] = Field(default_factory=list)

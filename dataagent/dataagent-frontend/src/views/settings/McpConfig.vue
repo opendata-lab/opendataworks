@@ -611,10 +611,21 @@ const handleSubmit = async () => {
         const firstKey = Object.keys(parsed)[0]
         const serverConfig = parsed[firstKey]
         if (serverConfig && typeof serverConfig === 'object' && (serverConfig.command || serverConfig.url)) {
+          const rawTransport = serverConfig.transport || serverConfig.type
+          const transport = rawTransport || (serverConfig.command ? 'stdio' : '')
+          if (!transport) {
+            ElMessage.error('缺少 MCP 传输类型。对于远程服务，请明确指定 transport (或 type) 为 "http" 或 "sse"')
+            return
+          }
+          const normalizedTransport = String(transport).trim().toLowerCase()
+          if (!['stdio', 'http', 'sse'].includes(normalizedTransport)) {
+            ElMessage.error(`不支持的 MCP 传输类型 "${transport}"。参照标准 MCP / PiAgent 规范，仅支持: stdio, http, sse`)
+            return
+          }
           const payload = {
             name: firstKey,
             source: 'configured',
-            transport: serverConfig.transport || (serverConfig.command ? 'stdio' : 'sse'),
+            transport: normalizedTransport,
             command: serverConfig.command || '',
             args: serverConfig.args || [],
             env: serverConfig.env || {},

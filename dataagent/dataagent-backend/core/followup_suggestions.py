@@ -2,25 +2,18 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-import anyio
-
-from config import get_settings
-from core.provider_runtime import build_provider_env, normalize_provider_id, safe_base_url_for_log
+from core.provider_runtime import request_model_text, safe_base_url_for_log
 from core.skill_admin_service import resolve_runtime_provider_selection
-from core.skill_discovery import resolve_agent_project_cwd
-from core.claude_cli import resolve_claude_cli_path
 
 logger = logging.getLogger(__name__)
 
 MAX_SUGGESTIONS = 3
 MAX_SUGGESTION_LENGTH = 64
 DEFAULT_TIMEOUT_SECONDS = 20
-DEFAULT_MAX_TURNS = 10
 SUGGESTION_TEXT_KEYS = ("question", "text", "content", "title", "value", "label")
 FOLLOWUP_SCHEMA_EXAMPLE = '{"suggestions":["问题1","问题2"]}'
 JSON_STRUCTURE_KEYS = {"suggestions", *SUGGESTION_TEXT_KEYS, "items", "item", "kind", "type"}
@@ -214,26 +207,6 @@ def _build_prompt(*, previous_question: str, answer_text: str, result_summary: s
     return "\n\n".join(sections)
 
 
-def _extract_sdk_text(message: Any) -> str:
-    type_name = type(message).__name__
-    if type_name == "ResultMessage":
-        return str(getattr(message, "result", "") or "")
-    content = getattr(message, "content", None)
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    parts: list[str] = []
-    for block in content:
-        if isinstance(block, dict):
-            value = block.get("text") or block.get("content")
-        else:
-            value = getattr(block, "text", None)
-        if value:
-            parts.append(str(value))
-    return "\n".join(parts)
-
-
 async def _default_model_runner(
     *,
     prompt: str,
@@ -241,61 +214,29 @@ async def _default_model_runner(
     model: str,
     timeout_seconds: int,
 ) -> str:
-    try:
-        from claude_agent_sdk import ClaudeAgentOptions, query as claude_query
-    except ImportError as exc:
-        raise RuntimeError(f"claude-agent-sdk 未安装: {exc}") from exc
-
-    cfg = get_settings()
     runtime_target = resolve_runtime_provider_selection(provider_id, model)
-    resolved_provider_id = normalize_provider_id(runtime_target.get("provider_id"), runtime_target.get("base_url"))
+    resolved_provider_id = str(runtime_target.get("provider_id") or "")
     resolved_model = str(runtime_target.get("model") or "").strip()
-    provider_env = build_provider_env(
-        resolved_provider_id,
-        api_key=str(runtime_target.get("api_key") or ""),
-        auth_token=str(runtime_target.get("auth_token") or ""),
-        base_url=str(runtime_target.get("base_url") or ""),
-    )
-    runtime_env = dict(os.environ)
-    runtime_env.update(provider_env)
-
-    options_kwargs = {
-        "system_prompt": "你是 OpenDataWorks 智能问数的追问建议生成器。只输出符合要求的 JSON。",
-        "model": resolved_model,
-        "cwd": str(resolve_agent_project_cwd()),
-        "setting_sources": ["project"],
-        "max_turns": DEFAULT_MAX_TURNS,
-        "allowed_tools": [],
-        "mcp_servers": {},
-        "include_partial_messages": bool(runtime_target.get("supports_partial_messages", True)),
-        "max_buffer_size": max(1024 * 1024, int(cfg.agent_max_buffer_size_bytes)),
-        "env": runtime_env,
-        "stderr": lambda line: logger.error(
-            "followup_suggestions.stderr provider=%s model=%s %s",
-            resolved_provider_id,
-            resolved_model,
-            str(line or "").rstrip(),
-        ),
-    }
-    cli_path = resolve_claude_cli_path(cfg)
-    if cli_path:
-        options_kwargs["cli_path"] = cli_path
+    api_format = str(runtime_target.get("api_format") or "/v1/messages")
+    base_url = str(runtime_target.get("base_url") or "")
 
     logger.info(
-        "followup_suggestions.start provider=%s model=%s base_url=%s",
+        "followup_suggestions.start provider=%s api_format=%s model=%s base_url=%s",
         resolved_provider_id,
+        api_format,
         resolved_model,
-        safe_base_url_for_log(str(runtime_target.get("base_url") or "")),
+        safe_base_url_for_log(base_url),
     )
-
-    chunks: list[str] = []
-    options = ClaudeAgentOptions(**options_kwargs)
-    with anyio.fail_after(max(3, int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS))):
-        async for message in claude_query(prompt=prompt, options=options):
-            text = _extract_sdk_text(message)
-            if text:
-                chunks.append(text)
-    return "\n".join(chunks).strip()
+    return await request_model_text(
+        api_format=api_format,
+        base_url=base_url,
+        api_key=str(runtime_target.get("api_key") or ""),
+        auth_token=str(runtime_target.get("auth_token") or ""),
+        model=resolved_model,
+        prompt=prompt,
+        timeout_seconds=max(3, int(timeout_seconds or DEFAULT_TIMEOUT_SECONDS)),
+        max_output_tokens=512,
+    )
 
 
 async def generate_followup_suggestions(

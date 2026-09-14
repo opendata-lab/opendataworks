@@ -66,7 +66,7 @@ Use this method if you have internet access and are deploying directly from the 
    - Portal MCP Streamable HTTP: `http://localhost:8801/mcp/`
 
    说明：
-   - 大模型供应商、Token 与候选模型在主前端配置页中维护，后端保存到 DataAgent 配置存储。
+   - 大模型供应商、Token 与候选模型在主前端配置页中维护，后端保存到 DataAgent provider registry。
    - 可直接编辑挂载文件后生效：
      - `dataagent/.claude/skills/`
      - `dataagent/.claude/skills/`（Skills 目录）
@@ -74,7 +74,7 @@ Use this method if you have internet access and are deploying directly from the 
    - OpenDataWorks 内部部署默认 MCP-first：DataAgent runtime 会向当前 run 动态注入 `portal-mcp`，优先直接调用 `portal_search_tables` / `portal_get_lineage` / `portal_resolve_datasource` / `portal_export_metadata` / `portal_get_table_ddl` / `portal_query_readonly`
    - 非 MCP 智能体或 MCP 未注入时，DataAgent 才回退到 platform tools skill 自带的 `opendataworks-platform-tools/bin/odw-cli` 调 backend `/api/v1/ai/*` 只读入口获取 metadata / lineage / datasource 解析，并通过 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" -> odw-cli -> /api/v1/ai/query/read` 执行只读 SQL；需保证 `AGENT_API_SERVICE_TOKEN` 在 backend 与 DataAgent 容器中一致
    - `ODW_BACKEND_BASE_URL` 的推荐值为 `http://backend:8080/api/v1/ai`；CLI 兼容旧值 `/api/v1/ai/metadata`，但部署默认值已切到 AI 根路径
-   - DataAgent 的 MCP client 开关与目标地址由 `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL` 控制；认证统一由 `PORTAL_MCP_TOKEN`、`PORTAL_MCP_TOKEN_HEADER_NAME` 配置，compose 会同时注入 `portal-mcp` frontdoor 和 DataAgent client
+   - `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL` 与 `PORTAL_MCP_TOKEN` 只在 registry 中尚无 `portal` 行时作为一次性 bootstrap 输入；导入后 DataAgent runtime 只读 `da_mcp_server`，页面禁用或修改不会被重启时的环境变量覆盖。`PORTAL_MCP_TOKEN_HEADER_NAME` 仍同时定义 frontdoor 与初始 client header
    - skill/runtime 不再需要外部数据源的 host / port / user / password；datasource 解析结果只保留定位摘要
    - 若对应 skill 目录下缺少 `opendataworks-platform-tools/bin/odw-cli`，需由用户先自行安装到该固定路径，再启动 DataAgent
    - `scripts/start.sh` 会在启动前对挂载的 `odw-cli` 执行一次宿主机侧 `chmod +x`；即使 bind mount 丢了执行位，DataAgent runtime 也会回退为 `sh /app/.claude/skills/opendataworks-platform-tools/bin/odw-cli ...`
@@ -94,6 +94,7 @@ Use this method if you have internet access and are deploying directly from the 
    > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
    >
    > 若保留旧的 `mysql-data` volume 升级，初始化脚本不会重跑；切换到独立 `dataagent` 用户前，需要先手动补建该用户或清空 volume 重新初始化。
+   > 升级到引入 `api_format` 的版本时，Alembic 会清空旧的 `da_model_provider` 供应商配置；升级完成后需在管理页重新添加供应商、凭据和模型。
    >
    > DataAgent 在 `docker-compose.prod.yml` 中默认以非 root 用户运行（`DATAAGENT_RUNTIME_UID/GID`，默认 `1000:1000`）。若 `dataagent/.claude/skills/` 无法写入，请把这两个值改成宿主机目录拥有者的 UID/GID，或先调整目录权限。
 
@@ -151,14 +152,14 @@ Use this method for isolated environments without internet access. You will use 
 
    说明：
    - 离线包内保留 `deploy/dataagent-runtime/skills/` 可直接编辑。
-   - 大模型供应商、Token 与候选模型仍通过主前端配置页管理。
+   - 大模型供应商、Token 与候选模型仍通过主前端配置页管理，并持久化到 DataAgent provider registry。
    - 离线包内保留 `deploy/dataagent-runtime/skills/` 可直接编辑
    - 大模型供应商、Token 与候选模型仍通过主前端配置页管理
    - 动态元数据查询示例保留在 platform tools skill 的 `reference/` / `scripts/` 中
    - OpenDataWorks 内部部署默认 MCP-first：DataAgent runtime 会向当前 run 动态注入 `portal-mcp`，优先直接调用 `portal_search_tables` / `portal_get_lineage` / `portal_resolve_datasource` / `portal_export_metadata` / `portal_get_table_ddl` / `portal_query_readonly`
    - 非 MCP 智能体或 MCP 未注入时，DataAgent 才回退到 platform tools skill 自带的 `opendataworks-platform-tools/bin/odw-cli` 调 backend `/api/v1/ai/*` 只读入口获取 metadata / lineage / datasource 解析，并通过 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" -> odw-cli -> /api/v1/ai/query/read` 执行只读 SQL；需保证 `AGENT_API_SERVICE_TOKEN` 在 backend 与 DataAgent 容器中一致
    - `ODW_BACKEND_BASE_URL` 的推荐值为 `http://backend:8080/api/v1/ai`；CLI 兼容旧值 `/api/v1/ai/metadata`，但部署默认值已切到 AI 根路径
-   - DataAgent 的 MCP client 开关与目标地址由 `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL` 控制；认证统一由 `PORTAL_MCP_TOKEN`、`PORTAL_MCP_TOKEN_HEADER_NAME` 配置，compose 会同时注入 `portal-mcp` frontdoor 和 DataAgent client
+   - `DATAAGENT_PORTAL_MCP_ENABLED`、`DATAAGENT_PORTAL_MCP_BASE_URL` 与 `PORTAL_MCP_TOKEN` 只在 registry 中尚无 `portal` 行时作为一次性 bootstrap 输入；导入后 DataAgent runtime 只读 `da_mcp_server`，页面禁用或修改不会被重启时的环境变量覆盖。`PORTAL_MCP_TOKEN_HEADER_NAME` 仍同时定义 frontdoor 与初始 client header
    - skill/runtime 不再需要外部数据源的 host / port / user / password；datasource 解析结果只保留定位摘要
    - 若对应 skill 目录下缺少 `opendataworks-platform-tools/bin/odw-cli`，需由用户先自行安装到该固定路径，再启动 DataAgent
    - `scripts/start.sh` 会在启动前对挂载的 `odw-cli` 执行一次宿主机侧 `chmod +x`；即使 bind mount 丢了执行位，DataAgent runtime 也会回退为 `sh /app/.claude/skills/opendataworks-platform-tools/bin/odw-cli ...`
@@ -175,6 +176,7 @@ Use this method for isolated environments without internet access. You will use 
    > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
    >
    > 若保留旧的 `mysql-data` volume 升级，初始化脚本不会重跑；切换到独立 `dataagent` 用户前，需要先手动补建该用户或清空 volume 重新初始化。
+   > 升级到引入 `api_format` 的版本时，Alembic 会清空旧的 `da_model_provider` 供应商配置；升级完成后需在管理页重新添加供应商、凭据和模型。
    >
    > 离线包中的 DataAgent 也默认以非 root 用户运行（`DATAAGENT_RUNTIME_UID/GID`，默认 `1000:1000`）。若 `deploy/dataagent-runtime/skills/` 无法写入，请把这两个值改成目标机器目录拥有者的 UID/GID，或先调整目录权限。
 

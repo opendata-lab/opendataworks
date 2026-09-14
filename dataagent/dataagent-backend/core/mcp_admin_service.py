@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 from config import get_settings
 from core.data_scope import encode_scope_header
@@ -48,15 +49,39 @@ def normalize_mcp_server(
         raise ValueError("name is required")
     if len(name) > 128:
         raise ValueError("name must be at most 128 characters")
-    transport = str(data.get("transport") or ("stdio" if data.get("command") else "sse")).strip().lower()
-    if transport not in MCP_TRANSPORTS:
-        raise ValueError("transport must be one of http/sse/stdio")
+
+    raw_transport = data.get("transport") or data.get("type")
+    if raw_transport is not None and str(raw_transport).strip():
+        transport = str(raw_transport).strip().lower()
+        if transport not in MCP_TRANSPORTS:
+            raise ValueError(
+                f"不支持的 MCP 传输类型 '{raw_transport}'。参照标准 MCP / PiAgent 规范，仅支持: stdio, http, sse"
+            )
+    elif data.get("command") and str(data.get("command")).strip():
+        # MCP 标准规范：提供 command 时默认为 stdio
+        transport = "stdio"
+    else:
+        raise ValueError(
+            "缺少 MCP 传输类型。请明确指定 transport (或 type) 为 'http'、'sse' 或 'stdio'"
+        )
+
     url = str(data.get("url") or "").strip()
     command = str(data.get("command") or "").strip()
-    if transport == "stdio" and not command:
-        raise ValueError("command is required for stdio transport")
-    if transport in {"http", "sse"} and not url:
-        raise ValueError("url is required for http/sse transport")
+
+    if transport == "stdio":
+        if not command:
+            raise ValueError("command is required for stdio transport (stdio 传输类型必须提供 command 命令)")
+        url = ""
+    else:
+        if not url:
+            raise ValueError(f"url is required for {transport} transport ({transport} 传输类型必须提供 url)")
+        parsed_url = urlparse(url)
+        if parsed_url.scheme not in {"http", "https"}:
+            raise ValueError(f"MCP 服务 URL 格式不正确，必须是以 http:// 或 https:// 开头的合法地址: {url}")
+        if not parsed_url.netloc:
+            raise ValueError(f"MCP 服务 URL 缺少有效的主机地址: {url}")
+        command = ""
+
     if source not in MCP_SOURCES:
         raise ValueError("source must be configured or plugin")
 
@@ -66,10 +91,10 @@ def normalize_mcp_server(
         "source": source,
         "transport": transport,
         "url": url if transport != "stdio" else "",
-        "headers": _string_map(data.get("headers") or {}, field="headers"),
+        "headers": _string_map(data.get("headers") or {}, field="headers") if transport != "stdio" else {},
         "command": command if transport == "stdio" else "",
-        "args": _string_list(data.get("args") or []),
-        "env": _string_map(data.get("env") or {}, field="env"),
+        "args": _string_list(data.get("args") or []) if transport == "stdio" else [],
+        "env": _string_map(data.get("env") or {}, field="env") if transport == "stdio" else {},
         "enabled": bool(data.get("enabled", True)),
         "oauth_required": bool(data.get("oauth_required", False)),
         "tool_count": max(0, int(data.get("tool_count") or 0)),
@@ -226,7 +251,9 @@ def resolve_runtime_mcp_servers(
             continue
         headers = dict(row.get("headers") or {})
         if server_id == PORTAL_MCP_SERVER_ID and agent_snapshot is not None:
-            headers["X-Agent-Data-Scope"] = encode_scope_header((agent_snapshot or {}).get("data_scope") or {})
+            scope_header = encode_scope_header((agent_snapshot or {}).get("data_scope") or {})
+            if scope_header:
+                headers["X-Agent-Data-Scope"] = scope_header
         url = str(row.get("url") or "")
         if server_id == PORTAL_MCP_SERVER_ID:
             url = url.rstrip("/") + "/"
