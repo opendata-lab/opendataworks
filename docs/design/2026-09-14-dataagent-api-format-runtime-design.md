@@ -34,8 +34,10 @@
 
 ### 数据迁移
 
-旧 `provider_type` 无法可靠映射新协议。迁移新增列后清空 `da_model_provider`，由管理员
-明确重建供应商、凭据和模型配置，不保留猜测式兼容分支。
+旧 `provider_type` 无法可靠映射新协议。迁移新增列后清空 `da_model_provider`，同时清除
+`da_agent_settings` 中旧供应商选择、凭据和 `provider_settings` 副本，避免启动引导逻辑把
+已删除记录重新创建；数据库、Skill 和 Widget 等非供应商设置保持不变。管理员需明确重建
+供应商、凭据和模型配置，不保留猜测式兼容分支。
 
 ## 失败处理与安全性
 
