@@ -59,7 +59,7 @@ export type EventSink = (event: NeutralAgentEvent) => void;
 export type HeartbeatSink = (detail: Record<string, unknown>) => void;
 
 export interface RunModelFactory {
-  (providerId: string, modelId: string, cacheRetention?: string): {
+  (providerId: string, modelId: string, apiFormat: string, cacheRetention?: string): {
     model: Model<Api>;
     streamFn: StreamFn;
   };
@@ -115,6 +115,7 @@ export class Cell {
       const { model, streamFn } = this.modelFactory(
         init.model.provider_id,
         init.model.model_id,
+        init.model.api_format,
         init.governance_settings?.cache_retention
       );
       const boundary = new WorkspaceBoundaryEnforcer(init.boundary_policy as unknown as BoundaryPolicy);

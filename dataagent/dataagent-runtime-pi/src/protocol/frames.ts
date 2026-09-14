@@ -97,7 +97,11 @@ export interface CellInitPayload {
   messages: Array<{ role: string; content: string }>;
   history?: Array<{ role: string; content: string }>;
   prompt?: string;
-  model: { provider_id: string; model_id: string };
+  model: {
+    provider_id: string;
+    api_format: "/v1/messages" | "/v1/chat/completions";
+    model_id: string;
+  };
   workspace: { project_cwd: string };
   boundary_policy: Record<string, unknown>;
   skills: Array<{ name: string; root_path: string }>;

@@ -26,7 +26,7 @@ function initPayload(root: string, overrides: Partial<CellInitPayload> = {}): Ce
     topic_id: "topic-1",
     system_prompt: "sys",
     messages: [{ role: "user", content: "hi" }],
-    model: { provider_id: "faux", model_id: "faux-1" },
+    model: { provider_id: "faux", api_format: "/v1/messages", model_id: "faux-1" },
     workspace: { project_cwd: root },
     boundary_policy: {
       policy_version: 1,
@@ -282,7 +282,7 @@ test("a thrown setup error is reported as an execution failure", async () => {
 test("an unsupported provider fails the run rather than hanging it", async () => {
   const root = workspace();
   const { events, result } = await runCell(
-    initPayload(root, { model: { provider_id: "nope", model_id: "x" } }),
+    initPayload(root, { model: { provider_id: "nope", api_format: "/v1/messages", model_id: "x" } }),
     (() => {
       throw new Error("Pi 运行时不支持 provider 'nope'");
     }) as never
