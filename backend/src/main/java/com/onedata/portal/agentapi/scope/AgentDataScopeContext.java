@@ -16,15 +16,32 @@ import java.util.Objects;
 public final class AgentDataScopeContext {
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
-    private static final ThreadLocal<String> ENCODED_SCOPE = new ThreadLocal<>();
+    private static final ThreadLocal<List<DataScopeItem>> SCOPES = new ThreadLocal<>();
     private static final ThreadLocal<Boolean> ACTIVE = new ThreadLocal<>();
 
     private AgentDataScopeContext() {
     }
 
     public static void setEncodedScope(String encodedScope) {
+        if (!StringUtils.hasText(encodedScope)) {
+            deactivate();
+            return;
+        }
+        ScopeParseResult parsed = parseScopes(encodedScope);
+        if (!parsed.isValid()) {
+            // A supplied but malformed scope is not the same as an omitted
+            // scope. Keep filtering active with no grants so access fails closed.
+            ACTIVE.set(true);
+            SCOPES.set(Collections.emptyList());
+            log.warn("拒绝非法的 X-Agent-Data-Scope 请求头");
+            return;
+        }
+        if (parsed.getScopes().isEmpty()) {
+            deactivate();
+            return;
+        }
         ACTIVE.set(true);
-        ENCODED_SCOPE.set(encodedScope == null ? "" : encodedScope.trim());
+        SCOPES.set(parsed.getScopes());
     }
 
     public static boolean isActive() {
@@ -32,7 +49,7 @@ public final class AgentDataScopeContext {
     }
 
     public static void clear() {
-        ENCODED_SCOPE.remove();
+        SCOPES.remove();
         ACTIVE.remove();
     }
 
@@ -117,34 +134,53 @@ public final class AgentDataScopeContext {
     }
 
     private static List<DataScopeItem> currentScopes() {
-        String encoded = ENCODED_SCOPE.get();
+        List<DataScopeItem> scopes = SCOPES.get();
+        return scopes == null ? Collections.emptyList() : scopes;
+    }
+
+    private static void deactivate() {
+        ACTIVE.set(false);
+        SCOPES.remove();
+    }
+
+    private static ScopeParseResult parseScopes(String encoded) {
         if (!StringUtils.hasText(encoded)) {
-            return Collections.emptyList();
+            return ScopeParseResult.invalid();
         }
         try {
             byte[] decoded = Base64.getUrlDecoder().decode(padBase64(encoded.trim()));
             JsonNode root = OBJECT_MAPPER.readTree(new String(decoded, StandardCharsets.UTF_8));
+            if (root == null || !root.isObject()) {
+                return ScopeParseResult.invalid();
+            }
             JsonNode scopes = root.path("allowed_scopes");
             if (!scopes.isArray()) {
-                return Collections.emptyList();
+                return ScopeParseResult.invalid();
             }
             List<DataScopeItem> result = new ArrayList<>();
             for (JsonNode scope : scopes) {
+                if (!scope.isObject()) {
+                    return ScopeParseResult.invalid();
+                }
                 String database = scope.path("database").asText("");
                 if (!StringUtils.hasText(database)) {
-                    continue;
+                    return ScopeParseResult.invalid();
+                }
+                JsonNode clusterId = scope.get("cluster_id");
+                if (clusterId != null && !clusterId.isNull()
+                        && (!clusterId.isIntegralNumber() || !clusterId.canConvertToLong())) {
+                    return ScopeParseResult.invalid();
                 }
                 DataScopeItem item = new DataScopeItem();
                 item.setDatabase(database.trim());
-                item.setClusterId(scope.hasNonNull("cluster_id") ? scope.path("cluster_id").asLong() : null);
+                item.setClusterId(clusterId != null && !clusterId.isNull() ? clusterId.asLong() : null);
                 item.setSourceType(scope.path("source_type").asText(""));
                 result.add(item);
             }
-            return result;
+            return ScopeParseResult.valid(result);
         } catch (Exception e) {
-            // 数据范围 JSON 解析失败时按“无范围”处理
-            log.trace("解析数据范围 scope 失败，返回空列表", e);
-            return Collections.emptyList();
+            log.trace("解析数据范围 scope 失败", e);
+            return ScopeParseResult.invalid();
         }
     }
 
@@ -162,6 +198,32 @@ public final class AgentDataScopeContext {
 
     private static String trimToEmpty(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private static final class ScopeParseResult {
+        private final boolean valid;
+        private final List<DataScopeItem> scopes;
+
+        private ScopeParseResult(boolean valid, List<DataScopeItem> scopes) {
+            this.valid = valid;
+            this.scopes = scopes;
+        }
+
+        static ScopeParseResult valid(List<DataScopeItem> scopes) {
+            return new ScopeParseResult(true, scopes);
+        }
+
+        static ScopeParseResult invalid() {
+            return new ScopeParseResult(false, Collections.emptyList());
+        }
+
+        boolean isValid() {
+            return valid;
+        }
+
+        List<DataScopeItem> getScopes() {
+            return scopes;
+        }
     }
 
     private static final class DataScopeItem {

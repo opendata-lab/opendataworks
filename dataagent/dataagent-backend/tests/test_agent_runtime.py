@@ -255,6 +255,67 @@ def test_build_system_prompt_includes_authorized_data_scope():
     assert "cluster_id=3, source_type=DORIS, database=ads_user" in prompt
 
 
+def test_build_system_prompt_when_data_scope_is_empty_does_not_block():
+    prompt = agent_runtime._build_system_prompt(
+        None,
+        {"enabled_folders": ["opendataworks-platform-tools"]},
+        {"data_scope": {"allowed_scopes": []}},
+    )
+
+    assert "禁止访问任何元数据" not in prompt
+    assert "未配置数据范围时禁止" not in prompt
+    assert "未配置特定数据范围限制（默认不限制）" in prompt
+
+
+def test_build_portal_mcp_servers_omits_data_scope_header_when_empty(monkeypatch):
+    class FakeRegistry:
+        def list_mcp_servers(self):
+            return [
+                {
+                    "server_id": "portal",
+                    "name": "Portal MCP",
+                    "source": "plugin",
+                    "transport": "http",
+                    "url": "http://registry-portal:8801/mcp/",
+                    "headers": {"X-Portal-MCP-Token": "registry-token"},
+                    "enabled": True,
+                }
+            ]
+
+    monkeypatch.setattr("core.mcp_admin_service.get_runtime_registry_store", lambda: FakeRegistry())
+    cfg = SimpleNamespace(
+        dataagent_portal_mcp_enabled=True,
+        dataagent_portal_mcp_base_url="http://environment-must-not-win:8801/mcp/",
+        dataagent_portal_mcp_token="environment-token",
+        dataagent_portal_mcp_token_header_name="X-Portal-MCP-Token",
+    )
+
+    actual = agent_runtime._build_portal_mcp_servers(
+        cfg,
+        agent_snapshot={"data_scope": {"allowed_scopes": []}},
+    )
+
+    assert actual == {
+        "portal": {
+            "type": "http",
+            "url": "http://registry-portal:8801/mcp/",
+            "headers": {
+                "X-Portal-MCP-Token": "registry-token",
+            },
+        }
+    }
+
+
+def test_tool_runtime_allows_database_when_data_scope_is_empty(monkeypatch):
+    import json
+    from core import tool_runtime
+
+    monkeypatch.setenv("DATAAGENT_DATA_SCOPE_JSON", json.dumps({"allowed_scopes": []}))
+    # Should not raise any ToolRuntimeError
+    tool_runtime._ensure_database_in_scope("arbitrary_db")
+
+
+
 def test_build_portal_mcp_servers_returns_empty_when_registry_row_is_disabled_or_missing(monkeypatch):
     class FakeRegistry:
         rows = []

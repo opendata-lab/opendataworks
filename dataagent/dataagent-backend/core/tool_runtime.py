@@ -202,5 +202,7 @@ def _resolve_datasource(engine: str, database: str) -> Any:
 
 
 def _ensure_database_in_scope(database: str) -> None:
-    if "DATAAGENT_DATA_SCOPE_JSON" in os.environ and not scope_allows_database(current_env_scope(), database):
-        raise ToolRuntimeError(f"数据范围限制: 未授权访问 database `{str(database or '').strip()}`")
+    if "DATAAGENT_DATA_SCOPE_JSON" in os.environ:
+        scope = current_env_scope()
+        if scope.get("allowed_scopes") and not scope_allows_database(scope, database):
+            raise ToolRuntimeError(f"数据范围限制: 未授权访问 database `{str(database or '').strip()}`")

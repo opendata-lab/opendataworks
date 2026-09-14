@@ -66,7 +66,10 @@ def current_env_scope() -> dict[str, list[dict[str, Any]]]:
 
 
 def encode_scope_header(scope: Any) -> str:
-    payload = json.dumps(normalize_data_scope(scope), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    normalized = normalize_data_scope(scope)
+    if not normalized.get("allowed_scopes"):
+        return ""
+    payload = json.dumps(normalized, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
 
 

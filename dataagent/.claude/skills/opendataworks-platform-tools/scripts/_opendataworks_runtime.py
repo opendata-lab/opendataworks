@@ -81,6 +81,8 @@ def runtime_data_scope_header() -> str:
         parsed = json.loads(raw_scope)
     except json.JSONDecodeError:
         return ""
+    if not isinstance(parsed, dict) or not parsed.get("allowed_scopes"):
+        return ""
     payload = json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
 

@@ -327,6 +327,21 @@ class BackendAgentQueryServiceTest {
     }
 
     @Test
+    void readQueryAllowsDatabaseWhenDataScopeIsUnconfiguredOrEmpty() {
+        // 当未配置数据范围（null、空字符串或 allowed_scopes 为空列表）时，不限制数据范围
+        AgentDataScopeContext.setEncodedScope(null);
+        org.junit.jupiter.api.Assertions.assertFalse(AgentDataScopeContext.isActive());
+
+        AgentDataScopeContext.setEncodedScope("");
+        org.junit.jupiter.api.Assertions.assertFalse(AgentDataScopeContext.isActive());
+
+        // base64url('{"allowed_scopes":[]}')
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W119");
+        org.junit.jupiter.api.Assertions.assertFalse(AgentDataScopeContext.isActive());
+        AgentDataScopeContext.clear();
+    }
+
+    @Test
     void readQueryRejectsCrossSchemaReferencesOutsideAgentDataScope() {
         AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
         try {

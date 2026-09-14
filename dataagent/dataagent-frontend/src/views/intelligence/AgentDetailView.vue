@@ -124,6 +124,9 @@
             <!-- 数据范围 -->
             <section v-else-if="activeTab === 'scope'" key="scope" class="agent-panel-section">
               <h3>数据范围</h3>
+              <p class="agent-panel-desc">
+                限制智能体访问指定的数据源 Schema。未配置限制时默认不限制。
+              </p>
               <el-form-item v-if="canManage" label="允许访问的 Schema">
                 <el-select
                   v-model="scopeSelection"
@@ -131,7 +134,7 @@
                   filterable
                   collapse-tags
                   collapse-tags-tooltip
-                  placeholder="选择数据源 Schema"
+                  placeholder="选择数据源 Schema（不选则默认不限制）"
                   style="width: 100%"
                 >
                   <el-option
@@ -142,7 +145,7 @@
                   />
                 </el-select>
               </el-form-item>
-              <div v-if="!scopeSelection.length" class="scope-empty">无可访问数据范围</div>
+              <div v-if="!scopeSelection.length" class="scope-empty">未配置限制（默认不限制数据范围）</div>
               <div v-else class="scope-list">
                 <span v-for="key in scopeSelection" :key="key">{{ scopeLabel(scopeOptionByKey[key]) }}</span>
               </div>
