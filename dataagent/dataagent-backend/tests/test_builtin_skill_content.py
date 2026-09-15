@@ -536,3 +536,44 @@ def test_migrated_scripts_are_gone_from_platform_tools():
         assert not (PLATFORM_TOOLS_SKILL_ROOT / "scripts" / name).exists(), f"{name} 仍留在平台技能中"
     assert not (PLATFORM_TOOLS_SKILL_ROOT / "assets" / "chart-template").exists()
     assert (CHART_SKILL_ROOT / "assets" / "chart-template" / "bar.json").exists()
+
+
+def test_every_builtin_skill_is_fully_tracked_by_git():
+    """内置 Skill 的每个文件都必须真的进了 git。
+
+    .gitignore 默认忽略 `/dataagent/.claude/skills/*/`，每个内置 Skill 都要显式
+    加白名单。漏加时 `git add -A` 会静默跳过新文件，而 `git mv` 过来的旧文件因为
+    已被跟踪照常提交——于是仓库里出现一个「有 scripts/、没有 SKILL.md」的半个 Skill。
+
+    后果是 `_discovered_skill_folders()` 认不出它（该函数以 SKILL.md 存在为准），
+    部署上启用时报 "skill folder not found"，而本地因为文件真实存在，全部测试通过。
+    """
+    import subprocess
+
+    repo_root = SKILLS_ROOT.parents[2]
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", str(SKILLS_ROOT.relative_to(repo_root))],
+        cwd=repo_root,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    tracked_paths = {repo_root / line for line in tracked}
+
+    missing: list[str] = []
+    for skill_dir in sorted(p for p in SKILLS_ROOT.iterdir() if p.is_dir()):
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.is_file():
+            continue  # 磁盘上就不是一个 Skill，交给别的用例管
+        for path in sorted(skill_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            if "__pycache__" in path.parts or path.suffix == ".pyc":
+                continue
+            if path not in tracked_paths:
+                missing.append(str(path.relative_to(repo_root)))
+
+    assert not missing, (
+        "以下内置 Skill 文件没有被 git 跟踪，多半是 .gitignore 少加了白名单：\n  "
+        + "\n  ".join(missing)
+    )
