@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import shutil
 import sys
 import types
 import zipfile
@@ -887,6 +888,9 @@ def test_reindex_does_not_query_each_file_individually(monkeypatch, tmp_path):
 def test_update_skill_runtime_enables_second_skill_without_changing_primary(monkeypatch):
     captured = {}
 
+    # 这几个用例只验证启停合并逻辑，不准备真实 skills 目录；
+    # 磁盘对账由 test_enabling_a_skill_reconciles_a_stale_db_row_with_disk 覆盖。
+    monkeypatch.setattr(skill_admin_service, "reindex_documents_from_disk", lambda **kwargs: [])
     monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {BUSINESS_SKILL, "marketing-insights"})
     monkeypatch.setattr(
         skill_admin_service,
@@ -936,6 +940,9 @@ def test_update_skill_runtime_rejects_disabling_last_skill(monkeypatch):
 def test_update_skill_runtime_moves_primary_when_disabling_current(monkeypatch):
     captured = {}
 
+    # 这几个用例只验证启停合并逻辑，不准备真实 skills 目录；
+    # 磁盘对账由 test_enabling_a_skill_reconciles_a_stale_db_row_with_disk 覆盖。
+    monkeypatch.setattr(skill_admin_service, "reindex_documents_from_disk", lambda **kwargs: [])
     monkeypatch.setattr(skill_admin_service, "_discovered_skill_folders", lambda: {BUSINESS_SKILL, "marketing-insights"})
     monkeypatch.setattr(
         skill_admin_service,
@@ -1254,3 +1261,41 @@ def test_uninstall_skill_rejects_last_enabled(monkeypatch, tmp_path):
 
     with pytest.raises(ValueError, match="至少需要保留一个启用 Skill"):
         skill_admin_service.uninstall_skill("marketing-insights")
+
+
+def test_enable_error_says_why_the_skill_is_unusable(monkeypatch, tmp_path):
+    """启用失败时必须说清是哪一种情况。
+
+    管理页列表读 DB，启用校验读磁盘且以 SKILL.md 存在为准。所以一个 Skill 目录
+    可以既出现在列表里（scripts/*.py、assets/*.json 已建了文档行），又无法启用
+    （缺 SKILL.md）——这正是 .gitignore 漏加白名单导致新 Skill 只提交了一半时的表现。
+    光报 "skill folder not found" 无从判断是目录没挂上还是文件不全。
+    """
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+
+    complete = discovery_root / "skill-a"
+    complete.mkdir(parents=True)
+    (complete / "SKILL.md").write_text("---\nname: skill-a\ndescription: a\n---\n", encoding="utf-8")
+
+    # 半个 Skill：有脚本、没有 SKILL.md
+    half = discovery_root / "skill-half"
+    (half / "scripts").mkdir(parents=True)
+    (half / "scripts" / "run.py").write_text("print(1)\n", encoding="utf-8")
+
+    skill_admin_service.reindex_documents_from_disk()
+    # 列表里看得见——文档行来自那个 .py
+    assert "skill-half" in {doc["folder"] for doc in skill_admin_service.list_documents()}
+
+    with pytest.raises(ValueError) as excinfo:
+        skill_admin_service.update_skill_runtime("skill-half", True)
+    message = str(excinfo.value)
+    assert "skill-half" in message
+    assert "SKILL.md" in message
+    assert str(discovery_root) in message
+
+    with pytest.raises(ValueError) as excinfo:
+        skill_admin_service.update_skill_runtime("skill-missing", True)
+    assert "目录不存在" in str(excinfo.value)
+
+    # 完整的 Skill 不受影响
+    assert skill_admin_service.update_skill_runtime("skill-a", True)["enabled"] is True

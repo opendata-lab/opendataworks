@@ -1594,7 +1594,16 @@ def update_skill_runtime(folder: str, enabled: bool) -> dict[str, Any]:
     target_folder = _validate_skill_folder_name(folder)
     available_folders = _discovered_skill_folders()
     if target_folder not in available_folders:
-        raise ValueError("skill folder not found")
+        # 管理页列表来自 list_documents()，读的是 DB；本函数校验的是实时磁盘扫描，
+        # 且以 SKILL.md 存在为准。所以一个目录可以既在列表里（.py/.json 建了行）
+        # 又不可启用（缺 SKILL.md）——光说 "not found" 完全看不出是哪种情况。
+        root = resolve_skill_discovery_root_dir()
+        target_dir = root / target_folder
+        if target_dir.is_dir():
+            reason = "目录存在但缺少 SKILL.md" if not (target_dir / "SKILL.md").is_file() else "目录不可读"
+        else:
+            reason = "目录不存在"
+        raise ValueError(f"skill folder not found: {target_folder}（{reason}，已扫描 {root}）")
 
     current = current_settings_payload()
     primary_folder = _folder_from_skills_output_dir(str(current.get("skills_output_dir") or "")) or _current_skill_folder()

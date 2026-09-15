@@ -54,6 +54,10 @@ export const buildSkillItems = (documents = []) => {
 
       return {
         folder,
+        // 描述只挂在 SKILL.md 那一条文档上，同目录其它文档是空串。
+        // 漏了这一行，列表页的 skill.description 永远是 undefined，
+        // 每个 Skill 都落到「未填写描述」的兜底文案。
+        description: sorted.map((item) => String(item.description || '').trim()).find(Boolean) || '',
         source: primary?.source || 'bundled',
         enabled: sorted.some((item) => item.enabled),
         editable: sorted.some((item) => item.editable !== false),
