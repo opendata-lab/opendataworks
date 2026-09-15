@@ -620,6 +620,20 @@ def _append_delta(current: str, incoming: str) -> tuple[str, str]:
     return current + new, new
 
 
+def _skills_dir_from(skills_root: Path) -> Path:
+    """从已解析的 skill 根推导 skills 发现根目录（`.claude/skills`）。
+
+    不直接调用 resolve_skill_discovery_root_dir()：它在 SKILLS_ROOT_DIR 未配置时会抛错，
+    而本函数所在的 env 构建路径在该配置缺失时原本仍可正常完成。
+
+    skills_root 有两种形态：主 Skill 自身目录（`.claude/skills/<folder>`），
+    或回落分支里已经是发现根目录本身。
+    """
+    if skills_root.name == "skills" and skills_root.parent.name == ".claude":
+        return skills_root
+    return skills_root.parent
+
+
 def _build_runtime_env(
     cfg,
     provider_env: dict[str, str],
@@ -665,6 +679,11 @@ def _build_runtime_env(
             "DATAAGENT_ORIGINAL_QUESTION": original_question,
             "DATAAGENT_PYTHON_BIN": str(python_bin),
             "DATAAGENT_SKILL_ROOT": str(skills_root),
+            # 跨 Skill 引用的通用锚点。DATAAGENT_SKILL_ROOT 指向主 Skill 自身目录，
+            # 会随智能体配置变化，不能用来定位兄弟 Skill。
+            # 显式写入而不依赖 os.environ 透传：skills_root_dir 由 pydantic Settings 解析，
+            # 来自 .env 时不会回写进 os.environ。
+            "SKILLS_ROOT_DIR": str(_skills_dir_from(skills_root)),
             "DATAAGENT_ENABLED_SKILLS": ",".join(enabled_folders),
             "DATAAGENT_ENABLED_SKILL_ROOTS": json.dumps(enabled_roots, ensure_ascii=False),
             "DATAAGENT_DATA_SCOPE_JSON": json.dumps(

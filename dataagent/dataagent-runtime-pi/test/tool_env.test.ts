@@ -22,6 +22,7 @@ const SECRET_ENV = {
   DATAAGENT_PYTHON_BIN: "/usr/bin/python3",
   DATAAGENT_SKILL_ROOT: "/skills/nl2sql",
   DATAAGENT_PLATFORM_SKILL_ROOT: "/skills/platform-tools",
+  SKILLS_ROOT_DIR: "/skills",
   ODW_BACKEND_BASE_URL: "http://backend:8080/api/v1/ai",
   ODW_AGENT_SERVICE_TOKEN: "service-token-123",
   ANTHROPIC_API_KEY: "sk-secret-anthropic",
@@ -39,6 +40,7 @@ test("shell env carries only allowlisted variables", () => {
   assert.equal(env.DATAAGENT_PYTHON_BIN, "/usr/bin/python3");
   assert.equal(env.DATAAGENT_SKILL_ROOT, "/skills/nl2sql");
   assert.equal(env.DATAAGENT_PLATFORM_SKILL_ROOT, "/skills/platform-tools");
+  assert.equal(env.SKILLS_ROOT_DIR, "/skills");
   assert.equal(env.ODW_BACKEND_BASE_URL, "http://backend:8080/api/v1/ai");
   assert.equal(env.ODW_AGENT_SERVICE_TOKEN, "service-token-123");
 });

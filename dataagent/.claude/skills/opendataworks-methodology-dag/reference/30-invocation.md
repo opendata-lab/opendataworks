@@ -55,7 +55,7 @@ cd <本技能目录> && python3 scripts/<name>.py ...
   | `--limit` | 每个查询节点的行数上限，默认取 `DATAAGENT_QUERY_LIMIT` |
 
 - 输出 `kind=sql_execution`，与 `run_sql.py` 同构，可直接收口回答或喂给
-  `build_chart_spec.py`。详见 [`40-output-contract.md`](40-output-contract.md)。
+  `chart-visualization` 技能出图。详见 [`40-output-contract.md`](40-output-contract.md)。
 - 结果归因：
   - `result_state=success`：已拿到真实结果，直接收口，并在回答里带上 `methodology.caliber`。
   - `result_state=empty_result`：口径下确实无数据，说明口径与空结果，不换方法论试探。

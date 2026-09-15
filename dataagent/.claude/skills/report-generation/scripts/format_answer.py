@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from _opendataworks_runtime import error_payload, load_json_input, print_json
+from _skill_io import error_payload, load_json_input, print_json
 
 
 def main():

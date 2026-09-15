@@ -55,7 +55,7 @@ cd <本技能目录> && python3 scripts/<name>.py ...
    ```
 
    输出契约与 `run_sql.py` 一致（`kind=sql_execution`），可直接收口回答，也可直接喂给
-   `build_chart_spec.py` 出图。**不要再逐节点自己拼 SQL 重跑一遍。**
+   `chart-visualization` 技能出图。**不要再逐节点自己拼 SQL 重跑一遍。**
 
 3. **参数缺失** → 返回 `error_code=param_missing` 并列出缺的槽位。
    只追问这些槽位，不要自行假定口径、不要用默认值蒙混。
@@ -96,5 +96,6 @@ cd <本技能目录> && python3 scripts/<name>.py ...
 - `ontology-modeling-assistant`：本体的 `query_functions` 声明**语义契约**
   （intent / grain / params / output_fields），本技能的工件提供**可执行体**，
   两者通过 `ontology_ref.function_name` 关联。语义在上、执行在下，不要混写。
-- `opendataworks-platform-tools`：SQL 验证、SQL 执行、图表契约、元数据发现全部走它。
+- `opendataworks-platform-tools`：SQL 验证、SQL 执行、元数据发现全部走它。
   本技能不复制这些能力。
+- `chart-visualization`：结果需要出图时走它，调用方式见其 SKILL.md。

@@ -6,7 +6,7 @@
 
 - fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
 - 若运行时暴露了 `mcp__portal__portal_*`，优先直接调用 MCP tools，不要先绕回脚本。
-- 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`export_query.py`、`build_chart_spec.py`、`format_answer.py`、`query_opendataworks_metadata.py`
+- 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`export_query.py`、`query_opendataworks_metadata.py`
 - validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py` 或 `export_query.py`。
 - run_sql.py 是唯一推荐的 SQL 执行入口；不要新增或猜测其他 SQL 执行脚本。
 - 大结果或需落盘的场景改用 `export_query.py`（结果写文件、不进上下文）；它服务于导出，不替代 run_sql.py 把结果回上下文的入口地位。
@@ -98,21 +98,8 @@
 - 落盘位置：所有要交付给用户、可下载的产物（CSV/Excel/HTML/图片等）必须写到工作区的 `output/` 目录下（如 `output/result.csv`）。只有 `output/` 与 `uploads/` 目录下的文件会出现在会话文件面板并可下载；写到工作区根目录或其他子目录的文件视为临时草稿，不会展示也不可下载。
 - 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<name>.csv`
 
-## build_chart_spec.py
+## 图表与报告
 
-- 用途：把 SQL 结果转换成图表契约。
-- 适用场景：结果结构适合图表，且用户问题需要可视化或对比展示。
-- 参数规则：必须显式传 `--chart-type bar|line|pie|table`。
-- 输入方式（二选一）：
-  - `--data '<JSON rows>'`：直接传 JSON 数组，适用于已有行数据。
-  - `--input '<sql_execution JSON>'`：传 `run_sql.py` 的完整输出 JSON（含 `rows` 字段）。
-- 可选参数：`--title "标题"`, `--x-field <维度字段>`, `--y-field <度量字段>`。
-- 数据完整性：`chart_spec.dataset` 必须保留传入的完整行集，脚本不抽样、不截前 N 行；若 `sql_execution` 已经 `has_more=true`、`truncated_by_size=true` 或 `error_code=result_truncated`，脚本会拒绝生成图表，必须先改写 SQL 做更精确的时间/类别聚合或缩小范围。
-- 收口规则：成功返回一次 `chart_spec` 后结束本轮，不重复生成。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py" --chart-type <bar|line|pie|table> --input '<sql_execution JSON>' [--title "<标题>"] [--x-field <维度字段>] [--y-field <度量字段>]`
-- 注意：`build_chart_spec.py` 不是独立注册的工具名，必须通过 Bash 工具执行上述命令。
-
-## format_answer.py
-
-- 用途：把结构化 SQL 结果压缩成中文结论。
-- 使用原则：只格式化已有结果，不补造业务事实。
+图表契约、报告导出和结果摘要不属于本技能，分别由 `chart-visualization` 与 `report-generation`
+技能提供，调用方式见各自的 SKILL.md。本技能只负责产出 `sql_execution` 结果，
+把结果交给哪个技能加工由调用方决定。
