@@ -109,8 +109,10 @@ def test_private_business_skill_assets_are_ignored_and_not_packaged():
     gitignore = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8")
     create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
 
+    # deny-by-default 这一条才是承重墙：它让未显式放行的 skill 目录（运行时导入的
+    # managed skill、租户私有 skill）默认不进版本库。此前这里还断言放行
+    # dataagent-nl2sql，那个 skill 早已删除，断言锁住的是一条残留规则。
     assert "/dataagent/.claude/skills/*/" in gitignore
-    assert "!/dataagent/.claude/skills/dataagent-nl2sql/" in gitignore
     assert "/evals/" in gitignore
     assert "*-core.jsonl" in gitignore
     assert "--exclude='*-assistant'" in create_package

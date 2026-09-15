@@ -46,9 +46,10 @@ dolphinscheduler-service/*.egg-info/
 .claude/
 !/dataagent/.claude/
 !/dataagent/.claude/skills/
+# Deny-by-default: 运行时导入的 managed skill 与租户私有 skill 落在同一个发现根里，
+# 只有下面逐个放行的内置 skill 受版本控制。新增内置 skill 必须同时补两行放行规则，
+# 并加进 core/skill_admin_service.py 的 BUILTIN_SKILL_FOLDERS。
 /dataagent/.claude/skills/*/
-!/dataagent/.claude/skills/dataagent-nl2sql/
-!/dataagent/.claude/skills/dataagent-nl2sql/**
 !/dataagent/.claude/skills/opendataworks-business-knowledge/
 !/dataagent/.claude/skills/opendataworks-business-knowledge/**
 !/dataagent/.claude/skills/opendataworks-platform-tools/

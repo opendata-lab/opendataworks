@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -67,6 +68,35 @@ def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
 
 def test_dataagent_nl2sql_skill_bundle_is_removed():
     assert not SQL_SKILL_ROOT.exists()
+
+
+def test_builtin_skill_folders_cover_every_tracked_skill():
+    """随仓库发布的 skill 必须全部判为 bundled。
+
+    BUILTIN_SKILL_FOLDERS 决定 source=bundled，而 uninstall_skill() 只对 bundled
+    拒绝卸载。漏掉一个，管理员就能从 UI 把仓库跟踪的 skill 目录 rmtree 掉。
+    此前 opendataworks-data-dev 与 opendataworks-methodology-dag 就漏在集合外。
+
+    以 git 跟踪状态而非磁盘内容为准：运行时导入的 managed skill 也落在同一个
+    发现根里，但它们被 .gitignore 排除，不应被当成内置。
+    """
+    from core.skill_admin_service import BUILTIN_SKILL_FOLDERS
+
+    # cwd 设在 SKILLS_ROOT，git ls-files 输出即相对该目录，首段就是 skill 目录名
+    completed = subprocess.run(
+        ["git", "ls-files"],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=SKILLS_ROOT,
+    )
+    tracked_folders = {
+        Path(line).parts[0]
+        for line in completed.stdout.splitlines()
+        if line.strip() and "/" in line
+    }
+    assert tracked_folders, "未解析到任何受版本控制的 skill 目录，断言失效"
+    assert tracked_folders == set(BUILTIN_SKILL_FOLDERS)
 
 
 def test_system_prompt_documents_data_quality_gate():
