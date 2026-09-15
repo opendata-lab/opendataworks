@@ -10,6 +10,7 @@ import re
 import shutil
 import stat
 import tempfile
+import threading
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -932,17 +933,31 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
     }
 
 
-def managed_skill_files() -> list[str]:
+def _managed_skill_entries() -> list[tuple[str, int, int]]:
+    """Managed files with an mtime/size fingerprint, sorted by path.
+
+    `stat` only — no file contents. This is what lets a list request detect an
+    out-of-band edit without reading every skill file.
+    """
     root = resolve_skill_discovery_root_dir()
-    files: list[str] = []
+    entries: list[tuple[str, int, int]] = []
     for path in root.rglob("*"):
         if not path.is_file():
             continue
         if path.suffix.lower() not in MANAGED_FILE_SUFFIXES:
             continue
-        files.append(path.relative_to(root).as_posix())
-    files.sort()
-    return files
+        try:
+            stat_result = path.stat()
+        except OSError:
+            # Disappeared mid-scan; the next request will see a new signature.
+            continue
+        entries.append((path.relative_to(root).as_posix(), stat_result.st_mtime_ns, stat_result.st_size))
+    entries.sort()
+    return entries
+
+
+def managed_skill_files() -> list[str]:
+    return [entry[0] for entry in _managed_skill_entries()]
 
 
 def _skill_folder_name(relative_path: str) -> str:
@@ -995,7 +1010,20 @@ def _is_skill_enabled(folder: str, skill_runtime: dict[str, dict[str, bool]] | N
     return bool((runtime.get(folder_name) or {}).get("enabled"))
 
 
-def _document_api_payload(document: dict[str, Any]) -> dict[str, Any]:
+def _document_api_payload(
+    document: dict[str, Any],
+    *,
+    skill_runtime: dict[str, dict[str, bool]] | None = None,
+    description_cache: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Shape one stored document for the API.
+
+    `skill_runtime` and `description_cache` let a caller resolve the shared
+    per-request state once. Without them this reloads settings from MySQL and
+    re-parses the folder's SKILL.md for every single document, which is how a
+    list of 84 documents came to cost 255 fresh connections — see
+    `list_documents`.
+    """
     payload = dict(document or {})
     full_relative_path = str(payload.get("relative_path") or "").replace("\\", "/").strip("/")
     folder = _skill_folder_name(full_relative_path)
@@ -1003,27 +1031,37 @@ def _document_api_payload(document: dict[str, Any]) -> dict[str, Any]:
     payload["relative_path"] = _relative_path_within_skill(full_relative_path)
     payload["source"] = _skill_source(folder)
     payload["editable"] = True
-    payload["enabled"] = _is_skill_enabled(folder)
+    payload["enabled"] = _is_skill_enabled(folder, skill_runtime)
     # Every SKILL.md in this repo declares what the skill is for, and none of it
     # reached the UI: the list had no description field, so the client filled
     # that column with last_change_summary — the reindex note, identical on
     # every row ("发现磁盘文件") and looking like content while saying nothing.
-    payload["description"] = _skill_description_from_front_matter(folder)
+    payload["description"] = _skill_description_from_front_matter(folder, description_cache)
     return payload
 
 
-def _skill_description_from_front_matter(folder: str) -> str:
+def _skill_description_from_front_matter(
+    folder: str,
+    description_cache: dict[str, str] | None = None,
+) -> str:
     if not folder:
         return ""
+    if description_cache is not None and folder in description_cache:
+        return description_cache[folder]
+    description = ""
     try:
         skill_md = (resolve_skill_discovery_root_dir() / folder / "SKILL.md").resolve()
     except Exception:
-        return ""
-    try:
-        return _front_matter_value(skill_md, "description")
-    except ValueError:
-        # Unreadable front matter is not worth failing a list request over.
-        return ""
+        skill_md = None
+    if skill_md is not None:
+        try:
+            description = _front_matter_value(skill_md, "description")
+        except ValueError:
+            # Unreadable front matter is not worth failing a list request over.
+            description = ""
+    if description_cache is not None:
+        description_cache[folder] = description
+    return description
 
 
 def _settings_path_for_skill_folder(folder: str) -> str:
@@ -1043,45 +1081,126 @@ def _discovered_skill_folders() -> set[str]:
     return folders
 
 
-def _migrate_document_paths_to_discovery_root(store) -> None:
+def _migrate_document_paths_to_discovery_root(store, documents: list[dict[str, Any]]) -> bool:
+    """Move pre-discovery-root document paths under their skill folder.
+
+    Takes the already-fetched document list so a plain read does not re-scan the
+    table. Returns whether anything moved, so the caller knows to refetch.
+    """
     skill_folders = _discovered_skill_folders()
     if not skill_folders:
-        return
+        return False
     current_folder = _current_skill_folder()
     if not current_folder:
-        return
-    for document in store.list_documents():
+        return False
+    known_paths = {
+        str(document.get("relative_path") or "").replace("\\", "/").strip("/")
+        for document in documents
+    }
+    migrated = False
+    for document in documents:
         relative_path = str(document.get("relative_path") or "").replace("\\", "/").strip("/")
         if not relative_path:
             continue
         if _skill_folder_name(relative_path) in skill_folders:
             continue
         next_path = f"{current_folder}/{relative_path}"
-        if store.get_document_by_path(next_path):
+        if next_path in known_paths:
             continue
         store.rename_document_path(relative_path, next_path)
+        known_paths.discard(relative_path)
+        known_paths.add(next_path)
+        migrated = True
+    return migrated
 
 
-def reindex_documents_from_disk(*, change_source: str = "import", change_summary: str = "发现磁盘文件") -> list[dict[str, Any]]:
+_reindex_lock = threading.Lock()
+_indexed_signature: tuple[tuple[str, int, int], ...] | None = None
+
+
+def reset_disk_index_signature() -> None:
+    """Forget the last indexed disk state, forcing the next scan to do full work."""
+    global _indexed_signature
+    with _reindex_lock:
+        _indexed_signature = None
+
+
+def reindex_documents_from_disk(
+    *,
+    change_source: str = "import",
+    change_summary: str = "发现磁盘文件",
+    force: bool = False,
+) -> list[dict[str, Any]]:
+    """Sync managed skill files on disk into the document store.
+
+    Short-circuits when no managed file's mtime or size has changed since the
+    last scan, so a plain list request costs one `stat` pass instead of reading
+    and hashing every skill file. The write paths (import, edit, rollback,
+    uninstall) all keep the store in sync themselves, so the DB — not disk — is
+    what a read serves; the signature check only covers edits made outside the
+    app.
+    """
+    global _indexed_signature
+    with _reindex_lock:
+        return _reindex_documents_locked(
+            change_source=change_source,
+            change_summary=change_summary,
+            force=force,
+        )
+
+
+def _reindex_documents_locked(*, change_source: str, change_summary: str, force: bool) -> list[dict[str, Any]]:
+    global _indexed_signature
+    entries = _managed_skill_entries()
+    signature = tuple(entries)
+    if not force and _indexed_signature is not None and signature == _indexed_signature:
+        return []
+
     store = get_skill_admin_store()
     root = resolve_skill_discovery_root_dir()
-    _migrate_document_paths_to_discovery_root(store)
-    managed_paths = managed_skill_files()
+    # One table read serves the migration, the orphan sweep and the hash
+    # comparison below. Looking each file up individually cost one fresh MySQL
+    # connection per managed file on every read.
+    documents = store.list_documents()
+    if _migrate_document_paths_to_discovery_root(store, documents):
+        documents = store.list_documents()
+
+    managed_paths = [entry[0] for entry in entries]
     managed_path_set = set(managed_paths)
-    for document in store.list_documents():
-        relative_path = str(document.get("relative_path") or "")
-        if relative_path and relative_path not in managed_path_set:
+    indexed: dict[str, dict[str, Any]] = {}
+    for document in documents:
+        relative_path = str(document.get("relative_path") or "").replace("\\", "/").strip("/")
+        if not relative_path:
+            continue
+        if relative_path not in managed_path_set:
             store.delete_document_by_path(relative_path)
+            continue
+        indexed[relative_path] = document
+
+    # Files whose fingerprint is unchanged since the last scan and which are
+    # already indexed need no read: one changed file must not re-hash the whole
+    # tree.
+    unchanged_fingerprints = set(_indexed_signature or ())
 
     changed: list[dict[str, Any]] = []
-    for relative_path in managed_paths:
+    # Resolved on first change only: a warm reindex writes nothing and must not
+    # pay a settings read, while a cold one (or a fresh import) shares a single
+    # resolve across every document it rewrites.
+    shared_runtime: dict[str, dict[str, bool]] | None = None
+    description_cache: dict[str, str] = {}
+    for entry in entries:
+        relative_path = entry[0]
+        existing = indexed.get(relative_path)
+        if existing and entry in unchanged_fingerprints:
+            continue
         file_path = root / relative_path
         content = file_path.read_text(encoding="utf-8")
-        existing = store.get_document_by_path(relative_path)
         current_hash = existing.get("current_hash") if existing else None
         next_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
         if existing and current_hash == next_hash:
             continue
+        if shared_runtime is None:
+            shared_runtime = _skill_runtime_from_current_settings()
         saved = store.save_document(
             relative_path=relative_path,
             content=content,
@@ -1089,19 +1208,60 @@ def reindex_documents_from_disk(*, change_source: str = "import", change_summary
             change_summary=change_summary,
             actor="system",
         )
-        changed.append(_document_api_payload(saved))
+        changed.append(
+            _document_api_payload(
+                saved,
+                skill_runtime=shared_runtime,
+                description_cache=description_cache,
+            )
+        )
+    _indexed_signature = signature
     return changed
 
 
+def _descriptions_from_store(store) -> dict[str, str]:
+    """folder -> description, parsed from the SKILL.md content already in the DB."""
+    contents = store.list_skill_manifest_contents()
+    descriptions: dict[str, str] = {}
+    for relative_path, content in contents.items():
+        folder = _skill_folder_name(str(relative_path or "").replace("\\", "/").strip("/"))
+        if not folder:
+            continue
+        descriptions[folder] = _front_matter_value_from_text(content, "description")
+    return descriptions
+
+
 def list_documents() -> list[dict[str, Any]]:
-    reindex_documents_from_disk()
-    documents = [_document_api_payload(item) for item in get_skill_admin_store().list_documents()]
+    """List managed skill documents from the store.
+
+    Reads the DB only. Every write path keeps the store in sync — import
+    reindexes, edits and rollbacks dual-write, uninstall deletes the rows, and
+    `main.py` indexes at startup — so a page load needs no disk access at all.
+    Disk belongs to the agent runtime, which consumes per-topic copies of the
+    skill folders, and to `reindex_documents_from_disk()` for explicit syncs.
+    """
+    store = get_skill_admin_store()
+    # Resolve the shared state once per request. Both of these used to be
+    # recomputed per document: the runtime config via a fresh pair of MySQL
+    # connections, the description via a re-read of the same SKILL.md from disk.
+    # Every write path keeps the store in sync, so this serves the DB only.
+    skill_runtime = _skill_runtime_from_current_settings()
+    description_cache = _descriptions_from_store(store)
+    documents = [
+        _document_api_payload(item, skill_runtime=skill_runtime, description_cache=description_cache)
+        for item in store.list_documents()
+    ]
     documents.sort(key=lambda item: (str(item.get("folder") or ""), str(item.get("category") or ""), str(item.get("relative_path") or "")))
     return documents
 
 
 def get_document_detail(document_id: int) -> dict[str, Any] | None:
-    reindex_documents_from_disk()
+    """Fetch one document with its version history.
+
+    Content and versions live in the store, so opening a skill file needs no
+    disk read either — the editor shows what the DB has, which is also what the
+    last write put on disk.
+    """
     store = get_skill_admin_store()
     document = store.get_document(document_id)
     if not document:
@@ -1229,13 +1389,8 @@ def _safe_extract_skill_zip(content: bytes, extract_root: Path):
         raise ValueError("ZIP 包未包含可导入文件")
 
 
-def _front_matter_value(skill_md: Path, key: str) -> str:
-    try:
-        lines = skill_md.read_text(encoding="utf-8").splitlines()
-    except FileNotFoundError:
-        return ""
-    except UnicodeDecodeError as exc:
-        raise ValueError("SKILL.md must be UTF-8 encoded") from exc
+def _front_matter_value_from_text(text: str, key: str) -> str:
+    lines = str(text or "").splitlines()
     if not lines or lines[0].strip() != "---":
         return ""
     for line in lines[1:]:
@@ -1245,6 +1400,16 @@ def _front_matter_value(skill_md: Path, key: str) -> str:
         if separator and candidate_key.strip() == key:
             return value.strip().strip("'\"")
     return ""
+
+
+def _front_matter_value(skill_md: Path, key: str) -> str:
+    try:
+        text = skill_md.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except UnicodeDecodeError as exc:
+        raise ValueError("SKILL.md must be UTF-8 encoded") from exc
+    return _front_matter_value_from_text(text, key)
 
 
 def _skill_name_from_front_matter(skill_md: Path) -> str:

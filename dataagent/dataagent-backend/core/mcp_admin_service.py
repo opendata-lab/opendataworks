@@ -110,6 +110,49 @@ def list_mcp_servers() -> dict[str, list[dict[str, Any]]]:
     }
 
 
+def _credential_flags(row: dict[str, Any]) -> dict[str, bool]:
+    return {
+        "headers_set": bool(row.get("headers")),
+        "env_set": bool(row.get("env")),
+    }
+
+
+def annotate_mcp_servers(listing: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    """Add `headers_set` / `env_set` without changing any value.
+
+    The flags are what a redacted view shows instead of the secrets, so admins
+    and non-admins read the same field rather than two different shapes.
+    """
+    return {
+        group: [{**row, **_credential_flags(row)} for row in rows]
+        for group, rows in listing.items()
+    }
+
+
+def redact_mcp_servers(listing: dict[str, list[dict[str, Any]]]) -> dict[str, list[dict[str, Any]]]:
+    """Strip credentials from an MCP listing for non-admin readers.
+
+    `headers` carries bearer tokens for http/sse servers and `env` carries API
+    keys for stdio servers, while `command`/`args` expose host paths and can
+    carry secrets as flags. Key names survive so the UI can still show what is
+    configured; values do not.
+    """
+    redacted: dict[str, list[dict[str, Any]]] = {}
+    for group, rows in listing.items():
+        redacted[group] = [
+            {
+                **row,
+                **_credential_flags(row),
+                "headers": {str(key): "" for key in (row.get("headers") or {})},
+                "env": {str(key): "" for key in (row.get("env") or {})},
+                "command": "",
+                "args": [],
+            }
+            for row in rows
+        ]
+    return redacted
+
+
 def create_mcp_server(payload: dict[str, Any]) -> str:
     store = get_runtime_registry_store()
     normalized = normalize_mcp_server(payload, source="configured")

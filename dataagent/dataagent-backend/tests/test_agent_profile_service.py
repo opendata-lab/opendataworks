@@ -13,6 +13,110 @@ from config import get_settings, update_settings
 from core import agent_profile_service
 
 
+class _RecordingProfileStore:
+    """Counts the store traffic a profile read triggers."""
+
+    def __init__(self):
+        self.calls: list[str] = []
+        self.profiles = {
+            agent_profile_service.DEFAULT_AGENT_ID: {
+                "agent_id": agent_profile_service.DEFAULT_AGENT_ID,
+                "name": "default",
+                "is_default": True,
+            },
+            agent_profile_service.OPENDATAWORKS_AGENT_ID: {
+                "agent_id": agent_profile_service.OPENDATAWORKS_AGENT_ID,
+                "name": "opendataworks",
+            },
+            agent_profile_service.ONTOLOGY_MODELING_AGENT_ID: {
+                "agent_id": agent_profile_service.ONTOLOGY_MODELING_AGENT_ID,
+                "name": "ontology",
+            },
+        }
+
+    def init_schema(self):
+        self.calls.append("init_schema")
+
+    def get_profile(self, agent_id):
+        self.calls.append(f"get_profile:{agent_id}")
+        return self.profiles.get(agent_id)
+
+    def save_profile(self, payload):
+        self.calls.append("save_profile")
+        self.profiles[payload["agent_id"]] = payload
+        return payload
+
+    def list_profiles(self):
+        self.calls.append("list_profiles")
+        return list(self.profiles.values())
+
+    def backfill_default_bindings(self, default_snapshot):
+        self.calls.append("backfill_default_bindings")
+
+
+def test_listing_agents_does_not_reseed_builtins_on_every_read(monkeypatch):
+    """The welcome page paid the built-in seed plus a full-table backfill per read.
+
+    `bootstrap_default_agent_profile()` ran on every `list_agent_profiles()` and
+    every `get_agent_profile()`: three profile SELECTs plus
+    `backfill_default_bindings()`, which issues two
+    `UPDATE ... WHERE agent_id IS NULL OR ...` statements against
+    `da_agent_topic` and `da_agent_task` and commits. That is one-time migration
+    work sitting on a hot read path, and it only gets more expensive as those
+    tables grow.
+    """
+    store = _RecordingProfileStore()
+    monkeypatch.setattr(agent_profile_service, "get_agent_profile_store", lambda: store)
+    agent_profile_service.reset_builtin_agent_seed()
+
+    agent_profile_service.list_agent_profiles()
+    seeding_calls = [call for call in store.calls if call != "list_profiles"]
+    assert "backfill_default_bindings" in seeding_calls, "first call still seeds"
+
+    store.calls.clear()
+
+    # Steady state: five more reads, no reseeding and no backfill.
+    for _ in range(5):
+        agent_profile_service.list_agent_profiles()
+        agent_profile_service.get_agent_profile(agent_profile_service.DEFAULT_AGENT_ID)
+
+    assert "backfill_default_bindings" not in store.calls
+    assert "save_profile" not in store.calls
+    assert "init_schema" not in store.calls
+    assert store.calls.count(f"get_profile:{agent_profile_service.OPENDATAWORKS_AGENT_ID}") == 0
+    # Each read still hits the store for live data, and nothing more.
+    assert store.calls.count("list_profiles") == 5
+    assert store.calls.count(f"get_profile:{agent_profile_service.DEFAULT_AGENT_ID}") == 5
+
+
+def test_reset_builtin_agent_seed_allows_reseeding(monkeypatch):
+    store = _RecordingProfileStore()
+    monkeypatch.setattr(agent_profile_service, "get_agent_profile_store", lambda: store)
+    agent_profile_service.reset_builtin_agent_seed()
+
+    agent_profile_service.list_agent_profiles()
+    assert "backfill_default_bindings" in store.calls
+
+    store.calls.clear()
+    agent_profile_service.reset_builtin_agent_seed()
+    agent_profile_service.list_agent_profiles()
+
+    assert "backfill_default_bindings" in store.calls
+
+
+def test_bootstrap_default_agent_profile_still_returns_default(monkeypatch):
+    store = _RecordingProfileStore()
+    monkeypatch.setattr(agent_profile_service, "get_agent_profile_store", lambda: store)
+    agent_profile_service.reset_builtin_agent_seed()
+
+    profile = agent_profile_service.bootstrap_default_agent_profile()
+
+    assert profile["agent_id"] == agent_profile_service.DEFAULT_AGENT_ID
+    # Still current after the seed is skipped, rather than a cached snapshot.
+    store.profiles[agent_profile_service.DEFAULT_AGENT_ID]["name"] = "renamed"
+    assert agent_profile_service.bootstrap_default_agent_profile()["name"] == "renamed"
+
+
 def test_default_agent_payload_is_general_builtin_agent():
     payload = agent_profile_service.default_agent_payload()
 

@@ -296,3 +296,105 @@ def test_registry_migration_preserves_custom_provider_and_backfills_current_lega
     assert json.loads(rows["custom_gateway"]["enabled_models_json"]) == ["gateway-model"]
     assert rows["anthropic"]["api_key"] == "legacy-key"
     assert json.loads(rows["anthropic"]["enabled_models_json"]) == ["claude-sonnet-4.5"]
+
+
+def test_redact_mcp_servers_strips_credentials_but_keeps_shape():
+    """Opening the MCP page to non-admins must not hand out credentials.
+
+    MCP rows carry `headers` (bearer tokens for http/sse servers) and `env`
+    (API keys for stdio servers); the shipped portal server stores a real
+    `X-Portal-MCP-Token`. Non-admin readers get key names and a "configured"
+    flag, never values — the same treatment the settings endpoint already gives
+    `anthropic_api_key` and `mysql_password`.
+    """
+    listing = {
+        "configured": [
+            {
+                "server_id": "srv_stdio",
+                "name": "local tool",
+                "source": "configured",
+                "transport": "stdio",
+                "url": "",
+                "headers": {},
+                "command": "/usr/local/bin/secret-binary",
+                "args": ["--token", "s3cret"],
+                "env": {"API_KEY": "super-secret", "REGION": "cn"},
+                "enabled": True,
+                "oauth_required": False,
+                "tool_count": 3,
+                "description": "d",
+            }
+        ],
+        "plugin": [
+            {
+                "server_id": "portal",
+                "name": "Portal MCP",
+                "source": "plugin",
+                "transport": "http",
+                "url": "http://127.0.0.1:8801/mcp/",
+                "headers": {"X-Portal-MCP-Token": "odw-portal-mcp-token"},
+                "command": "",
+                "args": [],
+                "env": {},
+                "enabled": True,
+                "oauth_required": False,
+                "tool_count": 6,
+                "description": "portal",
+            }
+        ],
+    }
+
+    redacted = mcp_admin_service.redact_mcp_servers(listing)
+
+    stdio = redacted["configured"][0]
+    assert stdio["env"] == {"API_KEY": "", "REGION": ""}, "key names kept, values dropped"
+    assert stdio["env_set"] is True
+    assert stdio["command"] == ""
+    assert stdio["args"] == []
+    assert "s3cret" not in json.dumps(redacted)
+    assert "super-secret" not in json.dumps(redacted)
+    assert "secret-binary" not in json.dumps(redacted)
+
+    portal = redacted["plugin"][0]
+    assert portal["headers"] == {"X-Portal-MCP-Token": ""}
+    assert portal["headers_set"] is True
+    assert "odw-portal-mcp-token" not in json.dumps(redacted)
+
+    # Everything a read-only viewer legitimately needs survives.
+    assert portal["name"] == "Portal MCP"
+    assert portal["url"] == "http://127.0.0.1:8801/mcp/"
+    assert portal["transport"] == "http"
+    assert portal["enabled"] is True
+    assert portal["tool_count"] == 6
+    assert stdio["env_set"] is True and portal["env_set"] is False
+
+
+def test_list_mcp_servers_marks_credential_presence_for_admins():
+    """Admins keep the real values, plus the same presence flags."""
+    listing = {
+        "configured": [
+            {
+                "server_id": "srv",
+                "name": "n",
+                "source": "configured",
+                "transport": "http",
+                "url": "https://x.test",
+                "headers": {"Authorization": "Bearer abc"},
+                "command": "",
+                "args": [],
+                "env": {},
+                "enabled": True,
+                "oauth_required": False,
+                "tool_count": 0,
+                "description": "",
+            }
+        ],
+        "plugin": [],
+    }
+
+    annotated = mcp_admin_service.annotate_mcp_servers(listing)
+
+    row = annotated["configured"][0]
+    assert row["headers"] == {"Authorization": "Bearer abc"}
+    assert row["headers_set"] is True
+    assert row["env_set"] is False

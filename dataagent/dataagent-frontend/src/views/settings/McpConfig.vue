@@ -16,6 +16,7 @@
         />
         <el-button :icon="Refresh" @click="loadMcpServers">刷新</el-button>
         <el-button
+          v-if="canManage"
           type="primary"
           :icon="Plus"
           @click="openAddDialog"
@@ -25,7 +26,9 @@
       </div>
     </div>
 
-    <div v-loading="loading" class="mcp-content">
+    <SettingsListSkeleton v-if="isInitialLoading" :sections="2" :rows="3" icon />
+
+    <div v-else v-loading="loading" class="mcp-content">
       <section class="mcp-section">
         <div class="mcp-section-title">自定义服务 <span>{{ filteredConfiguredServers.length }}</span></div>
 
@@ -53,12 +56,21 @@
                 授权
               </el-button>
               <el-switch
+                v-if="canManage"
                 :model-value="server.enabled"
                 :loading="updatingServerId === server.server_id"
                 :title="server.enabled ? '禁用服务' : '启用服务'"
                 @update:model-value="toggleServerEnabled(server, $event)"
               />
+              <span
+                v-else
+                class="mcp-managed-status"
+                :class="{ 'is-enabled': server.enabled }"
+              >
+                {{ server.enabled ? '已启用' : '未启用' }}
+              </span>
               <el-button
+                v-if="canManage"
                 text
                 :icon="EditPen"
                 title="编辑服务"
@@ -66,6 +78,7 @@
                 @click="openEditDialog(server)"
               />
               <el-button
+                v-if="canManage"
                 text
                 type="danger"
                 :icon="Delete"
@@ -83,8 +96,8 @@
           :class="{ 'is-compact': pluginServers.length }"
         >
           <div class="mcp-empty__title">尚未添加自定义 MCP 服务</div>
-          <p>手动新建服务器，或导入已有配置。</p>
-          <div class="mcp-empty__actions">
+          <p>{{ canManage ? '手动新建服务器，或导入已有配置。' : '管理员尚未配置自定义 MCP 服务。' }}</p>
+          <div v-if="canManage" class="mcp-empty__actions">
             <el-button type="primary" :icon="Plus" @click="openAddDialog">新建 MCP 服务器</el-button>
             <el-button :icon="Download" @click="openImportDialog">导入</el-button>
           </div>
@@ -312,8 +325,18 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Connection, Delete, Download, EditPen, Plus, Refresh } from '@element-plus/icons-vue'
 import { dataagentApi } from '@/api/dataagent'
+import { useAuthStore } from '@/stores/auth'
+import SettingsListSkeleton from './components/SettingsListSkeleton.vue'
+
+const authStore = useAuthStore()
+// 读对所有登录用户开放，写仍限 admin —— 与 SkillStudio 同一模式。后端写端点
+// 独立校验，这里只负责不展示用不了的入口。
+const canManage = computed(() => authStore.isAdmin)
 
 const loading = ref(false)
+// 首屏用骨架屏，刷新用遮罩：已有数据时不让内容跳走。
+const initialLoaded = ref(false)
+const isInitialLoading = computed(() => loading.value && !initialLoaded.value)
 const submitting = ref(false)
 const updatingServerId = ref('')
 const searchKeyword = ref('')
@@ -439,6 +462,7 @@ const loadMcpServers = async () => {
     pluginServers.value = []
   } finally {
     loading.value = false
+    initialLoaded.value = true
   }
 }
 
@@ -715,6 +739,8 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  /* 同 SkillStudio：刷新遮罩需要一个高度下限。 */
+  min-height: 180px;
 }
 
 .mcp-section {

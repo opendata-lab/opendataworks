@@ -35,10 +35,12 @@ from core.skill_admin_service import (
     update_skill_runtime,
 )
 from core.mcp_admin_service import (
+    annotate_mcp_servers,
     create_mcp_server,
     delete_mcp_server,
     import_mcp_servers,
     list_mcp_servers,
+    redact_mcp_servers,
     update_mcp_server,
 )
 from core.skill_discovery import resolve_skills_root_dir
@@ -148,12 +150,12 @@ def _build_admin_settings_response(updated_at: str = "") -> AdminSettingsRespons
 
 
 @settings_router.get("/settings", response_model=AdminSettingsResponse)
-async def get_admin_settings():
+def get_admin_settings():
     return _build_admin_settings_response()
 
 
 @settings_router.put("/settings", response_model=AdminSettingsResponse)
-async def update_admin_settings(request: AdminSettingsUpdateRequest):
+def update_admin_settings(request: AdminSettingsUpdateRequest):
     try:
         saved = persist_admin_settings(request.model_dump(exclude_none=True, exclude_unset=True))
     except ValueError as exc:
@@ -171,12 +173,12 @@ async def create_model_detection(request: ModelDetectionRequest):
 
 
 @settings_router.get("/providers", response_model=ProviderListResponse)
-async def get_providers():
+def get_providers():
     return ProviderListResponse(providers=_provider_catalog())
 
 
 @settings_router.post("/providers")
-async def create_provider(request: ProviderCreateRequest):
+def create_provider(request: ProviderCreateRequest):
     try:
         saved = save_provider_config(request.model_dump(exclude_none=True, exclude_unset=True), create=True)
     except ValueError as exc:
@@ -185,7 +187,7 @@ async def create_provider(request: ProviderCreateRequest):
 
 
 @settings_router.put("/providers/{provider_id}")
-async def update_provider(provider_id: str, request: ProviderUpdateRequest):
+def update_provider(provider_id: str, request: ProviderUpdateRequest):
     try:
         save_provider_config(
             {"provider_id": provider_id, **request.model_dump(exclude_none=True, exclude_unset=True)},
@@ -199,7 +201,7 @@ async def update_provider(provider_id: str, request: ProviderUpdateRequest):
 
 
 @settings_router.delete("/providers/{provider_id}")
-async def delete_provider(provider_id: str):
+def delete_provider(provider_id: str):
     try:
         delete_provider_config(provider_id)
     except KeyError as exc:
@@ -209,13 +211,21 @@ async def delete_provider(provider_id: str):
     return {"ok": True}
 
 
-@skills_router.get("/mcp/servers", response_model=McpServerListResponse)
-async def get_mcp_servers():
-    return McpServerListResponse.model_validate(list_mcp_servers())
+@user_router.get("/mcp/servers", response_model=McpServerListResponse)
+def get_mcp_servers(identity: AuthIdentity | None = Depends(require_user)):
+    """读开放给登录用户，写仍限 admin。
+
+    非 admin 读到的每一行都经过脱敏：`headers` 与 `env` 只保留键名，`command`
+    与 `args` 置空，凭证是否已配置通过 `headers_set` / `env_set` 表达。
+    """
+    listing = list_mcp_servers()
+    if is_auth_enabled() and not (identity and identity.is_admin):
+        return McpServerListResponse.model_validate(redact_mcp_servers(listing))
+    return McpServerListResponse.model_validate(annotate_mcp_servers(listing))
 
 
 @skills_router.post("/mcp/servers")
-async def create_mcp_server_endpoint(request: McpServerCreateRequest):
+def create_mcp_server_endpoint(request: McpServerCreateRequest):
     try:
         server_id = create_mcp_server(request.model_dump(exclude_none=True, exclude_unset=True))
     except ValueError as exc:
@@ -224,7 +234,7 @@ async def create_mcp_server_endpoint(request: McpServerCreateRequest):
 
 
 @skills_router.patch("/mcp/servers/{server_id}")
-async def update_mcp_server_endpoint(server_id: str, request: McpServerUpdateRequest):
+def update_mcp_server_endpoint(server_id: str, request: McpServerUpdateRequest):
     try:
         update_mcp_server(server_id, request.model_dump(exclude_none=True, exclude_unset=True))
     except KeyError as exc:
@@ -235,7 +245,7 @@ async def update_mcp_server_endpoint(server_id: str, request: McpServerUpdateReq
 
 
 @skills_router.delete("/mcp/servers/{server_id}")
-async def delete_mcp_server_endpoint(server_id: str):
+def delete_mcp_server_endpoint(server_id: str):
     try:
         delete_mcp_server(server_id)
     except KeyError as exc:
@@ -246,7 +256,7 @@ async def delete_mcp_server_endpoint(server_id: str):
 
 
 @skills_router.post("/mcp/servers/import")
-async def import_mcp_servers_endpoint(payload: dict[str, Any] = Body(...)):
+def import_mcp_servers_endpoint(payload: dict[str, Any] = Body(...)):
     try:
         imported = import_mcp_servers(payload)
     except ValueError as exc:
@@ -255,7 +265,7 @@ async def import_mcp_servers_endpoint(payload: dict[str, Any] = Body(...)):
 
 
 @settings_router.get("/topics", response_model=AdminWidgetTopicPage)
-async def admin_list_all_topics(
+def admin_list_all_topics(
     source: str = Query(default="", pattern="^(|portal|widget)$"),
     website_id: str | None = Query(default=None),
     external_user_id: str | None = Query(default=None),
@@ -293,7 +303,7 @@ async def admin_list_all_topics(
 
 
 @settings_router.get("/widget-topics", response_model=AdminWidgetTopicPage)
-async def admin_list_widget_topics(
+def admin_list_widget_topics(
     website_id: str | None = Query(default=None),
     external_user_id: str | None = Query(default=None),
     visitor_id: str | None = Query(default=None),
@@ -328,7 +338,7 @@ async def admin_list_widget_topics(
 
 
 @settings_router.get("/widget-users", response_model=AdminWidgetUserList)
-async def admin_list_widget_users(
+def admin_list_widget_users(
     website_id: str | None = Query(default=None),
     keyword: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -346,7 +356,7 @@ async def admin_list_widget_users(
 
 
 @settings_router.get("/auth-users", response_model=AdminAuthUserList)
-async def admin_list_auth_users(
+def admin_list_auth_users(
     keyword: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
 ):
@@ -358,7 +368,7 @@ async def admin_list_auth_users(
 
 
 @settings_router.get("/widget-topics/{topic_id}/messages", response_model=TopicMessagePageResponse)
-async def admin_list_widget_topic_messages(
+def admin_list_widget_topic_messages(
     topic_id: str,
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=200, ge=1, le=500),
@@ -377,34 +387,34 @@ async def admin_list_widget_topic_messages(
 
 
 @user_router.get("/skills/documents", response_model=list[SkillDocumentSummary])
-async def get_skill_documents():
+def get_skill_documents():
     return [SkillDocumentSummary.model_validate(item) for item in list_documents()]
 
 
 @skills_router.get("/agents/capabilities", response_model=AgentCapabilitiesResponse)
-async def get_agent_capabilities():
+def get_agent_capabilities():
     return AgentCapabilitiesResponse.model_validate(agent_capabilities(list_documents()))
 
 
 @skills_router.get("/data-scope/options", response_model=list[AgentDataScopeOption])
-async def get_data_scope_options():
+def get_data_scope_options():
     return [AgentDataScopeOption.model_validate(item) for item in list_data_scope_options()]
 
 
 @agents_public_router.get("/agents", response_model=list[AgentCatalogProfile])
-async def get_agents(request: Request):
+def get_agents(request: Request):
     profiles = filter_visible_agent_profiles(list_agent_profiles(), _catalog_identity(request))
     return [AgentCatalogProfile.model_validate(item) for item in profiles]
 
 
 @user_router.get("/agents/profiles", response_model=list[AgentReadableProfile])
-async def get_readable_agent_profiles(identity: AuthIdentity | None = Depends(require_user)):
+def get_readable_agent_profiles(identity: AuthIdentity | None = Depends(require_user)):
     profiles = filter_visible_agent_profiles(list_agent_profiles(), identity)
     return [AgentReadableProfile.model_validate(_readable_agent_payload(item)) for item in profiles]
 
 
 @skills_router.post("/agents", response_model=AgentProfile)
-async def create_agent(request: AgentProfileCreateRequest):
+def create_agent(request: AgentProfileCreateRequest):
     try:
         profile = create_agent_profile(
             request.model_dump(exclude_none=True, exclude_unset=True),
@@ -416,7 +426,7 @@ async def create_agent(request: AgentProfileCreateRequest):
 
 
 @agents_public_router.get("/agents/{agent_id}", response_model=AgentCatalogProfile)
-async def get_agent(agent_id: str, request: Request):
+def get_agent(agent_id: str, request: Request):
     profile = get_agent_profile(agent_id)
     # 不可见与不存在返回完全一致的 404，防助手存在性探测。
     if not profile or not agent_visible_to(profile, _catalog_identity(request)):
@@ -425,7 +435,7 @@ async def get_agent(agent_id: str, request: Request):
 
 
 @user_router.get("/agents/{agent_id}/profile", response_model=AgentReadableProfile)
-async def get_readable_agent_profile(agent_id: str, identity: AuthIdentity | None = Depends(require_user)):
+def get_readable_agent_profile(agent_id: str, identity: AuthIdentity | None = Depends(require_user)):
     profile = get_agent_profile(agent_id)
     if not profile or not agent_visible_to(profile, identity):
         raise HTTPException(status_code=404, detail="agent not found")
@@ -433,7 +443,7 @@ async def get_readable_agent_profile(agent_id: str, identity: AuthIdentity | Non
 
 
 @skills_router.get("/agents/{agent_id}/configuration", response_model=AgentProfile)
-async def get_agent_configuration(agent_id: str):
+def get_agent_configuration(agent_id: str):
     profile = get_agent_profile(agent_id)
     if not profile:
         raise HTTPException(status_code=404, detail="agent not found")
@@ -441,7 +451,7 @@ async def get_agent_configuration(agent_id: str):
 
 
 @agents_public_router.get("/agents/{agent_id}/slash-commands", response_model=AgentSlashCommandsResponse)
-async def get_agent_slash_commands_endpoint(agent_id: str, request: Request):
+def get_agent_slash_commands_endpoint(agent_id: str, request: Request):
     # Visibility must be enforced before consulting the slash-command cache,
     # otherwise a cache hit would leak data about a hidden agent.
     profile = get_agent_profile(agent_id)
@@ -459,7 +469,7 @@ async def get_agent_slash_commands_endpoint(agent_id: str, request: Request):
 
 
 @skills_router.put("/agents/{agent_id}", response_model=AgentProfile)
-async def update_agent(agent_id: str, request: AgentProfileUpdateRequest):
+def update_agent(agent_id: str, request: AgentProfileUpdateRequest):
     try:
         profile = update_agent_profile(
             agent_id,
@@ -474,7 +484,7 @@ async def update_agent(agent_id: str, request: AgentProfileUpdateRequest):
 
 
 @skills_router.delete("/agents/{agent_id}")
-async def delete_agent(agent_id: str):
+def delete_agent(agent_id: str):
     try:
         deleted = delete_agent_profile(agent_id)
     except ValueError as exc:
@@ -485,7 +495,7 @@ async def delete_agent(agent_id: str):
 
 
 @user_router.get("/skills/documents/{document_id}", response_model=SkillDocumentDetail)
-async def get_skill_document(document_id: int):
+def get_skill_document(document_id: int):
     document = get_document_detail(document_id)
     if not document:
         raise HTTPException(status_code=404, detail="document not found")
@@ -493,7 +503,7 @@ async def get_skill_document(document_id: int):
 
 
 @skills_router.put("/skills/documents/{document_id}", response_model=SkillDocumentDetail)
-async def update_skill_document(document_id: int, request: SkillDocumentUpdateRequest):
+def update_skill_document(document_id: int, request: SkillDocumentUpdateRequest):
     try:
         document = save_document_content(document_id, request.content, request.change_summary)
     except ValueError as exc:
@@ -504,7 +514,7 @@ async def update_skill_document(document_id: int, request: SkillDocumentUpdateRe
 
 
 @skills_router.put("/skills/runtime/{folder}", response_model=SkillRuntimeConfig)
-async def update_skill_runtime_config(folder: str, request: SkillRuntimeUpdateRequest):
+def update_skill_runtime_config(folder: str, request: SkillRuntimeUpdateRequest):
     try:
         result = update_skill_runtime(folder, request.enabled)
     except ValueError as exc:
@@ -523,7 +533,7 @@ async def import_skill(file: UploadFile = File(...)):
 
 
 @skills_router.get("/skills/{folder}/export")
-async def export_skill(folder: str):
+def export_skill(folder: str):
     try:
         file_name, content = export_skill_as_zip(folder)
     except ValueError as exc:
@@ -538,7 +548,7 @@ async def export_skill(folder: str):
 
 
 @skills_router.delete("/skills/{folder}", response_model=SkillUninstallResponse)
-async def delete_skill(folder: str):
+def delete_skill(folder: str):
     try:
         result = uninstall_skill(folder)
     except ValueError as exc:
@@ -549,7 +559,7 @@ async def delete_skill(folder: str):
 
 
 @user_router.post("/skills/documents/{document_id}/compare", response_model=SkillDocumentCompareResponse)
-async def compare_skill_document(document_id: int, request: SkillDocumentCompareRequest):
+def compare_skill_document(document_id: int, request: SkillDocumentCompareRequest):
     try:
         result = compare_document_versions(
             document_id,
@@ -564,7 +574,7 @@ async def compare_skill_document(document_id: int, request: SkillDocumentCompare
 
 
 @skills_router.post("/skills/documents/{document_id}/versions/{version_id}/rollback", response_model=SkillDocumentDetail)
-async def rollback_skill_document(document_id: int, version_id: int):
+def rollback_skill_document(document_id: int, version_id: int):
     try:
         document = rollback_document(document_id, version_id)
     except ValueError as exc:

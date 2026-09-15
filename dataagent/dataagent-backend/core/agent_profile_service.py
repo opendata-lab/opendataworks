@@ -577,7 +577,18 @@ def get_agent_profile_store() -> AgentProfileStore:
     return _agent_profile_store
 
 
-def bootstrap_default_agent_profile() -> dict[str, Any]:
+_seed_lock = threading.Lock()
+_builtin_agents_seeded = False
+
+
+def reset_builtin_agent_seed() -> None:
+    """Forget that the built-in seed already ran. Test hook."""
+    global _builtin_agents_seeded
+    with _seed_lock:
+        _builtin_agents_seeded = False
+
+
+def _seed_builtin_agent_profiles() -> None:
     store = get_agent_profile_store()
     store.init_schema()
     default_profile = store.get_profile(DEFAULT_AGENT_ID)
@@ -590,16 +601,41 @@ def bootstrap_default_agent_profile() -> dict[str, Any]:
     if not ontology_modeling_profile:
         store.save_profile(ontology_modeling_agent_payload())
     store.backfill_default_bindings(default_profile)
-    return default_profile
+
+
+def ensure_builtin_agent_profiles() -> None:
+    """Seed the built-in profiles and backfill legacy rows once per process.
+
+    This is deployment-time work: three profile lookups plus two full-table
+    `UPDATE ... WHERE agent_id IS NULL` statements against `da_agent_topic` and
+    `da_agent_task`. It used to run on every profile read, so the welcome page
+    and every chat request re-paid it. Same one-shot semantics as
+    `init_schema()`; `main.py` already runs it at startup.
+    """
+    global _builtin_agents_seeded
+    if _builtin_agents_seeded:
+        return
+    with _seed_lock:
+        if _builtin_agents_seeded:
+            return
+        _seed_builtin_agent_profiles()
+        _builtin_agents_seeded = True
+
+
+def bootstrap_default_agent_profile() -> dict[str, Any]:
+    ensure_builtin_agent_profiles()
+    # Read through rather than caching the seed's snapshot, so an edited default
+    # profile is not shadowed by a stale copy for the life of the process.
+    return get_agent_profile_store().get_profile(DEFAULT_AGENT_ID) or {}
 
 
 def list_agent_profiles() -> list[dict[str, Any]]:
-    bootstrap_default_agent_profile()
+    ensure_builtin_agent_profiles()
     return get_agent_profile_store().list_profiles()
 
 
 def get_agent_profile(agent_id: str) -> dict[str, Any] | None:
-    bootstrap_default_agent_profile()
+    ensure_builtin_agent_profiles()
     return get_agent_profile_store().get_profile(str(agent_id or "").strip())
 
 
