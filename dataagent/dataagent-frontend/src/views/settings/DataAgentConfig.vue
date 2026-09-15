@@ -1176,13 +1176,20 @@ const saveCurrentProvider = async () => {
 const deleteCurrentProvider = async () => {
   if (!currentProvider.value) return
   const providerId = currentProvider.value.provider_id
+  // 新建但尚未保存的供应商在后端根本不存在，调删除接口只会拿到 404。
+  // 这种情况下操作的语义是丢弃本地草稿，不涉及远端。
+  const isUnsavedDraft = Boolean(currentDraft.value?.is_new)
+  const providerLabel = currentDraft.value?.name || providerId
+
   try {
     await ElMessageBox.confirm(
-      `确定要删除供应商「${currentDraft.value?.name || providerId}」吗？`,
-      '删除确认',
+      isUnsavedDraft
+        ? `「${providerLabel}」尚未保存，确定要丢弃吗？`
+        : `确定要删除供应商「${providerLabel}」吗？`,
+      isUnsavedDraft ? '丢弃确认' : '删除确认',
       {
         type: 'warning',
-        confirmButtonText: '删除',
+        confirmButtonText: isUnsavedDraft ? '丢弃' : '删除',
         cancelButtonText: '取消'
       }
     )
@@ -1191,16 +1198,16 @@ const deleteCurrentProvider = async () => {
   }
 
   try {
-    if (typeof dataagentApi.deleteProvider === 'function') {
+    if (!isUnsavedDraft && typeof dataagentApi.deleteProvider === 'function') {
       await dataagentApi.deleteProvider(providerId)
     }
     providers.value = providers.value.filter((item) => item.provider_id !== providerId)
     delete providerDrafts[providerId]
     delete providerSnapshots[providerId]
     selectedProviderId.value = providers.value[0]?.provider_id || ''
-    ElMessage.success('供应商已删除')
+    ElMessage.success(isUnsavedDraft ? '已丢弃未保存的供应商' : '供应商已删除')
   } catch (error) {
-    ElMessage.error(error?.message || '删除供应商失败')
+    ElMessage.error(error?.message || (isUnsavedDraft ? '丢弃失败' : '删除供应商失败'))
   }
 }
 
