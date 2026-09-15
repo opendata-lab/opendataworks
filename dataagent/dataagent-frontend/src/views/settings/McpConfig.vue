@@ -327,6 +327,7 @@ import { Connection, Delete, Download, EditPen, Plus, Refresh } from '@element-p
 import { dataagentApi } from '@/api/dataagent'
 import { useAuthStore } from '@/stores/auth'
 import SettingsListSkeleton from './components/SettingsListSkeleton.vue'
+import { useDeferredLoading } from '@/utils/deferredLoading'
 
 const authStore = useAuthStore()
 // 读对所有登录用户开放，写仍限 admin —— 与 SkillStudio 同一模式。后端写端点
@@ -336,7 +337,9 @@ const canManage = computed(() => authStore.isAdmin)
 const loading = ref(false)
 // 首屏用骨架屏，刷新用遮罩：已有数据时不让内容跳走。
 const initialLoaded = ref(false)
-const isInitialLoading = computed(() => loading.value && !initialLoaded.value)
+const initialLoading = computed(() => loading.value && !initialLoaded.value)
+// 接口只要 6 ms 时骨架屏只存在一帧，那是闪烁而不是提示。慢到 200 ms 才提示。
+const isInitialLoading = useDeferredLoading(initialLoading)
 const submitting = ref(false)
 const updatingServerId = ref('')
 const searchKeyword = ref('')

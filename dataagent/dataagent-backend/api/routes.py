@@ -246,7 +246,7 @@ async def api_health():
 
 
 @router.get("/runtime-config", response_model=RuntimeConfigResponse)
-async def api_runtime_config():
+def api_runtime_config():
     payload = resolved_chat_settings_payload()
     providers = []
     for item in payload.get("providers") or []:
@@ -274,7 +274,7 @@ async def api_runtime_config():
 
 
 @router.post("/widget-events", response_model=WidgetEventIngestResponse)
-async def api_widget_events(payload: WidgetEventBatchRequest, http_request: Request):
+def api_widget_events(payload: WidgetEventBatchRequest, http_request: Request):
     context = _request_context(http_request)
     store = _get_store()
     events = [item.model_dump() for item in payload.events]
@@ -283,7 +283,7 @@ async def api_widget_events(payload: WidgetEventBatchRequest, http_request: Requ
 
 
 @topic_router.post("", response_model=TopicDetail)
-async def api_create_topic(http_request: Request, request: CreateTopicRequest | None = None):
+def api_create_topic(http_request: Request, request: CreateTopicRequest | None = None):
     store = _get_store()
     context = _request_context(http_request)
     payload = request or CreateTopicRequest()
@@ -300,20 +300,20 @@ async def api_create_topic(http_request: Request, request: CreateTopicRequest | 
 
 
 @topic_router.get("", response_model=list[TopicSummary])
-async def api_list_topics(request: Request, agent_id: str | None = Query(default=None)):
+def api_list_topics(request: Request, agent_id: str | None = Query(default=None)):
     store = _get_store()
     topics = store.list_topics(include_messages=False, context=_request_context(request), agent_id=agent_id)
     return [TopicSummary.model_validate(item) for item in topics]
 
 
 @topic_router.get("/{topic_id}", response_model=TopicDetail)
-async def api_get_topic(topic_id: str, request: Request):
+def api_get_topic(topic_id: str, request: Request):
     topic = _require_topic(topic_id, _request_context(request))
     return TopicDetail.model_validate(topic)
 
 
 @topic_router.put("/{topic_id}", response_model=TopicDetail)
-async def api_update_topic(topic_id: str, payload: UpdateTopicRequest, request: Request):
+def api_update_topic(topic_id: str, payload: UpdateTopicRequest, request: Request):
     context = _request_context(request)
     title: str | None = None
     if payload.title is not None:
@@ -336,7 +336,7 @@ async def api_update_topic(topic_id: str, payload: UpdateTopicRequest, request: 
 
 
 @topic_router.delete("/{topic_id}")
-async def api_delete_topic(topic_id: str, request: Request):
+def api_delete_topic(topic_id: str, request: Request):
     context = _request_context(request)
     store = _get_store()
     _require_topic(topic_id, context)
@@ -345,7 +345,7 @@ async def api_delete_topic(topic_id: str, request: Request):
 
 
 @topic_router.get("/{topic_id}/messages", response_model=TopicMessagePageResponse)
-async def api_list_topic_messages(
+def api_list_topic_messages(
     topic_id: str,
     request: Request,
     page: int = Query(default=1, ge=1),
@@ -383,13 +383,13 @@ async def api_upload_topic_file(topic_id: str, request: Request, file: UploadFil
 
 
 @topic_router.get("/{topic_id}/files", response_model=WorkspaceFileListResponse)
-async def api_list_topic_files(topic_id: str, request: Request):
+def api_list_topic_files(topic_id: str, request: Request):
     _require_topic(topic_id, _request_context(request))
     return WorkspaceFileListResponse(files=[WorkspaceFile.model_validate(item) for item in list_files(topic_id)])
 
 
 @topic_router.get("/{topic_id}/files/{rel_path:path}")
-async def api_download_topic_file(
+def api_download_topic_file(
     topic_id: str,
     rel_path: str,
     request: Request,
@@ -415,7 +415,7 @@ async def api_download_topic_file(
 
 
 @topic_router.put("/{topic_id}/messages/{message_id}/feedback", response_model=TopicMessage)
-async def api_update_message_feedback(
+def api_update_message_feedback(
     topic_id: str,
     message_id: str,
     payload: UpdateMessageFeedbackRequest,
@@ -542,7 +542,7 @@ async def api_create_task(payload: CreateTaskRequest, request: Request):
 
 
 @task_router.get("/{task_id}", response_model=TaskStatusResponse)
-async def api_get_task(task_id: str, request: Request):
+def api_get_task(task_id: str, request: Request):
     store = _get_store()
     task = store.get_task(task_id, context=_request_context(request))
     if not task:
@@ -551,7 +551,7 @@ async def api_get_task(task_id: str, request: Request):
 
 
 @task_router.get("/{task_id}/message", response_model=TopicMessage)
-async def api_get_task_message(task_id: str, request: Request):
+def api_get_task_message(task_id: str, request: Request):
     """The run's persisted assistant message. Lets the live stream path pick up
     post-run fields (generated-file attachments) without re-fetching the whole
     topic message page."""
@@ -566,7 +566,7 @@ async def api_get_task_message(task_id: str, request: Request):
 
 
 @task_router.get("/{task_id}/sdk-events", response_model=SdkEventPageResponse)
-async def api_list_sdk_events(
+def api_list_sdk_events(
     task_id: str,
     request: Request,
     after_id: int = Query(default=0, ge=0),
@@ -697,7 +697,7 @@ async def api_cancel_task(task_id: str, request: Request):
 
 
 @task_router.post("/{task_id}/permission-decision", response_model=PermissionDecisionResponse)
-async def api_submit_permission_decision(task_id: str, payload: PermissionDecisionRequest, request: Request):
+def api_submit_permission_decision(task_id: str, payload: PermissionDecisionRequest, request: Request):
     store = _get_store()
     context = _request_context(request)
     task = store.get_task(task_id, context=context)
@@ -735,7 +735,7 @@ async def api_submit_permission_decision(task_id: str, payload: PermissionDecisi
 
 
 @task_router.post("/{task_id}/question-answer", response_model=QuestionAnswerResponse)
-async def api_submit_question_answer(task_id: str, payload: QuestionAnswerRequest, request: Request):
+def api_submit_question_answer(task_id: str, payload: QuestionAnswerRequest, request: Request):
     store = _get_store()
     context = _request_context(request)
     task = store.get_task(task_id, context=context)
@@ -765,7 +765,7 @@ async def api_submit_question_answer(task_id: str, payload: QuestionAnswerReques
 
 
 @queue_router.post("/queries", response_model=MessageQueuePageResponse)
-async def api_query_message_queues(payload: MessageQueueQueryRequest, request: Request):
+def api_query_message_queues(payload: MessageQueueQueryRequest, request: Request):
     context = _request_context(request)
     if payload.topic_id:
         _require_topic(str(payload.topic_id), context)
@@ -781,7 +781,7 @@ async def api_query_message_queues(payload: MessageQueueQueryRequest, request: R
 
 
 @queue_router.post("", response_model=MessageQueueRecord)
-async def api_create_message_queue(payload: MessageQueueUpsertRequest, request: Request):
+def api_create_message_queue(payload: MessageQueueUpsertRequest, request: Request):
     context = _request_context(request)
     topic_id = str(payload.topic_id or "").strip()
     if not topic_id:
@@ -796,7 +796,7 @@ async def api_create_message_queue(payload: MessageQueueUpsertRequest, request: 
 
 
 @queue_router.put("/{queue_id}", response_model=MessageQueueRecord)
-async def api_update_message_queue(queue_id: str, payload: MessageQueueUpsertRequest, request: Request):
+def api_update_message_queue(queue_id: str, payload: MessageQueueUpsertRequest, request: Request):
     context = _request_context(request)
     store = _get_store()
     _require_topic(str(payload.topic_id or "").strip(), context)
@@ -814,7 +814,7 @@ async def api_update_message_queue(queue_id: str, payload: MessageQueueUpsertReq
 
 
 @queue_router.delete("/{queue_id}")
-async def api_delete_message_queue(queue_id: str, request: Request):
+def api_delete_message_queue(queue_id: str, request: Request):
     store = _get_store()
     context = _request_context(request)
     if not store.get_message_queue(queue_id, context=context):
@@ -851,7 +851,7 @@ async def api_consume_message_queue(queue_id: str, request: Request):
 
 
 @schedule_router.post("/queries", response_model=MessageSchedulePageResponse)
-async def api_query_message_schedules(payload: MessageScheduleQueryRequest, request: Request):
+def api_query_message_schedules(payload: MessageScheduleQueryRequest, request: Request):
     context = _request_context(request)
     if payload.topic_id:
         _require_topic(str(payload.topic_id), context)
@@ -867,7 +867,7 @@ async def api_query_message_schedules(payload: MessageScheduleQueryRequest, requ
 
 
 @schedule_router.post("", response_model=MessageScheduleRecord)
-async def api_create_message_schedule(payload: MessageScheduleUpsertRequest, request: Request):
+def api_create_message_schedule(payload: MessageScheduleUpsertRequest, request: Request):
     context = _request_context(request)
     topic_id = str(payload.topic_id or "").strip()
     if not topic_id:
@@ -891,7 +891,7 @@ async def api_create_message_schedule(payload: MessageScheduleUpsertRequest, req
 
 
 @schedule_router.put("/{schedule_id}", response_model=MessageScheduleRecord)
-async def api_update_message_schedule(schedule_id: str, payload: MessageScheduleUpsertRequest, request: Request):
+def api_update_message_schedule(schedule_id: str, payload: MessageScheduleUpsertRequest, request: Request):
     context = _request_context(request)
     store = _get_store()
     topic_id = str(payload.topic_id or "").strip()
@@ -919,7 +919,7 @@ async def api_update_message_schedule(schedule_id: str, payload: MessageSchedule
 
 
 @schedule_router.delete("/{schedule_id}")
-async def api_delete_message_schedule(schedule_id: str, request: Request):
+def api_delete_message_schedule(schedule_id: str, request: Request):
     store = _get_store()
     context = _request_context(request)
     if not store.get_message_schedule(schedule_id, context=context):
@@ -931,7 +931,7 @@ async def api_delete_message_schedule(schedule_id: str, request: Request):
 
 
 @schedule_router.get("/{schedule_id}", response_model=MessageScheduleRecord)
-async def api_get_message_schedule(schedule_id: str, request: Request):
+def api_get_message_schedule(schedule_id: str, request: Request):
     schedule = _get_store().get_message_schedule(schedule_id, context=_request_context(request))
     if not schedule:
         raise HTTPException(status_code=404, detail="Message schedule not found")
@@ -939,7 +939,7 @@ async def api_get_message_schedule(schedule_id: str, request: Request):
 
 
 @schedule_router.post("/{schedule_id}/logs", response_model=MessageScheduleLogPageResponse)
-async def api_list_message_schedule_logs(schedule_id: str, payload: MessageScheduleLogsQueryRequest, request: Request):
+def api_list_message_schedule_logs(schedule_id: str, payload: MessageScheduleLogsQueryRequest, request: Request):
     store = _get_store()
     schedule = store.get_message_schedule(schedule_id, context=_request_context(request))
     if not schedule:

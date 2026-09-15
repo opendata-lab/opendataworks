@@ -213,6 +213,7 @@ import { useAuthStore } from '@/stores/auth'
 import { withAgentContext } from '@/router/agentContext'
 import { buildSkillItems, sourceLabel } from './skillAdminShared'
 import SettingsListSkeleton from './components/SettingsListSkeleton.vue'
+import { useDeferredLoading } from '@/utils/deferredLoading'
 
 const route = useRoute()
 const router = useRouter()
@@ -224,7 +225,9 @@ const listLoading = ref(false)
 // 容器上：高度约 20px，转圈被压扁裁切，同时标题还先渲染出一个错误的
 // 「已启用 0」再跳变。
 const initialLoaded = ref(false)
-const isInitialLoading = computed(() => listLoading.value && !initialLoaded.value)
+const initialLoading = computed(() => listLoading.value && !initialLoaded.value)
+// 接口只要 16 ms 时骨架屏只存在一帧，那是闪烁而不是提示。慢到 200 ms 才提示。
+const isInitialLoading = useDeferredLoading(initialLoading)
 const importLoading = ref(false)
 const searchKeyword = ref('')
 const documents = ref([])

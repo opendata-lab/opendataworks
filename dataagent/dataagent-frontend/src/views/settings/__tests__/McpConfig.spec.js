@@ -1,5 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const apiMocks = vi.hoisted(() => ({
   listMcpServers: vi.fn(),
@@ -425,43 +425,68 @@ describe('McpConfig loading feedback', () => {
     authState.isAdmin = true
   })
 
-  it('shows a skeleton on first load and an overlay on refresh', async () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('shows no skeleton at all when the list arrives quickly', async () => {
+    // The endpoint now answers in ~6 ms. A skeleton that lives for a single
+    // frame reads as a flicker, not as feedback, so it must not appear.
+    apiMocks.listMcpServers.mockResolvedValue(basePayload())
+
+    const wrapper = mountConfig()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
+
+    await flushPromises()
+    expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
+    expect(wrapper.find('.mcp-content').exists()).toBe(true)
+    expect(wrapper.text()).toContain('filesystem')
+  })
+
+  it('shows the skeleton once loading is slow enough to be worth reporting', async () => {
+    vi.useFakeTimers()
     let resolveList
-    apiMocks.listMcpServers.mockReturnValue(
-      new Promise((resolve) => {
-        resolveList = resolve
-      })
-    )
+    apiMocks.listMcpServers.mockReturnValue(new Promise((resolve) => { resolveList = resolve }))
 
     const wrapper = mountConfig()
     await wrapper.vm.$nextTick()
 
-    // First load: skeleton stands in for the list, so the spinner is never
-    // squeezed into a container that only holds a section title.
+    // Below the threshold: still nothing.
+    vi.advanceTimersByTime(150)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
+
+    // Past the threshold: skeleton stands in for the list.
+    vi.advanceTimersByTime(100)
+    await wrapper.vm.$nextTick()
     expect(wrapper.find('.settings-skeleton').exists()).toBe(true)
     expect(wrapper.find('.mcp-content').exists()).toBe(false)
 
     resolveList(basePayload())
     await flushPromises()
+    await wrapper.vm.$nextTick()
 
     expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
     expect(wrapper.find('.mcp-content').exists()).toBe(true)
+  })
 
-    // Refresh: content stays put under the overlay instead of collapsing back
-    // to a skeleton.
-    apiMocks.listMcpServers.mockReturnValue(
-      new Promise((resolve) => {
-        resolveList = resolve
-      })
-    )
+  it('keeps content in place under an overlay when refreshing', async () => {
+    apiMocks.listMcpServers.mockResolvedValue(basePayload())
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    let resolveRefresh
+    apiMocks.listMcpServers.mockReturnValue(new Promise((resolve) => { resolveRefresh = resolve }))
     wrapper.vm.loadMcpServers()
     await flushPromises()
 
+    // Never a skeleton on refresh: the rows stay put so nothing jumps.
     expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
     expect(wrapper.find('.mcp-content').exists()).toBe(true)
     expect(wrapper.text()).toContain('filesystem')
 
-    resolveList(basePayload())
+    resolveRefresh(basePayload())
     await flushPromises()
   })
 })

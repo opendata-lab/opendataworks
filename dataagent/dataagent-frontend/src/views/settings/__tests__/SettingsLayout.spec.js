@@ -29,6 +29,8 @@ describe('SettingsLayout', () => {
   beforeEach(() => {
     push.mockClear()
     authState.isAdmin = true
+    authState.enabled = true
+    authState.currentUser = { display_name: 'tester' }
   })
 
   it('groups an admin\'s settings by what they configure', () => {
@@ -75,5 +77,47 @@ describe('SettingsLayout', () => {
     await wrapper.vm.handleUserCommand('logout')
     expect(logout).toHaveBeenCalled()
     expect(push).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/chat' } })
+  })
+})
+
+describe('SettingsLayout footer identity', () => {
+  beforeEach(() => {
+    push.mockClear()
+    authState.isAdmin = true
+    authState.enabled = true
+    authState.currentUser = { display_name: 'tester' }
+  })
+
+  it('shows the signed-in user with a logout action', () => {
+    const wrapper = mountLayout()
+    expect(wrapper.find('.settings-footer').text()).toContain('tester')
+    expect(wrapper.find('.settings-footer').text()).toContain('退出登录')
+  })
+
+  it('shows 未登录 and routes to login when auth is on but there is no session', async () => {
+    authState.currentUser = null
+    const wrapper = mountLayout()
+
+    const footer = wrapper.find('.settings-footer')
+    expect(footer.exists()).toBe(true)
+    expect(footer.text()).toContain('未登录')
+    expect(footer.text()).not.toContain('退出登录')
+
+    await footer.find('.settings-user__trigger').trigger('click')
+    expect(push).toHaveBeenCalledWith({ path: '/login', query: { redirect: '/settings/skills' } })
+  })
+
+  it('says 未启用登录 rather than 未登录 when auth is switched off entirely', () => {
+    // With auth disabled there is nothing to log in to, so claiming the user is
+    // "not logged in" would send an operator hunting for a login page.
+    authState.enabled = false
+    authState.currentUser = null
+    const wrapper = mountLayout()
+
+    const footer = wrapper.find('.settings-footer')
+    expect(footer.exists()).toBe(true)
+    expect(footer.text()).toContain('未启用登录')
+    expect(footer.text()).not.toContain('未登录')
+    expect(footer.find('.is-static').exists()).toBe(true)
   })
 })

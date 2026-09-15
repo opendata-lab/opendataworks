@@ -16,9 +16,13 @@
         </template>
       </el-menu>
 
-      <div v-if="authStore.enabled && authStore.currentUser" class="settings-footer">
+      <div class="settings-footer">
         <div class="settings-user">
-          <el-dropdown trigger="click" @command="handleUserCommand">
+          <el-dropdown
+            v-if="authStore.enabled && authStore.currentUser"
+            trigger="click"
+            @command="handleUserCommand"
+          >
             <span class="settings-user__trigger">
               <el-icon><User /></el-icon>
               <span class="settings-user__name">{{ authStore.currentUser.display_name }}</span>
@@ -29,6 +33,23 @@
               </el-dropdown-menu>
             </template>
           </el-dropdown>
+
+          <!-- 登录已开启但没有会话：可点，去登录页。 -->
+          <button
+            v-else-if="authStore.enabled"
+            type="button"
+            class="settings-user__trigger"
+            @click="goToLogin"
+          >
+            <el-icon><User /></el-icon>
+            <span class="settings-user__name">未登录</span>
+          </button>
+
+          <!-- 登录整体未启用：这里不存在「未登录」这回事，说清楚而不是留空。 -->
+          <span v-else class="settings-user__trigger is-static">
+            <el-icon><User /></el-icon>
+            <span class="settings-user__name">未启用登录</span>
+          </span>
         </div>
       </div>
     </aside>
@@ -94,6 +115,11 @@ const handleSelect = (index) => {
       return
     }
   }
+}
+
+const goToLogin = () => {
+  const redirect = route.fullPath || '/settings/skills'
+  router.push({ path: '/login', query: { redirect } })
 }
 
 const handleUserCommand = async (command) => {
@@ -185,6 +211,17 @@ const handleUserCommand = async (command) => {
   cursor: pointer;
   color: #1f2d3d;
   font-size: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+
+/* 未启用登录：是状态说明，不是可点的东西。 */
+.settings-user__trigger.is-static {
+  cursor: default;
+  color: #94a3b8;
 }
 
 .settings-user__name {

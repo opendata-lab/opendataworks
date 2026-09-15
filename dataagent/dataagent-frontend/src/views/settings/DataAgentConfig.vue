@@ -2,6 +2,18 @@
   <div class="dataagent-config">
     <div v-loading="loading" class="provider-workbench">
       <aside class="provider-nav">
+        <!-- 主操作放在列表上方：供应商一多，底部按钮就被推到滚动区外面去了。 -->
+        <div class="provider-nav-header">
+          <el-button
+            class="add-provider-btn"
+            type="primary"
+            :icon="Plus"
+            @click="addNewProvider"
+          >
+            添加供应商
+          </el-button>
+        </div>
+
         <div class="provider-nav-body">
           <button
             v-for="provider in providers"
@@ -20,17 +32,12 @@
               />
             </div>
           </button>
+
+          <p v-if="!providers.length" class="provider-nav-empty">
+            还没有配置任何供应商。
+          </p>
         </div>
 
-        <div class="provider-nav-footer">
-          <el-button
-            class="add-provider-btn"
-            :icon="Plus"
-            @click="addNewProvider"
-          >
-            添加供应商
-          </el-button>
-        </div>
       </aside>
 
       <section v-if="currentProvider && currentDraft" class="provider-detail">
@@ -256,6 +263,16 @@
             </div>
           </div>
           <div v-else class="empty-block">当前没有配置模型，添加模型后可在聊天中使用。</div>
+        </div>
+      </section>
+
+      <!-- 兜底：正常加载后会自动进入新建态，所以这里只在加载失败等情况下出现，
+           不让右侧留一整片空白。 -->
+      <section v-else class="provider-detail provider-detail--empty">
+        <div class="provider-empty">
+          <h3>还没有配置供应商</h3>
+          <p>添加一个供应商并填入 Base URL 与密钥，聊天才能选到模型。</p>
+          <el-button type="primary" :icon="Plus" @click="addNewProvider">添加供应商</el-button>
         </div>
       </section>
     </div>
@@ -892,6 +909,9 @@ const loadSettings = async () => {
     // `_provider_catalog()`。此前先取一次 listProviders 再取 settings，是两次
     // 串行往返拿同一份数据。
     applySettings(await dataagentApi.getSettings())
+    // 一个供应商都没有时，右侧本来什么都不渲染，整页是空的。直接进入新建态：
+    // 配置第一个供应商是这个页面此刻唯一有意义的动作。
+    if (!providers.value.length) addNewProvider()
   } finally {
     loading.value = false
   }
@@ -1276,16 +1296,49 @@ onMounted(() => {
   background: var(--settings-paper-muted);
 }
 
-.provider-nav-body {
-  flex: 1 1 auto;
+.provider-nav-header {
+  margin-bottom: 16px;
 }
 
-.provider-nav-footer {
-  margin-top: 20px;
+.provider-nav-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .add-provider-btn {
   width: 100%;
+}
+
+.provider-detail--empty {
+  display: grid;
+  place-items: center;
+}
+
+.provider-empty {
+  max-width: 360px;
+  text-align: center;
+}
+
+.provider-empty h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  color: var(--settings-ink, #0f172a);
+}
+
+.provider-empty p {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--settings-ink-soft, #64748b);
+}
+
+/* 一个供应商都没有时，左栏也不该是空的。 */
+.provider-nav-empty {
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--settings-ink-soft, #64748b);
 }
 
 .provider-group + .provider-group {
