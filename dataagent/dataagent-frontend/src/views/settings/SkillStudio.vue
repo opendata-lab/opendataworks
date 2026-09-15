@@ -23,7 +23,9 @@
       </div>
     </div>
 
-    <div v-loading="listLoading" class="skill-table-wrapper">
+    <SettingsListSkeleton v-if="isInitialLoading" :rows="4" />
+
+    <div v-else v-loading="listLoading" class="skill-table-wrapper">
       <div class="skill-studio__section-title">已启用 <span>{{ enabledSkillCount }}</span></div>
       <div v-if="filteredSkills.length" class="skill-list">
         <div
@@ -210,6 +212,7 @@ import { dataagentApi } from '@/api/dataagent'
 import { useAuthStore } from '@/stores/auth'
 import { withAgentContext } from '@/router/agentContext'
 import { buildSkillItems, sourceLabel } from './skillAdminShared'
+import SettingsListSkeleton from './components/SettingsListSkeleton.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -217,6 +220,11 @@ const authStore = useAuthStore()
 const canManage = computed(() => authStore.isAdmin)
 
 const listLoading = ref(false)
+// 首屏用骨架屏，刷新用遮罩。此前首屏是把 v-loading 打在一个只含分组标题的
+// 容器上：高度约 20px，转圈被压扁裁切，同时标题还先渲染出一个错误的
+// 「已启用 0」再跳变。
+const initialLoaded = ref(false)
+const isInitialLoading = computed(() => listLoading.value && !initialLoaded.value)
 const importLoading = ref(false)
 const searchKeyword = ref('')
 const documents = ref([])
@@ -308,6 +316,7 @@ const loadDocuments = async () => {
     notifyError(error, '加载 Skill 列表失败')
   } finally {
     listLoading.value = false
+    initialLoaded.value = true
   }
 }
 
@@ -542,6 +551,9 @@ onMounted(async () => {
 
 .skill-table-wrapper {
   min-width: 0;
+  /* 刷新时 v-loading 的遮罩覆盖这个容器；给它一个下限，空列表也不会把
+     转圈压成一条。 */
+  min-height: 180px;
 }
 
 .skill-list {

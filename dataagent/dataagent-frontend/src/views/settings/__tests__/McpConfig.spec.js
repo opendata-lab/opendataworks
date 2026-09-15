@@ -20,8 +20,14 @@ const messageBoxMocks = vi.hoisted(() => ({
   alert: vi.fn()
 }))
 
+const authState = vi.hoisted(() => ({ isAdmin: true }))
+
 vi.mock('@/api/dataagent', () => ({
   dataagentApi: apiMocks
+}))
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: () => authState
 }))
 
 vi.mock('element-plus', async (importOriginal) => ({
@@ -140,6 +146,7 @@ describe('McpConfig', () => {
     messageMocks.error.mockReset()
     messageBoxMocks.confirm.mockReset()
     messageBoxMocks.alert.mockReset()
+    authState.isAdmin = true
 
     apiMocks.listMcpServers.mockResolvedValue(basePayload())
     apiMocks.createMcpServer.mockResolvedValue({ server_id: 'new-srv' })
@@ -371,5 +378,90 @@ describe('McpConfig', () => {
     expect(wrapper.vm.dialogVisible).toBe(true)
     expect(wrapper.vm.activeAddMode).toBe('json')
     expect(wrapper.find('.el-dialog-stub').text()).toContain('导入配置')
+  })
+})
+
+describe('McpConfig read-only access', () => {
+  beforeEach(() => {
+    apiMocks.listMcpServers.mockReset()
+    apiMocks.listMcpServers.mockResolvedValue(basePayload())
+    authState.isAdmin = false
+  })
+
+  it('lets an ordinary user read the list without exposing any write entry point', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    const text = wrapper.text()
+    // The page is now reachable by any signed-in user, so the data must render.
+    expect(text).toContain('filesystem')
+    expect(text).toContain('portal-tools')
+    expect(wrapper.findAll('.mcp-row')).toHaveLength(3)
+
+    // Nothing that would 403 against the admin-only write routes.
+    expect(text).not.toContain('新建 MCP 服务')
+    expect(wrapper.findAll('.el-switch-stub')).toHaveLength(0)
+    const labels = wrapper.findAll('button').map((button) => button.attributes('aria-label'))
+    expect(labels).not.toContain('编辑服务')
+    expect(labels).not.toContain('删除服务')
+
+    // Enabled state is still legible, just not editable.
+    expect(text).toContain('已启用')
+  })
+
+  it('keeps the write entry points for an admin', async () => {
+    authState.isAdmin = true
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('新建 MCP 服务')
+    expect(wrapper.findAll('.el-switch-stub').length).toBeGreaterThan(0)
+  })
+})
+
+describe('McpConfig loading feedback', () => {
+  beforeEach(() => {
+    apiMocks.listMcpServers.mockReset()
+    authState.isAdmin = true
+  })
+
+  it('shows a skeleton on first load and an overlay on refresh', async () => {
+    let resolveList
+    apiMocks.listMcpServers.mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve
+      })
+    )
+
+    const wrapper = mountConfig()
+    await wrapper.vm.$nextTick()
+
+    // First load: skeleton stands in for the list, so the spinner is never
+    // squeezed into a container that only holds a section title.
+    expect(wrapper.find('.settings-skeleton').exists()).toBe(true)
+    expect(wrapper.find('.mcp-content').exists()).toBe(false)
+
+    resolveList(basePayload())
+    await flushPromises()
+
+    expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
+    expect(wrapper.find('.mcp-content').exists()).toBe(true)
+
+    // Refresh: content stays put under the overlay instead of collapsing back
+    // to a skeleton.
+    apiMocks.listMcpServers.mockReturnValue(
+      new Promise((resolve) => {
+        resolveList = resolve
+      })
+    )
+    wrapper.vm.loadMcpServers()
+    await flushPromises()
+
+    expect(wrapper.find('.settings-skeleton').exists()).toBe(false)
+    expect(wrapper.find('.mcp-content').exists()).toBe(true)
+    expect(wrapper.text()).toContain('filesystem')
+
+    resolveList(basePayload())
+    await flushPromises()
   })
 })

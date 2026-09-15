@@ -44,14 +44,17 @@ describe('SettingsLayout', () => {
   })
 
   it('hides everything an ordinary user may not configure', () => {
-    // Skills stay: a non-admin can read the catalogue. Models, MCP, widget
-    // access and the evaluation pages are admin-only and must not even appear.
+    // Skills and MCP stay: a non-admin can read both catalogues, and the MCP
+    // list endpoint redacts credentials for them. Models, widget access and the
+    // evaluation pages are admin-only and must not even appear.
     authState.isAdmin = false
     const wrapper = mountLayout()
     const text = wrapper.text()
 
     expect(text).toContain('Skills')
-    for (const hidden of ['模型管理', 'MCP 服务', 'Widget 接入', '评测集', '评测结果', '接入', '评测']) {
+    expect(text).toContain('MCP 服务')
+    expect(text).toContain('Agent 能力')
+    for (const hidden of ['模型管理', 'Widget 接入', '评测集', '评测结果', '接入', '评测']) {
       expect(text).not.toContain(hidden)
     }
   })

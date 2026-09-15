@@ -258,6 +258,10 @@ class McpServerConfig(BaseModel):
     oauth_required: bool = False
     tool_count: int = 0
     description: str = ""
+    # Non-admin readers get key names with empty values, so presence has to be
+    # reported separately for the UI to show "已配置" without the secret.
+    headers_set: bool = False
+    env_set: bool = False
 
 
 class McpServerCreateRequest(BaseModel):

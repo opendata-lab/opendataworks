@@ -58,7 +58,7 @@ const GROUPS = [
     adminOnly: false,
     items: [
       { index: 'skills', label: 'Skills', icon: Collection, path: '/settings/skills' },
-      { index: 'mcp', label: 'MCP 服务', icon: Connection, path: '/settings/mcp', adminOnly: true },
+      { index: 'mcp', label: 'MCP 服务', icon: Connection, path: '/settings/mcp' },
       { index: 'models', label: '模型管理', icon: Cpu, path: '/settings/models', adminOnly: true }
     ]
   },

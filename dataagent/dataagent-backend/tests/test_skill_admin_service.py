@@ -36,6 +36,13 @@ class FakeSkillStore:
     def list_documents(self):
         return list(self.documents.values())
 
+    def list_skill_manifest_contents(self):
+        return {
+            path: str(document.get("current_content") or "")
+            for path, document in self.documents.items()
+            if document.get("file_name") == "SKILL.md"
+        }
+
     def get_document_by_path(self, relative_path):
         return self.documents.get(str(relative_path or "").replace("\\", "/").strip("/"))
 
@@ -100,6 +107,9 @@ def configure_skill_filesystem(monkeypatch, tmp_path, store=None, *, settings=No
     discovery_root.mkdir(parents=True)
     fake_store = store or FakeSkillStore()
     persisted = {}
+
+    # The disk-index fingerprint is module state; each test gets a fresh root.
+    skill_admin_service.reset_disk_index_signature()
 
     monkeypatch.setattr(skill_admin_service, "resolve_skill_discovery_root_dir", lambda: discovery_root)
     monkeypatch.setattr(skill_admin_service, "resolve_skills_root_dir", lambda: discovery_root / BUSINESS_SKILL)
@@ -644,6 +654,9 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
                 }
             ]
 
+        def list_skill_manifest_contents(self):
+            return {}
+
     monkeypatch.setattr(skill_admin_service, "reindex_documents_from_disk", lambda *args, **kwargs: [])
     monkeypatch.setattr(skill_admin_service, "get_skill_admin_store", lambda: FakeStore())
     monkeypatch.setattr(
@@ -666,6 +679,209 @@ def test_list_documents_enriches_skill_fields(monkeypatch):
     assert documents[0]["source"] == "bundled"
     assert documents[0]["enabled"] is True
     assert documents[0]["editable"] is True
+
+
+def test_list_documents_reads_settings_once_regardless_of_document_count(monkeypatch, tmp_path):
+    """Per-document settings reads turned a list request into a connection storm.
+
+    `current_settings_payload()` opens two fresh MySQL connections every call
+    (no pool), and `_document_api_payload` used to trigger one per document via
+    `_is_skill_enabled`. With 84 documents on disk that measured 255 connections
+    and 403 ms for a page rendering 8 rows. The cost must not scale with the
+    number of documents.
+    """
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+
+    for index in range(4):
+        folder = discovery_root / f"skill-{index}"
+        (folder / "reference").mkdir(parents=True)
+        (folder / "SKILL.md").write_text(
+            f"---\nname: skill-{index}\ndescription: probe skill {index}\n---\n\nbody\n",
+            encoding="utf-8",
+        )
+        for doc in range(6):
+            (folder / "reference" / f"doc-{doc}.md").write_text(f"# doc {doc}\n", encoding="utf-8")
+
+    settings_calls = {"count": 0}
+    settings_payload = {
+        "skills_output_dir": "../.claude/skills/skill-0",
+        "skill_runtime": {f"skill-{index}": {"enabled": True} for index in range(4)},
+    }
+
+    def counting_settings():
+        settings_calls["count"] += 1
+        return settings_payload
+
+    monkeypatch.setattr(skill_admin_service, "current_settings_payload", counting_settings)
+
+    front_matter_calls = {"count": 0}
+    real_front_matter = skill_admin_service._front_matter_value
+
+    def counting_front_matter(path, key):
+        front_matter_calls["count"] += 1
+        return real_front_matter(path, key)
+
+    monkeypatch.setattr(skill_admin_service, "_front_matter_value", counting_front_matter)
+
+    # Seed the store from disk, then list. The sync may resolve the runtime
+    # config once for itself, but must not do so per file.
+    skill_admin_service.reindex_documents_from_disk()
+    documents = skill_admin_service.list_documents()
+
+    assert len(documents) == 28, "4 folders x (1 SKILL.md + 6 reference docs)"
+    assert all(item["enabled"] is True for item in documents)
+    assert {item["description"] for item in documents} == {
+        f"probe skill {index}" for index in range(4)
+    }
+    assert settings_calls["count"] <= 2, (
+        f"cold list resolved settings {settings_calls['count']} times for 28 documents"
+    )
+
+    settings_calls["count"] = 0
+    front_matter_calls["count"] = 0
+
+    # Warm pass: nothing changed on disk, so this is the steady-state page load.
+    warm = skill_admin_service.list_documents()
+
+    assert len(warm) == 28
+    # One shared resolve for the whole request, not one per document.
+    assert settings_calls["count"] == 1
+    # Descriptions now come from the SKILL.md content already in the DB, so a
+    # warm list parses no front matter off disk at all.
+    assert front_matter_calls["count"] == 0
+
+
+def test_list_documents_serves_from_db_without_rereading_disk(monkeypatch, tmp_path):
+    """A list request must not re-read every skill file from disk.
+
+    Every write path already keeps the DB in sync — import reindexes, edits
+    dual-write via `write_skill_file` + `save_document`, uninstall deletes the
+    rows, and `main.py` indexes at startup. So the steady-state list is pure DB
+    data, and re-reading 84 files per request was redundant work.
+    """
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+
+    folder = discovery_root / "skill-a"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: skill-a\ndescription: a\n---\n", encoding="utf-8")
+    for doc in range(8):
+        (folder / f"doc-{doc}.md").write_text(f"# {doc}\n", encoding="utf-8")
+
+    # Seed the store from disk.
+    skill_admin_service.reindex_documents_from_disk()
+    assert len(skill_admin_service.list_documents()) == 9
+
+    reads = {"count": 0}
+    real_read_text = Path.read_text
+
+    def counting_read_text(self, *args, **kwargs):
+        if self.suffix.lower() in skill_admin_service.MANAGED_FILE_SUFFIXES:
+            reads["count"] += 1
+        return real_read_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counting_read_text)
+
+    warm = skill_admin_service.list_documents()
+
+    assert len(warm) == 9
+    assert reads["count"] == 0, (
+        f"warm list read {reads['count']} skill files from disk; it should come from the DB"
+    )
+
+
+def test_list_documents_touches_no_disk_at_all_by_default(monkeypatch, tmp_path):
+    """The steady-state list must not walk the skills tree either.
+
+    The skills directory is a mounted volume in the container, so even a
+    stat-only `rglob` over it is not reliably cheap. Disk belongs to the agent
+    runtime and to explicit management actions.
+    """
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+
+    folder = discovery_root / "skill-a"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: skill-a\ndescription: a\n---\n", encoding="utf-8")
+    for doc in range(8):
+        (folder / f"doc-{doc}.md").write_text(f"# {doc}\n", encoding="utf-8")
+
+    skill_admin_service.reindex_documents_from_disk()
+
+    walks = {"count": 0}
+    real_entries = skill_admin_service._managed_skill_entries
+
+    def counting_entries():
+        walks["count"] += 1
+        return real_entries()
+
+    monkeypatch.setattr(skill_admin_service, "_managed_skill_entries", counting_entries)
+
+    warm = skill_admin_service.list_documents()
+
+    assert len(warm) == 9
+    assert walks["count"] == 0, "a plain list must not scan the skills directory"
+
+
+def test_out_of_band_disk_edits_surface_only_through_an_explicit_reindex(monkeypatch, tmp_path):
+    """Editing a skill file directly needs a reindex; listing never rescans.
+
+    No UI affordance triggers this — the list page just re-reads the DB. Disk
+    edits are picked up by startup or by a write path that reindexes, which is
+    why nothing in the request path walks the skills tree.
+    """
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+
+    folder = discovery_root / "skill-a"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: skill-a\ndescription: before\n---\n", encoding="utf-8")
+
+    skill_admin_service.reindex_documents_from_disk()
+    first = skill_admin_service.list_documents()
+    assert first[0]["description"] == "before"
+
+    # Edited outside the app, and a new file dropped in.
+    (folder / "SKILL.md").write_text("---\nname: skill-a\ndescription: after\n---\n", encoding="utf-8")
+    (folder / "extra.md").write_text("# extra\n", encoding="utf-8")
+
+    # A plain load still serves what the DB knows.
+    assert {item["file_name"] for item in skill_admin_service.list_documents()} == {"SKILL.md"}
+
+    skill_admin_service.reindex_documents_from_disk()
+    refreshed = skill_admin_service.list_documents()
+
+    assert {item["file_name"] for item in refreshed} == {"SKILL.md", "extra.md"}
+    assert all(item["description"] == "after" for item in refreshed)
+
+
+def test_reindex_does_not_query_each_file_individually(monkeypatch, tmp_path):
+    """Reindex issued one `get_document_by_path` per managed file.
+
+    Each of those is a fresh connection, so a plain GET paid ~84 of them on top
+    of the per-document settings reads.
+    """
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+
+    folder = discovery_root / "skill-a"
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text("---\nname: skill-a\ndescription: a\n---\n", encoding="utf-8")
+    for doc in range(8):
+        (folder / f"doc-{doc}.md").write_text(f"# {doc}\n", encoding="utf-8")
+
+    # Seed the store so the second pass has nothing to write.
+    skill_admin_service.reindex_documents_from_disk()
+
+    lookups = {"count": 0}
+    real_lookup = store.get_document_by_path
+
+    def counting_lookup(relative_path):
+        lookups["count"] += 1
+        return real_lookup(relative_path)
+
+    monkeypatch.setattr(store, "get_document_by_path", counting_lookup)
+
+    changed = skill_admin_service.reindex_documents_from_disk()
+
+    assert changed == [], "nothing changed on disk, so nothing should be rewritten"
+    assert lookups["count"] == 0, "hash comparison must use one bulk read, not per-file queries"
 
 
 def test_update_skill_runtime_enables_second_skill_without_changing_primary(monkeypatch):

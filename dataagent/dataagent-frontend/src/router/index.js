@@ -130,7 +130,9 @@ export const routes = [
         path: 'mcp',
         name: 'IntelligentQueryMcp',
         component: () => import('@/views/settings/McpConfig.vue'),
-        meta: { tab: 'mcp', title: 'MCP 服务', adminOnly: true }
+        // 与 skills 同样对登录用户开放只读视图；写操作由页面内 canManage 与
+        // 后端 admin 路由双重收口，非 admin 读到的凭证字段已脱敏。
+        meta: { tab: 'mcp', title: 'MCP 服务' }
       },
       {
         path: 'models',

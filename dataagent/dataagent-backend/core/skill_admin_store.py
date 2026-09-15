@@ -228,6 +228,34 @@ class SkillAdminStore:
             conn.close()
         return [self._normalize_document_row(row) for row in rows]
 
+    def list_skill_manifest_contents(self) -> dict[str, str]:
+        """Return `relative_path -> current_content` for every stored SKILL.md.
+
+        `list_documents()` deliberately omits `current_content` to keep the list
+        response small, but the skill list still needs each folder's description
+        from its SKILL.md front matter. One bounded query for those few rows
+        beats re-reading the files from disk on every request.
+        """
+        self._ensure_ready()
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT relative_path, current_content
+                    FROM da_skill_document
+                    WHERE file_name = 'SKILL.md'
+                    """
+                )
+                rows = cur.fetchall() or []
+        finally:
+            conn.close()
+        return {
+            str(row.get("relative_path") or ""): str(row.get("current_content") or "")
+            for row in rows
+            if row.get("relative_path")
+        }
+
     def get_document(self, document_id: int) -> dict[str, Any] | None:
         self._ensure_ready()
         conn = self._connect(database=self._schema_name())

@@ -888,25 +888,10 @@ const restoreProviderDraft = (providerId) => {
 const loadSettings = async () => {
   loading.value = true
   try {
-    let providerList = null
-    if (typeof dataagentApi.listProviders === 'function') {
-      try {
-        const res = await dataagentApi.listProviders()
-        if (res && Array.isArray(res.providers)) {
-          providerList = res.providers
-        } else if (Array.isArray(res)) {
-          providerList = res
-        }
-      } catch {
-        // Continue to getSettings
-      }
-    }
-
-    const payload = await dataagentApi.getSettings()
-    if (providerList && providerList.length) {
-      payload.providers = providerList
-    }
-    applySettings(payload)
+    // getSettings 的响应已包含 providers，与 /providers 同源于后端的
+    // `_provider_catalog()`。此前先取一次 listProviders 再取 settings，是两次
+    // 串行往返拿同一份数据。
+    applySettings(await dataagentApi.getSettings())
   } finally {
     loading.value = false
   }
