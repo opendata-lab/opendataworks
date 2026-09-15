@@ -449,4 +449,23 @@ describe('DataAgentConfig with no providers configured', () => {
     // getSettings already carries the same _provider_catalog() payload.
     expect(apiMocks.listProviders).not.toHaveBeenCalled()
   })
+
+  it('discards an unsaved provider locally instead of calling delete and getting a 404', async () => {
+    // 新建的供应商还没落库，调 DELETE 只会拿到 "provider not found" 404。
+    apiMocks.deleteProvider.mockReset()
+    messageMocks.success.mockReset()
+    messageMocks.error.mockReset()
+    messageBoxMocks.confirm.mockResolvedValue(true)
+
+    const wrapper = mountConfig()
+    await flushPromises()
+    expect(wrapper.vm.providers[0].is_new).toBe(true)
+
+    await wrapper.vm.deleteCurrentProvider()
+    await flushPromises()
+
+    expect(apiMocks.deleteProvider).not.toHaveBeenCalled()
+    expect(messageMocks.error).not.toHaveBeenCalled()
+    expect(messageMocks.success).toHaveBeenCalledWith('已丢弃未保存的供应商')
+  })
 })
