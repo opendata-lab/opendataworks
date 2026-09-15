@@ -121,7 +121,7 @@ async def auth_config():
 
 
 @router.post("/login")
-async def login(payload: LoginRequest):
+def login(payload: LoginRequest):
     _require_enabled()
     cfg = get_auth_settings()
     if not cfg.local_login_enabled:

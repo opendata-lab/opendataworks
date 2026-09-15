@@ -419,3 +419,34 @@ describe('DataAgentConfig', () => {
     expect(messageMocks.success).toHaveBeenCalledWith('供应商已删除')
   })
 })
+
+describe('DataAgentConfig with no providers configured', () => {
+  beforeEach(() => {
+    apiMocks.getSettings.mockReset()
+    apiMocks.listProviders.mockReset()
+    apiMocks.getSettings.mockResolvedValue({ provider_id: '', model: '', providers: [] })
+  })
+
+  it('lands directly in the add-provider state instead of an empty page', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    // Configuring the first provider is the only useful action here, so the
+    // page opens on it rather than rendering a blank right-hand pane.
+    expect(wrapper.vm.providers).toHaveLength(1)
+    expect(wrapper.vm.providers[0].is_new).toBe(true)
+    expect(wrapper.vm.selectedProviderId).toBe(wrapper.vm.providers[0].provider_id)
+    expect(wrapper.vm.currentDraft).toBeTruthy()
+    expect(wrapper.find('.provider-detail').exists()).toBe(true)
+    expect(wrapper.find('.provider-detail--empty').exists()).toBe(false)
+  })
+
+  it('fetches settings once, without a duplicate providers round trip', async () => {
+    mountConfig()
+    await flushPromises()
+
+    expect(apiMocks.getSettings).toHaveBeenCalledTimes(1)
+    // getSettings already carries the same _provider_catalog() payload.
+    expect(apiMocks.listProviders).not.toHaveBeenCalled()
+  })
+})
