@@ -49,6 +49,9 @@ def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeyp
     assert runtime_env["DATAAGENT_ORIGINAL_QUESTION"] == "workflow_publish_record 的上游表有哪些"
     assert runtime_env["DATAAGENT_SKILL_ROOT"] == str(Path("/tmp/skill-root").resolve())
     assert runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] == str(Path("/tmp/platform-tools").resolve())
+    # 跨技能引用的通用锚点：主技能目录的上一级，即 skills 发现根，不随主技能变化
+    assert runtime_env["SKILLS_ROOT_DIR"] == str(Path("/tmp/skill-root").resolve().parent)
+    assert runtime_env["SKILLS_ROOT_DIR"] != runtime_env["DATAAGENT_SKILL_ROOT"]
     assert runtime_env["DATAAGENT_ENABLED_SKILLS"] == "opendataworks-business-knowledge,opendataworks-platform-tools,marketing-insights"
     assert "marketing-insights" in runtime_env["DATAAGENT_ENABLED_SKILL_ROOTS"]
     assert runtime_env["MCP_TOOL_TIMEOUT"] == "180000"

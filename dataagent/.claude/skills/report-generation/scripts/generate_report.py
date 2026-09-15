@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from _opendataworks_runtime import error_payload, load_json_input, print_json
+from _skill_io import error_payload, load_json_input, print_json
 
 
 def _resolve_path(raw: str) -> Path:

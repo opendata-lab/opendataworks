@@ -25,7 +25,7 @@ tools: [Bash, Read]
 
 不负责：
 
-- 纯问数与结果可视化（交给 `opendataworks-platform-tools`）。
+- 纯问数（交给 `opendataworks-platform-tools`）与结果可视化（交给 `chart-visualization`）。
 - 业务术语、指标口径、歧义消解（交给语义技能）。
 - 本体建模（交给 `ontology-modeling-assistant`）。
 - 直接执行含写操作的 SQL（写 SQL 只进任务定义，绝不通过只读查询工具试跑）。

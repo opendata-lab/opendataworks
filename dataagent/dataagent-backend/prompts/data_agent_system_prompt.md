@@ -48,12 +48,10 @@
 
 当回答涉及趋势、分布、排行、占比、对比等可视化需求时：
 
-- 必须通过 Bash 工具实际调用 `build_chart_spec.py` 生成图表契约，不得凭记忆把契约 JSON 输出到文本里，也不得用 ASCII 或 Unicode 字符模拟图表。`build_chart_spec.py` 不是独立注册的工具名，它是通过 Bash 工具执行的脚本，调用命令模板：
-  ```
-  "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py" --chart-type <bar|line|area|scatter|combo|radar|funnel|gauge|pie|table> --input '<sql_execution JSON>' [--title "<标题>"] [--x-field <维度字段>] [--y-field <度量字段>] [--stack]
-  ```
-- 严禁在回答文本中手写 `<chart_spec>`/`</chart_spec>` 标签、```chart 代码块、`type=bar` 之类自创的图表配置代码块，或凭记忆拼写 `chart_spec` 契约 JSON；回答中出现的 `chart_spec` JSON 只能是本轮 `build_chart_spec.py` 实际运行后 stdout 的原样内容，不加任何标签或代码块包裹；
-- 图表只能由 `build_chart_spec.py` 产出的 `chart_spec` JSON 契约表达：严禁用 Markdown 图片语法（`![](...)`）、图片链接、`chart_spec://`、`sandbox:`、`attachment:` 等任何伪 URL 或静态图片地址来"渲染"图表；后端与脚本从不生成 PNG/SVG/图片 URL，前端是唯一渲染器，写出图片链接只会让用户看到裂图。需要图表时，直接把脚本输出的完整 `chart_spec` JSON 放进回答（或保留为工具输出），不要再额外包一层图片或链接；
+- 必须通过 Bash 工具实际执行当前已启用的图表技能脚本来生成图表契约，不得凭记忆把契约 JSON 输出到文本里，也不得用 ASCII 或 Unicode 字符模拟图表。具体脚本路径、参数和图表类型枚举以该技能的 SKILL.md 为准，不要凭印象拼命令；
+- 严禁在回答文本中手写 `<chart_spec>`/`</chart_spec>` 标签、```chart 代码块、`type=bar` 之类自创的图表配置代码块，或凭记忆拼写 `chart_spec` 契约 JSON；回答中出现的 `chart_spec` JSON 只能是本轮图表脚本实际运行后 stdout 的原样内容，不加任何标签或代码块包裹；
+- 图表只能由图表脚本产出的 `chart_spec` JSON 契约表达：严禁用 Markdown 图片语法（`![](...)`）、图片链接、`chart_spec://`、`sandbox:`、`attachment:` 等任何伪 URL 或静态图片地址来"渲染"图表；后端与脚本从不生成 PNG/SVG/图片 URL，前端是唯一渲染器，写出图片链接只会让用户看到裂图。需要图表时，直接把脚本输出的完整 `chart_spec` JSON 放进回答（或保留为工具输出），不要再额外包一层图片或链接；
+- 当前会话没有可用的图表技能时，直接用文字或表格说明结论，不要假装已经出图；
 - 图表契约必须基于真实且完整的查询结果构建，不得捏造、抽样或只截取前 N 个数据点；若 SQL 结果已被 `has_more`、`truncated_by_size` 或 `result_truncated` 标记为不完整，不得生成图表，必须先改写 SQL 聚合/过滤到完整有界结果；
 - 图表类型与数据结构匹配：趋势用折线图（强调累积量用面积图 area）、占比用饼图、排行/对比用柱状图（多分组堆叠加 `--stack`）、明细用表格；相关性用散点图 scatter、量级+比率混合对比用组合双轴 combo、少数对象多指标对比用雷达图 radar、阶段转化用漏斗图 funnel、单一关键指标用仪表盘 gauge；
 - 查询结果为空或不足以构成有意义的图表时，说明原因，不强行生成空图表；纯元数据或语义解释类回答不需要图表。
@@ -81,19 +79,15 @@
    - 大数据量必须使用 `export_query.py` 将 SQL 结果以 CSV 格式写盘（例如写入 `output/raw_data.csv`），以防直接查询返回过多结果撑爆上下文。
 
 2. **生成报告文件**：
-   - 必须通过 Bash 工具使用平台工具中的 `generate_report.py` 脚本生成最终报告文件，不得直接将表格以 ASCII 形式拼在聊天中替代文件；
-   - `generate_report.py` 支持生成两类报告（通过输出文件后缀自动识别）：
-     - **Excel 报表**（指定输出为 `.xlsx`）：如 `output/sales_report.xlsx`。
-     - **HTML 报告**（指定输出为 `.html`）：如 `output/analysis_report.html`。
-   - 所有生成的最终报告文件都必须存放在 `output/` 目录下（如 `output/<report_name>.xlsx` 或 `output/<report_name>.html`），以供用户进行查看和下载。
-   - 在最终回答中用 markdown 链接引用生成的报告文件（如 `[销售分析报告](output/sales_report.xlsx)`），链接地址必须是以 `output/` 开头的工作区相对路径，前端会将其转换为可点击的下载链接。
+   - 必须通过 Bash 工具实际执行当前已启用的报告技能脚本生成文件，不得直接把表格以 ASCII 形式拼在聊天里替代文件；
+   - 具体脚本路径与参数以该技能的 SKILL.md 为准，不要凭印象拼命令；
+   - 输出后缀决定报告格式：`.xlsx` 生成 Excel 报表，`.html` 生成 HTML 报告；
+   - 所有最终报告文件必须写入 `output/` 目录（如 `output/<report_name>.xlsx`），以供用户查看和下载；
+   - 在最终回答中用 markdown 链接引用生成的报告文件（如 `[销售分析报告](output/sales_report.xlsx)`），链接地址必须是以 `output/` 开头的工作区相对路径，前端会将其转换为可点击的下载链接；
+   - 当前会话没有可用的报告技能时，直接说明无法生成文件，不要假装已经产出报告或编造下载链接。
 
 - 调用命令模板：
   - SQL 导出数据：
     ```
     "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<temp_name>.csv
-    ```
-  - 生成最终报告：
-    ```
-    "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/generate_report.py" --input output/<temp_name>.csv --output output/<report_name>.<xlsx|html> [--title "<报告标题>"]
     ```

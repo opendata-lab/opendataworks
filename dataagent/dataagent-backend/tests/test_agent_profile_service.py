@@ -122,10 +122,11 @@ def test_default_agent_payload_is_general_builtin_agent():
 
     assert payload["agent_id"] == "agent_default"
     assert payload["name"] == "默认助手"
-    assert payload["description"] == "通用对话与分析入口，不预置 OpenDataWorks 专属 Skills。"
-    assert payload["allowed_tools"] == ["Read", "LS", "Glob", "Grep"]
+    assert payload["description"] == "通用对话与分析入口，预置图表与报告能力，不预置 OpenDataWorks 专属 Skills。"
+    # 默认助手开箱具备与平台无关的展示能力，不依赖任何 OpenDataWorks 技能
+    assert payload["skill_folders"] == ["chart-visualization", "report-generation"]
     assert payload["mcp_server_ids"] == []
-    assert payload["skill_folders"] == []
+    assert payload["allowed_tools"] == ["Read", "LS", "Glob", "Grep"]
     assert payload["is_default"] is True
     assert payload["is_builtin"] is True
 
@@ -137,10 +138,13 @@ def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     assert payload["name"] == "OpenDataWorks平台助手"
     assert payload["allowed_tools"] == ["Skill", "Bash", "Read", "LS", "Glob", "Grep"]
     assert payload["mcp_server_ids"] == ["portal"]
+    # 图表与报告已抽离为独立技能，平台助手需显式绑定才能保住原有能力
     assert payload["skill_folders"] == [
         "opendataworks-business-knowledge",
         "opendataworks-platform-tools",
         "opendataworks-data-dev",
+        "chart-visualization",
+        "report-generation",
     ]
     assert payload["is_default"] is False
     assert payload["is_builtin"] is True

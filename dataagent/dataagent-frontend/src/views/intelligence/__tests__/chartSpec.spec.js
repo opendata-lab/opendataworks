@@ -332,7 +332,7 @@ describe('chartSpec', () => {
   })
 
   it('keeps a fence that merely mentions the chart script command untouched', () => {
-    const message = '需要图表时执行：\n```bash\n"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py" --chart-type bar --input \'...\'\n```\n以上。'
+    const message = '需要图表时执行：\n```bash\n"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/chart-visualization/scripts/build_chart_spec.py" --chart-type bar --input \'...\'\n```\n以上。'
 
     const stripped = stripChartSpecsFromText(message)
 

@@ -12,6 +12,8 @@ PLATFORM_TOOLS_SKILL_ROOT = SKILLS_ROOT / "opendataworks-platform-tools"
 ONTOLOGY_MODELING_SKILL_ROOT = SKILLS_ROOT / "ontology-modeling-assistant"
 DATA_DEV_SKILL_ROOT = SKILLS_ROOT / "opendataworks-data-dev"
 METHODOLOGY_DAG_SKILL_ROOT = SKILLS_ROOT / "opendataworks-methodology-dag"
+CHART_SKILL_ROOT = SKILLS_ROOT / "chart-visualization"
+REPORT_SKILL_ROOT = SKILLS_ROOT / "report-generation"
 
 
 def _skill_text_snapshot(root: Path) -> str:
@@ -55,7 +57,12 @@ def test_generic_nl2sql_methodology_lives_in_system_prompt_file():
     for token in forbidden_tokens:
         assert token not in snapshot
 
-    assert '"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/build_chart_spec.py"' in snapshot
+    # 已抽离为独立技能的脚本不得再出现在基础提示词里，命令模板下沉到各自的 SKILL.md。
+    # export_query.py / run_sql.py 仍是平台取数能力，不在本次抽离范围内。
+    for leaked in ("build_chart_spec.py", "generate_report.py", "format_answer.py"):
+        assert leaked not in snapshot
+    assert "必须通过 Bash 工具实际执行当前已启用的图表技能脚本" in snapshot
+    assert "必须通过 Bash 工具实际执行当前已启用的报告技能脚本" in snapshot
 
 
 def test_dataagent_nl2sql_skill_bundle_is_removed():
@@ -142,7 +149,6 @@ def test_platform_tools_skill_contains_platform_capabilities_without_business_se
         "validate_sql.py",
         "run_sql.py",
         "sql_execution",
-        "chart_spec",
     ]
     for token in required_tokens:
         assert token in snapshot
@@ -475,3 +481,58 @@ def test_data_dev_skill_documents_metadata_completion():
         "数据新鲜度",
     ):
         assert token in snapshot, f"data-dev 技能缺少: {token}"
+
+
+def test_generic_presentation_skills_are_free_of_platform_coupling():
+    """图表与报告技能必须能在没有 OpenDataWorks 的环境独立运行。
+
+    这两个技能是从 opendataworks-platform-tools 抽出来的，一旦平台概念回流，
+    不接入 OpenDataWorks 的部署就又用不了它们了。
+    """
+    forbidden_tokens = [
+        "OpenDataWorks",
+        "opendataworks",
+        "portal",
+        "odw-cli",
+        "DATAAGENT_PLATFORM_SKILL_ROOT",
+        "DATAAGENT_DATA_SCOPE_JSON",
+        "X-Agent-Data-Scope",
+    ]
+    for root in (CHART_SKILL_ROOT, REPORT_SKILL_ROOT):
+        snapshot = _skill_text_snapshot(root)
+        assert snapshot, f"{root.name} 的文档快照为空"
+        for token in forbidden_tokens:
+            assert token not in snapshot, f"{root.name} 泄漏平台概念: {token}"
+
+        for script in sorted((root / "scripts").glob("*.py")):
+            source = script.read_text(encoding="utf-8")
+            for token in forbidden_tokens:
+                assert token not in source, f"{script} 泄漏平台概念: {token}"
+
+
+def test_generic_presentation_skills_use_shared_skills_dir_anchor():
+    """跨技能引用必须走通用锚点，不能再退回 per-skill 专属环境变量。"""
+    for root, script_name in (
+        (CHART_SKILL_ROOT, "build_chart_spec.py"),
+        (REPORT_SKILL_ROOT, "generate_report.py"),
+    ):
+        skill_md = (root / "SKILL.md").read_text(encoding="utf-8")
+        expected = f'"$DATAAGENT_PYTHON_BIN" "${{SKILLS_ROOT_DIR}}/{root.name}/scripts/{script_name}"'
+        assert expected in skill_md, f"{root.name}/SKILL.md 缺少标准调用形式"
+
+
+def test_generic_presentation_skills_do_not_import_platform_runtime():
+    """脚本只能依赖技能自带的 _skill_io，不得跨目录 import 平台运行时。"""
+    for root in (CHART_SKILL_ROOT, REPORT_SKILL_ROOT):
+        assert (root / "scripts" / "_skill_io.py").exists(), f"{root.name} 缺少 _skill_io.py"
+        for script in sorted((root / "scripts").glob("*.py")):
+            source = script.read_text(encoding="utf-8")
+            assert "_opendataworks_runtime" not in source, f"{script} 仍在 import 平台运行时"
+
+
+def test_migrated_scripts_are_gone_from_platform_tools():
+    """不保留兼容副本，避免两份等价实现漂移。"""
+    for name in ("build_chart_spec.py", "generate_report.py", "format_answer.py"):
+        assert not (PLATFORM_TOOLS_SKILL_ROOT / "scripts" / name).exists(), f"{name} 仍留在平台技能中"
+    assert not (PLATFORM_TOOLS_SKILL_ROOT / "assets" / "chart-template").exists()
+    assert (CHART_SKILL_ROOT / "assets" / "chart-template" / "bar.json").exists()

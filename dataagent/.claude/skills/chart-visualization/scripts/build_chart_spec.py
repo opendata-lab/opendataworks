@@ -4,7 +4,7 @@ import argparse
 from datetime import datetime
 from typing import Any
 
-from _opendataworks_runtime import error_payload, load_json_input, print_json
+from _skill_io import error_payload, load_json_input, print_json
 
 
 def is_time_like(field: str, values: list[Any]) -> bool:

@@ -1197,4 +1197,6 @@ def test_build_container_command_auto_mounts_platform_tools_and_sets_env(tmp_pat
     # Verify DATAAGENT_PLATFORM_SKILL_ROOT is provided in container environment
     assert "--env" in command
     assert "DATAAGENT_PLATFORM_SKILL_ROOT=/mnt/workspace/.claude/skills/opendataworks-platform-tools" in command
+    # 跨技能引用的通用锚点，与平台技能是否启用无关
+    assert "SKILLS_ROOT_DIR=/mnt/workspace/.claude/skills" in command
 
