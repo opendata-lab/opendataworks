@@ -15,7 +15,8 @@ When working in this repository, optimize for:
 - `backend/`: main business backend for metadata, workflow, lineage, and platform APIs
 - `frontend/`: main web application
 - `dataagent/dataagent-backend/`: FastAPI-based intelligent-query backend
-- `dataagent/.claude/skills/dataagent-nl2sql/`: intelligent-query skill bundle
+- `dataagent/.claude/skills/`: bundled intelligent-query skills (business knowledge, platform tools, data dev, methodology DAG, ontology modeling, chart, report)
+- `dataagent/dataagent-backend/prompts/data_agent_system_prompt.md`: DataAgent system prompt; generic NL2SQL method lives here, not in a skill
 - `deploy/`: Docker Compose, environment templates, and image/build assets
 
 ### Frontend stack
@@ -144,14 +145,16 @@ When working in this repository, optimize for:
 
 ### Intelligent Query module rules
 
-- Scope: these rules apply to the NL2SQL / intelligent-query flow under `dataagent/dataagent-backend` and the skill bundle under `dataagent/.claude/skills/dataagent-nl2sql`.
-- Keep generic agent and runtime modules skill-agnostic. Do not hardcode skill-specific script names, CLI subcommands, prompt recipes, or deployment paths in shared modules such as `core/nl2sql_agent.py`.
-- The skill bundle is the single source of truth for question-routing playbooks, script invocation patterns, exact required arguments, and recovery rules. If behavior is specific to intelligent-query, put it in `SKILL.md`, `reference/*`, or skill-local scripts.
-- Never assume deployment-only absolute paths such as `/app/scripts/...`. Resolve from `skills_output_dir`, skill root, or another runtime-derived root.
-- For intelligent-query, do not add an extra wrapper layer unless a verified runtime limitation requires it. Prefer direct execution of skill-local scripts via `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`.
+- Scope: these rules apply to the NL2SQL / intelligent-query flow under `dataagent/dataagent-backend` and the bundled skills under `dataagent/.claude/skills/`.
+- Keep generic agent and runtime modules skill-agnostic. Do not hardcode skill-specific script names, CLI subcommands, prompt recipes, or deployment paths in shared modules such as `core/agent_runtime.py`.
+- Generic question routing, clarification, and failure-handling method belongs in `prompts/data_agent_system_prompt.md`, not in a skill. Each skill owns only its own domain, and its `SKILL.md`, `reference/*`, and skill-local scripts are the single source of truth for that skill's invocation patterns, exact required arguments, and recovery rules.
+- Never assume deployment-only absolute paths such as `/app/scripts/...`. Resolve from `SKILLS_ROOT_DIR`, the enabled skill roots, or another runtime-derived root.
+- For intelligent-query, do not add an extra wrapper layer unless a verified runtime limitation requires it. Prefer direct execution of skill-local scripts.
 - The current canonical invocation contract is:
-  - runtime exposes `DATAAGENT_PYTHON_BIN` and `DATAAGENT_SKILL_ROOT`
-  - executable form is `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_SKILL_ROOT}/scripts/<name>.py" ...`
+  - runtime exposes `DATAAGENT_PYTHON_BIN`, `SKILLS_ROOT_DIR`, `DATAAGENT_ENABLED_SKILL_ROOTS`, and `DATAAGENT_PLATFORM_SKILL_ROOT`
+  - executable form is `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/<skill-folder>/scripts/<name>.py" ...`
+  - platform-tools scripts use `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
+  - `DATAAGENT_SKILL_ROOT` points at the primary skill only and shifts with agent configuration, so it must not be used to locate sibling skills or their scripts
   - executable references in docs must use the full form above, not bare `run_sql.py` or guessed relative paths
 - Avoid duplicating invocation contracts across layers. When changing script entrypoints or required parameters, update the skill docs, skill template or sync generator, and regression tests in the same change.
 - Prefer one stable invocation contract. Do not keep multiple equivalent command forms unless a real environment difference has been verified.
