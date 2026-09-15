@@ -1,5 +1,8 @@
 # DataAgent Skills Directory Out of .claude Plan
 
+> **Status: 未采纳（2026-09-15）。** 见设计文档顶部说明——T2 的前提错误，
+> `.gitignore` 的 allowlist 是承重墙而非历史包袱，搬迁无法消除它。以下任务未执行。
+
 **Date:** 2026-09-15
 **Design:** [2026-09-15-dataagent-skills-dir-out-of-dot-claude-design.md](../design/2026-09-15-dataagent-skills-dir-out-of-dot-claude-design.md)
 

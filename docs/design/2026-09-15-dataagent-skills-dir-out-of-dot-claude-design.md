@@ -1,5 +1,22 @@
 # DataAgent Skills Directory Out of .claude Design
 
+> **Status: 未采纳（2026-09-15）。** 本文的核心论据有误，不要照此执行。
+>
+> 文中把 `.gitignore` 的 allowlist 当成搬迁就能消除的历史包袱，实际它是**承重墙**：
+> 运行时 ZIP 导入的 managed skill 经 `_resolve_skill_target_dir()` 写入同一个发现根，
+> 租户私有 skill 也放在那里，所以 `/dataagent/.claude/skills/*/` 这条 deny-by-default
+> 必须保留，内置 skill 只能逐个放行。
+>
+> 搬出 `.claude` 只能去掉最外层三行（全局忽略 + 两层反向放行），20 行降到 15 行，
+> 而「每新增一个内置 skill 要补两行」这一故障模式**原样存在**——那恰恰是本文引用
+> `e213f6cc` 作为证据、并列为首要理由的问题。
+>
+> 真正能消除 ignore 规则的做法是把内置 skill 与导入 skill 拆到两个目录，让 discovery
+> 合并两个根；那是另一个更大的变更，本文未覆盖。若将来重提目录调整，请从这一点开始，
+> 不要重复本文的结论。
+>
+> 本次实际落地的只有复核过程中发现的 `BUILTIN_SKILL_FOLDERS` 漏项修复。
+
 **Date:** 2026-09-15
 **Goal:** 把仓库内置 skill 源码目录从 `dataagent/.claude/skills/` 迁到 `dataagent/skills/`，消除为「在被全局忽略的 `.claude/` 里维护受版本控制的源码」而存在的整套 `.gitignore` 反向放行规则。
 **Tech Stack:** DataAgent 后端 FastAPI（`core/skill_discovery.py`、`core/agent_runtime.py`、`core/skill_admin_service.py`）；Alembic；`deploy/` Compose 与离线打包脚本；pytest。
