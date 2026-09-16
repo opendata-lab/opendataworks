@@ -147,13 +147,13 @@ def test_three_engines_scope_empty_results_to_target_query_and_enforce_limits():
         {
             "type": "tool_use",
             "tool_name": "Bash",
-            "input": {"command": '"$DATAAGENT_PYTHON_BIN" "$DATAAGENT_PLATFORM_SKILL_ROOT/scripts/run_sql.py" --sql "SELECT id FROM opendataworks.data_table WHERE 1 = 0"'},
+            "input": {"command": '"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/run_sql.py" --sql "SELECT id FROM opendataworks.data_table WHERE 1 = 0"'},
             "output": {"kind": "sql_execution", "sql": "SELECT id FROM opendataworks.data_table WHERE 1 = 0", "rows": [], "row_count": 0, "result_state": "empty_result"},
         },
         {
             "type": "tool_use",
             "tool_name": "Bash",
-            "input": {"command": '"$DATAAGENT_PYTHON_BIN" "$DATAAGENT_PLATFORM_SKILL_ROOT/scripts/run_sql.py" --sql "SELECT COUNT(id) AS table_cnt FROM opendataworks.data_table WHERE deleted = 0"'},
+            "input": {"command": '"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/run_sql.py" --sql "SELECT COUNT(id) AS table_cnt FROM opendataworks.data_table WHERE deleted = 0"'},
             "output": {"kind": "sql_execution", "sql": "SELECT COUNT(id) AS table_cnt FROM opendataworks.data_table WHERE deleted = 0", "rows": [{"table_cnt": 37}], "row_count": 1, "result_state": "success"},
         },
     ]
@@ -340,7 +340,7 @@ def test_three_engines_accept_expected_empty_reference_sql(monkeypatch):
         {
             "type": "tool_use",
             "tool_name": "Bash",
-            "input": {"command": f'"$DATAAGENT_PYTHON_BIN" "$DATAAGENT_PLATFORM_SKILL_ROOT/scripts/run_sql.py" --sql "{sql}"'},
+            "input": {"command": f'"$DATAAGENT_PYTHON_BIN" "${{SKILLS_ROOT_DIR}}/opendataworks-platform-tools/scripts/run_sql.py" --sql "{sql}"'},
             "output": {
                 "kind": "sql_execution",
                 "sql": sql,

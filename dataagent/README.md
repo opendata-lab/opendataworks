@@ -19,7 +19,7 @@
 - 租户私有业务知识仍应拆到仓库外或未提交的扩展 skill 中，不应写入 system prompt 或内置平台通用 skill。
 - 表元数据、血缘、数据源的动态查询入口放在 platform tools skill 的 `reference/` 和 `scripts/` 中，不再同步成大块 JSON 快照。
 - OpenDataWorks 内部部署下，DataAgent runtime 默认 MCP-first：若当前 run 已注入 `portal-mcp`，模型会优先直接调用 `portal_search_tables` / `portal_get_lineage` / `portal_resolve_datasource` / `portal_export_metadata` / `portal_get_table_ddl` / `portal_query_readonly`。
-- `inspect_metadata.py` / `resolve_datasource.py` / `query_opendataworks_metadata.py` / `run_sql.py` 仍保留为非 MCP 智能体或 MCP 未注入场景下的 fallback，统一通过 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...` 调用；这些脚本会通过 `dataagent/.claude/skills/opendataworks-platform-tools/bin/odw-cli` 调用 backend 的 `/api/v1/ai/*` 只读接口，而不是由 skill/runtime 直接访问平台元数据库或业务数据库。
+- `inspect_metadata.py` / `resolve_datasource.py` / `query_opendataworks_metadata.py` / `run_sql.py` 仍保留为非 MCP 智能体或 MCP 未注入场景下的 fallback，统一通过 `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/<name>.py" ...` 调用；这些脚本会通过 `dataagent/.claude/skills/opendataworks-platform-tools/bin/odw-cli` 调用 backend 的 `/api/v1/ai/*` 只读接口，而不是由 skill/runtime 直接访问平台元数据库或业务数据库。
 - metadata 检索默认先做全局搜索；只有用户明确给出 database 时才加 database 过滤。
 - `resolve_datasource.py` 与 datasource export 只返回 datasource 摘要，不再向 skill/runtime 暴露 host、port、user、password、readonly_* 等连接信息。
 - 如果把内置 skills 复制到其他智能体平台，支持远程 MCP 时优先挂 `portal-mcp`；不支持 MCP 时，需要同时复制或启用 `opendataworks-platform-tools` 并检查其 `bin/odw-cli` 是否存在。业务语义需要同时复制或启用对应 knowledge skill。

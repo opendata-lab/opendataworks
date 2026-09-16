@@ -48,7 +48,8 @@ def test_build_runtime_env_does_not_expose_direct_db_connection_settings(monkeyp
     assert runtime_env["DATAAGENT_SQL_READ_TIMEOUT_SECONDS"] == "45"
     assert runtime_env["DATAAGENT_ORIGINAL_QUESTION"] == "workflow_publish_record 的上游表有哪些"
     assert runtime_env["DATAAGENT_SKILL_ROOT"] == str(Path("/tmp/skill-root").resolve())
-    assert runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] == str(Path("/tmp/platform-tools").resolve())
+    # 平台工具没有专属锚点：和其他技能一样走 ${SKILLS_ROOT_DIR}/<folder>/scripts/
+    assert "DATAAGENT_PLATFORM_SKILL_ROOT" not in runtime_env
     # 跨技能引用的通用锚点：主技能目录的上一级，即 skills 发现根，不随主技能变化
     assert runtime_env["SKILLS_ROOT_DIR"] == str(Path("/tmp/skill-root").resolve().parent)
     assert runtime_env["SKILLS_ROOT_DIR"] != runtime_env["DATAAGENT_SKILL_ROOT"]
@@ -97,7 +98,13 @@ def test_build_runtime_env_uses_configured_portal_mcp_timeout_and_protects_cli_i
     assert runtime_env["MCP_TOOL_TIMEOUT"] == "240000"
 
 
-def test_build_runtime_env_derives_platform_root_from_primary_root_when_enabled_roots_lag(tmp_path: Path):
+def test_build_runtime_env_never_injects_a_platform_specific_anchor(tmp_path: Path):
+    """平台工具不再有专属根变量，即使它已启用且目录就在那里。
+
+    此前运行时会注入 DATAAGENT_PLATFORM_SKILL_ROOT，并在 enabled_roots 缺失时
+    从 primary_root 的同级推导。该变量恒等于 ${SKILLS_ROOT_DIR}/<folder>，
+    两种等价写法已合并为一种。
+    """
     primary_root = tmp_path / ".claude" / "skills" / "opendataworks-business-knowledge"
     platform_root = tmp_path / ".claude" / "skills" / "opendataworks-platform-tools"
     primary_root.mkdir(parents=True)
@@ -109,12 +116,17 @@ def test_build_runtime_env_derives_platform_root_from_primary_root_when_enabled_
         SimpleNamespace(question="", sql_read_timeout_seconds=0),
         {
             "primary_root": str(primary_root),
-            "enabled_folders": ["opendataworks-business-knowledge"],
-            "enabled_roots": {"opendataworks-business-knowledge": str(primary_root)},
+            "enabled_folders": ["opendataworks-business-knowledge", "opendataworks-platform-tools"],
+            "enabled_roots": {
+                "opendataworks-business-knowledge": str(primary_root),
+                "opendataworks-platform-tools": str(platform_root),
+            },
         },
     )
 
-    assert runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] == str(platform_root.resolve())
+    assert "DATAAGENT_PLATFORM_SKILL_ROOT" not in runtime_env
+    # 统一锚点仍然能拼出平台脚本路径，这是替代它的唯一形式
+    assert runtime_env["SKILLS_ROOT_DIR"] == str(platform_root.parent.resolve())
 
 
 def test_resolve_sql_read_timeout_seconds_selects_mode_specific_value():

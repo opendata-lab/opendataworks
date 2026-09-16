@@ -4,7 +4,7 @@
 
 ## 统一命令规则
 
-- fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
+- fallback 脚本统一通过：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/<name>.py" ...`
 - 若运行时暴露了 `mcp__portal__portal_*`，优先直接调用 MCP tools，不要先绕回脚本。
 - 固定脚本只有：`inspect_metadata.py`、`resolve_datasource.py`、`get_lineage.py`、`get_table_ddl.py`、`validate_sql.py`、`run_sql.py`、`export_query.py`、`query_opendataworks_metadata.py`
 - validate_sql.py 是唯一推荐的 SQL 验证入口；脚本 fallback 下必须先 `validate_sql.py`，再 `run_sql.py` 或 `export_query.py`。
@@ -43,28 +43,28 @@
 - 用途：定位候选表、字段和 metadata。
 - 适用场景：用户没有给出明确表名；需要确认指标字段和维度字段；需要在元数据中做关键词检索。
 - 调用原则：用户没有明确给 database 时，先不要传 `--database`；首次结果过少时可做少量同义词补检。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/inspect_metadata.py" --keyword "<keyword>"`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/inspect_metadata.py" --keyword "<keyword>"`
 
 ## resolve_datasource.py
 
 - 用途：根据 database 判断 engine 和 datasource 摘要。
 - 必须满足：`--database` 必填，值直接取自已确认 database/schema。
 - 成功一次后不要重复调用。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/resolve_datasource.py" --database <database>`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/resolve_datasource.py" --database <database>`
 
 ## get_lineage.py
 
 - 用途：查看目标对象的上下游或血缘快照。
 - 必须满足：目标对象已确认；同名对象不唯一时先补充 database/schema。
 - 收口规则：返回足够证据后优先基于结果回答。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/get_lineage.py" --table <table> [--db-name <db>]`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/get_lineage.py" --table <table> [--db-name <db>]`
 
 ## get_table_ddl.py
 
 - 用途：查看 live DDL、字段顺序、注释、分区或建表属性。
 - 必须满足：目标 database/table 或 table id 已确认。
 - 收口规则：返回 `table_ddl` 后优先基于该结果回答。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/get_table_ddl.py" --database <db> --table <table>`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/get_table_ddl.py" --database <db> --table <table>`
 
 ## validate_sql.py
 
@@ -72,8 +72,8 @@
 - 适用场景：SQL 已形成，准备进入 `run_sql.py`。
 - 检查范围：只读、安全、schema 前缀、`SELECT *`、相对日期、占位符；可选 ontology 表字段检查。
 - 命令模板：
-  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --json "<SQL>"`
-  - `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/validate_sql.py" --ontology <ontology-path-from-caller> --json "<SQL>"`
+  - `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/validate_sql.py" --json "<SQL>"`
+  - `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/validate_sql.py" --ontology <ontology-path-from-caller> --json "<SQL>"`
 - 验证失败时修正 SQL 后最多重跑一次同类验证；仍失败则说明缺口。
 
 ## run_sql.py
@@ -85,7 +85,7 @@
   - `result_state=success`：已拿到真实结果，直接收口回答。
   - `result_state=empty_result`：查询成功但无数据，说明口径和空结果，不换表试探。
   - `result_state=failed`：按 `error_code`、`failure_attribution`、`stop_reason` 说明原因。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" --database <db> --engine <mysql|doris> --sql "<SQL>"`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/run_sql.py" --database <db> --engine <mysql|doris> --sql "<SQL>"`
 - 注意：`run_sql.py` 与 `portal_query_readonly` 的结果会进模型上下文，受结果字节守卫（默认 512KB）约束；超限会返回 `truncated_by_size=true` 与 `error_code=result_truncated`。大结果或要落盘时改用 `export_query.py`。
 
 ## export_query.py
@@ -96,7 +96,7 @@
 - 行数上限：默认且最大 10000 行；命中上限时 `has_more=true`，应改用更精确的过滤或聚合。
 - 后续处理：模型用 Bash/Python 读取返回的 `file_path`（CSV）再生成最终文件，不要把 CSV 内容整体读进上下文。
 - 落盘位置：所有要交付给用户、可下载的产物（CSV/Excel/HTML/图片等）必须写到工作区的 `output/` 目录下（如 `output/result.csv`）。只有 `output/` 与 `uploads/` 目录下的文件会出现在会话文件面板并可下载；写到工作区根目录或其他子目录的文件视为临时草稿，不会展示也不可下载。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<name>.csv`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<name>.csv`
 
 ## 图表与报告
 

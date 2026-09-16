@@ -395,7 +395,7 @@ SKILLS_REQUIRING_PLATFORM_TOOLS = {
 }
 
 
-def _build_child_env(enabled_folders: list[str] | None = None) -> dict[str, str]:
+def _build_child_env() -> dict[str, str]:
     cfg = get_settings()
     child_env = {
         key: str(value)
@@ -411,8 +411,6 @@ def _build_child_env(enabled_folders: list[str] | None = None) -> dict[str, str]
             "DATAAGENT_RUNTIME_KIND": resolve_runtime_kind(cfg),
         }
     )
-    if enabled_folders and PLATFORM_TOOLS_SKILL_FOLDER in enabled_folders:
-        child_env["DATAAGENT_PLATFORM_SKILL_ROOT"] = f"{CHILD_SKILLS_ROOT}/{PLATFORM_TOOLS_SKILL_FOLDER}"
     return child_env
 
 
@@ -549,7 +547,7 @@ def _build_container_command(
     )
     task_label_value = task_id_label if task_id_label is not None else _safe_container_fragment(params.task_id)
 
-    child_env = _build_child_env(enabled_folders)
+    child_env = _build_child_env()
     if extra_env:
         child_env.update({str(key): str(value) for key, value in extra_env.items()})
 

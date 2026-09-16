@@ -1,7 +1,7 @@
 ---
 name: opendataworks-platform-tools
 description: "当请求需要真实 OpenDataWorks 平台能力时使用：元数据查询、表/字段发现、数据源路由、血缘、DDL、只读 SQL 验证/执行、结果导出。不用于业务语义或 NL2SQL 推理，也不负责图表与报告。"
-compatibility: "需要 DATAAGENT_PYTHON_BIN、DATAAGENT_PLATFORM_SKILL_ROOT，以及可见的 portal MCP 工具或本技能 bin/odw-cli 的后端服务访问能力。"
+compatibility: "需要 DATAAGENT_PYTHON_BIN、SKILLS_ROOT_DIR，以及可见的 portal MCP 工具或本技能 bin/odw-cli 的后端服务访问能力。"
 tools: [Bash, Read]
 ---
 
@@ -40,7 +40,7 @@ OpenDataWorks Platform Tools Skill。平台工具 Skill。
 1. 当前运行中能看到 portal MCP 工具时，优先使用 portal MCP。
 2. 只有 portal MCP 不可用时，才使用脚本回退。
 3. 脚本回退必须使用：
-   `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
+   `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/<name>.py" ...`
 4. 平台脚本不要使用 primary `DATAAGENT_SKILL_ROOT`。
 5. 脚本回退执行前，必须先验证已确认 SQL。
 6. 已确认 SQL 必须通过唯一只读 SQL 执行入口执行。

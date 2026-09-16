@@ -19,7 +19,7 @@
 
 ## 使用原则
 
-- MCP 不可用时，fallback 脚本统一使用 `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`。
+- MCP 不可用时，fallback 脚本统一使用 `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/<name>.py" ...`。
 - MCP 优先的运行时下，portal 工具直接由运行时暴露给模型。
 - 只有 MCP 不可用时，Python 脚本才作为兼容回退调用 backend API。
 - 执行元数据相关脚本前，确认技能自带 CLI 路径存在；如果缺少，说明缺失能力，不尝试下载或安装。
@@ -33,7 +33,7 @@
 
 - `DATAAGENT_PYTHON_BIN`：当前 DataAgent Python 解释器。
 - `DATAAGENT_SKILL_ROOT`：primary 技能根目录，不用于平台脚本回退。
-- `DATAAGENT_PLATFORM_SKILL_ROOT`：OpenDataWorks 平台工具技能根目录，平台脚本回退只使用该根目录。
+- `SKILLS_ROOT_DIR`：技能发现根目录。平台脚本回退只使用 `${SKILLS_ROOT_DIR}/opendataworks-platform-tools`。
 - `DATAAGENT_ENABLED_SKILLS`：本轮启用的技能文件夹列表。
 - `DATAAGENT_ENABLED_SKILL_ROOTS`：启用技能到绝对路径的映射。
 - `DATAAGENT_QUERY_LIMIT`：查询结果限制。

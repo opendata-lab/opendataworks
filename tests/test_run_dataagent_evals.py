@@ -394,7 +394,7 @@ def test_extract_evidence_from_bash_script_text_outputs():
             "tool_name": "Bash",
             "input": {
                 "command": (
-                    '"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/run_sql.py" '
+                    '"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/run_sql.py" '
                     f'--database public --engine mysql --sql "{actual_sql}"'
                 )
             },

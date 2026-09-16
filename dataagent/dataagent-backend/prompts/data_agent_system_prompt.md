@@ -89,5 +89,5 @@
 - 调用命令模板：
   - SQL 导出数据：
     ```
-    "$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<temp_name>.csv
+    "$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<temp_name>.csv
     ```

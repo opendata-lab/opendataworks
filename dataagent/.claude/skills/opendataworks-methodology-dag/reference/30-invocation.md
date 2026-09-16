@@ -109,7 +109,6 @@ mock 出来的不是真实结果。
 
 | 变量 | 用途 | 缺失后果 |
 |---|---|---|
-| `DATAAGENT_PLATFORM_SKILL_ROOT` | 平台工具目录的覆盖值 | 回落到同级目录 `../opendataworks-platform-tools` |
 | `DATAAGENT_QUERY_LIMIT` | 查询节点行数上限 | 默认 1000 |
 | `DATAAGENT_SQL_READ_TIMEOUT_SECONDS` | 单节点超时 | 默认 60 |
 | `DATAAGENT_METHODOLOGY_TOTAL_TIMEOUT_SECONDS` | 单次运行总预算 | 默认 240 |

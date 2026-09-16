@@ -20,8 +20,8 @@ tools: [Read, Bash, Glob, Grep]
 ## 前置依赖
 
 本技能的 `sql` 节点通过 `opendataworks-platform-tools` 的 `run_sql.py` 执行只读查询，
-以复用平台既有的只读校验、数据范围校验和失败归因。脚本自己定位它：默认取同级目录
-`../opendataworks-platform-tools`，宿主可用 `DATAAGENT_PLATFORM_SKILL_ROOT` 覆盖。
+以复用平台既有的只读校验、数据范围校验和失败归因。脚本自己定位它：取同级目录
+`../opendataworks-platform-tools`，不需要宿主注入任何环境变量。
 
 **必须与 `opendataworks-platform-tools` 一起安装并启用。** 两者都不存在时执行会返回
 `error_code=platform_tools_unavailable`；此时说明缺少执行入口，不要改用其他方式取数。

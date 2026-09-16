@@ -151,10 +151,10 @@ When working in this repository, optimize for:
 - Never assume deployment-only absolute paths such as `/app/scripts/...`. Resolve from `SKILLS_ROOT_DIR`, the enabled skill roots, or another runtime-derived root.
 - For intelligent-query, do not add an extra wrapper layer unless a verified runtime limitation requires it. Prefer direct execution of skill-local scripts.
 - The current canonical invocation contract is:
-  - runtime exposes `DATAAGENT_PYTHON_BIN`, `SKILLS_ROOT_DIR`, `DATAAGENT_ENABLED_SKILL_ROOTS`, and `DATAAGENT_PLATFORM_SKILL_ROOT`
-  - executable form is `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/<skill-folder>/scripts/<name>.py" ...`
-  - platform-tools scripts use `"$DATAAGENT_PYTHON_BIN" "${DATAAGENT_PLATFORM_SKILL_ROOT}/scripts/<name>.py" ...`
+  - runtime exposes `DATAAGENT_PYTHON_BIN`, `SKILLS_ROOT_DIR`, and `DATAAGENT_ENABLED_SKILL_ROOTS`
+  - the executable form is `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/<skill-folder>/scripts/<name>.py" ...`, with no per-skill exception
   - `DATAAGENT_SKILL_ROOT` points at the primary skill only and shifts with agent configuration, so it must not be used to locate sibling skills or their scripts
+  - a skill locating a sibling skill's directory resolves it from its own path, not from an injected variable
   - executable references in docs must use the full form above, not bare `run_sql.py` or guessed relative paths
 - Avoid duplicating invocation contracts across layers. When changing script entrypoints or required parameters, update the skill docs, skill template or sync generator, and regression tests in the same change.
 - Prefer one stable invocation contract. Do not keep multiple equivalent command forms unless a real environment difference has been verified.

@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 READ_ONLY_PREFIXES = ("SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN")
-PLATFORM_TOOLS_SKILL_FOLDER = "opendataworks-platform-tools"
 
 
 def env_int(name: str, default: int) -> int:
@@ -23,19 +22,13 @@ def env_int(name: str, default: int) -> int:
 
 
 def skill_root_dir() -> Path:
-    configured = str(os.getenv("DATAAGENT_PLATFORM_SKILL_ROOT", "")).strip()
-    if configured:
-        return Path(configured).expanduser()
-    enabled_roots_raw = str(os.getenv("DATAAGENT_ENABLED_SKILL_ROOTS", "")).strip()
-    if enabled_roots_raw:
-        try:
-            enabled_roots = json.loads(enabled_roots_raw)
-        except json.JSONDecodeError:
-            enabled_roots = {}
-        if isinstance(enabled_roots, dict):
-            platform_root = str(enabled_roots.get(PLATFORM_TOOLS_SKILL_FOLDER) or "").strip()
-            if platform_root:
-                return Path(platform_root).expanduser()
+    """本技能自身的根目录。
+
+    从 __file__ 推导，不读环境变量：脚本就在自己的 skill 目录内，这是唯一
+    不依赖宿主注入、且在本地与沙箱容器里都成立的解析方式。此前这里有一条
+    env -> DATAAGENT_ENABLED_SKILL_ROOTS -> __file__ 的三层回落链，三个分支
+    在所有已知部署下都解析到同一个目录。
+    """
     return Path(__file__).resolve().parents[1]
 
 
