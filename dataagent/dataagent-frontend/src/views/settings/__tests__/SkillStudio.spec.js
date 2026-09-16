@@ -68,6 +68,11 @@ const stubs = {
   },
   'el-upload': {
     template: '<div><slot /></div>'
+  },
+  // shallowMount 默认把 el-dialog 渲染成空壳，弹窗内容就完全断言不到。
+  'el-dialog': {
+    props: ['modelValue'],
+    template: '<div v-if="modelValue"><slot /><slot name="footer" /></div>'
   }
 }
 
@@ -334,35 +339,19 @@ describe('SkillStudio', () => {
     expect(apiMocks.listSkillDocuments).toHaveBeenCalledTimes(2)
   })
 
-  it('opens import dialog showing detected skills grouped by source with symlink and copy options', async () => {
+  // 导入对话框只剩 ZIP 上传一条真实路径。此前这里还有一组「检测到的 Skill」用例，
+  // 锁的是一份写死的假清单（dataagent-nl2sql / chart-generator / web-search /
+  // text-to-sql，全部不存在），以及一个不发请求却弹「导入成功」的按钮。
+  it('opens import dialog with the ZIP upload as the only import path', async () => {
     const wrapper = mountView()
     await flushPromises()
 
     expect(wrapper.vm.importDialogVisible).toBe(false)
     wrapper.vm.openImportDialog()
+    await flushPromises()
+
     expect(wrapper.vm.importDialogVisible).toBe(true)
-
-    expect(wrapper.vm.detectedGroups.length).toBeGreaterThanOrEqual(1)
-    expect(wrapper.vm.detectedGroups[0].path).toBe('/workspace/skills')
-    expect(wrapper.vm.importMode).toBe('symlink')
-    expect(wrapper.vm.targetLocation).toBe('/dataagent/.claude/skills')
-  })
-
-  it('allows batch selecting and importing detected skills', async () => {
-    const wrapper = mountView()
-    await flushPromises()
-
-    wrapper.vm.openImportDialog()
-    wrapper.vm.toggleAllSelection(true)
-    expect(wrapper.vm.selectedDetectedCount).toBe(4)
-    expect(wrapper.vm.isAllDetectedSelected).toBe(true)
-
-    wrapper.vm.importMode = 'copy'
-    wrapper.vm.targetLocation = '/workspace/skills'
-    await wrapper.vm.confirmBatchImport()
-    await flushPromises()
-
-    expect(messageMocks.success).toHaveBeenCalledWith(expect.stringContaining('拷贝'))
-    expect(wrapper.vm.importDialogVisible).toBe(false)
+    expect(wrapper.text()).toContain('将 ZIP 格式的 Skill 包拖到此处')
+    expect(wrapper.text()).not.toContain('检测到以下可导入技能')
   })
 })

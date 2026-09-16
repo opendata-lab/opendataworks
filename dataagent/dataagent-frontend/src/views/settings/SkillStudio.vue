@@ -81,122 +81,30 @@
       width="680px"
       :close-on-click-modal="false"
     >
-      <el-tabs v-model="activeImportTab" class="import-tabs">
-        <el-tab-pane label="检测到的 Skill" name="detected">
-          <div class="import-dialog-body">
-            <div class="import-section-header">
-              <span class="import-section-title">检测到以下可导入技能</span>
-              <el-checkbox
-                :model-value="isAllDetectedSelected"
-                :indeterminate="isDetectedIndeterminate"
-                @change="toggleAllSelection"
-              >
-                全选
-              </el-checkbox>
-            </div>
-
-            <div class="detected-groups">
-              <div
-                v-for="group in detectedGroups"
-                :key="group.id"
-                class="detected-group"
-              >
-                <div class="detected-group-header">
-                  <div class="detected-group-title-row">
-                    <el-checkbox
-                      :model-value="isGroupAllSelected(group)"
-                      :indeterminate="isGroupIndeterminate(group)"
-                      @change="toggleGroupSelection(group, $event)"
-                    >
-                      <span class="group-name">{{ group.name }}</span>
-                    </el-checkbox>
-                    <el-tag size="small" effect="plain" type="info">{{ group.path }}</el-tag>
-                    <span class="group-count">（{{ group.skills.length }} 个）</span>
-                  </div>
-                </div>
-
-                <div class="detected-skills-list">
-                  <div
-                    v-for="skill in group.skills"
-                    :key="skill.id"
-                    class="detected-skill-item"
-                  >
-                    <el-checkbox v-model="skill.selected">
-                      <div class="detected-skill-info">
-                        <span class="detected-skill-name">{{ skill.name }}</span>
-                        <span class="detected-skill-desc">{{ skill.desc }}</span>
-                      </div>
-                    </el-checkbox>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="import-options">
-              <el-form label-position="top">
-                <el-row :gutter="16">
-                  <el-col :xs="24" :sm="12">
-                    <el-form-item label="导入方式">
-                      <el-radio-group v-model="importMode">
-                        <el-radio value="symlink">符号链接</el-radio>
-                        <el-radio value="copy">拷贝</el-radio>
-                      </el-radio-group>
-                    </el-form-item>
-                  </el-col>
-                  <el-col :xs="24" :sm="12">
-                    <el-form-item label="目标位置">
-                      <el-select v-model="targetLocation" class="full-width">
-                        <el-option
-                          v-for="opt in targetLocationOptions"
-                          :key="opt.value"
-                          :label="opt.label"
-                          :value="opt.value"
-                        />
-                      </el-select>
-                    </el-form-item>
-                  </el-col>
-                </el-row>
-              </el-form>
-            </div>
+      <div class="zip-upload-body">
+        <el-upload
+          drag
+          accept=".zip,application/zip"
+          :show-file-list="false"
+          :disabled="importLoading"
+          :before-upload="beforeSkillUpload"
+          :http-request="handleSkillUpload"
+        >
+          <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+          <div class="el-upload__text">
+            将 ZIP 格式的 Skill 包拖到此处，或 <em>点击上传</em>
           </div>
-        </el-tab-pane>
-
-        <el-tab-pane label="上传 ZIP 包" name="zip">
-          <div class="zip-upload-body">
-            <el-upload
-              drag
-              accept=".zip,application/zip"
-              :show-file-list="false"
-              :disabled="importLoading"
-              :before-upload="beforeSkillUpload"
-              :http-request="handleSkillUpload"
-            >
-              <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-              <div class="el-upload__text">
-                将 ZIP 格式的 Skill 包拖到此处，或 <em>点击上传</em>
-              </div>
-              <template #tip>
-                <div class="el-upload__tip">
-                  支持包含 SKILL.md 的标准 ZIP 压缩包
-                </div>
-              </template>
-            </el-upload>
-          </div>
-        </el-tab-pane>
-      </el-tabs>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持包含 SKILL.md 的标准 ZIP 压缩包
+            </div>
+          </template>
+        </el-upload>
+      </div>
 
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="importDialogVisible = false">取消</el-button>
-          <el-button
-            v-if="activeImportTab === 'detected'"
-            type="primary"
-            :disabled="!selectedDetectedCount"
-            :loading="importLoading"
-            @click="confirmBatchImport"
-          >
-            导入选中 Skill ({{ selectedDetectedCount }})
-          </el-button>
         </div>
       </template>
     </el-dialog>
@@ -204,7 +112,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Refresh, UploadFilled } from '@element-plus/icons-vue'
@@ -236,36 +144,6 @@ const downloadingFolder = ref('')
 
 // 导入对话框状态
 const importDialogVisible = ref(false)
-const activeImportTab = ref('detected')
-const importMode = ref('symlink')
-const targetLocation = ref('/dataagent/.claude/skills')
-
-const targetLocationOptions = [
-  { label: '/dataagent/.claude/skills (系统默认目录)', value: '/dataagent/.claude/skills' },
-  { label: '/workspace/skills (当前工作区)', value: '/workspace/skills' },
-  { label: '~/.claude/skills (用户全局目录)', value: '~/.claude/skills' }
-]
-
-const detectedGroups = ref([
-  {
-    id: 'workspace',
-    name: '工作区 Skills',
-    path: '/workspace/skills',
-    skills: [
-      { id: 'dataagent-nl2sql', name: 'dataagent-nl2sql', desc: '智能问数与 NL2SQL 核心能力，包含数据探查与 SQL 生成', selected: false },
-      { id: 'chart-generator', name: 'chart-generator', desc: '自动化图表生成与可视化数据渲染', selected: false }
-    ]
-  },
-  {
-    id: 'bundled',
-    name: '扩展与插件 Skills',
-    path: '~/.claude/skills',
-    skills: [
-      { id: 'web-search', name: 'web-search', desc: '网络检索与数据源抓取服务', selected: false },
-      { id: 'text-to-sql', name: 'text-to-sql', desc: '基于业务元数据的高级自然语言转 SQL', selected: false }
-    ]
-  }
-])
 
 const skillItems = computed(() => buildSkillItems(documents.value))
 const enabledSkillCount = computed(() => skillItems.value.filter((item) => item.enabled).length)
@@ -380,70 +258,6 @@ const handleSkillUpload = async ({ file }) => {
     }
   } catch (error) {
     notifyError(error, '导入 Skill 失败')
-  } finally {
-    importLoading.value = false
-  }
-}
-
-// 检测项多选逻辑
-const allDetectedSkills = computed(() => {
-  const list = []
-  detectedGroups.value.forEach((group) => {
-    group.skills.forEach((s) => list.push(s))
-  })
-  return list
-})
-
-const selectedDetectedCount = computed(() => {
-  return allDetectedSkills.value.filter((s) => s.selected).length
-})
-
-const isAllDetectedSelected = computed(() => {
-  const all = allDetectedSkills.value
-  return all.length > 0 && all.every((s) => s.selected)
-})
-
-const isDetectedIndeterminate = computed(() => {
-  const count = selectedDetectedCount.value
-  return count > 0 && count < allDetectedSkills.value.length
-})
-
-const isGroupAllSelected = (group) => {
-  return group.skills.length > 0 && group.skills.every((s) => s.selected)
-}
-
-const isGroupIndeterminate = (group) => {
-  const selectedCount = group.skills.filter((s) => s.selected).length
-  return selectedCount > 0 && selectedCount < group.skills.length
-}
-
-const toggleGroupSelection = (group, checked) => {
-  group.skills.forEach((s) => {
-    s.selected = Boolean(checked)
-  })
-}
-
-const toggleAllSelection = (checked) => {
-  allDetectedSkills.value.forEach((s) => {
-    s.selected = Boolean(checked)
-  })
-}
-
-const confirmBatchImport = async () => {
-  const selected = allDetectedSkills.value.filter((s) => s.selected)
-  if (!selected.length) return
-  importLoading.value = true
-  try {
-    // 模拟或调用导入契约，完成后刷新
-    await loadDocuments()
-    ElMessage.success(`成功以 ${importMode.value === 'symlink' ? '符号链接' : '拷贝'} 方式导入 ${selected.length} 个 Skill`)
-    importDialogVisible.value = false
-    // 重置选择
-    allDetectedSkills.value.forEach((s) => {
-      s.selected = false
-    })
-  } catch (error) {
-    notifyError(error, '批量导入失败')
   } finally {
     importLoading.value = false
   }
@@ -674,102 +488,6 @@ onMounted(async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-}
-
-.import-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.import-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.import-section-title {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.detected-groups {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.detected-group {
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #f8fafc;
-}
-
-.detected-group-header {
-  margin-bottom: 8px;
-}
-
-.detected-group-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-
-.group-name {
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.group-count {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.detected-skills-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-left: 20px;
-}
-
-.detected-skill-item {
-  display: flex;
-  align-items: center;
-}
-
-.detected-skill-info {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-left: 6px;
-}
-
-.detected-skill-name {
-  font-weight: 600;
-  font-size: 13px;
-  color: #1e293b;
-}
-
-.detected-skill-desc {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.import-options {
-  margin-top: 8px;
-  padding-top: 14px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.full-width {
-  width: 100%;
 }
 
 .zip-upload-body {

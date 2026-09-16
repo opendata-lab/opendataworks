@@ -38,14 +38,22 @@ LEGACY_SQL_SKILL_FOLDER = "dataagent-nl2sql"
 DEFAULT_PRIMARY_SKILL_FOLDER = "opendataworks-business-knowledge"
 PLATFORM_TOOLS_SKILL_FOLDER = "opendataworks-platform-tools"
 ONTOLOGY_MODELING_SKILL_FOLDER = "ontology-modeling-assistant"
+DATA_DEV_SKILL_FOLDER = "opendataworks-data-dev"
+METHODOLOGY_DAG_SKILL_FOLDER = "opendataworks-methodology-dag"
 # 与数据平台无关的通用展示能力，可被任意智能体单独启用，不依赖平台工具
 CHART_VISUALIZATION_SKILL_FOLDER = "chart-visualization"
 REPORT_GENERATION_SKILL_FOLDER = "report-generation"
 DEFAULT_SKILLS_OUTPUT_DIR = f"../.claude/skills/{DEFAULT_PRIMARY_SKILL_FOLDER}"
+# 必须覆盖仓库内所有随发布携带的 skill：它决定 source=bundled，而 bundled 是
+# 「不可卸载、不可覆盖导入」的唯一依据。漏掉一个，该 skill 就会被判成 managed，
+# 管理员能从 UI 卸载它，uninstall_skill() 会 rmtree 掉仓库跟踪的目录。
+# 由 test_builtin_skill_folders_cover_every_tracked_skill 锁定，勿手工增删。
 BUILTIN_SKILL_FOLDERS = {
     DEFAULT_PRIMARY_SKILL_FOLDER,
     PLATFORM_TOOLS_SKILL_FOLDER,
     ONTOLOGY_MODELING_SKILL_FOLDER,
+    DATA_DEV_SKILL_FOLDER,
+    METHODOLOGY_DAG_SKILL_FOLDER,
     CHART_VISUALIZATION_SKILL_FOLDER,
     REPORT_GENERATION_SKILL_FOLDER,
 }
