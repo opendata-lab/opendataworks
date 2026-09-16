@@ -118,36 +118,29 @@ def _resolve_python_bin() -> str:
 
 
 PLATFORM_TOOLS_FOLDER = "opendataworks-platform-tools"
-PLATFORM_TOOLS_ROOT_ENV = "DATAAGENT_PLATFORM_SKILL_ROOT"
 
 
-def _platform_skill_candidates() -> list[Path]:
-    """Where the platform-tools skill may live, most specific first.
+def _platform_skill_root() -> Path:
+    """同级 platform-tools 技能目录，不校验是否存在。
 
-    The sibling directory is tried first because it needs nothing from the host:
-    skills are installed side by side, so this skill can find its neighbour from
-    its own location. The environment variable is an optional override for hosts
-    that install skills somewhere else.
+    只走同级目录：技能并排安装，本技能从自身位置就能找到邻居，不需要宿主注入
+    任何东西。此前这里返回一个候选列表，第一个候选来自
+    DATAAGENT_PLATFORM_SKILL_ROOT 覆盖；该变量已随调用锚点统一移除——它恒等于
+    ${SKILLS_ROOT_DIR}/opendataworks-platform-tools，与同级目录解析结果相同。
+
+    调用方各自需要的脚本不同（run_sql.py / validate_sql.py），存在性由调用方检查。
     """
-    candidates: list[Path] = []
-    override = str(os.getenv(PLATFORM_TOOLS_ROOT_ENV) or "").strip()
-    if override:
-        candidates.append(Path(override).expanduser())
     skill_root = Path(__file__).resolve().parent.parent
-    candidates.append(skill_root.parent / PLATFORM_TOOLS_FOLDER)
-    return candidates
+    return (skill_root.parent / PLATFORM_TOOLS_FOLDER).resolve(strict=False)
 
 
 def _resolve_platform_skill_root() -> Path:
-    checked: list[str] = []
-    for candidate in _platform_skill_candidates():
-        root = candidate.resolve(strict=False)
-        if (root / "scripts" / "run_sql.py").is_file():
-            return root
-        checked.append(str(root))
+    root = _platform_skill_root()
+    if (root / "scripts" / "run_sql.py").is_file():
+        return root
     raise MethodologyError(
         "找不到 opendataworks-platform-tools：方法论的 sql 节点依赖它执行只读查询。已尝试："
-        + "、".join(checked),
+        + str(root),
         error_code="platform_tools_unavailable",
         failure_attribution=["invalid_tool_path"],
         stop_reason=(

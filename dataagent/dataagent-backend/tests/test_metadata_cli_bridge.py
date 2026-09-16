@@ -209,10 +209,17 @@ def test_call_metadata_cli_surfaces_non_zero_exit(monkeypatch):
         runtime.call_metadata_cli("export", kind="tables")
 
 
-def test_metadata_cli_bin_defaults_to_platform_tools_skill_cli(monkeypatch):
+def test_metadata_cli_bin_resolves_from_the_scripts_own_location(monkeypatch):
+    """odw-cli 定位只看脚本自身位置，不读任何环境变量。
+
+    此前 skill_root_dir() 有一条 DATAAGENT_PLATFORM_SKILL_ROOT ->
+    DATAAGENT_ENABLED_SKILL_ROOTS -> __file__ 的三层回落链。前两层已移除：
+    它们在所有已知部署下都解析到同一个目录。这里给全部候选变量都塞进错误值，
+    确保它们真的不再参与解析。
+    """
     runtime = _load_runtime_module()
-    monkeypatch.delenv("DATAAGENT_PLATFORM_SKILL_ROOT", raising=False)
-    monkeypatch.delenv("DATAAGENT_ENABLED_SKILL_ROOTS", raising=False)
+    monkeypatch.setenv("DATAAGENT_PLATFORM_SKILL_ROOT", "/tmp/stale-platform-root")
+    monkeypatch.setenv("DATAAGENT_ENABLED_SKILL_ROOTS", '{"opendataworks-platform-tools": "/tmp/stale-enabled-root"}')
     monkeypatch.setenv("DATAAGENT_SKILL_ROOT", "/tmp/wrong-primary-skill")
 
     cli_path = Path(runtime.metadata_cli_bin())
@@ -220,18 +227,6 @@ def test_metadata_cli_bin_defaults_to_platform_tools_skill_cli(monkeypatch):
     assert cli_path.name == "odw-cli"
     assert cli_path.parent.name == "bin"
     assert str(cli_path) == str(PLATFORM_TOOLS_ROOT / "bin" / "odw-cli")
-
-
-def test_metadata_cli_bin_uses_platform_skill_root_env(monkeypatch):
-    runtime = _load_runtime_module()
-    monkeypatch.delenv("DATAAGENT_SKILL_ROOT", raising=False)
-    monkeypatch.setenv("DATAAGENT_PLATFORM_SKILL_ROOT", "/tmp/platform-tools")
-
-    cli_path = Path(runtime.metadata_cli_bin())
-
-    assert cli_path.name == "odw-cli"
-    assert cli_path.parent.name == "bin"
-    assert str(cli_path) == "/tmp/platform-tools/bin/odw-cli"
 
 
 def test_call_metadata_cli_non_executable_bin_falls_back_to_sh(monkeypatch):

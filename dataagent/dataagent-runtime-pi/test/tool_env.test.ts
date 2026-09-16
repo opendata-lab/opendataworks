@@ -39,7 +39,8 @@ test("shell env carries only allowlisted variables", () => {
   assert.equal(env.HOME, "/home/agent");
   assert.equal(env.DATAAGENT_PYTHON_BIN, "/usr/bin/python3");
   assert.equal(env.DATAAGENT_SKILL_ROOT, "/skills/nl2sql");
-  assert.equal(env.DATAAGENT_PLATFORM_SKILL_ROOT, "/skills/platform-tools");
+  // 平台专属锚点已随调用契约统一移除，即使上游还塞进来也不该透传
+  assert.equal(env.DATAAGENT_PLATFORM_SKILL_ROOT, undefined);
   assert.equal(env.SKILLS_ROOT_DIR, "/skills");
   assert.equal(env.ODW_BACKEND_BASE_URL, "http://backend:8080/api/v1/ai");
   assert.equal(env.ODW_AGENT_SERVICE_TOKEN, "service-token-123");

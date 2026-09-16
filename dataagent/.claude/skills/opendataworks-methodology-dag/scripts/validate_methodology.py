@@ -25,7 +25,7 @@ from binding import (
     iter_template_predicates,
     parse_expression,
 )
-from engine import _platform_skill_candidates
+from engine import _platform_skill_root
 from registry import (
     REGISTRY_DIR,
     RegistryError,
@@ -178,13 +178,8 @@ def _stub_value(spec: Mapping[str, Any]) -> Any:
 
 def _validate_sql_with_platform_tools(sql: str) -> tuple[bool, str]:
     """Run the platform-tools SQL validator when it is reachable."""
-    script = None
-    for candidate in _platform_skill_candidates():
-        found = candidate.resolve(strict=False) / "scripts" / "validate_sql.py"
-        if found.is_file():
-            script = found
-            break
-    if script is None:
+    script = _platform_skill_root() / "scripts" / "validate_sql.py"
+    if not script.is_file():
         return True, "skipped: 找不到 opendataworks-platform-tools 的 validate_sql.py"
     python_bin = str(os.getenv("DATAAGENT_PYTHON_BIN") or "").strip() or sys.executable
     try:

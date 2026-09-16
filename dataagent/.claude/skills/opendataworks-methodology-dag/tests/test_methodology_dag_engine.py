@@ -194,27 +194,30 @@ def test_an_exhausted_total_budget_stops_the_run():
 
 # -- node behaviour ---------------------------------------------------------
 
-def test_platform_tools_is_found_as_a_sibling_without_any_environment_variable(monkeypatch):
+def test_platform_tools_is_found_as_a_sibling_without_any_environment_variable():
     """The skill locates its neighbour from its own path, needing nothing from the host."""
-    monkeypatch.delenv(engine.PLATFORM_TOOLS_ROOT_ENV, raising=False)
-
     root = engine._resolve_platform_skill_root()
 
     assert root.name == engine.PLATFORM_TOOLS_FOLDER
     assert (root / "scripts" / "run_sql.py").is_file()
 
 
-def test_an_environment_override_wins_over_the_sibling(monkeypatch, tmp_path):
-    override = tmp_path / "elsewhere"
-    (override / "scripts").mkdir(parents=True)
-    (override / "scripts" / "run_sql.py").write_text("", encoding="utf-8")
-    monkeypatch.setenv(engine.PLATFORM_TOOLS_ROOT_ENV, str(override))
+def test_platform_tools_resolution_reads_no_environment_variable(monkeypatch):
+    """定位只依赖自身路径。
 
-    assert engine._resolve_platform_skill_root() == override.resolve()
+    此前 DATAAGENT_PLATFORM_SKILL_ROOT 可以覆盖同级解析；该变量已随调用锚点
+    统一移除，因为它恒等于同级目录。这里让任何 os.getenv 调用都爆炸，确保解析
+    路径上不会再悄悄长出一个环境变量依赖。
+    """
+    def _explode(*args, **kwargs):
+        raise AssertionError("platform-tools 定位不应读取任何环境变量")
+
+    monkeypatch.setattr(engine.os, "getenv", _explode)
+
+    assert engine._platform_skill_root().name == engine.PLATFORM_TOOLS_FOLDER
 
 
 def test_sql_node_without_platform_tools_anywhere_reports_a_precise_cause(monkeypatch):
-    monkeypatch.delenv(engine.PLATFORM_TOOLS_ROOT_ENV, raising=False)
     monkeypatch.setattr(engine, "PLATFORM_TOOLS_FOLDER", "absent-platform-tools")
     methodology = _graph({"a": {"type": "sql", "database": "d", "sql": "SELECT 1"}}, "a")
 

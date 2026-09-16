@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from engine import _platform_skill_candidates, run_methodology
+from engine import _platform_skill_root, run_methodology
 from registry import coerce_params, load_registry
 from validate_methodology import validate_methodology
 
@@ -78,7 +78,7 @@ def test_each_methodology_sql_passes_the_platform_validator(identifier):
     platform-tools is not installed, because a check that quietly does nothing is
     how such a defect hides.
     """
-    if not any((c.resolve(strict=False) / "scripts" / "validate_sql.py").is_file() for c in _platform_skill_candidates()):
+    if not (_platform_skill_root() / "scripts" / "validate_sql.py").is_file():
         pytest.skip("opendataworks-platform-tools 未安装，无法做 SQL 校验")
 
     report = validate_methodology(REGISTRY[identifier], registry=REGISTRY, check_sql=True)

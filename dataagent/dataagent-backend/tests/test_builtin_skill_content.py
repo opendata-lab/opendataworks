@@ -140,7 +140,8 @@ def test_platform_tools_skill_documents_run_sql_as_only_recommended_sql_executio
 
     required_tokens = [
         "OpenDataWorks Platform Tools Skill",
-        "DATAAGENT_PLATFORM_SKILL_ROOT",
+        # 调用锚点已统一：平台工具不再有专属根变量，走和其他技能一样的共享锚点
+        "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/",
         "validate_sql.py 是唯一推荐的 SQL 验证入口",
         "run_sql.py 是唯一推荐的 SQL 执行入口",
         "语义确认 → SQL 生成 → SQL 验证 → run_sql.py 执行 → 结果收口",
@@ -540,15 +541,47 @@ def test_generic_presentation_skills_are_free_of_platform_coupling():
                 assert token not in source, f"{script} 泄漏平台概念: {token}"
 
 
-def test_generic_presentation_skills_use_shared_skills_dir_anchor():
-    """跨技能引用必须走通用锚点，不能再退回 per-skill 专属环境变量。"""
+def test_skills_use_shared_skills_dir_anchor():
+    """跨技能引用必须走通用锚点，不能再退回 per-skill 专属环境变量。
+
+    platform-tools 曾是唯一例外，用 DATAAGENT_PLATFORM_SKILL_ROOT 而非共享锚点；
+    该变量恒等于 ${SKILLS_ROOT_DIR}/opendataworks-platform-tools，已被移除。
+    """
     for root, script_name in (
         (CHART_SKILL_ROOT, "build_chart_spec.py"),
         (REPORT_SKILL_ROOT, "generate_report.py"),
+        (PLATFORM_TOOLS_SKILL_ROOT, "<name>.py"),
     ):
         skill_md = (root / "SKILL.md").read_text(encoding="utf-8")
         expected = f'"$DATAAGENT_PYTHON_BIN" "${{SKILLS_ROOT_DIR}}/{root.name}/scripts/{script_name}"'
         assert expected in skill_md, f"{root.name}/SKILL.md 缺少标准调用形式"
+
+
+def test_no_skill_document_or_script_references_the_removed_platform_anchor():
+    """删掉的变量不能在任何技能文档或脚本里复活。
+
+    模板与运行时注入必须同时切换：只要有一处文档还写着它，模型就会拿到一条
+    指向未注入变量的命令。
+    """
+    # 只查实际使用形式。散文里提一句「该变量已移除」是有价值的历史说明，
+    # 不该被这条断言误伤；真正会出问题的是命令模板和 getenv 调用。
+    forbidden_uses = (
+        "${DATAAGENT_PLATFORM_SKILL_ROOT}",
+        '"DATAAGENT_PLATFORM_SKILL_ROOT"',
+        "'DATAAGENT_PLATFORM_SKILL_ROOT'",
+        "$DATAAGENT_PLATFORM_SKILL_ROOT",
+    )
+    targets = [(SYSTEM_PROMPT, SYSTEM_PROMPT.read_text(encoding="utf-8"))]
+    for root in sorted(p for p in SKILLS_ROOT.iterdir() if p.is_dir()):
+        targets.append((root, _skill_text_snapshot(root)))
+        scripts_dir = root / "scripts"
+        if scripts_dir.is_dir():
+            for script in sorted(scripts_dir.glob("*.py")):
+                targets.append((script, script.read_text(encoding="utf-8")))
+
+    for where, text in targets:
+        for use in forbidden_uses:
+            assert use not in text, f"{where} 仍在使用已移除的 DATAAGENT_PLATFORM_SKILL_ROOT"
 
 
 def test_generic_presentation_skills_do_not_import_platform_runtime():
@@ -598,7 +631,9 @@ def test_every_builtin_skill_is_fully_tracked_by_git():
         for path in sorted(skill_dir.rglob("*")):
             if not path.is_file():
                 continue
-            if "__pycache__" in path.parts or path.suffix == ".pyc":
+            # 技能自带 pytest 套件，跑一次就会留下缓存目录（见 .gitignore 里同名条目）。
+            # 它们本就该被忽略，不跳过的话，任何跑过技能测试的人都会看到这个用例假报红。
+            if {"__pycache__", ".pytest_cache"} & set(path.parts) or path.suffix == ".pyc":
                 continue
             if path not in tracked_paths:
                 missing.append(str(path.relative_to(repo_root)))

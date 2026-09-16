@@ -644,7 +644,7 @@ def _build_runtime_env(
 
     Inherits the current process env, overlays ``provider_env`` (provider/model
     credentials and base URL), and exposes the skill-agnostic invocation contract
-    (``DATAAGENT_PYTHON_BIN``/``DATAAGENT_SKILL_ROOT``) plus per-run knobs derived
+    (``DATAAGENT_PYTHON_BIN``/``SKILLS_ROOT_DIR``) plus per-run knobs derived
     from ``cfg`` and ``params`` (query limit, SQL read timeout, enabled skills,
     data scope). No direct DB connection settings are exposed here — those stay at
     the deploy/skill layer. See AGENTS.md "Intelligent Query module rules".
@@ -654,11 +654,6 @@ def _build_runtime_env(
     skills_root = Path(str((skill_runtime or {}).get("primary_root") or resolve_builtin_skill_root_dir())).resolve()
     enabled_folders = [str(item) for item in ((skill_runtime or {}).get("enabled_folders") or [])]
     enabled_roots = dict((skill_runtime or {}).get("enabled_roots") or {})
-    platform_skill_root = str(enabled_roots.get(PLATFORM_TOOLS_SKILL_FOLDER) or "").strip()
-    if not platform_skill_root:
-        sibling_platform_root = skills_root.parent / PLATFORM_TOOLS_SKILL_FOLDER
-        if sibling_platform_root.is_dir():
-            platform_skill_root = str(sibling_platform_root)
     existing_path = str(os.getenv("PATH") or "").strip()
     runtime_path = python_dir if not existing_path else f"{python_dir}:{existing_path}"
     # Preserve the current process environment so skill-private env vars can be
@@ -696,8 +691,6 @@ def _build_runtime_env(
             "TZ": str(os.getenv("TZ") or "Asia/Shanghai"),
         }
     )
-    if platform_skill_root:
-        runtime_env["DATAAGENT_PLATFORM_SKILL_ROOT"] = str(Path(platform_skill_root).resolve())
     agent_env = getattr(params, "agent_env_vars", None)
     if not agent_env and getattr(params, "agent_snapshot", None):
         agent_env = dict((getattr(params, "agent_snapshot", None) or {}).get("env_vars") or {})
