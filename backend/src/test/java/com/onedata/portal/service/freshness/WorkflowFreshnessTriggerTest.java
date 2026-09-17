@@ -37,8 +37,8 @@ class WorkflowFreshnessTriggerTest {
     }
 
     @Test
-    void triggersCheckForWriteTables() {
-        when(relationMapper.selectWriteTableIdsByWorkflow(eq(7L))).thenReturn(Arrays.asList(1L, 2L));
+    void triggersCheckForAssociatedTables() {
+        when(relationMapper.selectAllTableIdsByWorkflow(eq(7L))).thenReturn(Arrays.asList(1L, 2L));
         when(dataTableMapper.selectBatchIds(any())).thenReturn(Arrays.asList(activeTable(1), activeTable(2)));
         when(checkService.checkBatch(any(), eq("workflow"), eq("system"), any()))
             .thenReturn(Collections.emptyList());
@@ -49,8 +49,8 @@ class WorkflowFreshnessTriggerTest {
     }
 
     @Test
-    void noWriteTables_noCheck() {
-        when(relationMapper.selectWriteTableIdsByWorkflow(any())).thenReturn(Collections.emptyList());
+    void noAssociatedTables_noCheck() {
+        when(relationMapper.selectAllTableIdsByWorkflow(any())).thenReturn(Collections.emptyList());
         trigger.onWorkflowSucceeded(7L, 42L);
         verify(checkService, never()).checkBatch(any(), any(), any(), any());
     }
@@ -59,13 +59,13 @@ class WorkflowFreshnessTriggerTest {
     void disabled_noCheck() {
         properties.setEnabled(false);
         trigger.onWorkflowSucceeded(7L, 42L);
-        verify(relationMapper, never()).selectWriteTableIdsByWorkflow(any());
+        verify(relationMapper, never()).selectAllTableIdsByWorkflow(any());
         verify(checkService, never()).checkBatch(any(), any(), any(), any());
     }
 
     @Test
     void exceptionIsSwallowed() {
-        when(relationMapper.selectWriteTableIdsByWorkflow(any()))
+        when(relationMapper.selectAllTableIdsByWorkflow(any()))
             .thenThrow(new RuntimeException("db down"));
         // 不应抛出
         trigger.onWorkflowSucceeded(7L, 42L);

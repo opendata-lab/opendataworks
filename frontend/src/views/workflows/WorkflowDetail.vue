@@ -482,7 +482,9 @@
             <div v-loading="freshnessLoading" class="freshness-pane">
               <div class="freshness-toolbar">
                 <div class="freshness-summary" v-if="freshness">
-                  <el-tag type="info" effect="plain">写出表 {{ freshness.summary.total }}</el-tag>
+                  <el-tag type="info" effect="plain">全部关联表 {{ freshness.summary.total }}</el-tag>
+                  <el-tag effect="plain">写出 {{ freshness.summary.writeCount }}</el-tag>
+                  <el-tag effect="plain">读取 {{ freshness.summary.readCount }}</el-tag>
                   <el-tag type="success" effect="plain">正常 {{ freshness.summary.pass }}</el-tag>
                   <el-tag type="warning" effect="plain">预警 {{ freshness.summary.warn }}</el-tag>
                   <el-tag type="danger" effect="plain">过期 {{ freshness.summary.error }}</el-tag>
@@ -521,11 +523,29 @@
               <el-empty
                 v-if="freshness && freshness.runs.length === 0"
                 :image-size="60"
-                description="暂无检查记录（工作流成功产出后自动检查其写出表）"
+                description="暂无检查记录（工作流成功运行后自动检查其关联表）"
               />
 
-              <div class="freshness-section-title">写出表最新状态</div>
-              <el-table :data="freshness?.tables || []" border size="small">
+              <div class="freshness-table-header">
+                <div class="freshness-section-title">关联表最新状态</div>
+                <el-radio-group v-model="freshnessRelationFilter" size="small" class="freshness-relation-filter">
+                  <el-radio-button label="all">全部 ({{ freshness?.tables?.length || 0 }})</el-radio-button>
+                  <el-radio-button label="write">写出 ({{ freshness?.summary?.writeCount || 0 }})</el-radio-button>
+                  <el-radio-button label="read">读取 ({{ freshness?.summary?.readCount || 0 }})</el-radio-button>
+                </el-radio-group>
+              </div>
+              <el-table :data="filteredFreshnessTables" border size="small">
+                <el-table-column label="角色" width="90">
+                  <template #default="{ row }">
+                    <el-tag
+                      size="small"
+                      :type="freshnessRelationTagType(row.relationType)"
+                      effect="plain"
+                    >
+                      {{ freshnessRelationLabel(row.relationType) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
                 <el-table-column label="表" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">{{ row.tableName }}</template>
                 </el-table-column>
@@ -548,9 +568,9 @@
                 </el-table-column>
               </el-table>
               <el-empty
-                v-if="freshness && freshness.tables.length === 0"
+                v-if="freshness && filteredFreshnessTables.length === 0"
                 :image-size="60"
-                description="该工作流没有写出表"
+                description="没有符合条件的关联表"
               />
             </div>
           </el-tab-pane>
@@ -942,6 +962,28 @@ const executionTotal = ref(0)
 const freshness = ref(null)
 const freshnessLoading = ref(false)
 const freshnessLoaded = ref(false)
+const freshnessRelationFilter = ref('all')
+const filteredFreshnessTables = computed(() => {
+  const list = freshness.value?.tables || []
+  if (freshnessRelationFilter.value === 'all') return list
+  if (freshnessRelationFilter.value === 'write') {
+    return list.filter((t) => t.relationType === 'write' || t.relationType === 'both')
+  }
+  if (freshnessRelationFilter.value === 'read') {
+    return list.filter((t) => t.relationType === 'read' || t.relationType === 'both')
+  }
+  return list
+})
+const freshnessRelationLabel = (type) => {
+  if (type === 'both') return '读写'
+  if (type === 'read') return '读取'
+  return '写出'
+}
+const freshnessRelationTagType = (type) => {
+  if (type === 'both') return 'warning'
+  if (type === 'read') return 'info'
+  return 'success'
+}
 const FRESHNESS_STATUS = {
   pass: { label: '正常', type: 'success' },
   warn: { label: '预警', type: 'warning' },
@@ -2067,6 +2109,15 @@ watch(
 }
 .freshness-section-title:first-of-type {
   margin-top: 0;
+}
+.freshness-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+}
+.freshness-table-header .freshness-section-title {
+  margin: 0;
 }
 .instance-link {
   color: var(--el-color-primary);

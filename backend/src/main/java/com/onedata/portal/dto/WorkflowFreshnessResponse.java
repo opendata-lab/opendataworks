@@ -24,8 +24,12 @@ public class WorkflowFreshnessResponse {
 
     @Data
     public static class Summary {
-        /** 写出表总数。 */
+        /** 关联表总数。 */
         private int total;
+        /** 写出表数（含 write 与 both）。 */
+        private int writeCount;
+        /** 读取表数（含 read 与 both）。 */
+        private int readCount;
         private int pass;
         private int warn;
         private int error;
@@ -50,6 +54,8 @@ public class WorkflowFreshnessResponse {
         private Long tableId;
         private String dbName;
         private String tableName;
+        /** 关联类型: write | read | both */
+        private String relationType;
         private boolean configured;
         /** pass | warn | error | runtime_error；未检查为 null。 */
         private String status;
