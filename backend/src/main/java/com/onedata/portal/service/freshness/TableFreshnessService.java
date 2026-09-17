@@ -5,6 +5,7 @@ import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.TableFreshnessRequest;
 import com.onedata.portal.dto.TableFreshnessResponse;
 import com.onedata.portal.dto.WorkflowFreshnessResponse;
+import com.onedata.portal.dto.WorkflowTableRelationItem;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.TableFreshnessConfig;
@@ -21,6 +22,7 @@ import org.springframework.util.StringUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -120,7 +122,7 @@ public class TableFreshnessService {
     }
 
     /**
-     * 工作流详情页「数据新鲜度」页签：该工作流写出表的最新状态汇总、每次运行的问题表数、逐表最新结果。
+     * 工作流详情页「数据新鲜度」页签：该工作流关联表（读取表与写出表）的最新状态汇总、每次运行的问题表数、逐表最新结果。
      */
     public WorkflowFreshnessResponse workflowFreshness(Long workflowId) {
         WorkflowFreshnessResponse response = new WorkflowFreshnessResponse();
@@ -130,16 +132,43 @@ public class TableFreshnessService {
         response.setRuns(new ArrayList<>());
         response.setTables(new ArrayList<>());
 
-        List<Long> tableIds = tableTaskRelationMapper.selectWriteTableIdsByWorkflow(workflowId);
-        if (tableIds == null || tableIds.isEmpty()) {
+        List<WorkflowTableRelationItem> relations = tableTaskRelationMapper.selectWorkflowTableRelations(workflowId);
+        if (relations == null || relations.isEmpty()) {
             return response;
         }
-        List<DataTable> tables = dataTableMapper.selectBatchIds(tableIds).stream()
+
+        Map<Long, Set<String>> typesByTable = new java.util.LinkedHashMap<>();
+        for (WorkflowTableRelationItem rel : relations) {
+            if (rel.getTableId() != null && rel.getRelationType() != null) {
+                typesByTable.computeIfAbsent(rel.getTableId(), k -> new java.util.HashSet<>())
+                    .add(rel.getRelationType().trim().toLowerCase());
+            }
+        }
+        if (typesByTable.isEmpty()) {
+            return response;
+        }
+
+        List<DataTable> tables = dataTableMapper.selectBatchIds(typesByTable.keySet()).stream()
             .filter(t -> !Integer.valueOf(1).equals(t.getDeleted()))
             .collect(Collectors.toList());
         if (tables.isEmpty()) {
             return response;
         }
+
+        // 排序规则：write/both 优先，其后为 read；同类按表名排序
+        tables.sort((a, b) -> {
+            Set<String> typesA = typesByTable.get(a.getId());
+            Set<String> typesB = typesByTable.get(b.getId());
+            boolean writeA = typesA != null && typesA.contains("write");
+            boolean writeB = typesB != null && typesB.contains("write");
+            if (writeA != writeB) {
+                return writeA ? -1 : 1;
+            }
+            String nameA = a.getTableName() == null ? "" : a.getTableName();
+            String nameB = b.getTableName() == null ? "" : b.getTableName();
+            return nameA.compareToIgnoreCase(nameB);
+        });
+
         List<Long> activeIds = tables.stream().map(DataTable::getId).collect(Collectors.toList());
         summary.setTotal(tables.size());
 
@@ -153,11 +182,24 @@ public class TableFreshnessService {
         }
 
         for (DataTable table : tables) {
+            Set<String> types = typesByTable.get(table.getId());
+            boolean hasRead = types != null && types.contains("read");
+            boolean hasWrite = types != null && types.contains("write");
+            String relationType = hasRead && hasWrite ? "both" : (hasRead ? "read" : "write");
+
+            if (hasWrite) {
+                summary.setWriteCount(summary.getWriteCount() + 1);
+            }
+            if (hasRead) {
+                summary.setReadCount(summary.getReadCount() + 1);
+            }
+
             TableFreshnessResult latest = latestByTable.get(table.getId());
             WorkflowFreshnessResponse.TableStatus ts = new WorkflowFreshnessResponse.TableStatus();
             ts.setTableId(table.getId());
             ts.setDbName(table.getDbName());
             ts.setTableName(table.getTableName());
+            ts.setRelationType(relationType);
             ts.setConfigured(findConfig(table.getId()) != null);
             if (latest != null) {
                 ts.setStatus(latest.getStatus());

@@ -2,6 +2,8 @@ package com.onedata.portal.service.freshness;
 
 import com.onedata.portal.dto.TableFreshnessRequest;
 import com.onedata.portal.dto.TableFreshnessResponse;
+import com.onedata.portal.dto.WorkflowFreshnessResponse;
+import com.onedata.portal.dto.WorkflowTableRelationItem;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.TableFreshnessConfig;
@@ -15,6 +17,7 @@ import java.util.Arrays;
 import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -180,5 +183,57 @@ class TableFreshnessServiceTest {
         assertEquals("column", response.getEffective().getMode());
         assertEquals("table", response.getEffective().getFieldSources().get("mode"));
         assertEquals(2, response.getEffective().getWarnAfter().getCount());
+    }
+
+    @Test
+    void workflowFreshness_includesReadAndWriteTables() {
+        WorkflowTableRelationItem r1 = new WorkflowTableRelationItem(100L, "write");
+        WorkflowTableRelationItem r2 = new WorkflowTableRelationItem(200L, "read");
+        WorkflowTableRelationItem r3 = new WorkflowTableRelationItem(300L, "read");
+        WorkflowTableRelationItem r4 = new WorkflowTableRelationItem(300L, "write"); // 300 is both
+        when(relationMapper.selectWorkflowTableRelations(10L)).thenReturn(Arrays.asList(r1, r2, r3, r4));
+
+        DataTable t1 = new DataTable();
+        t1.setId(100L);
+        t1.setDbName("dwd");
+        t1.setTableName("dwd_orders");
+        t1.setDeleted(0);
+
+        DataTable t2 = new DataTable();
+        t2.setId(200L);
+        t2.setDbName("ods");
+        t2.setTableName("ods_users");
+        t2.setDeleted(0);
+
+        DataTable t3 = new DataTable();
+        t3.setId(300L);
+        t3.setDbName("dws");
+        t3.setTableName("dws_summary");
+        t3.setDeleted(0);
+
+        when(dataTableMapper.selectBatchIds(any())).thenReturn(Arrays.asList(t1, t2, t3));
+        when(resultMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        WorkflowFreshnessResponse res = service.workflowFreshness(10L);
+
+        assertEquals(3, res.getSummary().getTotal());
+        assertEquals(2, res.getSummary().getWriteCount()); // 100 and 300
+        assertEquals(2, res.getSummary().getReadCount());  // 200 and 300
+        assertEquals(3, res.getTables().size());
+
+        WorkflowFreshnessResponse.TableStatus ts1 = res.getTables().stream()
+            .filter(t -> t.getTableId().equals(100L)).findFirst().orElse(null);
+        assertNotNull(ts1);
+        assertEquals("write", ts1.getRelationType());
+
+        WorkflowFreshnessResponse.TableStatus ts2 = res.getTables().stream()
+            .filter(t -> t.getTableId().equals(200L)).findFirst().orElse(null);
+        assertNotNull(ts2);
+        assertEquals("read", ts2.getRelationType());
+
+        WorkflowFreshnessResponse.TableStatus ts3 = res.getTables().stream()
+            .filter(t -> t.getTableId().equals(300L)).findFirst().orElse(null);
+        assertNotNull(ts3);
+        assertEquals("both", ts3.getRelationType());
     }
 }

@@ -34,7 +34,7 @@ public class WorkflowFreshnessTrigger {
             return;
         }
         try {
-            List<Long> tableIds = tableTaskRelationMapper.selectWriteTableIdsByWorkflow(workflowId);
+            List<Long> tableIds = tableTaskRelationMapper.selectAllTableIdsByWorkflow(workflowId);
             if (tableIds == null || tableIds.isEmpty()) {
                 return;
             }
@@ -47,7 +47,7 @@ public class WorkflowFreshnessTrigger {
             List<FreshnessCheckResult> results =
                 freshnessCheckService.checkBatch(tables, "workflow", "system", instanceId);
             if (!results.isEmpty()) {
-                log.info("Workflow {} instance {} freshness check done: writeTables={}, checked={}",
+                log.info("Workflow {} instance {} freshness check done: associatedTables={}, checked={}",
                     workflowId, instanceId, tables.size(), results.size());
             }
         } catch (Exception e) {
