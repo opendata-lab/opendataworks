@@ -1,29 +1,120 @@
 <template>
   <div class="dac-root">
-    <div class="dac-messages">
-      <slot name="empty">暂无消息</slot>
-    </div>
-    <div class="dac-composer">
-      <div class="dac-composer-actions">
-        <slot name="composer-actions" />
-      </div>
-    </div>
+    <MessageList :messages="conversation.messages.value" :file-url="fileUrl">
+      <template #empty><slot name="empty">暂无消息</slot></template>
+    </MessageList>
+    <Composer
+      ref="composerRef"
+      :model-value="conversation.draft.value"
+      :placeholder="placeholder"
+      :disabled="disabled || !endpointApi.ready.value && !endpointResolver"
+      :active="conversation.isActive.value"
+      :run-detail="conversation.run.value?.detail || ''"
+      @update:modelValue="onDraft"
+      @send="() => send()"
+      @cancel="conversation.cancel"
+    >
+      <template #composer-actions><slot name="composer-actions" /></template>
+    </Composer>
   </div>
 </template>
 
 <script setup>
-// T1 scaffold: layout and slot anchors only. The conversation kernel, composer
-// and message list arrive in T2/T3. Keeping this component inert on purpose —
-// T1 exists to prove the custom element plumbing, not to render conversations.
-defineProps({
-  placeholder: { type: String, default: '' }
+import { computed, onBeforeUnmount, ref, toRef, useHost, watch } from 'vue'
+import MessageList from './MessageList.vue'
+import Composer from './Composer.vue'
+import { useEndpoint } from '../core/useEndpoint.js'
+import { useConversation } from '../core/useConversation.js'
+
+const props = defineProps({
+  endpoint: { type: String, default: '' },
+  placeholder: { type: String, default: '' },
+  active: { type: Boolean, default: true },
+  disabled: { type: Boolean, default: false },
+  // Functions and objects arrive as JS properties, never as attributes.
+  endpointResolver: { type: Function, default: null },
+  transportFactory: { type: Function, default: null }
+})
+
+const composerRef = ref(null)
+const host = useHost()
+
+/**
+ * Dispatch on the host element with bubbles + composed, which is what lets a
+ * host listen from outside the shadow root. Vue's own emit produces a
+ * non-bubbling event that never escapes it.
+ */
+const emit = ({ name, detail }) => {
+  host?.dispatchEvent(new CustomEvent(`dataagent-${name}`, {
+    detail: detail ?? {},
+    bubbles: true,
+    composed: true
+  }))
+}
+
+const endpointApi = useEndpoint({
+  endpoint: toRef(props, 'endpoint'),
+  endpointResolver: toRef(props, 'endpointResolver'),
+  transportFactory: toRef(props, 'transportFactory'),
+  onReset: (reason) => {
+    conversation.reset()
+    if (reason === 'switch' && !endpointApi.ready.value) return
+    if (props.active) conversation.load()
+  }
+})
+
+const conversation = useConversation({
+  transport: endpointApi.transport,
+  generation: endpointApi.generation,
+  emit
+})
+
+const fileUrl = computed(() => (path) => endpointApi.transport.value?.fileUrl?.(path) ?? path)
+
+const onDraft = (value) => {
+  conversation.draft.value = value
+  emit({ name: 'draft-change', detail: { value } })
+}
+
+/**
+ * Send, creating the conversation first if the host deferred it.
+ *
+ * This is the only place endpointResolver is consulted, which is what keeps a
+ * host from minting an empty conversation just because a user opened the page.
+ */
+async function send(content, options = {}) {
+  if (!endpointApi.ready.value) {
+    const address = await endpointApi.ensure()
+    if (!address) return
+  }
+  await conversation.send(content, options)
+}
+
+// Releasing the stream when the host parks the element keeps a hidden tab from
+// holding a connection open; re-activating reloads to catch up on what it missed.
+watch(() => props.active, (isActive) => {
+  if (isActive) {
+    if (endpointApi.ready.value) conversation.load()
+  } else {
+    conversation.stopStream()
+  }
+})
+
+if (endpointApi.ready.value && props.active) conversation.load()
+
+onBeforeUnmount(() => conversation.stopStream())
+
+defineExpose({
+  reload: () => { endpointApi.reload() },
+  sendMessage: (content, options) => send(content, options),
+  cancel: () => conversation.cancel(),
+  focus: () => composerRef.value?.focus(),
+  getValue: () => conversation.draft.value,
+  setValue: (value) => onDraft(String(value ?? ''))
 })
 </script>
 
 <style>
-/* Element Plus popovers must never teleport out of the shadow root: the
-   package's styles live here, so a teleported layer would render unstyled.
-   The stacking context below is what keeps in-place layers on top. */
 .dac-root {
   position: relative;
   z-index: 0;
@@ -34,23 +125,5 @@ defineProps({
   font-family: Inter, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
   font-size: 14px;
   color: #0f172a;
-}
-
-.dac-messages {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px;
-}
-
-.dac-composer {
-  border-top: 1px solid #e2e8f0;
-  padding: 12px 16px;
-}
-
-.dac-composer-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 </style>
