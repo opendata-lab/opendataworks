@@ -73,7 +73,14 @@ export default defineConfig(() => {
     ].filter(Boolean),
     resolve: {
       alias: {
-        '@': resolve(__dirname, 'src')
+        '@': resolve(__dirname, 'src'),
+        // The SDK lives in this repo and is built from the same tree. The
+        // alias points at source so the widget and the package cannot drift;
+        // external consumers resolve the published entry points instead.
+        '@opendataworks/agent-conversation': resolve(
+          __dirname,
+          'packages/agent-conversation/src/index.js'
+        )
       }
     },
     build: {
