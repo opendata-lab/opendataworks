@@ -472,7 +472,7 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 
 | 项 | 取值 | 理由 |
 | --- | --- | --- |
-| 模块格式 | ESM 为主，附 UMD | 下游是 Vite/webpack 项目 |
+| 模块格式 | **仅 ESM** | 见下 |
 | 元素实现 | **`defineCustomElement`**（Vue 官方自定义元素），不是 `createApp().mount()` | 只有它能把 Light DOM 的 `slot="composer-actions"` 正确投影进组件的 `<slot>`。`createApp().mount()` 不接收 vnode slots，宿主按钮不会显示 |
 | Shadow Root | `defineCustomElement` 自带（`shadowRoot: true`） | 同时解决"断开后重新插入时重复 `attachShadow` 抛错" |
 | 样式 | **编译为 JS 内联字符串**，由元素注入 Shadow Root；宿主**不需要** import 任何 CSS | 宿主 import 的文档级 CSS 进不了 Shadow DOM；`new URL('./style.css', import.meta.url)` 在 UMD 下不可靠。内联是唯一在 ESM/UMD 都成立的方案 |
@@ -480,6 +480,14 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 | Element Plus | 打进包内，按需引入 | 卡片与表格依赖它 |
 | Element Plus 弹层 | **包内所有弹层统一 `:teleported="false"`** | 见下 |
 | 类型 | 手写 `types/index.d.ts` | 公开面很小 |
+
+**为什么不出 UMD，以及图表为什么必须懒加载。**
+
+工具调用卡片（`ToolOutputRenderer`）依赖 `ChartSpecView`，后者 `import * as echarts`。直接打包会让产物从 108KB 涨到 1MB 以上——对一个要嵌进别人页面的包不可接受。
+
+解法是 `defineAsyncComponent(() => import('./ChartSpecView.vue'))`：echarts 进独立 chunk，只有会话里真出现图表规格时才加载。主包保持在 ~110KB。
+
+代价是**必须放弃 UMD**：Rollup 的单文件 UMD 输出强制 `inlineDynamicImports`，与代码分割互斥。这个取舍是划算的——UMD 没有已知消费方（OntoFoundry 用 Vite/React，Widget 由应用侧单独打 IIFE），为一个没人用的格式牺牲所有 ESM 消费者的体积预算说不通。将来真有 `<script>` 接入需求，再单独出一个内联 echarts 的 IIFE 变体即可，不必让主包背着。
 
 **Element Plus 弹层必须关闭 teleport。** `el-dropdown`、`el-popover`、`el-select`、`el-tooltip` 默认 teleport 到 `document.body`，而包的样式只注入 Shadow Root——弹层会脱离样式作用域，表现为无样式、层级错乱或定位偏移。这不是"需要验证"的风险，是已知行为。
 
