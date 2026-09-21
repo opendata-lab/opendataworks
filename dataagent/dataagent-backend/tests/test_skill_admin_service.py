@@ -242,6 +242,7 @@ def test_normalize_widget_allowed_sites_from_json_string():
             "project_name": "Demo",
             "project_color": "#4A90A4",
             "allow_anonymous": False,
+            "server_side": {"enabled": False, "access_key_hash": ""},
         }
     ]
 
@@ -287,6 +288,7 @@ def test_merge_settings_payload_carries_widget_allowed_sites_from_patch():
             "project_name": "",
             "project_color": "#000",
             "allow_anonymous": True,
+            "server_side": {"enabled": False, "access_key_hash": ""},
         }
     ]
 
@@ -307,6 +309,7 @@ def test_merge_settings_payload_preserves_widget_allowed_sites_without_patch():
             "project_name": "",
             "project_color": "",
             "allow_anonymous": False,
+            "server_side": {"enabled": False, "access_key_hash": ""},
         }
     ]
 

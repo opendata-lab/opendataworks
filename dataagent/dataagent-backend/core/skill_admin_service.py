@@ -161,6 +161,21 @@ def _string_list(values: Any) -> list[str]:
     return result
 
 
+def _normalize_server_side(raw: Any) -> dict[str, Any]:
+    """Server-side access config for one site.
+
+    A site that never opts in behaves exactly as before, which is what keeps
+    every existing deployment untouched. `access_key_hash` is a sha256 digest;
+    the plaintext is returned once at generation and never stored.
+    """
+    if not isinstance(raw, dict):
+        return {"enabled": False, "access_key_hash": ""}
+    return {
+        "enabled": raw.get("enabled") is True,
+        "access_key_hash": str(raw.get("access_key_hash") or "").strip()[:64],
+    }
+
+
 def _normalize_widget_allowed_sites(raw: Any) -> list[dict[str, Any]]:
     items = raw
     if isinstance(raw, str):
@@ -187,6 +202,7 @@ def _normalize_widget_allowed_sites(raw: Any) -> list[dict[str, Any]]:
             "project_name": str(item.get("project_name") or "").strip()[:128],
             "project_color": str(item.get("project_color") or "").strip()[:32],
             "allow_anonymous": item.get("allow_anonymous") is True,
+            "server_side": _normalize_server_side(item.get("server_side")),
         })
     return normalized
 
@@ -512,6 +528,19 @@ def _merge_provider_settings(
     }
 
 
+def _preserve_access_key_hashes(
+    incoming: list[dict[str, Any]], existing: list[dict[str, Any]]
+) -> None:
+    stored = {
+        site["website_id"]: site.get("server_side", {}).get("access_key_hash", "")
+        for site in existing
+    }
+    for site in incoming:
+        server_side = site["server_side"]
+        if not server_side["access_key_hash"]:
+            server_side["access_key_hash"] = stored.get(site["website_id"], "")
+
+
 def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any] | None) -> dict[str, Any]:
     base = dict(current or {})
     update = dict(patch or {})
@@ -540,6 +569,14 @@ def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any
         fallback_folder=fallback_skill_folder,
     )
     widget_allowed_sites = _normalize_widget_allowed_sites(base.get("widget_allowed_sites"))
+    # The admin read DTO masks access_key_hash, so a settings round-trip sends
+    # it back empty. Carrying the stored digest forward keeps a plain "save
+    # settings" from silently revoking a site's key; only the dedicated
+    # access-key endpoints may change it.
+    _preserve_access_key_hashes(
+        widget_allowed_sites,
+        _normalize_widget_allowed_sites((current or {}).get("widget_allowed_sites")),
+    )
 
     provider_id = _normalize_provider_id(base.get("provider_id"), allow_empty=True)
     if not provider_id or provider_id not in provider_settings:

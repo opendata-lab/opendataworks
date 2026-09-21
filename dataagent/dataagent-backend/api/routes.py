@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
+import hashlib
+import hmac
 import json
 from typing import Any, AsyncIterator
 
@@ -206,14 +208,31 @@ def _request_context(request: Request) -> dict[str, str]:
         logger.warning(f"Widget site rejected: website_id={website_id!r} allowed={allowed_ids!r}")
         raise HTTPException(status_code=403, detail="Widget site is not allowed")
 
-    allowed_origins = matched_site.get("allowed_origins") or []
-    if not isinstance(allowed_origins, list):
-        logger.warning(f"Widget config error: allowed_origins is not a list: {allowed_origins!r}")
-        allowed_origins = []
-    req_origin = request.headers.get("Origin") or ""
-    if not _origin_allowed(req_origin, allowed_origins):
-        logger.warning(f"Widget origin rejected: origin={req_origin!r} allowed={allowed_origins!r}")
-        raise HTTPException(status_code=403, detail="Widget origin is not allowed")
+    # Server-side callers authenticate with a key instead of an Origin. A browser
+    # always sends Origin; a backend never does, and `_origin_allowed` lets an
+    # absent Origin through — so without this branch any process that can reach
+    # DataAgent and guesses a website_id could open sessions.
+    server_side = matched_site.get("server_side")
+    if isinstance(server_side, dict) and server_side.get("enabled") is True:
+        expected = str(server_side.get("access_key_hash") or "")
+        presented = _clean_header(request.headers.get("X-ODW-Access-Key"), 128)
+        if not expected or not presented or not hmac.compare_digest(
+            hashlib.sha256(presented.encode("utf-8")).hexdigest(), expected
+        ):
+            logger.warning(f"Widget access key rejected: website_id={website_id!r}")
+            raise HTTPException(status_code=403, detail="Widget access key is invalid")
+        # Origin is deliberately not checked here: the caller has proven itself
+        # with a secret, and enforcing an allowlist it structurally cannot
+        # satisfy would only look like security.
+    else:
+        allowed_origins = matched_site.get("allowed_origins") or []
+        if not isinstance(allowed_origins, list):
+            logger.warning(f"Widget config error: allowed_origins is not a list: {allowed_origins!r}")
+            allowed_origins = []
+        req_origin = request.headers.get("Origin") or ""
+        if not _origin_allowed(req_origin, allowed_origins):
+            logger.warning(f"Widget origin rejected: origin={req_origin!r} allowed={allowed_origins!r}")
+            raise HTTPException(status_code=403, detail="Widget origin is not allowed")
 
     if not external_user_id and (not visitor_id or matched_site.get("allow_anonymous") is not True):
         raise HTTPException(
