@@ -175,9 +175,14 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
-import { extractChartSpec, extractTextParts, parseMaybeJson } from './chartSpec'
-import { describeToolAction, formatSkillBootstrapLabel } from './toolPresentation'
-import { useCopyFeedback } from '@/utils/useCopyFeedback'
+import { extractChartSpec, extractTextParts, parseMaybeJson } from '../core/chartSpec.js'
+import { describeToolAction, formatSkillBootstrapLabel } from '../core/toolPresentation.js'
+import { useCopyFeedback } from '../utils/useCopyFeedback.js'
+// TODO(bundle): this pulls echarts into the main chunk (~1MB). Loading it with
+// defineAsyncComponent does split it correctly, but breaks the three
+// findComponent(ChartSpecView) assertions in ToolOutputRenderer.spec.js —
+// neither flushPromises nor vi.dynamicImportSettled() gets the resolved
+// component into the tree. Needs a test strategy before switching.
 import ChartSpecView from './ChartSpecView.vue'
 import ResultDataTable from './components/ResultDataTable.vue'
 import SqlCodePanel from './components/SqlCodePanel.vue'

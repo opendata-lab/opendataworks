@@ -481,13 +481,13 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 | Element Plus 弹层 | **包内所有弹层统一 `:teleported="false"`** | 见下 |
 | 类型 | 手写 `types/index.d.ts` | 公开面很小 |
 
-**为什么不出 UMD，以及图表为什么必须懒加载。**
+**图表依赖与 UMD：现状与未决项。**
 
-工具调用卡片（`ToolOutputRenderer`）依赖 `ChartSpecView`，后者 `import * as echarts`。直接打包会让产物从 108KB 涨到 1MB 以上——对一个要嵌进别人页面的包不可接受。
+工具调用卡片（`ToolOutputRenderer`）依赖 `ChartSpecView`，后者 `import * as echarts`，因此 echarts 目前在主 chunk 里。
 
-解法是 `defineAsyncComponent(() => import('./ChartSpecView.vue'))`：echarts 进独立 chunk，只有会话里真出现图表规格时才加载。主包保持在 ~110KB。
+**已确认可行但尚未启用：** `defineAsyncComponent(() => import('./ChartSpecView.vue'))` 能正确把 echarts 分出独立 chunk。阻碍不在构建而在测试——它会让 `ToolOutputRenderer.spec.js` 里三处 `findComponent(ChartSpecView)` 断言失效，`flushPromises()` 与 `vi.dynamicImportSettled()` 都无法把已解析的组件送进组件树。切换前需要先定一个测试策略（改断言渲染产物、还是在测试中替换异步边界）。代码里已留 `TODO(bundle)` 标注具体诊断。
 
-代价是**必须放弃 UMD**：Rollup 的单文件 UMD 输出强制 `inlineDynamicImports`，与代码分割互斥。这个取舍是划算的——UMD 没有已知消费方（OntoFoundry 用 Vite/React，Widget 由应用侧单独打 IIFE），为一个没人用的格式牺牲所有 ESM 消费者的体积预算说不通。将来真有 `<script>` 接入需求，再单独出一个内联 echarts 的 IIFE 变体即可，不必让主包背着。
+**模块格式暂定仅 ESM。** 单文件 UMD 输出强制 `inlineDynamicImports`，与代码分割互斥；一旦启用上面的懒加载，UMD 就必须放弃。既然 UMD 没有已知消费方（OntoFoundry 用 Vite/React，Widget 由应用侧单独打 IIFE），不值得为它锁死主包的体积策略。
 
 **Element Plus 弹层必须关闭 teleport。** `el-dropdown`、`el-popover`、`el-select`、`el-tooltip` 默认 teleport 到 `document.body`，而包的样式只注入 Shadow Root——弹层会脱离样式作用域，表现为无样式、层级错乱或定位偏移。这不是"需要验证"的风险，是已知行为。
 

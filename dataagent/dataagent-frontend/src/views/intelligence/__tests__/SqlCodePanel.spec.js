@@ -5,21 +5,15 @@ const apiMocks = vi.hoisted(() => ({
   executeSql: vi.fn()
 }))
 
-vi.mock('@/api/nl2sql', () => ({
-  createNl2SqlApiClient: () => ({
-    queryApi: { executeSql: apiMocks.executeSql }
-  })
-}))
-
 const clipboardMocks = vi.hoisted(() => ({
   copyText: vi.fn(() => Promise.resolve())
 }))
 
-vi.mock('@/utils/clipboard', () => ({
+vi.mock('../../../../packages/agent-conversation/src/utils/clipboard.js', () => ({
   copyText: clipboardMocks.copyText
 }))
 
-import SqlCodePanel from '../components/SqlCodePanel.vue'
+import SqlCodePanel from '../../../../packages/agent-conversation/src/ui/components/SqlCodePanel.vue'
 
 const successResult = {
   kind: 'sql_execution',
@@ -41,7 +35,9 @@ const mountPanel = (props = {}, options = {}) => mount(SqlCodePanel, {
     ...props
   },
   global: {
-    provide: options.provide || {},
+    // The panel reaches the network only through the injected transport. A
+    // transport without executeSql is the read-only case, covered below.
+    provide: options.provide || { agentConversationTransport: { executeSql: apiMocks.executeSql } },
     stubs: {
       ResultDataTable: {
         props: ['columns', 'rows', 'title', 'meta'],
@@ -99,11 +95,11 @@ describe('SqlCodePanel', () => {
     expect(wrapper.find('.sql-panel-error').exists()).toBe(false)
   })
 
-  it('uses injected api client and topic id when provided', async () => {
+  it('uses the injected transport and topic id when provided', async () => {
     const injectedExecuteSql = vi.fn().mockResolvedValue(successResult)
     const wrapper = mountPanel({}, {
       provide: {
-        nl2sqlApi: { queryApi: { executeSql: injectedExecuteSql } },
+        agentConversationTransport: { executeSql: injectedExecuteSql },
         nl2sqlTopicId: { value: 'topic-42' }
       }
     })

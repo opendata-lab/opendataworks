@@ -37,12 +37,12 @@ vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
 const exportMocks = vi.hoisted(() => ({ downloadCsv: vi.fn() }))
 
-vi.mock('@/utils/tableExport', async (importOriginal) => {
+vi.mock('../../../../packages/agent-conversation/src/utils/tableExport.js', async (importOriginal) => {
   const actual = await importOriginal()
   return { ...actual, downloadCsv: exportMocks.downloadCsv }
 })
 
-import ChartSpecView from '../ChartSpecView.vue'
+import ChartSpecView from '../../../../packages/agent-conversation/src/ui/ChartSpecView.vue'
 
 const lineSpec = {
   kind: 'chart_spec',

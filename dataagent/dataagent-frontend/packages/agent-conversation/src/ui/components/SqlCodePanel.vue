@@ -59,12 +59,17 @@ import { Compartment, EditorState } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { MySQL, sql } from '@codemirror/lang-sql'
-import { useCopyFeedback } from '@/utils/useCopyFeedback'
-import { createNl2SqlApiClient } from '@/api/nl2sql'
+import { useCopyFeedback } from '../../utils/useCopyFeedback.js'
 import ResultDataTable from './ResultDataTable.vue'
 
-const injectedApi = inject('nl2sqlApi', null)
+// The transport is the package's only route to the network. A host whose
+// backend has no SQL execution simply omits executeSql, and this panel
+// degrades to read-only rather than reaching for a client of its own —
+// OntoFoundry is exactly that case: an ontology platform has no business
+// running arbitrary SQL.
+const transport = inject('agentConversationTransport', null)
 const injectedTopicId = inject('nl2sqlTopicId', ref(''))
+const canExecute = computed(() => typeof transport?.executeSql === 'function')
 
 const props = defineProps({
   sql: { type: String, default: '' },
@@ -84,10 +89,9 @@ const executeResult = ref(null)
 const executeError = ref('')
 
 let view = null
-let apiClient = null
 const editableCompartment = new Compartment()
 
-const executable = computed(() => Boolean(String(props.database || '').trim()))
+const executable = computed(() => canExecute.value && Boolean(String(props.database || '').trim()))
 const exportTitle = computed(() => props.title || props.database || 'query_result')
 const executeResultMeta = computed(() => ({
   rowCount: executeResult.value?.row_count,
@@ -96,12 +100,6 @@ const executeResultMeta = computed(() => ({
   truncatedBySize: executeResult.value?.truncated_by_size,
   notice: executeResult.value?.notice
 }))
-
-const getApi = () => {
-  if (injectedApi) return injectedApi
-  if (!apiClient) apiClient = createNl2SqlApiClient({ timeout: 150000 })
-  return apiClient
-}
 
 const setEditorDoc = (value) => {
   if (!view) return
@@ -179,7 +177,7 @@ const executeSql = async () => {
   executeError.value = ''
   try {
     const topicId = typeof injectedTopicId === 'object' && injectedTopicId !== null ? injectedTopicId.value : (injectedTopicId || '')
-    const result = await getApi().queryApi.executeSql({
+    const result = await transport.executeSql({
       sql: currentSql.value,
       database: props.database,
       engine: props.engine || undefined,

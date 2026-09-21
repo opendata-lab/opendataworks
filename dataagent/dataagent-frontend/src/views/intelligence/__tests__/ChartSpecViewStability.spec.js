@@ -33,7 +33,7 @@ vi.mock('echarts/components', () => ({
 }))
 vi.mock('echarts/renderers', () => ({ CanvasRenderer: {} }))
 
-import ChartSpecView from '../ChartSpecView.vue'
+import ChartSpecView from '../../../../packages/agent-conversation/src/ui/ChartSpecView.vue'
 
 const multiSeriesSpec = () => ({
   kind: 'chart_spec',

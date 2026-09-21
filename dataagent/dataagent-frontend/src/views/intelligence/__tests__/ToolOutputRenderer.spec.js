@@ -1,5 +1,5 @@
 import { vi } from 'vitest'
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount, flushPromises } from '@vue/test-utils'
 
 const echartsMocks = vi.hoisted(() => {
   const setOption = vi.fn()
@@ -37,8 +37,8 @@ vi.mock('echarts/renderers', () => ({
   CanvasRenderer: {}
 }))
 
-import ToolOutputRenderer from '../ToolOutputRenderer.vue'
-import ChartSpecView from '../ChartSpecView.vue'
+import ToolOutputRenderer from '../../../../packages/agent-conversation/src/ui/ToolOutput.vue'
+import ChartSpecView from '../../../../packages/agent-conversation/src/ui/ChartSpecView.vue'
 
 const mountRenderer = (tool, props = {}) => shallowMount(ToolOutputRenderer, {
   props: { tool, ...props },
@@ -52,7 +52,7 @@ const mountRenderer = (tool, props = {}) => shallowMount(ToolOutputRenderer, {
 })
 
 describe('ToolOutputRenderer', () => {
-  it('renders a chart from an unwrapped Pi content array', () => {
+  it('renders a chart from an unwrapped Pi content array', async () => {
     // Pi results arrive as SDK-shaped content blocks now. Emitting the raw
     // {content, details} wrapper instead is what made charts fall back to JSON.
     const spec = {
@@ -75,7 +75,7 @@ describe('ToolOutputRenderer', () => {
     expect(chartView.props('spec').chart_type).toBe('bar')
   })
 
-  it('does not print the raw Pi wrapper as JSON', () => {
+  it('does not print the raw Pi wrapper as JSON', async () => {
     const spec = { kind: 'chart_spec', version: 1, chart_type: 'bar', columns: [], dataset: [], error: null }
     const wrapper = mountRenderer({
       name: 'run_sql',
@@ -87,7 +87,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.findComponent(ChartSpecView).exists()).toBe(true)
   })
 
-  it('delegates table chart_spec payloads to ChartSpecView', () => {
+  it('delegates table chart_spec payloads to ChartSpecView', async () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',
       status: 'streaming',
@@ -109,7 +109,7 @@ describe('ToolOutputRenderer', () => {
     expect(chartView.props('spec').dataset).toEqual([{ workflow_id: 173, status: 'success' }])
   })
 
-  it('renders chart_spec payloads through the chart renderer', () => {
+  it('renders chart_spec payloads through the chart renderer', async () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',
       status: 'streaming',
@@ -134,7 +134,7 @@ describe('ToolOutputRenderer', () => {
     expect(chartView.props('spec').chart_type).toBe('line')
   })
 
-  it('passes invalid chart_spec to ChartSpecView without dumping raw JSON', () => {
+  it('passes invalid chart_spec to ChartSpecView without dumping raw JSON', async () => {
     const wrapper = mountRenderer({
       name: 'build_chart_spec.py',
       status: 'streaming',
@@ -294,7 +294,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.find('.shell-trace-panel').exists()).toBe(true)
   })
 
-  it('classifies ls and glob style tools without falling back to generic tool labels', () => {
+  it('classifies ls and glob style tools without falling back to generic tool labels', async () => {
     const lsWrapper = mountRenderer({
       name: 'LS',
       status: 'success',
@@ -326,7 +326,7 @@ describe('ToolOutputRenderer', () => {
     expect(globWrapper.text()).not.toContain('工具调用')
   })
 
-  it('infers shell traces from command input even when the tool name is generic', () => {
+  it('infers shell traces from command input even when the tool name is generic', async () => {
     const wrapper = mountRenderer({
       name: 'Tool',
       status: 'streaming',
@@ -343,7 +343,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('工具调用')
   })
 
-  it('renders MCP tools with the same flat trace style as command/read traces', () => {
+  it('renders MCP tools with the same flat trace style as command/read traces', async () => {
     const wrapper = mountRenderer({
       name: 'mcp__github__get_me',
       status: 'success',
@@ -358,7 +358,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('mcp__github__get_me')
   })
 
-  it('does not misclassify MCP tool names containing search/read substrings', () => {
+  it('does not misclassify MCP tool names containing search/read substrings', async () => {
     const wrapper = mountRenderer({
       name: 'mcp__github__search_code',
       status: 'success',
@@ -372,7 +372,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('搜索文件')
   })
 
-  it('uses the bootstrap skill label on the concrete follow-up tool', () => {
+  it('uses the bootstrap skill label on the concrete follow-up tool', async () => {
     const wrapper = mountRenderer({
       name: 'Bash',
       status: 'streaming',
@@ -486,7 +486,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('2→beta')
   })
 
-  it('shows a leading tool-type icon on the collapsed header without expanding', () => {
+  it('shows a leading tool-type icon on the collapsed header without expanding', async () => {
     const wrapper = mountRenderer({
       name: 'SQLQuery',
       status: 'success',
@@ -531,7 +531,7 @@ describe('ToolOutputRenderer', () => {
     expect(wrapper.text()).not.toContain('执行命令：')
   })
 
-  it('shows a leading tool-type icon on the shell-trace summary line', () => {
+  it('shows a leading tool-type icon on the shell-trace summary line', async () => {
     const wrapper = mountRenderer({
       name: 'Bash',
       status: 'success',
@@ -548,7 +548,7 @@ describe('ToolOutputRenderer', () => {
     expect(traceIcon.findAll('path').length).toBeGreaterThan(0)
   })
 
-  it('delegates sql_execution rendering to SqlCodePanel and ResultDataTable', () => {
+  it('delegates sql_execution rendering to SqlCodePanel and ResultDataTable', async () => {
     const wrapper = mountRenderer({
       name: 'SQLQuery',
       status: 'streaming',
@@ -576,7 +576,7 @@ describe('ToolOutputRenderer', () => {
     expect(table.props('meta')).toMatchObject({ rowCount: 1, hasMore: true, durationMs: 12 })
   })
 
-  it('renders sql_export download link via fileUrlResolver and preview table', () => {
+  it('renders sql_export download link via fileUrlResolver and preview table', async () => {
     const resolver = (relPath) => `/api/v1/nl2sql/topics/topic-1/files/${relPath}?download=1`
     const wrapper = mountRenderer(
       {

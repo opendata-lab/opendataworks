@@ -73,8 +73,8 @@ import {
   RadarComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
-import { buildChartRenderModel, parseChartSpec } from './chartSpec'
-import { downloadCsv, exportFilename } from '@/utils/tableExport'
+import { buildChartRenderModel, parseChartSpec } from '../core/chartSpec.js'
+import { downloadCsv, exportFilename } from '../utils/tableExport.js'
 import ResultDataTable from './components/ResultDataTable.vue'
 
 use([
