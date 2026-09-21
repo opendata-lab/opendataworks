@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>agent-conversation · mock BFF</title>
+<style>
+  body { margin: 0; font-family: Inter, "PingFang SC", Arial, sans-serif; background: #f8fafc; }
+  .shell { max-width: 760px; margin: 32px auto; background: #fff; border: 1px solid #e2e8f0;
+           border-radius: 14px; height: 78vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-weight: 600; }
+  dataagent-conversation { flex: 1; min-height: 0; }
+  #host-action { height: 30px; padding: 0 12px; border: 1px solid #cbd5e1; border-radius: 8px;
+                 background: #fff; font-size: 13px; cursor: pointer; }
+  #log { font: 12px/1.6 ui-monospace, monospace; color: #475569; padding: 8px 16px;
+         border-top: 1px solid #e2e8f0; max-height: 120px; overflow: auto; }
+</style>
+
+<div class="shell">
+  <header>建模工作台（mock）</header>
+  <dataagent-conversation id="chat" endpoint="/api/conversation" placeholder="描述你的建模需求">
+    <!-- A host button in the composer footer: the reason the element projects
+         light DOM at all. It reads the element's draft and sends with its own
+         metadata, which comes back on the completion event. -->
+    <button id="host-action" slot="composer-actions">开始建模</button>
+  </dataagent-conversation>
+  <div id="log"></div>
+</div>
+
+<script type="module">
+  import { defineAgentConversation } from './sdk.js'
+  defineAgentConversation()
+
+  const chat = document.getElementById('chat')
+  const log = document.getElementById('log')
+  const write = (line) => {
+    log.textContent += `${line}\n`
+    log.scrollTop = log.scrollHeight
+  }
+
+  for (const name of ['ready', 'run-change', 'complete', 'error']) {
+    chat.addEventListener(`dataagent-${name}`, (event) => {
+      write(`${name} ${JSON.stringify(event.detail)}`)
+    })
+  }
+
+  document.getElementById('host-action').addEventListener('click', () => {
+    const text = chat.value.trim() || '基于已选材料开始建模'
+    chat.sendMessage(text, { metadata: { mode: 'model' } })
+  })
+</script>
