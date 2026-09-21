@@ -194,3 +194,58 @@ class TestRequestContext:
                 },
                 self.widget_headers(**{"X-ODW-Access-Key": "anything"}),
             )
+
+
+class TestRevocationActuallyRevokes:
+    """Disabling a site clears its digest, and the preserve logic must not undo that.
+
+    The two paths look identical on the wire — both arrive with an empty
+    digest — so preserve cannot treat "empty" alone as "I did not say". It was
+    doing exactly that, which meant DELETE turned the site off but kept the
+    hash, and re-enabling later through a normal settings save brought the old
+    key back to life.
+    """
+
+    def test_a_disabled_site_does_not_get_its_old_digest_back(self):
+        stored = sites({
+            "website_id": "ontofoundry",
+            "server_side": {"enabled": True, "access_key_hash": DIGEST},
+        })
+        revoked = sites({
+            "website_id": "ontofoundry",
+            "server_side": {"enabled": False, "access_key_hash": ""},
+        })
+
+        _preserve_access_key_hashes(revoked, stored)
+
+        assert revoked[0]["server_side"]["access_key_hash"] == ""
+
+    def test_re_enabling_after_revocation_does_not_resurrect_the_key(self):
+        # The state a revoked site is stored in: off, no digest.
+        stored = sites({
+            "website_id": "ontofoundry",
+            "server_side": {"enabled": False, "access_key_hash": ""},
+        })
+        # An operator later flips it back on from the settings page.
+        reenabled = sites({
+            "website_id": "ontofoundry",
+            "server_side": {"enabled": True, "access_key_hash": ""},
+        })
+
+        _preserve_access_key_hashes(reenabled, stored)
+
+        assert reenabled[0]["server_side"]["access_key_hash"] == ""
+
+    def test_an_enabled_site_still_keeps_its_digest_across_a_plain_save(self):
+        stored = sites({
+            "website_id": "ontofoundry",
+            "server_side": {"enabled": True, "access_key_hash": DIGEST},
+        })
+        saved = sites({
+            "website_id": "ontofoundry",
+            "server_side": {"enabled": True, "access_key_hash": ""},
+        })
+
+        _preserve_access_key_hashes(saved, stored)
+
+        assert saved[0]["server_side"]["access_key_hash"] == DIGEST

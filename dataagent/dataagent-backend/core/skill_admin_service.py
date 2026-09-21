@@ -531,14 +531,27 @@ def _merge_provider_settings(
 def _preserve_access_key_hashes(
     incoming: list[dict[str, Any]], existing: list[dict[str, Any]]
 ) -> None:
+    """Carry a stored digest forward when the caller did not supply one.
+
+    The admin read DTO masks the digest, so a plain settings save sends it back
+    empty; without this, opening the settings page and pressing save would
+    revoke every site's key.
+
+    Revocation therefore cannot express itself by sending an empty digest — it
+    is indistinguishable from a masked round-trip. A site that is explicitly
+    disabled is the signal instead: the delete endpoint turns server-side
+    access off and clears the digest together, and that pair means "forget it"
+    rather than "I did not say".
+    """
     stored = {
         site["website_id"]: site.get("server_side", {}).get("access_key_hash", "")
         for site in existing
     }
     for site in incoming:
         server_side = site["server_side"]
-        if not server_side["access_key_hash"]:
-            server_side["access_key_hash"] = stored.get(site["website_id"], "")
+        if server_side["access_key_hash"] or not server_side["enabled"]:
+            continue
+        server_side["access_key_hash"] = stored.get(site["website_id"], "")
 
 
 def _merge_settings_payload(current: dict[str, Any] | None, patch: dict[str, Any] | None) -> dict[str, Any]:
