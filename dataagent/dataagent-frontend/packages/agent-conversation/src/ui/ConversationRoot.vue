@@ -1,6 +1,12 @@
 <template>
   <div class="dac-root">
-    <MessageList :messages="conversation.messages.value" :file-url="fileUrl">
+    <MessageList
+      :messages="conversation.messages.value"
+      :file-url="fileUrl"
+      :disabled="disabled"
+      @decide="onDecide"
+      @answer="onAnswer"
+    >
       <template #empty><slot name="empty">暂无消息</slot></template>
     </MessageList>
     <Composer
@@ -70,6 +76,24 @@ const conversation = useConversation({
   generation: endpointApi.generation,
   emit
 })
+
+// Without these the two waiting states have no exit: a run parked on
+// waiting_permission renders a card nobody can answer, and stays parked.
+const onDecide = ({ taskId, requestId, decision }) =>
+  conversation.submitInteraction({
+    taskId: taskId || conversation.run.value?.taskId,
+    kind: 'permission',
+    requestId,
+    payload: { decision },
+  })
+
+const onAnswer = ({ taskId, requestId, answers }) =>
+  conversation.submitInteraction({
+    taskId: taskId || conversation.run.value?.taskId,
+    kind: 'question',
+    requestId,
+    payload: { answers },
+  })
 
 const fileUrl = computed(() => (path) => endpointApi.transport.value?.fileUrl?.(path) ?? path)
 

@@ -241,3 +241,125 @@ describe('host slots', () => {
     el.remove()
   })
 })
+
+describe('streaming actually renders', () => {
+  /** Records shaped like the ones the runtime emits. */
+  const textRun = (taskId) => async function* () {
+    yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+    yield { type: 'event', seqId: 2, event: { record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } } }
+    yield { type: 'event', seqId: 3, event: { record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '你好' } } } }
+    yield { type: 'event', seqId: 4, event: { record_type: 'stream', data: { type: 'content_block_stop', index: 0 } } }
+    yield { type: 'terminal', run: { taskId, status: 'finished', detail: '' } }
+  }
+
+  it('shows assistant text as it streams, not only after the run ends', async () => {
+    // The element used to dispatch events and nothing else: the conversation
+    // stayed visually empty for the whole run, then filled in from a refetch.
+    let releaseTerminal
+    const held = new Promise((resolve) => { releaseTerminal = resolve })
+    const transport = makeTransport({
+      sendMessage: async () => ({ taskId: 't-1', status: 'queued', detail: '' }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+        yield { type: 'event', seqId: 2, event: { record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } } }
+        yield { type: 'event', seqId: 3, event: { record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '流式内容' } } } }
+        await held
+        yield { type: 'terminal', run: { taskId: 't-1', status: 'finished', detail: '' } }
+      },
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('hi')
+    await settle(30)
+
+    // Still mid-run — the terminal item has not been yielded.
+    expect(el.shadowRoot.textContent).toContain('流式内容')
+
+    releaseTerminal()
+    await settle(30)
+    el.remove()
+  })
+
+  it('renders a tool call rather than dropping it', async () => {
+    const transport = makeTransport({
+      sendMessage: async () => ({ taskId: 't-2', status: 'queued', detail: '' }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+        yield { type: 'event', seqId: 2, event: { record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: 'tu-1', name: 'run-sql' } } } }
+        yield { type: 'event', seqId: 3, event: { record_type: 'stream', data: { type: 'content_block_stop', index: 0 } } }
+        yield { type: 'terminal', run: { taskId: 't-2', status: 'finished', detail: '' } }
+      },
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('查一下')
+    await settle(30)
+
+    expect(el.shadowRoot.querySelector('.tool-output')).toBeTruthy()
+    el.remove()
+  })
+
+  it('renders history blocks the same way a live run renders', async () => {
+    // A reloaded page must not look different from one that watched the run.
+    const transport = makeTransport({
+      loadConversation: async () => ({
+        messages: [{
+          id: 'm-1',
+          role: 'assistant',
+          content: '',
+          blocks: [{ type: 'text', text: '历史回复' }],
+        }],
+        run: null,
+      }),
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    expect(el.shadowRoot.textContent).toContain('历史回复')
+    el.remove()
+  })
+})
+
+describe('waiting states have a way out', () => {
+  it('submits a permission decision so a parked run can continue', async () => {
+    // Without this the card renders and nothing can answer it: the run stays
+    // on waiting_permission forever.
+    const transport = makeTransport({
+      sendMessage: async () => ({ taskId: 't-3', status: 'queued', detail: '' }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+        yield {
+          type: 'event',
+          seqId: 2,
+          event: {
+            record_type: 'permission_request',
+            data: { request_id: 'req-1', tool_name: 'run-sql', input: {} },
+          },
+        }
+        await new Promise(() => {})
+      },
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('删点东西')
+    await settle(30)
+
+    const card = el.shadowRoot.querySelector('.v2-perm-card')
+    expect(card, 'a permission request must render a card').toBeTruthy()
+
+    const allow = [...el.shadowRoot.querySelectorAll('button')].find((b) =>
+      /允许|同意|allow/i.test(b.textContent || ''),
+    )
+    expect(allow, 'the card must offer an answer').toBeTruthy()
+    allow.click()
+    await settle(20)
+
+    expect(transport.submitInteraction).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'permission', requestId: 'req-1' }),
+    )
+    el.remove()
+  })
+})

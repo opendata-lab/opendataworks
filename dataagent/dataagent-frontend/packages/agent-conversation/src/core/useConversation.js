@@ -1,5 +1,6 @@
-import { computed, ref, shallowRef } from 'vue'
+import { computed, reactive, ref, shallowRef, triggerRef } from 'vue'
 import { ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './runStatus.js'
+import { createChatState, processV2Record } from './streamParser.js'
 import { ErrorCode, StreamInterrupted } from '../transport/errors.js'
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000]
@@ -39,6 +40,20 @@ export function useConversation({ transport, generation, emit }) {
   const canSend = computed(() => Boolean(transport.value) && !isActive.value)
 
   const stale = (at) => at !== generation.value
+
+  /** A live assistant turn whose blocks the stream parser writes into. */
+  const openAssistant = (taskId) => ({
+    id: `local-assistant-${taskId || Date.now()}`,
+    role: 'assistant',
+    content: '',
+    taskId,
+    _v2state: reactive(createChatState()),
+  })
+
+  const assistantFor = (taskId) =>
+    [...messages.value].reverse().find(
+      (message) => message.role === 'assistant' && message.taskId === taskId,
+    )
 
   const fail = (error) => {
     emit({
@@ -128,6 +143,15 @@ export function useConversation({ transport, generation, emit }) {
         if (stale(at)) return
         if (item.type === 'event') {
           lastSeq = Math.max(lastSeq, item.seqId || 0)
+          // Reduce into the open assistant turn so tool calls, thinking and
+          // text appear as they stream. Emitting the raw event and nothing
+          // else is what left the element showing an empty conversation until
+          // the run ended.
+          const assistant = assistantFor(taskId)
+          if (assistant) {
+            processV2Record(assistant._v2state, item.event)
+            triggerRef(messages)
+          }
           emit({ name: 'agent-event', detail: item.event })
           continue
         }
@@ -165,11 +189,21 @@ export function useConversation({ transport, generation, emit }) {
     }, POLL_INTERVAL_MS)
   }
 
+  /**
+   * Replace the live turns with the server's version once a run ends.
+   *
+   * A snapshot that has not caught up yet must not win. The backend persists
+   * the assistant row slightly after the run closes, so a refetch can return
+   * fewer turns than were just streamed — overwriting unconditionally makes
+   * the answer the user watched arrive flash and vanish.
+   */
   async function refreshMessages(at) {
     try {
       const snapshot = await transport.value.loadConversation()
       if (stale(at)) return
-      messages.value = snapshot.messages
+      if (snapshot.messages.length >= messages.value.length) {
+        messages.value = snapshot.messages
+      }
     } catch (error) {
       if (!stale(at)) fail(error)
     }
@@ -186,7 +220,14 @@ export function useConversation({ transport, generation, emit }) {
       if (clearDraft) draft.value = ''
       if (started?.taskId && metadata) runMetadata.set(started.taskId, metadata)
       setRun(started)
-      await refreshMessages(at)
+      // Show the user's turn and an assistant placeholder immediately. Waiting
+      // for a refetch would leave the conversation visually frozen for the
+      // length of the run.
+      messages.value = [
+        ...messages.value,
+        { id: `local-user-${Date.now()}`, role: 'user', content: text },
+        openAssistant(started?.taskId),
+      ]
       if (started?.taskId) subscribe(started.taskId, 0, at)
     } catch (error) {
       if (!stale(at)) fail(error)
