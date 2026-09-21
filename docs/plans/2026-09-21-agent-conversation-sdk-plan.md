@@ -124,6 +124,8 @@ export function defineAgentConversation(tagName = 'dataagent-conversation') {
 
 **验收：** 两套测试全绿；黄金夹具对照逐条一致；`grep -rn "@/api\|@/views" packages/agent-conversation/src` 无结果；`useConversation.js` 中无 topic 列表状态。
 
+**T2 已完成**（commits `74ff39b7`、`91388f8e`）。实施说明：原计划要把测试复制进包做黄金基线，改为**原路径留 re-export 垫片让既有测试原样跑**——同样证明等价，且不会有夹具漂移。
+
 ---
 
 ## T3 — 消息 UI 与交互卡片
@@ -158,6 +160,11 @@ export function defineAgentConversation(tagName = 'dataagent-conversation') {
 
 **验收：** `npm run test:sdk` 全绿；无 `executeSql` 时 SQL 面板只读且无报错；`grep -rn "@/api" packages/agent-conversation/src` 仍无结果。
 
+**T3 的组件搬迁已完成**（commit `d8d434a1`），506 passed。两处与计划不符：
+- **`.vue` 不能做 re-export 垫片**——SFC 编译器会把 `<script>` 包成自己的组件定义，`export { default }` 的转发被覆盖，产生第二个组件身份使 `findComponent` 失配。组件改为调用点直接 import 包内路径；`.js` 垫片不受影响。
+- **echarts 仍在主 chunk**。`defineAsyncComponent` 能正确分包，但会让 `ToolOutputRenderer.spec.js` 三处 `findComponent(ChartSpecView)` 断言失效（`flushPromises` 与 `vi.dynamicImportSettled()` 均无效）。代码里留了 `TODO(bundle)`，切换前需先定测试策略。
+- 仍未做：`MessageList` / `Composer` 的组装与元素属性方法代理。
+
 ---
 
 ## T4 — 内置 HTTP transport、会话地址生命周期与容错
@@ -191,6 +198,8 @@ export function defineAgentConversation(tagName = 'dataagent-conversation') {
 - [ ] 提交。
 
 **验收：** `npm run test:sdk` 全绿；起 mock BFF 后能跑通装载→发送→流式→终态→停止全链路；切换 `endpoint` 后消息区正确重置。
+
+**T4 的 transport 与会话地址生命周期已完成**（commits `e56ac656` 起），36 个 SDK 测试通过。`useEndpoint.js` 把 `endpoint` 做成唯一会话键：变化即 abort+重置+重建 transport，并 bump generation 让旧会话的在途结果被丢弃；宿主不需要、也不应该调 `reload()` 切换。仍未做：mock BFF 示例、退避重订与轮询降级。
 
 ---
 
