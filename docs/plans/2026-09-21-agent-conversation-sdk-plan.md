@@ -338,6 +338,19 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 
 ---
 
+### 一个会误导人的既有失败
+
+`src/widget/__tests__/entry.spec.js` 的 "delivers a message when sendMessage
+opens a closed floating panel" **单独跑必失败，全量跑必通过**，与本次改造无关，
+改造前后都如此。
+
+我一度把它判成"时序 flaky"，那是错的——连跑三次单独执行是 3/3 失败，不是间歇性。
+真实原因是**测试间的顺序依赖**：它依赖别的测试文件留下的状态。
+
+实际影响：`npx vitest run src/widget` 会红，`npm test` 会绿。**不要据此认为自己
+改坏了 widget**，也不要在它身上浪费时间——真要修，方向是找出它依赖的前置状态并
+在自己的 setup 里建立，而不是加等待。
+
 ## 验证清单（合并前一次性跑完）
 
 - [ ] `cd dataagent/dataagent-frontend && npm ci && npm test && npm run test:sdk`
