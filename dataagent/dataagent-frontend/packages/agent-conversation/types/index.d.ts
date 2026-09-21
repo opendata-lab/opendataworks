@@ -143,6 +143,19 @@ export interface AgentConversationElement extends HTMLElement {
   focus(): void
 }
 
+/**
+ * Named slots the element projects host content into.
+ *
+ * `composer-overlay` renders above the input, `composer-toolbar` below the
+ * footer. Order is part of the contract, not an implementation detail: a slash
+ * menu has to sit against the textarea, and a control row has to sit under it.
+ */
+export type AgentConversationSlot =
+  | "empty"
+  | "composer-overlay"
+  | "composer-actions"
+  | "composer-toolbar";
+
 export interface AgentConversationEventMap {
   'dataagent-ready': CustomEvent<Record<string, never>>
   'dataagent-draft-change': CustomEvent<{ value: string }>

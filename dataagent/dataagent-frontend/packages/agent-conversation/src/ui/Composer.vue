@@ -1,5 +1,8 @@
 <template>
   <div class="dac-composer">
+    <!-- Above the input: overlays that must sit against it, such as a slash
+         command menu. Empty for hosts that have none. -->
+    <slot name="composer-overlay" />
     <textarea
       ref="inputRef"
       class="dac-input"
@@ -26,6 +29,11 @@
         >发送</button>
       </div>
     </div>
+    <!-- Below the footer: a host's own composer controls. The widget puts its
+         permission-mode and model selectors here; those are product choices
+         the SDK has no opinion about, so it supplies the space rather than the
+         controls. -->
+    <slot name="composer-toolbar" />
   </div>
 </template>
 

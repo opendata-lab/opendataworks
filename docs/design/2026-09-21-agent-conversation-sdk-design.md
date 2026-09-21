@@ -234,8 +234,17 @@ interface SendOptions {
 
 | 插槽 | 位置 | 用途 |
 | --- | --- | --- |
+| `composer-overlay` | 输入框**上方** | 需要贴着输入框的浮层，如斜杠命令菜单 |
 | `composer-actions` | 输入框 footer 左侧，标准发送按钮之前 | 宿主业务按钮 |
+| `composer-toolbar` | footer **下方**独立一行 | 宿主自己的输入区控件 |
 | `empty` | 消息区为空时 | 宿主自定义空态 |
+
+**为什么是四个而不是两个。** 最初只设计了 `composer-actions` 与 `empty`——那是照
+OntoFoundry"在输入框里加一个按钮"的需求来的。实际让 Widget 组合 SDK 时才发现它的
+输入区远不止一个按钮：斜杠命令菜单要贴着 textarea 浮起，权限模式与模型选择器占据
+footer 下方独立一行。两者都是产品选择，SDK 不该有意见——所以它提供**位置**而不是
+控件。插槽的**顺序**同样是契约的一部分（浮层在输入框之前、工具栏在 footer 之后），
+有测试钉住。
 
 插槽内容来自元素的 Light DOM（宿主用 React/Vue/原生渲染），必须真正被投影到 Shadow DOM 内的对应位置。实现方式见 §11.1。
 

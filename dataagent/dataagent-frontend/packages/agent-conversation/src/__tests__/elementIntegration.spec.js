@@ -184,6 +184,50 @@ describe('switching conversations', () => {
 })
 
 describe('host slots', () => {
+  it('gives a host somewhere to put composer overlays and its own toolbar', async () => {
+    // The widget's composer is not just a send button: a slash-command menu
+    // sits against the textarea, and permission-mode and model selectors sit
+    // in a row of their own. Those are product choices the SDK has no opinion
+    // about, so it supplies the space rather than the controls.
+    const el = mount(
+      { endpoint: '/conv/a', transportFactory: () => makeTransport() },
+      {
+        lightDom: `
+          <div slot="composer-overlay" id="slash-menu">/commands</div>
+          <button slot="composer-actions" id="start">开始建模</button>
+          <div slot="composer-toolbar" id="toolbar">模型选择</div>
+        `,
+      },
+    )
+    await settle()
+
+    const shadow = el.shadowRoot
+    const named = (name) => shadow.querySelector(`slot[name="${name}"]`)
+
+    for (const [slotName, id] of [
+      ['composer-overlay', 'slash-menu'],
+      ['composer-actions', 'start'],
+      ['composer-toolbar', 'toolbar'],
+    ]) {
+      const slot = named(slotName)
+      expect(slot, `${slotName} slot must exist`).toBeTruthy()
+      expect(slot.assignedNodes({ flatten: true })).toContain(el.querySelector(`#${id}`))
+    }
+
+    // Position matters as much as presence: the overlay has to precede the
+    // input and the toolbar has to follow the footer, or the widget's layout
+    // cannot be reproduced.
+    const composer = shadow.querySelector('.dac-composer')
+    const order = [...composer.children].map((child) =>
+      child.tagName === 'SLOT' ? child.getAttribute('name') : child.className,
+    )
+    expect(order.indexOf('composer-overlay')).toBeLessThan(order.indexOf('dac-input'))
+    expect(order.indexOf('composer-toolbar')).toBeGreaterThan(
+      order.indexOf('dac-composer-footer'),
+    )
+    el.remove()
+  })
+
   it('projects composer actions into the footer', async () => {
     const el = mount(
       { endpoint: '/conv/a', transportFactory: () => makeTransport() },

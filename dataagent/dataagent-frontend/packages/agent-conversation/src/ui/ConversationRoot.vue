@@ -14,7 +14,9 @@
       @send="() => send()"
       @cancel="conversation.cancel"
     >
+      <template #composer-overlay><slot name="composer-overlay" /></template>
       <template #composer-actions><slot name="composer-actions" /></template>
+      <template #composer-toolbar><slot name="composer-toolbar" /></template>
     </Composer>
   </div>
 </template>
