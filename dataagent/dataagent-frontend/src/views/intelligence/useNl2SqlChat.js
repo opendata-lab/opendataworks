@@ -12,13 +12,9 @@
 // and write the exposed `topics` ref directly.
 
 import { computed, reactive, ref, triggerRef, watch } from 'vue'
-import { topicStatusKind, isActiveStatusKind } from './topicStatus'
-import {
-  compareTopicsByRecency,
-  extractErrorText,
-  hydrateMessageFromApi,
-  normalizeTopic,
-} from './chatMessage'
+import { extractErrorText, hydrateMessageFromApi } from './chatMessage'
+import { normalizeTopic } from './topicHelpers.js'
+import { useTopicList } from './useTopicList.js'
 import { createChatState, processV2Record } from './v2StreamParser'
 
 const noop = () => {}
@@ -50,7 +46,6 @@ export function useNl2SqlChat(options) {
   } = options
 
   // ── State ────────────────────────────────────────────────────────────────
-  const topics = ref([])
   const topicId = ref('')
   const messages = ref([])
   const errorText = ref('')
@@ -62,7 +57,6 @@ export function useNl2SqlChat(options) {
   const selectedModel = ref('')
 
   const inputText = ref('')
-  const searchKeyword = ref('')
   const thinkingExpanded = reactive({})
 
   const isSubmitting = ref(false)
@@ -73,9 +67,16 @@ export function useNl2SqlChat(options) {
 
   const hydratedTopicIds = new Set()
 
+  // Topic-list concerns live in the shell; see useTopicList.js.
+  const {
+    topics, searchKeyword, filteredTopics, activeTopic,
+    isTopicWorking, topicBadgeKind, isTopicTaskActive, setTopicTaskStatus,
+    sortTopics, moveTopicToTop, upsertTopicAtTop,
+    refreshTopics,
+  } = useTopicList({ api, topicId, activeTaskId, listTopicsParams })
+
   // ── Computed ───────────────────────────────────────────────────────────────
   const isBusy = computed(() => isSubmitting.value || Boolean(activeTaskId.value))
-  const activeTopic = computed(() => topics.value.find((t) => t.topic_id === topicId.value) || null)
   const activeProviderConfig = computed(() => (
     providers.value.find((p) => p.provider_id === selectedProvider.value)
     || providers.value[0]
@@ -93,12 +94,6 @@ export function useNl2SqlChat(options) {
     && !isBusy.value
   ))
   // Base keyword filter; components layer their own status/user/sort facets.
-  const filteredTopics = computed(() => {
-    const keyword = searchKeyword.value.trim().toLowerCase()
-    if (!keyword) return topics.value
-    return topics.value.filter((t) => String(t.title || '').toLowerCase().includes(keyword))
-  })
-
   // Keep the selected model valid as the provider/model set changes.
   watch(availableModels, (models) => {
     if (!models.length) {
@@ -107,40 +102,6 @@ export function useNl2SqlChat(options) {
     }
     if (!models.includes(selectedModel.value)) selectedModel.value = models[0]
   })
-
-  // ── Session-list status badges ───────────────────────────────────────────
-  const isTopicWorking = (topic) =>
-    (topic?.topic_id === topicId.value && Boolean(activeTaskId.value)) ||
-    topicStatusKind(topic?.current_task_status) === 'running'
-  const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
-  // A run parked at waiting_input ('awaiting') is still live, so it counts as
-  // active — re-selecting the topic must resume its stream to deliver the answer.
-  const isTopicTaskActive = (topic) => isActiveStatusKind(topicStatusKind(topic?.current_task_status))
-
-  // Reflect a task's terminal/active status onto its topic so the badge stays
-  // accurate without reloading the list.
-  const setTopicTaskStatus = (targetTopicId, status) => {
-    const target = topics.value.find((t) => t.topic_id === targetTopicId)
-    if (target) target.current_task_status = String(status || '')
-  }
-
-  // Recency comes from the server's updated_at only: the backend bumps it when
-  // messages persist, when a task starts running, and when a run reaches a
-  // terminal state, so refreshing the list (working-topic poll / afterRun) is
-  // what keeps the order current. No local timestamps are mixed in, avoiding
-  // client/server clock skew and timestamp-format mismatches.
-  const sortTopics = () => {
-    topics.value = [...topics.value].sort(compareTopicsByRecency)
-  }
-  const moveTopicToTop = (targetTopicId) => {
-    const target = topics.value.find((t) => t.topic_id === targetTopicId)
-    if (!target) return
-    topics.value = [target, ...topics.value.filter((t) => t.topic_id !== targetTopicId)]
-  }
-  const upsertTopicAtTop = (topic) => {
-    if (!topic?.topic_id) return
-    topics.value = [topic, ...topics.value.filter((t) => t.topic_id !== topic.topic_id)]
-  }
 
   // ── Messages ───────────────────────────────────────────────────────────────
   const appendUserMessage = (content) => {
@@ -201,22 +162,6 @@ export function useNl2SqlChat(options) {
       ? defaultModel.value
       : (resolved?.default_model || resolved?.models?.[0] || '')
     return config
-  }
-
-  const refreshTopics = async () => {
-    const data = await api.topicApi.listTopics(listTopicsParams())
-    const currentTopic = activeTopic.value ? { ...activeTopic.value } : null
-    const list = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : [])
-    const nextTopics = list.map(normalizeTopic).filter((t) => t.topic_id)
-    if (currentTopic?.topic_id && !nextTopics.some((t) => t.topic_id === currentTopic.topic_id)) {
-      nextTopics.unshift(currentTopic)
-    }
-    topics.value = nextTopics
-    sortTopics()
-    if (currentTopic?.topic_id && currentTopic.topic_id === topicId.value) {
-      moveTopicToTop(currentTopic.topic_id)
-    }
-    return topics.value
   }
 
   const loadTopics = async () => {
