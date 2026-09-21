@@ -31,8 +31,13 @@ export default defineConfig({
     lib: {
       entry: resolve(__dirname, 'src/index.js'),
       name: 'OpenDataWorksAgentConversation',
-      formats: ['es', 'umd'],
-      fileName: (format) => (format === 'es' ? 'index.js' : 'index.umd.cjs')
+      // ESM only. A single-file UMD build forces inlineDynamicImports, which
+      // is incompatible with the code splitting that keeps echarts and
+      // CodeMirror out of the main chunk — and no consumer needs UMD:
+      // OntoFoundry builds with Vite, and the widget is packed as IIFE from
+      // the app side.
+      formats: ['es'],
+      fileName: () => 'index.js'
     },
     rollupOptions: {
       // Vue and Element Plus are bundled on purpose: downstream hosts are React

@@ -178,11 +178,25 @@ import { marked } from 'marked'
 import { extractChartSpec, extractTextParts, parseMaybeJson } from '../core/chartSpec.js'
 import { describeToolAction, formatSkillBootstrapLabel } from '../core/toolPresentation.js'
 import { useCopyFeedback } from '../utils/useCopyFeedback.js'
-// TODO(bundle): this pulls echarts into the main chunk (~1MB). Loading it with
-// defineAsyncComponent does split it correctly, but breaks the three
-// findComponent(ChartSpecView) assertions in ToolOutputRenderer.spec.js —
-// neither flushPromises nor vi.dynamicImportSettled() gets the resolved
-// component into the tree. Needs a test strategy before switching.
+// TODO(bundle): this pulls echarts into the main chunk, which is most of the
+// package's ~1.1MB. Two approaches have now failed, for different reasons
+// worth recording so a third attempt does not repeat them:
+//
+//   defineAsyncComponent on ChartSpecView splits the chunk correctly but
+//   changes the component's identity, so the three findComponent(ChartSpecView)
+//   assertions in ToolOutputRenderer.spec.js stop matching. Neither
+//   flushPromises nor vi.dynamicImportSettled() resolves that.
+//
+//   Importing echarts dynamically *inside* ChartSpecView keeps the identity
+//   intact and does split the chunk, but ChartSpecViewStability.spec.js mounts
+//   300 charts at once and only one ever reaches init. That is not a waiting
+//   problem — the count stays at 1 no matter how long the flush runs — so
+//   something about the shared module promise and 300 concurrent frame
+//   callbacks is wrong, and it needs understanding rather than more await.
+//
+// CodeMirror was moved out successfully by the same technique (see
+// SqlCodePanel), which is why this is a chart-specific problem, not a general
+// one with lazy loading here.
 import ChartSpecView from './ChartSpecView.vue'
 import ResultDataTable from './components/ResultDataTable.vue'
 import SqlCodePanel from './components/SqlCodePanel.vue'
