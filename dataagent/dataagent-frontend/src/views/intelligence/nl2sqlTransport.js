@@ -11,17 +11,49 @@ import { StreamInterrupted } from '../../../packages/agent-conversation/src/tran
  *
  * @param {object} api result of createNl2SqlApiClient
  * @param {string} topicId conversation this transport is bound to
+ * @param {object} [context] run parameters the shell owns
+ * @param {() => string} [context.getAgentId]
+ * @param {() => string} [context.getProviderId]
+ * @param {() => string} [context.getModel]
+ * @param {() => string} [context.getPermissionMode]
  */
-export function createNl2SqlTransport(api, topicId) {
+export function createNl2SqlTransport(api, topicId, context = {}) {
+  const {
+    getAgentId = () => '',
+    getProviderId = () => '',
+    getModel = () => '',
+    getPermissionMode = () => '',
+  } = context
+
   const toRunRef = (task, metadata) => {
     if (!task) return null
     return {
       taskId: String(task.task_id || task.taskId || ''),
       status: toRunStatus(task.task_status || task.status),
       detail: String(task.detail || task.error?.message || ''),
-      metadata
+      metadata,
     }
   }
+
+  /**
+   * DataAgent's message rows are not the SDK's shape. Mapping explicitly beats
+   * passing them through: `sender_type` is not `role`, and a renderer reading
+   * `message.role` would silently treat every row as an assistant turn.
+   */
+  const toMessage = (row) => ({
+    id: String(row?.message_id || row?.id || ''),
+    role: String(row?.sender_type) === 'user' ? 'user' : 'assistant',
+    content: String(row?.content || ''),
+    blocks: Array.isArray(row?.blocks) ? row.blocks : undefined,
+    records: Array.isArray(row?.records) ? row.records : undefined,
+    attachments: (row?.attachments || []).map((file) => ({
+      name: String(file?.name || file?.rel_path || ''),
+      relPath: String(file?.rel_path || ''),
+      mediaType: file?.content_type || undefined,
+    })),
+    taskId: row?.task_id ? String(row.task_id) : undefined,
+    createdAt: row?.created_at ? String(row.created_at) : undefined,
+  })
 
   return {
     /**
@@ -31,28 +63,42 @@ export function createNl2SqlTransport(api, topicId) {
     async loadConversation() {
       if (!topicId) return { messages: [], run: null }
 
-      const messages = []
+      const rows = []
       let page = 1
       for (;;) {
         const payload = await api.topicApi.getTopicMessages(topicId, { page, page_size: 500 })
         const items = Array.isArray(payload?.items) ? payload.items : []
-        messages.push(...items)
+        rows.push(...items)
         const total = Number(payload?.total || 0)
-        if (!items.length || messages.length >= total) break
+        if (!items.length || rows.length >= total) break
         page += 1
       }
 
       const topic = await api.topicApi.getTopic(topicId)
       const currentTaskId = String(topic?.current_task_id || '')
-      const run = currentTaskId
-        ? toRunRef({ task_id: currentTaskId, task_status: topic?.current_task_status })
-        : null
 
-      return { messages, run }
+      return {
+        messages: rows.map(toMessage),
+        run: currentTaskId
+          ? toRunRef({ task_id: currentTaskId, task_status: topic?.current_task_status })
+          : null,
+      }
     },
 
     async sendMessage({ content, metadata }) {
-      const submitted = await api.taskApi.deliverMessage({ topic_id: topicId, content })
+      // The shell owns agent, provider, model and permission mode; omitting
+      // them would submit to the default agent at the interactive timeout
+      // tier, which is not what the user selected.
+      const submitted = await api.taskApi.deliverMessage({
+        topic_id: topicId,
+        content,
+        provider_id: getProviderId() || undefined,
+        model: getModel() || undefined,
+        agent_id: getAgentId() || undefined,
+        permission_mode: getPermissionMode() || undefined,
+        debug: false,
+        execution_mode: 'auto',
+      })
       return toRunRef({ ...submitted, task_status: submitted?.task_status || 'waiting' }, metadata)
     },
 
@@ -62,7 +108,9 @@ export function createNl2SqlTransport(api, topicId) {
 
     async submitInteraction({ taskId, kind, requestId, payload }) {
       if (kind === 'permission') {
-        await api.taskApi.submitPermissionDecision(taskId, requestId, payload?.decision, payload?.note || '')
+        await api.taskApi.submitPermissionDecision(
+          taskId, requestId, payload?.decision, payload?.note || '',
+        )
         return
       }
       await api.taskApi.submitQuestionAnswer(taskId, requestId, payload?.answers || [])
@@ -73,22 +121,50 @@ export function createNl2SqlTransport(api, topicId) {
     },
 
     /**
-     * DataAgent's native stream is unnamed `data:` frames that stop at EOF.
-     * The SDK needs an explicit terminal item, so EOF is resolved by asking
-     * for the task's status — and only a genuinely terminal status becomes a
-     * terminal item. An upstream stream that ends while the run is still going
-     * is an interruption to reconnect from, not a completion.
+     * Bridges the client's callback-style stream to an async iterable.
+     *
+     * `taskApi.streamSdkEvents` pushes records into an `onRecord` callback and
+     * resolves when the socket closes. The SDK pulls. A queue plus a waiter
+     * connects the two without dropping records that arrive between pulls.
+     *
+     * Closure alone does not mean the run finished — the same bytes appear
+     * when a connection drops — so the task's status decides, and only a
+     * genuinely terminal one becomes a terminal item.
      */
     async *streamEvents({ taskId, afterId, signal }) {
-      let lastSeq = afterId
+      const queue = []
+      let notify = null
+      let finished = false
+      let failure = null
 
-      for await (const record of api.eventApi.streamSdkEvents(taskId, { afterId, signal })) {
-        if (signal?.aborted) return
-        lastSeq = Math.max(lastSeq, Number(record?.seq_id || 0))
-        yield { type: 'event', seqId: lastSeq, event: record }
+      const push = (record) => {
+        queue.push(record)
+        notify?.()
+        notify = null
       }
 
+      const pump = api.taskApi
+        .streamSdkEvents(taskId, { afterId, signal, onRecord: push })
+        .then(() => { finished = true })
+        .catch((error) => { failure = error; finished = true })
+        .finally(() => { notify?.(); notify = null })
+
+      let lastSeq = afterId
+      for (;;) {
+        if (queue.length) {
+          const record = queue.shift()
+          if (signal?.aborted) return
+          lastSeq = Math.max(lastSeq, Number(record?.seq_id || 0))
+          yield { type: 'event', seqId: lastSeq, event: record }
+          continue
+        }
+        if (finished) break
+        await new Promise((resolve) => { notify = resolve })
+      }
+
+      await pump
       if (signal?.aborted) return
+      if (failure) throw new StreamInterrupted(`事件流中断: ${failure.message || failure}`)
 
       const task = await api.taskApi.getTask(taskId)
       const status = toRunStatus(task?.task_status)
@@ -110,7 +186,8 @@ export function createNl2SqlTransport(api, topicId) {
     },
 
     async submitFeedback(messageId, value) {
-      await api.topicApi.updateMessageFeedback(topicId, messageId, value === 1 ? 'up' : value === -1 ? 'down' : '')
-    }
+      const feedback = value === 1 ? 'up' : value === -1 ? 'down' : ''
+      await api.topicApi.updateMessageFeedback(topicId, messageId, feedback)
+    },
   }
 }

@@ -15,16 +15,17 @@ const makeApi = (over = {}) => ({
   },
   taskApi: {
     deliverMessage: vi.fn(async () => ({ task_id: 't-1' })),
+    // The real client is callback-style and lives on taskApi, not eventApi.
+    // Mocking the shape I wished for is how the previous version of this file
+    // passed while calling a method that does not exist.
+    streamSdkEvents: vi.fn(async () => {}),
     getTask: vi.fn(async () => ({ task_id: 't-1', task_status: 'finished' })),
     cancelTask: vi.fn(async () => ({ task_id: 't-1', task_status: 'suspended' })),
     submitPermissionDecision: vi.fn(async () => ({})),
     submitQuestionAnswer: vi.fn(async () => ({})),
     ...over.taskApi
   },
-  eventApi: {
-    streamSdkEvents: vi.fn(async function* () {}),
-    ...over.eventApi
-  },
+  eventApi: { recordEvents: vi.fn(async () => {}), ...over.eventApi },
   queryApi: { executeSql: vi.fn(async () => ({ columns: [], rows: [] })), ...over.queryApi }
 })
 
@@ -104,12 +105,12 @@ describe('status translation', () => {
 describe('the event stream', () => {
   it('synthesises a terminal item once the task is genuinely done', async () => {
     const api = makeApi({
-      eventApi: {
-        streamSdkEvents: async function* () {
-          yield { seq_id: 1, kind: 'text' }
-          yield { seq_id: 2, kind: 'text' }
-        }
-      }
+      taskApi: {
+        streamSdkEvents: async (_taskId, { onRecord }) => {
+          onRecord({ seq_id: 1, kind: 'text' })
+          onRecord({ seq_id: 2, kind: 'text' })
+        },
+      },
     })
 
     const items = await drain(
@@ -126,8 +127,10 @@ describe('the event stream', () => {
     // calling the second case "finished" would have the host refresh its data
     // while the agent is still working.
     const api = makeApi({
-      eventApi: { streamSdkEvents: async function* () { yield { seq_id: 1 } } },
-      taskApi: { getTask: vi.fn(async () => ({ task_id: 't-1', task_status: 'running' })) }
+      taskApi: {
+        streamSdkEvents: async (_taskId, { onRecord }) => onRecord({ seq_id: 1 }),
+        getTask: vi.fn(async () => ({ task_id: 't-1', task_status: 'running' })),
+      },
     })
 
     await expect(
@@ -205,5 +208,52 @@ describe('interactions', () => {
     })
 
     expect(api.taskApi.submitQuestionAnswer).toHaveBeenCalledWith('t-1', 'r-2', ['a'])
+  })
+})
+
+describe('it talks to the client that actually exists', () => {
+  it('only calls methods the real client provides', async () => {
+    // The previous version of this adapter called
+    // `api.eventApi.streamSdkEvents` — a method that does not exist. Every
+    // test passed because they mocked it into being. A Proxy over the real
+    // client's own key set is what would have caught that.
+    const { createNl2SqlApiClient } = await import('@/api/nl2sql')
+    const real = createNl2SqlApiClient({ baseURL: '' })
+
+    const guard = (target, path) =>
+      new Proxy(target, {
+        get(obj, key) {
+          if (typeof key !== 'string' || key in obj) {
+            const value = Reflect.get(obj, key)
+            return value && typeof value === 'object' && !Array.isArray(value)
+              ? guard(value, `${path}.${key}`)
+              : typeof value === 'function'
+                ? () => Promise.resolve({})
+                : value
+          }
+          throw new Error(`${path}.${String(key)} does not exist on the real client`)
+        },
+      })
+
+    const transport = createNl2SqlTransport(guard(real, 'api'), TOPIC)
+
+    // Touch every method the SDK contract requires. A missing namespace or a
+    // renamed method fails here instead of at the first real subscription.
+    await transport.loadConversation()
+    await transport.sendMessage({ content: 'hi' })
+    await transport.cancelRun({ taskId: 't-1' })
+    await transport.submitInteraction({
+      taskId: 't-1', kind: 'permission', requestId: 'r', payload: {},
+    })
+    await transport.submitInteraction({
+      taskId: 't-1', kind: 'question', requestId: 'r', payload: {},
+    })
+    transport.fileUrl('output/x.json')
+    await transport.executeSql({ sql: 'SELECT 1' })
+    await transport.setPermissionMode('default')
+    await transport.submitFeedback('m-1', 1)
+
+    expect(typeof real.taskApi.streamSdkEvents).toBe('function')
+    expect(real.eventApi.streamSdkEvents).toBeUndefined()
   })
 })
