@@ -12,7 +12,7 @@
 - 元素标签名 `dataagent-conversation`；DOM 事件前缀 `dataagent-`，全部 `bubbles: true, composed: true`。
 - 元素用 **`defineCustomElement`** 实现，不用 `createApp().mount()`——后者无法投影 Light DOM 插槽。
 - 样式**编译为 JS 内联字符串**由元素注入 Shadow Root；包**不导出** `style.css`，宿主不 import 任何 CSS。
-- 包内**任何文件不得 import `@/api/nl2sql` 或 `@/views/*`**。CI 用 lint 规则强制。
+- 包内**任何文件不得 import `@/api/nl2sql` 或 `@/views/*`**。**由 `src/__tests__/package-boundary.spec.js` 强制**——`dataagent-frontend` 没有 eslint（只有独立的 `frontend/` 应用有），为一条规则引入整套 lint 工具链不划算。
 - Vue 与 Element Plus 打进产物，不作为 peerDependency。
 - **npm 管理根是 `dataagent/dataagent-frontend/`，仓库根没有 `package.json`。** 所有 npm 命令必须显式指定 cwd。
 - DataAgent 运行时 API 前缀 `/api/v1/nl2sql`，事件流 `/tasks/{task_id}/sdk-events/stream`；**Agent 存在性查询在不同前缀** `/api/v1/dataagent/agents/{agent_id}`。
@@ -38,9 +38,12 @@
 
 **步骤**
 
-- [ ] 写 `package.json`，字段按设计 §11.1 抄全。`exports` 只有 `"."` 一项，**没有 `./style.css`**。
-- [ ] 写 `vite.config.js`：`build.lib` 入口 `src/index.js`，`formats: ['es','umd']`，`cssCodeSplit: false`，`build.rollupOptions.external: []`。插件 `vue({ customElement: true })` + `ElementPlus({ useSource: true })`。样式通过 `?inline` 导入为字符串，不产出独立 CSS 文件。
-- [ ] `ConversationRoot.vue` 先只渲染两个插槽占位和一个固定文案，用于验证投影：
+- [x] 写 `package.json`，字段按设计 §11.1 抄全。`exports` 只有 `"."` 一项，**没有 `./style.css`**。
+- [x] 写 `vite.config.js`：`build.lib` 入口 `src/index.js`，`formats: ['es','umd']`，`cssCodeSplit: false`，`build.rollupOptions.external: []`，插件 `vue({ customElement: true })`。
+  **必须 `root: __dirname`。** vite 的 `outDir` 相对 `root` 解析，而 `root` 默认是 cwd——从 `dataagent-frontend` 执行时会把库直接产到主应用的 `dist/` 里。
+  **必须 `define: { 'process.env.NODE_ENV': JSON.stringify('production') }`。** UMD 产物由 `<script>` 直接加载，裸 `process` 引用会 `ReferenceError`；顺带消除 dev 分支，ES 产物从 158kB 降到 108kB。
+  样式写在 SFC 的 `<style>` 块里，`customElement: true` 会把它编译成字符串挂到组件上，由 `VueElement` 注入 shadow root——无需 `?inline`，也不产出独立 CSS。
+- [x] `ConversationRoot.vue` 先只渲染两个插槽占位和一个固定文案，用于验证投影：
 
 ```vue
 <template>
@@ -51,7 +54,7 @@
 </template>
 ```
 
-- [ ] `src/element.js`：
+- [x] `src/element.js`：
 
 ```js
 import { defineCustomElement } from 'vue'
@@ -72,13 +75,16 @@ export function defineAgentConversation(tagName = 'dataagent-conversation') {
 }
 ```
 
-- [ ] 写测试：注册幂等（连调两次不抛错）；**在同一个 registry 中先注册默认标签名、再注册自定义标签名不抛错**（这条会暴露构造器复用问题）；**断开后重新插入不抛错**；Light DOM 中 `<button slot="composer-actions">` 真实渲染在 `.dac-composer-actions` 内并可点击。
-- [ ] eslint 对 `packages/agent-conversation/**` 增加 `no-restricted-imports`，pattern `@/api/*` 与 `@/views/*`。
-- [ ] `cd dataagent/dataagent-frontend && npm run build:sdk`，确认产出 `dist/index.js`、`dist/index.umd.cjs`，**且没有 `dist/style.css`**。
-- [ ] `cd dataagent/dataagent-frontend/packages/agent-conversation && npm pack --dry-run`，确认 tarball 只含 `dist`、`types`、`docs`、`README.md`、`package.json`。
-- [ ] 提交。
+- [x] 写测试：注册幂等；**同一 registry 中先注册默认标签名再注册别名不抛错**（暴露构造器复用问题）；**断开后重新插入不抛错**；Light DOM 中 `<button slot="composer-actions">` 被投影进 `.dac-composer-actions` 且可点击。
+  注意断言 fallback 内容时用 `assignedNodes()` 而非 `assignedNodes({flatten:true})`——后者会把 fallback 折进来，断言变成恒真。
+- [x] 写 `src/__tests__/package-boundary.spec.js`：扫描包内所有 `.js/.ts/.vue`，断言无 `@/api/`、`@/views/`、`@/` 的 import。**不引入 eslint**（理由见全局约束）。
+- [x] `cd dataagent/dataagent-frontend && npm run build:sdk`，确认产出落在 `packages/agent-conversation/dist/`（**不是主应用的 `dist/`**），有 `index.js`、`index.umd.cjs`，无 `style.css`，且 `grep -c 'process\.env' dist/index.umd.cjs` 为 0。
+- [x] `cd dataagent/dataagent-frontend/packages/agent-conversation && npm pack --dry-run`，确认 tarball 只含 `dist`、`types`、`README.md`、`package.json`（`docs/bff-protocol.md` 在 T4 产生）。
+- [x] 提交。
 
 **验收：** 上述测试全绿；插槽投影测试是本任务的核心门禁——它验证了 `defineCustomElement` 这条技术路线成立。
+
+**T1 已完成**（commit `1701c785`）：12 个新测试通过，全量 506 个测试通过。三条结论已落实到代码——插槽投影成立、每个标签名需独立构造器、`root` 必须固定。
 
 ---
 
