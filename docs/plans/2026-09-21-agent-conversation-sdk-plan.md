@@ -205,29 +205,34 @@ export function defineAgentConversation(tagName = 'dataagent-conversation') {
 
 ## T5 — Widget 与 SPA 改为复用 SDK
 
-**产出：** 仓库内不再有第二套聊天实现，Widget 对外行为零变化。**这是发布前的 dogfood。**
+**当前状态：适配器已完成，外壳替换未做。**
 
-**涉及文件**
+已完成（commit `e234b0cc`）：`src/views/intelligence/nl2sqlTransport.js` 把本应用的
+DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfood 的验证价值集中在
+这一半**——它把契约对着真实 API 形状跑了一遍，当场暴露两处不匹配：
 
-- 修改 `src/widget/WidgetChat.vue`、`src/widget/styles.js`
-- 修改 `src/views/intelligence/NL2SqlChatV2.vue`
-- 修改 `src/widget/__tests__/WidgetChat.spec.js`
-- 移动 `output/playwright/widget-smoke.mjs` 与三张基线图 → `dataagent/dataagent-frontend/tests/e2e/widget/`
+- 历史消息上游默认 200/页、上限 500，单次请求会静默截断长会话；适配器分页取全。
+- 原生流是无名 `data:` 帧、靠 EOF 终止，EOF 无法区分"跑完"和"断线"；适配器在 EOF 后
+  查任务状态，**只有真正终态才合成 terminal**，否则抛中断走重连。
 
-**步骤**
+未完成：把 `WidgetChat.vue` 的消息区与输入区换成 `<dataagent-conversation>`。
 
-- [ ] `WidgetChat.vue` 的消息区与输入区替换为 `<dataagent-conversation>`，通过 `ref` 设置 `transportFactory = (endpoint) => nl2sqlTransport(inject('nl2sqlApi'), parseTopicKey(endpoint))`。保留登录态判断、历史抽屉联动；`state.outboundMessage` / `cancelSignal` 改为调用元素的 `sendMessage()` / `cancel()`。
-- [ ] **会话切换只设置元素的 `endpoint`**，值为 `topic://{topic_id}`。不替换 transport 对象，不调 `reload()`——元素检测到会话键变化后自行 abort、重置、用新键重新调用工厂。全仓库只有这一条切换路径。
-- [ ] 补测试：切换 topic 后消息区重置，且旧 topic 的残留事件不会渲染进新会话。
-- [ ] `NL2SqlChatV2.vue` 替换中间会话区，保留 Agent 选择器、会话列表（用 `useTopicList`）、管理入口。
-- [ ] **把 Widget smoke 脚本移入受版本控制的 `tests/e2e/widget/`**，并修正其中写死的产物路径：当前是 `frontend/dist/widget`（widget-smoke.mjs:11），实际产物在 `dataagent/dataagent-frontend/dist/widget`（vite.widget.config.js:16）。移动后 `git add` 脚本与三张基线图。
-- [ ] 跑 `npm test`，修正受影响用例。
-- [ ] 跑三形态 e2e，与基线图比对。
-- [ ] 提交。
+**为什么单独拆出来做。** 这个组件 1197 行，消息渲染与登录态、历史抽屉、悬浮几何、
+埋点、斜杠命令、权限卡片交织在一起，从 `useNl2SqlChat` 解构了约 25 个值。它的回归保护
+里有三张 playwright 基线截图，改动对不对只能靠视觉比对确认。这属于需要一次专注、能实际
+看到渲染结果的改动，不适合夹在别的工作中间推进。
 
-**验收：** `npm test` 全绿；三形态交互正常无布局回归；e2e 脚本已在 Git 中且能从干净 clone 跑起来；`grep -rn "v2StreamParser\|agentEvents/reducer" src/` 只剩 re-export。
+**做之前要知道的：**
 
----
+- 保留外壳（`entry.js`、`OpenDataWorksWidget.vue`、`useWidgetGeometry.js`、`tracking.js`、
+  `config.js`）与 Topic 列表（`useTopicList.js`），只换中间会话区。
+- 通过 `ref` 设 `transportFactory = (endpoint) => createNl2SqlTransport(api, parseTopicKey(endpoint))`。
+- **切换会话只改 `endpoint`**（直连场景用 `topic://{topic_id}` 作会话键），不替换
+  transport 对象、不调 `reload()`。全仓库只有这一条切换路径。
+- playwright 脚本目前在 `output/playwright/` 且**未纳入 Git**，产物路径还写死成
+  `frontend/dist/widget`（实际在 `dataagent/dataagent-frontend/dist/widget`）。搬进
+  受版本控制的位置并修正路径，否则它不是可复现的门禁。
+
 
 ## T6 — React 消费冒烟（本地 tarball）
 
