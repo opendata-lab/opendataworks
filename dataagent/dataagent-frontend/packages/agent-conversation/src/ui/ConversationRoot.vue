@@ -7,6 +7,7 @@
       :disabled="disabled"
       :can-rate="canRate"
       :can-preview-files="canPreviewFiles"
+      :activity-label="activityLabel"
       @decide="onDecide"
       @answer="onAnswer"
       @retry="conversation.retry"
@@ -74,7 +75,9 @@ const props = defineProps({
   // Functions and objects arrive as JS properties, never as attributes.
   endpointResolver: { type: Function, default: null },
   transportFactory: { type: Function, default: null },
-  composerConfig: { type: Object, default: () => ({}) }
+  composerConfig: { type: Object, default: () => ({}) },
+  /** Shown while an open turn has produced nothing yet. */
+  activityLabel: { type: String, default: '正在处理…' }
 })
 
 const suggestions = computed(() => props.composerConfig?.suggestions || [])

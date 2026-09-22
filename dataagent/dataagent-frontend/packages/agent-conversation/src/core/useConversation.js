@@ -49,7 +49,11 @@ export function useConversation({ transport, generation, emit }) {
     content: '',
     taskId,
     status: 'queued',
-    _v2state: reactive(createChatState()),
+    // Streaming from the moment it opens, not from its first block. Leaving it
+    // 'idle' made the turn indistinguishable from a finished one before any
+    // token arrived: no waiting indicator, and copy / rating offered on an
+    // answer that did not exist yet.
+    _v2state: reactive({ ...createChatState(), status: 'streaming' }),
   })
 
   const normalizeMessages = (items) => (Array.isArray(items) ? items : []).map(normalizeConversationMessage)

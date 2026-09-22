@@ -399,11 +399,13 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
   坏的，界面上只剩一个永久禁用的按钮和一句误导的"缺少 database"。两个外壳已补上
   provide 作为过渡，等 T11-B/C 迁移后由元素自己提供。
   反馈与斜杠命令尚未收敛，见下方两项。）
-- [ ] `MessageList` 对文本块统一支持 Markdown、内联 `chart_spec`、流式 cursor、首段 / 尾部
-  活动提示。
-  （错误卡片与失败重试已完成：`errorRecovery.spec.js`。同时修掉一处死锁——流失败时只标了
-  消息、没结束 `run`，`isActive` 永远为真，输入框禁用、`retry()` 直接拒绝，错误可见但无法
-  操作。）
+- [x] `MessageList` 对文本块统一支持 Markdown、内联 `chart_spec`、流式 cursor 与等待提示。
+  （`textRendering.spec.js`。文本块改走 `splitChartSpecText`，否则 Agent 写在回答里的
+  chart_spec JSON 会原样印在正文里。顺带修正：`openAssistant` 建出的回合状态是 `idle`，
+  与"已结束"无从区分——首个 token 到达前既没有等待提示，还会在一个尚不存在的回答上给出
+  复制与评分按钮。
+  错误卡片与失败重试见 `errorRecovery.spec.js`，同时修掉一处死锁——流失败时只标了消息、
+  没结束 `run`，`isActive` 永远为真，输入框禁用、`retry()` 直接拒绝。）
 - [x] `transport.fileUrl` 同时覆盖 Markdown 相对链接、工具输出文件和历史附件；补路径编码、
   非工作区链接不改写的测试。（`fileLinks.spec.js`。`renderMarkdown` 一直支持重写相对链接，
   但**没有任何调用方传入 resolver**——Agent 在回答里写的每个产物链接都是坏的。）
@@ -426,14 +428,19 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
   失败后各说各话的情况，也就没有需要回滚的第二次调用。）
 - [x] `focusMessage(messageId)` 已提供，宿主无需穿透 Shadow DOM 查询内部节点。
   （attachment-open / message-action 事件随附件与上传能力一起做。）
-- [ ] 修正文档与类型中“已声明但未接线”的能力，package contract test 锁定公开入口。
+- [x] 修正文档与类型中“已声明但未接线”的能力，package contract test 锁定公开入口。
+  （`package-contract.spec.js`：公开导出逐个断言**有运行时值**而不只是类型——`ErrorCode`
+  曾经是"类型声明 + 运行时 undefined"，TypeScript 编译得过、一用就炸；同时反向断言 README
+  承诺的每个可选能力确实被代码读取，避免宿主去实现一个没人调用的方法。）
 
 **验收门槛**
 
 - [x] 历史加载与实时观看同一条运行，最终 DOM 结构和可操作能力一致。
-- [ ] 思考、完成后的工具输出默认折叠；交互卡片在等待状态可操作。
-- [ ] 文本图表、SQL、附件、相对文件链接、错误重试、复制和反馈各有独立回归用例。
-- [ ] SDK 的 jsdom 测试与真实浏览器 Shadow DOM 冒烟均通过。
+- [x] 思考、完成后的工具输出默认折叠；交互卡片在等待状态可操作。
+- [x] 文本图表、SQL、附件、相对文件链接、错误重试、复制和反馈各有独立回归用例。
+- [~] SDK 的 jsdom 测试全通过（136 个）。**真实浏览器 Shadow DOM 冒烟尚未做**：目前仓库里
+  没有任何页面挂载这个元素——`NL2SqlChatV2` 与 `WidgetChat` 都还是旧实现，所以在 T11-B
+  之前无处可冒烟。这一条随 T11-B 一起验收，不得在迁移中默认它已通过。
 - [ ] 在该阶段完成前，不开始删除 `NL2SqlChatV2.vue` / `WidgetChat.vue` 的旧展示。
 
 ### T11-B — 迁移 `NL2SqlChatV2.vue`

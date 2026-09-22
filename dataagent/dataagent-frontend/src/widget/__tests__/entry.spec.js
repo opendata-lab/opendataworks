@@ -18,6 +18,17 @@ vi.mock('@/api/nl2sql', () => ({
   createNl2SqlApiClient: apiMocks.createClient
 }))
 
+/** Poll until the shadow root shows `needle`, rather than guessing tick counts. */
+const waitForText = async (root, needle, attempts = 40) => {
+  for (let i = 0; i < attempts; i += 1) {
+    if (root.shadowRoot.textContent.includes(needle)) return true
+    await flushPromises()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await nextTick()
+  }
+  return false
+}
+
 describe('installWidget', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -95,11 +106,12 @@ describe('installWidget', () => {
     const root = document.querySelector('[data-odw-widget-root]')
 
     controller.sendMessage('hello from closed panel')
-    await nextTick()
-    await flushPromises()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await flushPromises()
-    await nextTick()
+
+    // Opening a closed panel mounts the chat, which loads its topic list and
+    // falls back to demo mode — several awaits deep, and how many depends on
+    // how the runner scheduled the file. A fixed tick count passed or failed
+    // according to what else was in the suite; waiting for the text does not.
+    await waitForText(root, 'hello from closed panel')
 
     expect(root.shadowRoot.textContent).toContain('hello from closed panel')
   })

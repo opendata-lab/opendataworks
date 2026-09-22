@@ -27,8 +27,15 @@
               v-if="block.type === 'text'"
               class="dac-bubble"
               part="bubble assistant-bubble"
-              v-html="markdown(block.content || block.text || '')"
-            />
+            >
+              <!-- An answer can carry a chart inline. Rendering the block as
+                   one markdown string leaks the spec JSON into the prose. -->
+              <template v-for="(segment, part) in segmentsOf(block.content || block.text || '')" :key="part">
+                <div v-if="segment.type === 'text'" v-html="markdown(segment.value)" />
+                <ChartSpecView v-else :spec="segment.spec" />
+              </template>
+              <span v-if="block.status === 'streaming'" class="dac-cursor" part="cursor" aria-hidden="true" />
+            </div>
             <ThinkingBlock
               v-else-if="block.type === 'thinking'"
               :block="block"
@@ -52,7 +59,19 @@
           </template>
         </template>
 
-        <div v-else class="dac-bubble" part="bubble assistant-bubble" v-html="markdown(message.content || '')" />
+        <!-- An open turn that has not produced anything yet. Without this the
+             conversation shows an empty bubble for however long the agent
+             spends before its first token, which reads as a stall. -->
+        <p v-else-if="isStreaming(message)" class="dac-activity" part="activity">
+          <span class="dac-activity-dot" aria-hidden="true" />{{ activityLabel }}
+        </p>
+
+        <div v-else class="dac-bubble" part="bubble assistant-bubble">
+          <template v-for="(segment, part) in segmentsOf(message.content || '')" :key="part">
+            <div v-if="segment.type === 'text'" v-html="markdown(segment.value)" />
+            <ChartSpecView v-else :spec="segment.spec" />
+          </template>
+        </div>
 
         <!-- A failed turn keeps whatever it managed to produce; the card is
              appended rather than replacing it, so a run that died mid-answer
@@ -104,6 +123,8 @@ import PermissionCard from './PermissionCard.vue'
 import QuestionCard from './QuestionCard.vue'
 import MessageActions from './MessageActions.vue'
 import { previewKindFor } from '../core/previewKind.js'
+import { splitChartSpecText } from '../core/chartSpec.js'
+import ChartSpecView from './ChartSpecView.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -111,7 +132,17 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   canRate: { type: Boolean, default: false },
   canPreviewFiles: { type: Boolean, default: false },
+  /** Shown while an open turn has produced nothing yet. */
+  activityLabel: { type: String, default: '正在处理…' },
 })
+
+/**
+ * Split answer text into prose and the charts embedded in it.
+ *
+ * An agent writes a chart as a `chart_spec` object inside its answer; rendering
+ * the whole block as one markdown string puts the raw JSON on screen.
+ */
+const segmentsOf = (text) => splitChartSpecText(text)
 
 const canPreview = (file) =>
   props.canPreviewFiles && Boolean(previewKindFor(file?.relPath || file?.name))
@@ -230,6 +261,32 @@ watch(
 }
 .dac-assistant .dac-bubble { max-width: 100%; }
 .dac-attachments { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.dac-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: dac-blink 1s step-end infinite;
+}
+@keyframes dac-blink { 50% { opacity: 0; } }
+.dac-activity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--dac-text-muted, #64748b);
+  font-size: 13px;
+}
+.dac-activity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dac-primary, #10b981);
+  animation: dac-pulse 1.2s ease-in-out infinite;
+}
+@keyframes dac-pulse { 50% { opacity: 0.25; } }
 .dac-preview-open {
   margin-left: 8px;
   padding: 0 6px;
