@@ -32,6 +32,19 @@ const waitFor = async (el, selector, attempts = 20) => {
 let created
 let revoked
 
+// jsdom's Blob predates Blob.text(). Every browser that can run a custom
+// element has it, so this belongs here rather than as a branch in the SDK.
+if (typeof Blob.prototype.text !== 'function') {
+  Blob.prototype.text = function text() {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsText(this)
+    })
+  }
+}
+
 beforeEach(() => {
   created = []
   revoked = []

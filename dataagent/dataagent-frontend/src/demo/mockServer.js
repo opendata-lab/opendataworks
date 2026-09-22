@@ -1417,7 +1417,6 @@ const demoTopics = [
           {
             block_id: 'chart-sql',
             type: 'tool_use',
-            kind: 'tool_use',
             status: 'success',
             is_error: false,
             tool_id: 'demo-tool-chart-sql',
@@ -1446,7 +1445,6 @@ const demoTopics = [
           {
             block_id: 'chart-spec',
             type: 'tool_use',
-            kind: 'tool_use',
             status: 'success',
             is_error: false,
             tool_id: 'demo-tool-chart-spec',

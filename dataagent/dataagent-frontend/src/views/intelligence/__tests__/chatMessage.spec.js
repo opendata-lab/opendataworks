@@ -132,9 +132,9 @@ describe('chatMessage helpers', () => {
       task_id: 'task-1',
       feedback: 'up',
       blocks: [
-        { kind: 'thinking', text: '想一下' },
-        { kind: 'tool_use', tool_id: 'x', tool_name: 'run-sql', output: 'ok' },
-        { kind: 'main_text', text: '结果如下' },
+        { type: 'thinking', text: '想一下' },
+        { type: 'tool_use', tool_id: 'x', tool_name: 'run-sql', output: 'ok' },
+        { type: 'main_text', text: '结果如下' },
       ],
     })
     expect(m).toMatchObject({ id: 'a1', role: 'assistant', task_id: 'task-1', feedback: 'up' })

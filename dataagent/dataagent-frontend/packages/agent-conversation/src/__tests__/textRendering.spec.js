@@ -75,7 +75,7 @@ describe('answer text', () => {
         role: 'assistant',
         content: '',
         blocks: [
-          { kind: 'main_text', content: '已完成的段落', status: 'done' }
+          { type: 'main_text', text: '已完成的段落' }
         ]
       }
     ]))

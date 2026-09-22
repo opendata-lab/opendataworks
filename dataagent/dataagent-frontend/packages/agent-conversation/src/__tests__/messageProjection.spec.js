@@ -57,9 +57,9 @@ const RECORDS = [
 
 /** The same turn, as the blocks a BFF projects server-side. */
 const BLOCKS = [
-  { kind: 'thinking', content: '先看四张表的外键。' },
-  { kind: 'tool_use', tool_id: 'tool-1', tool_name: 'read_schema', output: 'customers, products, orders, order_items' },
-  { kind: 'main_text', content: '已识别 4 张表。' }
+  { type: 'thinking', text: '先看四张表的外键。' },
+  { type: 'tool_use', tool_id: 'tool-1', tool_name: 'read_schema', output: 'customers, products, orders, order_items' },
+  { type: 'main_text', text: '已识别 4 张表。' }
 ]
 
 describe('history projection', () => {
@@ -121,7 +121,7 @@ describe('history projection', () => {
         role: 'assistant',
         content: '',
         blocks: [{
-          kind: 'question_request',
+          type: 'question_request',
           request_id: 'q-1',
           questions: [{ question: '按下单时间还是发货时间统计？', options: [{ label: '下单时间' }, { label: '发货时间' }] }]
         }]

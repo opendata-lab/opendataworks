@@ -64,7 +64,7 @@ describe('history replay', () => {
   })
 
   it('falls back to stored blocks for messages saved before records existed', () => {
-    const item = { blocks: [{ kind: 'main_text', text: '旧消息' }], status: 'success' }
+    const item = { blocks: [{ type: 'main_text', text: '旧消息' }], status: 'success' }
     const viaRecords = buildV2StateFromStoredRecords(item)
     const viaBlocks = buildV2StateFromStoredBlocks(item)
     expect(viaRecords.blocks.map((b) => b.content)).toEqual(viaBlocks.blocks.map((b) => b.content))

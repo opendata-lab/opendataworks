@@ -30,7 +30,7 @@
             >
               <!-- An answer can carry a chart inline. Rendering the block as
                    one markdown string leaks the spec JSON into the prose. -->
-              <template v-for="(segment, part) in segmentsOf(block.content || block.text || '')" :key="part">
+              <template v-for="(segment, part) in segmentsOf(block.content || '')" :key="part">
                 <div v-if="segment.type === 'text'" v-html="markdown(segment.value)" />
                 <ChartSpecView v-else :spec="segment.spec" />
               </template>

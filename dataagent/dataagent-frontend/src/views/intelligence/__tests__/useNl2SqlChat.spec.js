@@ -305,7 +305,7 @@ describe('useNl2SqlChat engine', () => {
     api.topicApi.getTopicMessages.mockResolvedValue({
       items: [
         { message_id: 'u1', sender_type: 'user', content: '问题', seq_id: 1 },
-        { message_id: 'a1', sender_type: 'assistant', task_id: 'task-done', status: 'success', blocks: [{ kind: 'main_text', text: '完成' }], seq_id: 2 },
+        { message_id: 'a1', sender_type: 'assistant', task_id: 'task-done', status: 'success', blocks: [{ type: 'main_text', text: '完成' }], seq_id: 2 },
       ],
     })
     const chat = await ready(api)
@@ -326,7 +326,7 @@ describe('useNl2SqlChat engine', () => {
     api.topicApi.getTopicMessages.mockResolvedValue({
       items: [
         { message_id: 'u1', sender_type: 'user', content: '问题', seq_id: 1 },
-        { message_id: 'a1', sender_type: 'assistant', task_id: 'task-done', status: 'success', blocks: [{ kind: 'main_text', text: '完成' }], seq_id: 2 },
+        { message_id: 'a1', sender_type: 'assistant', task_id: 'task-done', status: 'success', blocks: [{ type: 'main_text', text: '完成' }], seq_id: 2 },
       ],
     })
     const chat = await ready(api)

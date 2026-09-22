@@ -45,22 +45,6 @@ const html = ref(null)
 
 const path = computed(() => String(props.file?.relPath || props.file?.name || ''))
 
-/**
- * Blob text, without assuming `Blob.text()` exists.
- *
- * It is absent in jsdom and in older WebViews an embedded widget can be loaded
- * into, and FileReader is the one route present everywhere this package runs.
- */
-const readText = (blob) => {
-  if (typeof blob?.text === 'function') return blob.text()
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.onerror = () => reject(reader.error || new Error('读取失败'))
-    reader.readAsText(blob)
-  })
-}
-
 const release = () => {
   if (objectUrl.value) {
     URL.revokeObjectURL(objectUrl.value)
@@ -84,7 +68,7 @@ const load = async () => {
     if (kind === 'image') {
       objectUrl.value = URL.createObjectURL(blob)
     } else {
-      html.value = await readText(blob)
+      html.value = await blob.text()
     }
   } catch (cause) {
     error.value = cause?.message || '预览加载失败'

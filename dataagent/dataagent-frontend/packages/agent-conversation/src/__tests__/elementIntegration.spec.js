@@ -211,11 +211,7 @@ describe('thinking blocks', () => {
           id: 'assistant-1',
           role: 'assistant',
           content: '',
-          blocks: [{
-            type: 'thinking',
-            content: '先分析业务目标，再确认数据范围。',
-            status: 'done',
-          }],
+          blocks: [{ type: 'thinking', text: '先分析业务目标，再确认数据范围。' }],
         }],
         run: null,
       })),

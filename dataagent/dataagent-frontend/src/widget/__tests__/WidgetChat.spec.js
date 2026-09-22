@@ -697,7 +697,7 @@ describe('WidgetChat history conversations', () => {
               status: topicAFinished ? 'success' : 'running',
               task_id: 'task-a',
               content: '',
-              blocks: topicAFinished ? [{ kind: 'main_text', text: '恢复完成' }] : [],
+              blocks: topicAFinished ? [{ type: 'main_text', text: '恢复完成' }] : [],
               resume_after_seq: 7,
               seq_id: 2
             }
@@ -877,7 +877,7 @@ describe('WidgetChat history conversations', () => {
             message_id: 'msg-topic-new',
             sender_type: 'assistant',
             status: 'success',
-            blocks: [{ kind: 'main_text', text: 'smoke-ok' }],
+            blocks: [{ type: 'main_text', text: 'smoke-ok' }],
             seq_id: 1
           }]
         }
@@ -970,8 +970,8 @@ describe('WidgetChat history conversations', () => {
             sender_type: 'assistant',
             status: 'success',
             blocks: [
-              { kind: 'tool_use', tool_id: 'tool-chart', tool_name: 'Bash', input: null, output: `build ok\n${chartSpec}`, is_error: false },
-              { kind: 'main_text', text: '最近发布趋势如下。' }
+              { type: 'tool_use', tool_id: 'tool-chart', tool_name: 'Bash', input: null, output: `build ok\n${chartSpec}`, is_error: false },
+              { type: 'main_text', text: '最近发布趋势如下。' }
             ],
             seq_id: 1
           }]

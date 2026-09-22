@@ -120,30 +120,61 @@ export function buildV2StateFromStoredBlocks(item) {
   const turn = { turnIndex: 0, blocks: [], status: 'done' }
   v2state.turns.push(turn)
   let blockIdx = 0
+  const base = { turnIndex: 0, content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+  const push = (block) => {
+    turn.blocks.push(block)
+    v2state.blocks.push(block)
+  }
+
+  // Field names are the ones the backend projection emits (see the block writer
+  // in topic_task_store.py) and nothing else. Accepting a second spelling per
+  // field would be tolerating an upstream that does not exist, and each
+  // alternative is a shape nobody is left responsible for converging.
   for (const b of storedBlocks) {
-    const kind = String(b?.kind || b?.type || '')
-    const blockContent = String(b?.content ?? b?.text ?? '')
-    if (kind === 'thinking' && blockContent) {
-      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: blockContent, status: 'done', id: b?.id || null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if ((kind === 'main_text' || kind === 'text') && blockContent) {
-      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: blockContent, status: 'done', id: b?.id || null, name: null, inputJson: '', input: null, output: null, is_error: false }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'tool_use') {
-      // SDK-derived format: flat tool_id / tool_name / input / output / is_error.
-      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.id || b.tool_id || null, name: b.name || b.tool_name || 'Tool', inputJson: b.inputJson || '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'permission_request') {
-      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'permission_request', content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false, requestId: b.requestId || b.request_id || '', tool_name: b.tool_name || '', risk_level: b.risk_level || 'high', title: b.title || '', summary: b.summary || '', payload_preview: b.payload_preview ?? null, decision: b.decision || 'pending', note: b.note || '', decided_at: b.decided_at || '' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
-    } else if (kind === 'question_request') {
-      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'question_request', content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false, requestId: b.requestId || b.request_id || '', questions: Array.isArray(b.questions) ? b.questions : [], answers: Array.isArray(b.answers) ? b.answers : [], answered: Boolean(b.answered), answered_at: b.answered_at || '' }
-      turn.blocks.push(block)
-      v2state.blocks.push(block)
+    const text = String(b?.text ?? '')
+    switch (String(b?.type || '')) {
+      case 'thinking':
+        if (text) push({ ...b, ...base, blockIndex: blockIdx++, type: 'thinking', content: text })
+        break
+      case 'main_text':
+        if (text) push({ ...b, ...base, blockIndex: blockIdx++, type: 'text', content: text })
+        break
+      case 'tool_use':
+        push({
+          ...b, ...base, blockIndex: blockIdx++, type: 'tool_use',
+          id: b.tool_id || null,
+          name: b.tool_name || 'Tool',
+          input: b.input ?? null,
+          output: b.output ?? null,
+          is_error: Boolean(b.is_error),
+        })
+        break
+      case 'permission_request':
+        push({
+          ...b, ...base, blockIndex: blockIdx++, type: 'permission_request',
+          requestId: b.request_id || '',
+          tool_name: b.tool_name || '',
+          risk_level: b.risk_level || 'high',
+          title: b.title || '',
+          summary: b.summary || '',
+          payload_preview: b.payload_preview ?? null,
+          decision: b.decision || 'pending',
+          note: b.note || '',
+          decided_at: b.decided_at || '',
+        })
+        break
+      case 'question_request':
+        push({
+          ...b, ...base, blockIndex: blockIdx++, type: 'question_request',
+          requestId: b.request_id || '',
+          questions: Array.isArray(b.questions) ? b.questions : [],
+          answers: Array.isArray(b.answers) ? b.answers : [],
+          answered: Boolean(b.answered),
+          answered_at: b.answered_at || '',
+        })
+        break
+      default:
+        break
     }
   }
   const content = String(item?.content || '')
