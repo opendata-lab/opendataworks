@@ -1,1 +1,4 @@
 export { defineAgentConversation, DEFAULT_TAG } from './element.js'
+export { createHttpTransport } from './transport/http.js'
+export { ConversationError, ErrorCode, StreamInterrupted } from './transport/errors.js'
+export { toRunStatus, ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './core/runStatus.js'

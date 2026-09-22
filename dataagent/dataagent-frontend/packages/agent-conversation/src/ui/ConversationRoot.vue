@@ -1,5 +1,5 @@
 <template>
-  <div class="dac-root">
+  <div class="dac-root" part="root">
     <MessageList
       :messages="conversation.messages.value"
       :file-url="fileUrl"
@@ -148,8 +148,9 @@ defineExpose({
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
-  font-size: 14px;
-  color: #0f172a;
+  font-family: var(--dac-font-family, Inter, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif);
+  font-size: var(--dac-font-size, 14px);
+  color: var(--dac-text-color, #0f172a);
+  background: var(--dac-bg, transparent);
 }
 </style>

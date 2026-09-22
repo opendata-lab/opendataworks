@@ -1,6 +1,6 @@
 <template>
-  <div class="dac-messages" ref="scrollRef">
-    <div v-if="!messages.length" class="dac-empty">
+  <div class="dac-messages" part="messages" ref="scrollRef">
+    <div v-if="!messages.length" class="dac-empty" part="empty">
       <slot name="empty">暂无消息</slot>
     </div>
 
@@ -9,12 +9,13 @@
       :key="message.id"
       class="dac-message"
       :class="`dac-message-${message.role}`"
+      :part="`message message-${message.role}`"
     >
       <!-- A user turn is plain text. Rendering it as markdown would let a
            pasted snippet change how the page looks. -->
-      <div v-if="message.role === 'user'" class="dac-bubble">{{ message.content }}</div>
+      <div v-if="message.role === 'user'" class="dac-bubble" part="bubble user-bubble">{{ message.content }}</div>
 
-      <div v-else class="dac-assistant">
+      <div v-else class="dac-assistant" part="assistant-turn">
         <!-- Blocks are the live shape: a streaming turn has them before it has
              any content, and interaction requests only ever exist here. A
              renderer that reads `content` alone shows an empty conversation
@@ -24,11 +25,13 @@
             <div
               v-if="block.type === 'text'"
               class="dac-bubble"
+              part="bubble assistant-bubble"
               v-html="renderMarkdown(block.content || block.text || '')"
             />
             <div
               v-else-if="block.type === 'thinking'"
               class="dac-thinking"
+              part="thinking"
               v-html="renderMarkdown(block.content || block.text || '')"
             />
             <ToolOutput
@@ -50,10 +53,10 @@
           </template>
         </template>
 
-        <div v-else class="dac-bubble" v-html="renderMarkdown(message.content || '')" />
+        <div v-else class="dac-bubble" part="bubble assistant-bubble" v-html="renderMarkdown(message.content || '')" />
       </div>
 
-      <ul v-if="message.attachments?.length" class="dac-attachments">
+      <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
         <li v-for="file in message.attachments" :key="file.relPath">
           <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
         </li>
@@ -109,24 +112,28 @@ watch(
 
 <style>
 .dac-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
-.dac-empty { color: #64748b; font-size: 14px; }
+.dac-empty { color: var(--dac-text-muted, #64748b); font-size: 14px; }
 .dac-message { margin-bottom: 14px; display: flex; }
 .dac-message-user { justify-content: flex-end; }
 .dac-assistant { width: 100%; display: flex; flex-direction: column; gap: 8px; }
 .dac-bubble {
   max-width: 82%;
   padding: 10px 13px;
-  border-radius: 14px;
-  background: #f1f5f9;
+  border-radius: var(--dac-bubble-radius, 14px);
+  background: var(--dac-assistant-bubble-bg, #f1f5f9);
+  color: var(--dac-assistant-bubble-color, inherit);
   line-height: 1.65;
   word-break: break-word;
 }
-.dac-message-user .dac-bubble { background: #ecfdf5; color: #065f46; }
+.dac-message-user .dac-bubble {
+  background: var(--dac-user-bubble-bg, #ecfdf5);
+  color: var(--dac-user-bubble-color, #065f46);
+}
 .dac-assistant .dac-bubble { max-width: 100%; }
 .dac-thinking {
   font-size: 13px;
-  color: #64748b;
-  border-left: 2px solid #cbd5e1;
+  color: var(--dac-text-muted, #64748b);
+  border-left: 2px solid var(--dac-border-color, #cbd5e1);
   padding-left: 10px;
   line-height: 1.6;
 }
