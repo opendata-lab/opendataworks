@@ -38,7 +38,32 @@ mvn -f pom.xml -pl backend -am spring-boot:run
 - 配置文件 `application.yml` 中的 `spring.datasource.url` 已指向 `opendataworks`。
 - 开启调试日志：`mvn -f pom.xml -pl backend -am spring-boot:run -Dspring-boot.run.arguments="--logging.level.com.onedata.portal=DEBUG"`。
 
-## 第三步：启动前端 (Vue3)
+## 第三步：启动 DataAgent
+
+DataAgent 的 `config.py` 使用相对路径 `.env`，因此本地启动时必须先进入 `dataagent/dataagent-backend` 目录。如果从仓库根目录或其他目录直接运行 `uvicorn`，可能读不到本地 `.env`，并回退到容器默认路径 `/dataagent_runtime`；该路径在 macOS 本地根文件系统上不可写，会导致会话创建后报 `Errno 30: Read-only file system`。
+
+本地 `.env` 至少需要使用可写的运行时目录，并指向仓库内的 Skills：
+
+```dotenv
+DATAAGENT_RUNTIME_ROOT=/tmp/dataagent_runtime
+DATAAGENT_HOST_ROOT=/tmp/dataagent_runtime
+SKILLS_ROOT_DIR=<仓库绝对路径>/dataagent/.claude/skills
+```
+
+使用项目虚拟环境启动：
+
+```bash
+# 先在仓库根目录执行
+cd dataagent/dataagent-backend
+
+./.venv-py313/bin/python -c "import fastapi, uvicorn, alembic, pymysql, anyio, claude_agent_sdk"
+./.venv-py313/bin/alembic upgrade head
+./.venv-py313/bin/uvicorn main:app --host 127.0.0.1 --port 8900
+```
+
+启动后不要只检查 `/api/v1/nl2sql/health`。至少在真实前端中选择一个带 Skills 的助手并提交一次最小会话，确认 topic 创建、任务执行、事件流与最终消息持久化都成功。健康检查为绿不代表会话工作区一定可写。
+
+## 第四步：启动前端 (Vue3)
 
 ```bash
 cd frontend
@@ -70,6 +95,7 @@ npm run dev
 | “Access denied for user 'opendataworks'” | 确认数据库用户/密码已创建；`mysql -uopendataworks -popendataworks123 opendataworks -e "SHOW TABLES;"` |
 | 调度接口 500 | 检查后端日志；确认系统管理 -> Dolphin 配置（URL/token/Project）正确且 OpenAPI 可访问 |
 | 前端跨域 | 检查 `frontend/vite.config.js` 中 `server.proxy` 是否指向正确的 backend / dataagent 地址 |
+| DataAgent 会话报 `/dataagent_runtime` 只读 | 确认从 `dataagent/dataagent-backend` 目录启动，并检查 `.env` 中 `DATAAGENT_RUNTIME_ROOT` / `DATAAGENT_HOST_ROOT` 指向本地可写目录 |
 | 示例数据缺失 | 确认 Flyway 迁移已完成；如需演示数据可根据业务手工插入 |
 | Doris 集群不可用 | 在 `doris_cluster` 表中配置 FE 地址，并在 Portal 中标记 `is_default=1` |
 

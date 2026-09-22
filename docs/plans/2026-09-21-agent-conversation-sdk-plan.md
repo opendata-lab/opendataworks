@@ -215,7 +215,9 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - 原生流是无名 `data:` 帧、靠 EOF 终止，EOF 无法区分"跑完"和"断线"；适配器在 EOF 后
   查任务状态，**只有真正终态才合成 terminal**，否则抛中断走重连。
 
-未完成：把 `WidgetChat.vue` 的消息区与输入区换成 `<dataagent-conversation>`。
+未完成：把 `NL2SqlChatV2.vue` 与 `WidgetChat.vue` 的消息区和输入区换成
+`<dataagent-conversation>`。2026-09-22 复核发现 SDK 尚未达到 SPA 功能对等，具体门槛与
+拆分步骤见 T11；在 T11-A 完成前不得直接删除任一外壳的旧消息实现。
 
 **为什么单独拆出来做。** 这个组件 1197 行，消息渲染与登录态、历史抽屉、悬浮几何、
 埋点、斜杠命令、权限卡片交织在一起，从 `useNl2SqlChat` 解构了约 25 个值。它的回归保护
@@ -361,6 +363,123 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - [x] 补充 `httpTransport.spec.js` 测试用例（通过 17 项测试）。
 - [x] 彻底重写 `README.md`，删除过时的 T1 占位描述，提供全量开发指南。
 - [x] 全量测试验证通过（`npm run test:sdk` 77/77 绿）。
+
+---
+
+## T11 — SDK 功能对齐与 DataAgent 外壳收敛（2026-09-22 复核）
+
+**产出：** SDK 成为消息区与 composer 的唯一实现；SPA 和 Widget 只保留产品外壳。
+详细职责边界与差距矩阵见设计 §15。
+
+### T11-A — SDK 功能对等（迁移硬门槛）
+
+**涉及文件**
+
+- `packages/agent-conversation/src/core/useConversation.js`
+- `packages/agent-conversation/src/core/message.js`
+- `packages/agent-conversation/src/ui/ConversationRoot.vue`
+- `packages/agent-conversation/src/ui/MessageList.vue`
+- `packages/agent-conversation/src/ui/Composer.vue`
+- `packages/agent-conversation/src/ui/ThinkingBlock.vue`
+- `packages/agent-conversation/src/ui/ToolOutput.vue`
+- `packages/agent-conversation/src/element.js`
+- `packages/agent-conversation/types/index.d.ts`
+- SDK 单元、集成与真实浏览器测试
+
+**步骤**
+
+- [x] 历史消息与实时消息统一走同一套 reducer；补 records-only、blocks-only、多 turn、错误
+  终态和 interaction block 的对照测试。
+  （`messageProjection.spec.js`：两种来源渲染出的 DOM 逐字节相同。此前 blocks 投影没有
+  `question_request` 分支，重载一条停在提问上的运行会丢掉整张卡片，运行再也无法恢复。）
+- [x] 深度思考提取为 SDK 组件，历史与流式默认折叠、可独立展开。
+- [x] `ConversationRoot` provide 响应式 transport；SQL 面板不再依赖应用私有的
+  `nl2sqlTopicId`，会话身份由 transport 自带。
+  （原先 SDK 里**没有任何 `provide`**，注入恒为 `null`：SQL 执行自面板搬进包里就一直是
+  坏的，界面上只剩一个永久禁用的按钮和一句误导的"缺少 database"。两个外壳已补上
+  provide 作为过渡，等 T11-B/C 迁移后由元素自己提供。
+  反馈与斜杠命令尚未收敛，见下方两项。）
+- [ ] `MessageList` 对文本块统一支持 Markdown、内联 `chart_spec`、流式 cursor、首段 / 尾部
+  活动提示。
+  （错误卡片与失败重试已完成：`errorRecovery.spec.js`。同时修掉一处死锁——流失败时只标了
+  消息、没结束 `run`，`isActive` 永远为真，输入框禁用、`retry()` 直接拒绝，错误可见但无法
+  操作。）
+- [ ] `transport.fileUrl` 同时覆盖 Markdown 相对链接、工具输出文件和历史附件；补路径编码、
+  非工作区链接不改写的测试。
+- [x] 增加消息时间与复制；只有 `submitFeedback` 存在时显示点赞 / 点踩，并验证乐观更新失败
+  后回滚。（`messageActions.spec.js`。`submitFeedback` 的类型签名原本与实现对不上——声明的是
+  位置参数加数值，改成与实现一致的 `{ messageId, feedback }`。）
+- [ ] 定义通用附件模型和可选上传 contract；composer 支持上传状态、移除、随消息发送，
+  transport 负责映射到 DataAgent 工作区引用。缺少上传能力时不显示入口。
+- [ ] 增加可选文件读取 contract 和 SDK 内建预览器：图片使用可回收 Blob URL，HTML 使用
+  无权限 sandbox iframe + 默认 CSP；缺少读取能力时保留下载、隐藏预览。
+- [ ] 在 composer 内真正接入可选斜杠命令，包括输入过滤、上下键、Enter、Esc 和 IME；
+  transport 缺失时完全不渲染菜单。
+- [ ] 增加 `composerConfig`，由宿主提供 Provider / Model、权限模式、斜杠命令与预置问题；
+  SDK 渲染选择器并将当前 `settings` 随发送请求交给 transport。`setPermissionMode` 失败时回滚。
+- [x] `focusMessage(messageId)` 已提供，宿主无需穿透 Shadow DOM 查询内部节点。
+  （attachment-open / message-action 事件随附件与上传能力一起做。）
+- [ ] 修正文档与类型中“已声明但未接线”的能力，package contract test 锁定公开入口。
+
+**验收门槛**
+
+- [x] 历史加载与实时观看同一条运行，最终 DOM 结构和可操作能力一致。
+- [ ] 思考、完成后的工具输出默认折叠；交互卡片在等待状态可操作。
+- [ ] 文本图表、SQL、附件、相对文件链接、错误重试、复制和反馈各有独立回归用例。
+- [ ] SDK 的 jsdom 测试与真实浏览器 Shadow DOM 冒烟均通过。
+- [ ] 在该阶段完成前，不开始删除 `NL2SqlChatV2.vue` / `WidgetChat.vue` 的旧展示。
+
+### T11-B — 迁移 `NL2SqlChatV2.vue`
+
+**保留在 SPA**
+
+- Agent 欢迎页和 Agent 选择；Provider / Model、权限模式与预置问题改由 SDK 的
+  `composerConfig` 渲染。
+- Topic 新建、搜索、筛选、排序、portal / widget / all 审计视图。
+- URL 路由和右侧产物树；消息附件的 HTML / 图片预览由 SDK 负责。
+
+**步骤**
+
+- [ ] 在 Vue 编译配置中声明 `dataagent-*` 为 custom element，并在应用入口幂等注册元素。
+- [ ] 用 `<dataagent-conversation>` 替换当前消息循环和 composer；模型、权限等宿主控件
+  通过明确的属性、事件或插槽连接，不访问 shadowRoot 内部节点。
+- [ ] `transportFactory(endpoint)` 解析 `topic://{topic_id}` 并创建
+  `createNl2SqlTransport`；新会话使用 `endpointResolver` 延迟创建 Topic。
+- [ ] Topic 切换只修改 `endpoint`；新建会话清空 endpoint；不得手工替换 transport、调用
+  `reload()` 模拟切换或并行保留 `useNl2SqlChat` 流状态机。
+- [ ] 用 `dataagent-run-change` 更新 Topic 状态，用 `dataagent-complete` 刷新 Topic / 产物，用
+  `dataagent-error` 提示错误，用 `focusMessage` 完成路由定位。
+- [ ] 为 widget / all 管理视图提供独立只读 transport，元素设置 `disabled`；SDK 不包含来源判断。
+- [ ] 功能对等测试通过后，删除页面内消息块渲染、thinking 状态、旧 composer、旧流状态和
+  对应 CSS；保留外壳逻辑。
+
+**验收门槛**
+
+- [ ] 新建 Topic 首次发送、已有 Topic 恢复、运行中切换离开 / 返回、取消、权限确认、提问
+  回答、失败重试全部通过。
+- [ ] 上传附件并发送、生成附件下载 / 预览、文本图表、SQL 工具、斜杠命令、模型与权限模式
+  均无功能回退。
+- [ ] `?agent=&topic=&message=` 深链、portal / widget / all 只读审计行为保持不变。
+- [ ] `NL2SqlChatV2.vue` 不再直接 import 或渲染 Thinking / ToolOutput / Permission / Question
+  等消息组件。
+
+### T11-C — 迁移 `WidgetChat.vue` 并删除分叉
+
+- [ ] 复用同一个元素、同一个 `createNl2SqlTransport` 和 `topic://` 切换语义。
+- [ ] 保留 Widget 登录、历史抽屉、悬浮几何、宿主事件与埋点；删除消息区和 composer 重复实现。
+- [ ] 修复并纳管三形态 Playwright 基线，不再依赖 `output/playwright/` 中未跟踪脚本。
+- [ ] SPA、Widget、mock BFF、React tarball 四条消费路径通过后，确认仓库中只有 SDK 一份消息
+  渲染和单会话状态机。
+
+### T11 验证命令与场景
+
+- [ ] `npm run test:sdk`
+- [ ] `npm test`
+- [ ] `npm run build && npm run build:widget && npm run build:sdk`
+- [ ] 真实浏览器覆盖：历史恢复、实时流、Topic 切换、等待输入、等待确认、附件、图表、错误
+  重试、只读审计、路由定位。
+- [ ] 本地环境可用时跑一条真实 DataAgent HTTP + SSE 全链路；若未跑，报告中明确仅完成前端层
+  验证，不得写“完全验证”。
 
 ---
 

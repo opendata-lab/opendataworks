@@ -21,20 +21,25 @@
           data-action="revert"
           @click="revertSql"
         >还原</button>
-        <select v-model.number="limit" class="sql-panel-limit" :disabled="!executable || running" aria-label="返回行数上限">
-          <option :value="100">100 行</option>
-          <option :value="500">500 行</option>
-          <option :value="1000">1000 行</option>
-        </select>
-        <button
-          type="button"
-          class="sql-panel-btn sql-panel-btn-primary"
-          data-action="execute"
-          :disabled="running || !currentSql.trim() || !executable"
-          :title="!executable ? '缺少 database，无法执行' : ''"
-          @click="executeSql"
-        >{{ running ? '执行中…' : '执行' }}</button>
-        <span v-if="!executable" class="sql-panel-hint">缺少 database</span>
+        <!-- Execution is a host capability, not a panel feature. A host that
+             cannot run SQL gets no controls at all, rather than a permanently
+             disabled button explaining a limit that is not the real one. -->
+        <template v-if="canExecute">
+          <select v-model.number="limit" class="sql-panel-limit" :disabled="!executable || running" aria-label="返回行数上限">
+            <option :value="100">100 行</option>
+            <option :value="500">500 行</option>
+            <option :value="1000">1000 行</option>
+          </select>
+          <button
+            type="button"
+            class="sql-panel-btn sql-panel-btn-primary"
+            data-action="execute"
+            :disabled="running || !currentSql.trim() || !executable"
+            :title="!executable ? '缺少 database，无法执行' : ''"
+            @click="executeSql"
+          >{{ running ? '执行中…' : '执行' }}</button>
+          <span v-if="!executable" class="sql-panel-hint">缺少 database</span>
+        </template>
       </div>
     </div>
 
@@ -53,7 +58,7 @@
 </template>
 
 <script setup>
-import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
 import { useCopyFeedback } from '../../utils/useCopyFeedback.js'
 import ResultDataTable from './ResultDataTable.vue'
 
@@ -84,9 +89,11 @@ async function loadCodeMirror() {
 // degrades to read-only rather than reaching for a client of its own —
 // OntoFoundry is exactly that case: an ontology platform has no business
 // running arbitrary SQL.
-const transport = inject('agentConversationTransport', null)
-const injectedTopicId = inject('nl2sqlTopicId', ref(''))
-const canExecute = computed(() => typeof transport?.executeSql === 'function')
+// Injected as a ref so switching conversations swaps the transport underneath
+// this panel; a plain object stays supported for hosts that provide one.
+const injectedTransport = inject('agentConversationTransport', null)
+const transport = computed(() => unref(injectedTransport))
+const canExecute = computed(() => typeof transport.value?.executeSql === 'function')
 
 const props = defineProps({
   sql: { type: String, default: '' },
@@ -203,13 +210,15 @@ const executeSql = async () => {
   running.value = true
   executeError.value = ''
   try {
-    const topicId = typeof injectedTopicId === 'object' && injectedTopicId !== null ? injectedTopicId.value : (injectedTopicId || '')
-    const result = await transport.executeSql({
+    // Conversation identity belongs to the transport, which is built per
+    // endpoint and attaches it itself. The panel used to read an app-private
+    // `nl2sqlTopicId` injection for the same value, which made a generic SQL
+    // renderer depend on one product's naming.
+    const result = await transport.value.executeSql({
       sql: currentSql.value,
       database: props.database,
       engine: props.engine || undefined,
-      limit: limit.value,
-      topicId: topicId || undefined
+      limit: limit.value
     })
     executeResult.value = result
     if (result?.error) {

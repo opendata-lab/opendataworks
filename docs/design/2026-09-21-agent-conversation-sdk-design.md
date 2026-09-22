@@ -126,7 +126,7 @@ transport 的可选方法缺失时，SDK **静默关闭对应 UI，不得抛错*
 | --- | --- |
 | `executeSql` | SQL 面板降级为只读：语法高亮 + 复制按钮，隐藏"执行"，不显示结果表格 |
 | `listSlashCommands` | 输入 `/` 不弹菜单 |
-| `setPermissionMode` | 不渲染权限模式切换器 |
+| `setPermissionMode` | 预留给宿主 transport 适配；SDK v1 不内建权限模式选择器 |
 | `submitFeedback` | 不渲染点赞/点踩 |
 
 OntoFoundry 的 BFF 只实现必选方法，因此建模工作台里 SQL 卡片是只读的——这是正确的，本体平台不该具备执行任意 SQL 的能力。
@@ -659,3 +659,117 @@ CSS 变量具有跨越 Shadow DOM 边界自然继承的特性，宿主直接在�
 - `HTMLElementTagNameMap`: 让 `document.querySelector('dataagent-conversation')` 自动推导出 `AgentConversationElement` 及其完整属性与方法。
 - `JSX.IntrinsicElements`: 让 React / TSX 模板中直接书写 `<dataagent-conversation>` 时不报错，并支持传入全部 attributes。
 
+## 15. SPA / Widget 收敛前的能力对齐（2026-09-22 复核）
+
+### 15.1 复核结论
+
+当前包已经具备可嵌入的单会话内核、基础消息块、传输契约和 Web Component
+外壳，但还不能被视为 DataAgent 会话 UI 的唯一实现。`NL2SqlChatV2.vue` 与
+`WidgetChat.vue` 仍保留自己的消息列表、输入框和运行状态展示；包内 README / 类型
+声明中的一部分可选能力也尚未由 `ConversationRoot` 实际消费。
+
+因此，不能直接把 SPA 中间区域替换成 `<dataagent-conversation>` 后删除旧实现。迁移前
+必须先完成能力对齐，否则会丢失附件、错误重试、消息反馈、内联图表、工作区文件链接、
+斜杠命令和只读审计会话等已有行为。
+
+这不是改变 §3、§5.1 的单会话边界，而是把已经属于“单会话”的展示和交互完整收回 SDK。
+BFF 仍只做协议与认证适配，不投影 UI 状态、不拼装展示块。
+
+### 15.2 最终职责边界
+
+一个能力只有同时满足以下条件，才值得封装进 SDK：
+
+1. **属于单个会话。** 切换 Topic 后该状态应整体重置，不需要读取会话列表或产品路由。
+2. **跨宿主语义一致。** DataAgent SPA、Widget、OntoFoundry 对它的正确解释相同；宿主不应
+   各自解析 message block、运行状态或 Shadow DOM。
+3. **可由通用 transport 表达。** 包内不需要知道 DataAgent 私有 URL、Agent 配置、审计来源
+   或业务资源 ID；宿主不支持时可以通过缺少可选方法自然降级。
+
+满足前两项但不满足第三项的能力，先留在外壳，不为迁移制造 DataAgent 专用 SDK API。
+
+按此规则，T11-A 的封装决定如下：
+
+| 决定 | 能力 | 原因 |
+| --- | --- | --- |
+| 必须进入 SDK | 历史 / 实时消息投影、运行状态、思考 / 工具 / 权限 / 提问 / 错误渲染 | 宿主自行解释会直接产生协议和展示分叉 |
+| 必须进入 SDK | Markdown、内联图表、消息时间、复制、重试、自动滚动、消息定位 | 都是单条会话的稳定展示行为，不含产品策略 |
+| 可选进入 SDK | 反馈、SQL 执行、斜杠命令、附件上传 | 是通用会话能力，但并非所有宿主都允许；由 transport 能力检测启用 |
+| 必须进入 SDK | Provider / Model、权限模式选择器、预置问题 | 都属于单会话 composer；宿主提供选项和初始值，SDK 统一交互并把选择随发送请求传给 transport |
+| 必须进入 SDK | 消息附件的 HTML / 图片预览 | SDK 统一预览体验和安全默认值；宿主只提供受鉴权保护的文件读取能力，仍可通过 capability 关闭 |
+| 留在外壳 | Topic 列表、搜索筛选、审计来源、URL 路由 | 超出单会话范围 |
+| 留在外壳 | 右侧产物树、登录、Widget 几何、埋点 | 是页面 / 产品集成能力，不应污染会话协议 |
+
+| 能力 | SDK 负责 | DataAgent SPA / Widget 外壳负责 |
+| --- | --- | --- |
+| 单会话装载、发送、取消、恢复、流重连 | 是 | 否 |
+| 历史 / 实时消息统一投影 | 是 | 否 |
+| Markdown、内联图表、思考、工具、权限、提问、错误块 | 是 | 否 |
+| 消息时间、复制、可选反馈、附件展示 | 是 | 否 |
+| 输入框、斜杠命令、可选附件上传、运行状态 | 是 | 否 |
+| Agent 选择 | 否 | 是；Agent 会改变 Topic 列表、能力和路由，超出单会话 |
+| Provider / Model 选择 | 是 | 提供配置、初始值和可用性；不重复渲染控件 |
+| 权限模式选择 | 是 | 提供配置、初始值和持久化 transport；不重复渲染控件 |
+| 预置问题 | 是 | 提供配置；SDK 负责空会话展示、填入和发送 |
+| Topic 列表、新建、删除、搜索、筛选、审计 | 否 | 是 |
+| URL 路由与 `agent` / `topic` / `message` 查询参数 | 否 | 是；消息定位调用 SDK 方法 |
+| 消息附件 HTML / 图片预览 | 是 | 提供文件读取、鉴权和产品级审计策略 |
+| 右侧产物树、站点登录、Widget 几何与埋点 | 否 | 是 |
+
+这里的“可选”不是“SDK 可以不实现”，而是 **SDK 完整实现，宿主按 capability 启用**。
+例如没有 `uploadFile` 时不显示附件按钮，没有 `submitFeedback` 时不显示反馈按钮，没有
+模型或权限模式选项时不渲染对应选择器。宿主不得为已关闭的能力保留另一套消息区实现。
+
+SDK 不硬编码 DataAgent 的模型、权限文案或预置问题。宿主通过 `composerConfig` 提供选项与
+初始值，SDK 持有单会话内的当前选择；发送时统一写入 `settings`。权限模式已有会话的即时
+持久化走可选 `setPermissionMode`，失败时 SDK 回滚选择并报告错误。Agent 选择仍留在外壳，
+因为它同时决定 Topic 集合、路由和整个 capability 配置。
+
+### 15.3 当前能力差距
+
+| 领域 | SPA 当前行为 | SDK 当前状态 | 迁移要求 |
+| --- | --- | --- | --- |
+| 历史投影 | 用 stored records 重放，兼容旧 blocks | `MessageList` 只读取 `_v2state.blocks` / `blocks`，忽略 `records` | 使用同一个 reducer 生成历史与实时 blocks |
+| 思考块 | 默认折叠，可独立展开 | 2026-09-22 已补 `ThinkingBlock` | 保留完成态 / 流式态契约测试 |
+| 工具输出 | 支持图表、SQL、文件链接 | 卡片存在，但根组件未 provide transport，且未传文件解析器 | `ConversationRoot` provide 当前 transport；`MessageList` 传 `fileUrlResolver` |
+| 文本图表 | 识别正文中的 `chart_spec` | 仅 Markdown | 将文本分段与图表渲染收回 SDK |
+| 运行反馈 | 首段 / 尾部活动提示、错误卡片、重试 | 仅 composer 状态与 `dataagent-error` | SDK 渲染活动 / 错误状态并提供重试 |
+| 消息操作 | 时间、复制、点赞 / 点踩 | 未渲染；`submitFeedback` 仅声明 | 复制内建，反馈在 transport 支持时显示 |
+| 工作区链接 | Markdown 相对链接与工具文件都按 topic 解析 | 普通 Markdown 相对链接未改写 | 所有消息内文件入口统一走 `transport.fileUrl` |
+| 附件 | 上传、待发送 chips、消息附件、下载 / 预览 | 仅历史附件下载链接 | 增加可选上传 / 文件读取契约、发送附件参数和内建 HTML / 图片预览；保留 attachment-open 事件用于审计 |
+| 斜杠命令 | 输入、键盘导航、命令列表 | transport 类型有声明，根组件未消费 | 在 SDK composer 内实现，缺能力时静默隐藏 |
+| 模型 / 权限 | Provider、Model、权限模式选择 | 只有插槽与未消费的 `setPermissionMode` | `composerConfig` 驱动内建选择器，发送时通过 `settings` 传给 transport |
+| 预置问题 | 空会话快捷问题 | 无 | `composerConfig.suggestions` 驱动，选择后由 SDK 发送 |
+| 消息定位 | URL `message` 定位并高亮 | Shadow DOM 无定位方法 | 增加 `focusMessage(messageId)` |
+| 只读审计 | portal / widget / all 使用不同读接口 | 只有 portal topic 直连 transport | 外壳提供只读 transport；元素使用 `disabled`，SDK 不感知审计来源 |
+
+### 15.4 公开契约补充
+
+能力对齐优先扩展通用契约，不允许把 DataAgent 私有 API 放进包内：
+
+- `ConversationTransport` 可选增加附件上传能力；缺失时 composer 不显示上传入口。
+- `ConversationTransport` 可选增加 `fetchFile`，以 `text` 或 `blob` 读取带鉴权的会话文件。
+  SDK 用它实现 HTML / 图片预览；HTML 放入无权限 sandbox iframe，并注入默认 CSP，图片使用
+  Blob URL 且关闭弹窗时释放。没有该能力时保留下载，不显示预览按钮。
+- `sendMessage` 的输入扩展为可选附件列表。SDK 负责本地消息的展示一致性，transport
+  负责把通用附件映射成 DataAgent 当前使用的工作区引用。
+- 元素新增 `composerConfig` 对象属性，包含 `providers`、`providerId`、`model`、
+  `permissionModes`、`permissionMode`、`slashCommands` 与 `suggestions`。SDK 不提供任何
+  DataAgent 固定枚举。
+- `sendMessage` 的输入增加 `settings: { providerId, model, permissionMode }`；transport 只做
+  字段映射，不从页面闭包读取另一份选择状态。
+- `ConversationRoot` 必须向工具、SQL、反馈、斜杠命令等子组件 provide 当前 transport；
+  endpoint 切换后注入引用同步变化。
+- 新增附件点击、预览开关、配置变化和消息反馈变化等 composed DOM 事件，供宿主做审计、
+  埋点或同步外部状态，但不得要求宿主重新解析消息块。
+- 新增 `focusMessage(messageId)`，只负责 SDK 内滚动和短暂高亮；URL 解析仍由宿主完成。
+- 文档与类型只描述已经有测试证明的能力。声明但未接线的可选方法必须实现或明确标记为
+  预留，不能继续作为已交付功能宣传。
+
+### 15.5 收敛顺序
+
+1. 先补 SDK 能力和契约测试，保持 SPA / Widget 旧展示不动，建立功能对等基线。
+2. 再让 `NL2SqlChatV2.vue` 保留产品外壳，只用 `<dataagent-conversation>` 替换消息区与
+   composer；切换 Topic 只更新 `endpoint=topic://{topic_id}`。
+3. SPA 稳定后迁移 `WidgetChat.vue`，保留登录、历史抽屉、悬浮几何与埋点。
+4. 两个外壳都通过回归后，删除旧消息模板、旧 composer、重复状态机和对应样式；不得长期
+   保留“新旧两套都能走”的兼容分支。

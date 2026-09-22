@@ -4,7 +4,7 @@ Embeddable AI agent conversation Web Component for the OpenDataWorks DataAgent r
 
 - **Framework-Agnostic**: Pure W3C Custom Element. Works seamlessly with React, Vue 3, Angular, Svelte, or plain Vanilla HTML.
 - **Zero External Runtime Dependencies**: Runtime, message rendering, and styles are bundled internally. No external CSS stylesheet import needed. Styles are encapsulated in Shadow DOM without bleeding into or inheriting unwanted rules from the host page.
-- **Built-in Conversation Kernel**: Streaming SSE decoder, run state machine, thought collapsible blocks, tool output rendering, permission/question interaction cards, and file attachments.
+- **Built-in Conversation Kernel**: Streaming SSE decoder, run state machine, thought blocks that are collapsed by default, tool output rendering, permission/question interaction cards, and file attachments.
 - **Secure BFF Proxy Architecture**: The browser element never talks directly to DataAgent or leaks API credentials. All communication proxies through your backend (BFF).
 - **High Extensibility**: First-class CSS Custom Properties (`--dac-*`) design tokens, CSS Shadow Parts (`::part(...)`), flexible slot projections, and extensible transport layer with custom auth headers and credentials.
 
@@ -229,6 +229,18 @@ Access methods via DOM reference (`ref` or `document.getElementById`):
 | `reload()` | `() => Promise<void>` | Refetches the current conversation snapshot and restores the active run if any. |
 | `cancel()` | `() => Promise<void>` | Cancels the currently executing agent task. No-op if idle. |
 | `focus()` | `() => void` | Focuses the composer textarea. |
+| `focusMessage(messageId)` | `(messageId: string) => Promise<boolean>` | Scrolls one message into view and highlights it briefly. Returns `false` when that message is not in this conversation. Use this for deep links instead of querying the shadow root, which couples the host to internal markup. |
+
+### Optional Transport Capabilities
+
+The element is capability-driven: a control appears only when the transport can
+serve it. Omitting a method is the supported way to turn a feature off — nothing
+is rendered that would silently discard the user's action.
+
+| Transport method | When present | When absent |
+| --- | --- | --- |
+| `executeSql(input)` | SQL tool cards get a row-limit selector and an execute button | The query renders read-only — no controls at all |
+| `submitFeedback({ messageId, feedback })` | 👍 / 👎 appear under finished answers; applied optimistically and rolled back if the call rejects | No rating buttons |
 
 ### DOM Events
 
@@ -325,7 +337,7 @@ dataagent-conversation::part(input) {
 #### Available Parts
 
 - **Containers & List**: `root`, `messages`, `empty`
-- **Messages & Content**: `message`, `message-user`, `message-assistant`, `bubble`, `user-bubble`, `assistant-bubble`, `thinking`, `attachments`
+- **Messages & Content**: `message`, `message-user`, `message-assistant`, `bubble`, `user-bubble`, `assistant-bubble`, `thinking`, `thinking-toggle`, `thinking-content`, `attachments`
 - **Composer & Controls**: `composer`, `input`, `footer`, `actions`, `controls`, `run-detail`, `send-button`, `stop-button`
 
 ---

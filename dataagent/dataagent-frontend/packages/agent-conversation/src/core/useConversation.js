@@ -1,6 +1,7 @@
 import { computed, reactive, ref, shallowRef, triggerRef } from 'vue'
 import { ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './runStatus.js'
 import { createChatState, processV2Record } from './streamParser.js'
+import { normalizeConversationMessage } from './message.js'
 import { ErrorCode, StreamInterrupted } from '../transport/errors.js'
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000]
@@ -47,8 +48,11 @@ export function useConversation({ transport, generation, emit }) {
     role: 'assistant',
     content: '',
     taskId,
+    status: 'queued',
     _v2state: reactive(createChatState()),
   })
+
+  const normalizeMessages = (items) => (Array.isArray(items) ? items : []).map(normalizeConversationMessage)
 
   const assistantFor = (taskId) =>
     [...messages.value].reverse().find(
@@ -109,13 +113,20 @@ export function useConversation({ transport, generation, emit }) {
     try {
       const snapshot = await transport.value.loadConversation()
       if (stale(at)) return
-      messages.value = snapshot.messages
+      messages.value = normalizeMessages(snapshot.messages)
       if (snapshot.run?.metadata && snapshot.run.taskId) {
         runMetadata.set(snapshot.run.taskId, snapshot.run.metadata)
       }
       setRun(snapshot.run)
       emit({ name: 'ready', detail: {} })
       if (snapshot.run && ACTIVE_RUN_STATUSES.has(snapshot.run.status)) {
+        let assistant = assistantFor(snapshot.run.taskId)
+        if (!assistant) {
+          assistant = openAssistant(snapshot.run.taskId)
+          messages.value = [...messages.value, assistant]
+        }
+        assistant.status = snapshot.run.status
+        assistant._v2state.status = 'streaming'
         subscribe(snapshot.run.taskId, 0, at)
       }
     } catch (error) {
@@ -155,13 +166,42 @@ export function useConversation({ transport, generation, emit }) {
           emit({ name: 'agent-event', detail: item.event })
           continue
         }
+        const assistant = assistantFor(taskId)
+        if (assistant) {
+          assistant.status = item.run.status
+          if (item.run.status === 'failed') {
+            assistant._v2state.status = 'error'
+            assistant._v2state.errorText = item.run.detail || '会话执行失败'
+          } else if (TERMINAL_RUN_STATUSES.has(item.run.status)) {
+            assistant._v2state.status = 'done'
+          }
+          triggerRef(messages)
+        }
         setRun({ ...item.run, metadata: item.run.metadata || runMetadata.get(item.run.taskId) })
         await refreshMessages(at)
         return
       }
     } catch (error) {
       if (stale(at)) return
-      if (!(error instanceof StreamInterrupted)) return fail(error)
+      if (!(error instanceof StreamInterrupted)) {
+        const assistant = assistantFor(taskId)
+        if (assistant) {
+          assistant.status = 'failed'
+          assistant._v2state.status = 'error'
+          assistant._v2state.errorText = error?.message || '会话执行失败'
+          triggerRef(messages)
+        }
+        // The run has to end with the stream. Leaving it on its last active
+        // status keeps isActive true forever, which disables the composer and
+        // makes retry refuse — an error the user can see but cannot act on.
+        setRun({
+          taskId,
+          status: 'failed',
+          detail: error?.message || '会话执行失败',
+          metadata: run.value?.metadata || runMetadata.get(taskId)
+        })
+        return fail(error)
+      }
 
       fail(error)
       const delay = RETRY_DELAYS_MS[attempt]
@@ -180,7 +220,7 @@ export function useConversation({ transport, generation, emit }) {
       try {
         const snapshot = await transport.value.loadConversation()
         if (stale(at)) return
-        messages.value = snapshot.messages
+        messages.value = normalizeMessages(snapshot.messages)
         setRun(snapshot.run)
         if (snapshot.run && ACTIVE_RUN_STATUSES.has(snapshot.run.status)) poll(at)
       } catch {
@@ -202,21 +242,24 @@ export function useConversation({ transport, generation, emit }) {
       const snapshot = await transport.value.loadConversation()
       if (stale(at)) return
       if (snapshot.messages.length >= messages.value.length) {
-        messages.value = snapshot.messages
+        messages.value = normalizeMessages(snapshot.messages)
       }
     } catch (error) {
       if (!stale(at)) fail(error)
     }
   }
 
-  async function send(content, { metadata, clearDraft = true } = {}) {
+  async function send(content, { metadata, clearDraft = true, attachments = [] } = {}) {
     const text = String(content ?? draft.value).trim()
-    if (!text || !canSend.value) return
+    const files = Array.isArray(attachments) ? attachments.filter((file) => file?.relPath) : []
+    if ((!text && !files.length) || !canSend.value) return false
     const at = generation.value
 
     try {
-      const started = await transport.value.sendMessage({ content: text, metadata })
-      if (stale(at)) return
+      const request = { content: text, metadata }
+      if (files.length) request.attachments = files
+      const started = await transport.value.sendMessage(request)
+      if (stale(at)) return false
       if (clearDraft) draft.value = ''
       if (started?.taskId && metadata) runMetadata.set(started.taskId, metadata)
       setRun(started)
@@ -225,13 +268,26 @@ export function useConversation({ transport, generation, emit }) {
       // length of the run.
       messages.value = [
         ...messages.value,
-        { id: `local-user-${Date.now()}`, role: 'user', content: text },
+        { id: `local-user-${Date.now()}`, role: 'user', content: text, attachments: files },
         openAssistant(started?.taskId),
       ]
       if (started?.taskId) subscribe(started.taskId, 0, at)
+      return true
     } catch (error) {
       if (!stale(at)) fail(error)
+      return false
     }
+  }
+
+  async function retry(message) {
+    if (!message || isActive.value) return false
+    const index = messages.value.findIndex((item) => item.id === message.id)
+    for (let cursor = (index < 0 ? messages.value.length : index) - 1; cursor >= 0; cursor -= 1) {
+      const candidate = messages.value[cursor]
+      if (candidate?.role !== 'user') continue
+      return send(candidate.content, { attachments: candidate.attachments || [] })
+    }
+    return false
   }
 
   async function cancel() {
@@ -256,10 +312,41 @@ export function useConversation({ transport, generation, emit }) {
     }
   }
 
+  /**
+   * Record a thumbs up/down, clearing it when the same one is pressed twice.
+   *
+   * Applied optimistically and rolled back on failure: a rating is a one-click
+   * aside, and waiting on a round trip to acknowledge it reads as a dead button.
+   * Rolling back matters just as much — a rating that silently failed to save
+   * looks identical to one that saved, and the user never knows to press again.
+   */
+  async function submitFeedback(message, value) {
+    if (!message || typeof transport.value?.submitFeedback !== 'function') return false
+    const previous = String(message.feedback || '')
+    const next = previous === String(value || '') ? '' : String(value || '')
+
+    message.feedback = next
+    triggerRef(messages)
+    const at = generation.value
+    try {
+      const saved = await transport.value.submitFeedback({ messageId: message.id, feedback: next })
+      if (stale(at)) return false
+      message.feedback = String(saved?.feedback ?? next)
+      triggerRef(messages)
+      return true
+    } catch (error) {
+      if (stale(at)) return false
+      message.feedback = previous
+      triggerRef(messages)
+      fail(error)
+      return false
+    }
+  }
+
   return {
     messages, run, draft, loading,
     isActive, canSend,
-    load, reset, send, cancel, submitInteraction,
+    load, reset, send, retry, cancel, submitInteraction, submitFeedback,
     stopStream
   }
 }

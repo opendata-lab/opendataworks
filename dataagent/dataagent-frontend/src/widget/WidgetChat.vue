@@ -360,6 +360,7 @@ import { splitChartSpecText, stripChartSpecsFromText } from '@/views/intelligenc
 import { blockToToolProp, processV2Record } from '@/views/intelligence/v2StreamParser'
 import { extractErrorText, isPlainEnterSubmit, renderMarkdown as renderMarkdownBase } from '@/views/intelligence/chatMessage'
 import { useNl2SqlChat } from '@/views/intelligence/useNl2SqlChat'
+import { createNl2SqlTransport } from '@/views/intelligence/nl2sqlTransport'
 import { useChatMessageActions } from '@/views/intelligence/useChatMessageActions'
 import SlashCommandMenu from '@/views/intelligence/SlashCommandMenu.vue'
 import { useSlashCommands, buildCommands } from '@/views/intelligence/useSlashCommands'
@@ -488,7 +489,10 @@ const {
   send: sendReal, cancel,
   selectTopic: selectTopicEngine, newConversation: newConversationEngine, deleteConversation,
 } = chat
-provide('nl2sqlTopicId', topicId)
+// Same reason as the portal: the SQL panel's only route to the network is this
+// injection, and until the widget moves onto the SDK element (T11-C) the shell
+// has to provide it.
+provide('agentConversationTransport', computed(() => createNl2SqlTransport(api, topicId.value)))
 
 const historyVisible = computed(() => isInline.value || Boolean(props.state.historyOpen))
 const hasWorkingTopicRecord = computed(() => topics.value.some((topic) => isTopicWorking(topic)))

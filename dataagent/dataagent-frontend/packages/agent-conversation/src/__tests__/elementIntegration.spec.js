@@ -203,6 +203,40 @@ describe('switching conversations', () => {
   })
 })
 
+describe('thinking blocks', () => {
+  it('renders history reasoning collapsed and lets the user expand it', async () => {
+    const transport = makeTransport({
+      loadConversation: vi.fn(async () => ({
+        messages: [{
+          id: 'assistant-1',
+          role: 'assistant',
+          content: '',
+          blocks: [{
+            type: 'thinking',
+            content: '先分析业务目标，再确认数据范围。',
+            status: 'done',
+          }],
+        }],
+        run: null,
+      })),
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    const toggle = el.shadowRoot.querySelector('.dac-thinking-summary')
+    expect(toggle).toBeTruthy()
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(el.shadowRoot.querySelector('.dac-thinking-content')).toBeNull()
+
+    toggle.click()
+    await settle()
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(el.shadowRoot.querySelector('.dac-thinking-content').textContent).toContain('再确认数据范围')
+    el.remove()
+  })
+})
+
 describe('host slots', () => {
   it('gives a host somewhere to put composer overlays and its own toolbar', async () => {
     // The widget's composer is not just a send button: a slash-command menu

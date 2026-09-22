@@ -679,6 +679,7 @@ import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
 import { hydrateMessageFromApi, isPlainEnterSubmit, normalizeTopic, renderMarkdown as renderMarkdownBase } from './chatMessage'
 import { useNl2SqlChat } from './useNl2SqlChat'
+import { createNl2SqlTransport } from './nl2sqlTransport'
 import { useChatMessageActions } from './useChatMessageActions'
 import SlashCommandMenu from './SlashCommandMenu.vue'
 import AgentSelector from './AgentSelector.vue'
@@ -754,7 +755,13 @@ const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
   notifyCopied: (message) => ElMessage.success(message),
   notifyError: (message) => ElMessage.error(message),
 })
-provide('nl2sqlTopicId', activeTopicId)
+// The SQL panel reaches the network only through this. Until the page itself
+// moves onto the SDK element (T11-B), the shell still has to supply one, or the
+// panel silently loses its execute button: it was left injecting a transport
+// nobody provided, so execution had been dead since the panel moved into the
+// package. A computed rebuilds it per topic, which is the ref contract the
+// panel follows.
+provide('agentConversationTransport', computed(() => createNl2SqlTransport(api, activeTopicId.value)))
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.

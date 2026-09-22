@@ -87,7 +87,12 @@ export interface SendOptions {
 
 export interface ConversationTransport {
   loadConversation(): Promise<ConversationSnapshot>
-  sendMessage(input: { content: string; metadata?: Record<string, unknown> }): Promise<RunRef>
+  sendMessage(input: {
+    content: string
+    metadata?: Record<string, unknown>
+    /** Present only when the user attached files to this message. */
+    attachments?: ConversationAttachment[]
+  }): Promise<RunRef>
   streamEvents(input: {
     taskId: string
     afterId: number
@@ -102,17 +107,40 @@ export interface ConversationTransport {
   }): Promise<void>
   fileUrl(relPath: string): string
 
-  /** Optional. When absent the SQL panel degrades to read-only. */
+  /**
+   * Optional. When absent the SQL panel renders the query read-only: no limit
+   * selector, no execute button. The transport is built per conversation and
+   * attaches its own identity, so nothing about the conversation is passed here.
+   */
   executeSql?(input: {
     sql: string
-    signal?: AbortSignal
-  }): Promise<{ columns: string[]; rows: unknown[][] }>
-  /** Optional. When absent the slash-command menu is disabled. */
-  listSlashCommands?(): Promise<{ name: string; description: string }[]>
-  /** Optional. When absent the permission-mode switcher is hidden. */
-  setPermissionMode?(mode: string): Promise<void>
-  /** Optional. When absent message feedback controls are hidden. */
-  submitFeedback?(messageId: string, value: 1 | -1 | 0): Promise<void>
+    database?: string
+    engine?: string
+    limit?: number
+  }): Promise<SqlExecutionResult>
+
+  /**
+   * Optional. When absent the thumbs up / down buttons are not rendered.
+   *
+   * `feedback` is `''` when the user clears a previous rating. The SDK applies
+   * the change optimistically and rolls it back if this rejects.
+   */
+  submitFeedback?(input: {
+    messageId: string
+    feedback: string
+  }): Promise<{ feedback?: string } | void>
+}
+
+export interface SqlExecutionResult {
+  columns?: string[]
+  rows?: unknown[]
+  row_count?: number
+  has_more?: boolean
+  truncated_by_size?: boolean
+  duration_ms?: number
+  notice?: string
+  /** Set when the query ran but failed; rendered in place of a result table. */
+  error?: string | null
 }
 
 export interface AgentConversationElement extends HTMLElement {

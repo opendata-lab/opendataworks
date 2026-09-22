@@ -7,7 +7,7 @@ function resolveValue(value) {
   return typeof value === 'function' ? value() : unref(value)
 }
 
-async function copyTextToClipboard(text) {
+export async function copyTextToClipboard(text) {
   let clipboardError = null
   if (typeof navigator !== 'undefined' && navigator.clipboard && typeof window !== 'undefined' && window.isSecureContext) {
     try {

@@ -8,7 +8,7 @@ const DEFAULT_TAG = 'dataagent-conversation'
 // Shadowing those here breaks reactivity — the value lands in _props without
 // scheduling an update.
 
-const METHODS = ['reload', 'sendMessage', 'cancel', 'focus']
+const METHODS = ['reload', 'sendMessage', 'cancel', 'focus', 'focusMessage']
 
 // One constructor per tag name. customElements.define rejects a constructor
 // already registered under another name with NotSupportedError, so a shared

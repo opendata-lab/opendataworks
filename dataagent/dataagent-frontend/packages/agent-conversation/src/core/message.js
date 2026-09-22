@@ -106,7 +106,7 @@ export function buildV2StateFromStoredRecords(item) {
   for (const turn of v2state.turns) {
     if (turn.status === 'streaming') turn.status = 'done'
   }
-  if (String(item?.status || '') === 'error') {
+  if (['error', 'failed'].includes(String(item?.status || ''))) {
     v2state.status = 'error'
     v2state.errorText = extractErrorText(item?.error) || '会话执行失败'
   }
@@ -122,21 +122,26 @@ export function buildV2StateFromStoredBlocks(item) {
   let blockIdx = 0
   for (const b of storedBlocks) {
     const kind = String(b?.kind || b?.type || '')
-    if (kind === 'thinking' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+    const blockContent = String(b?.content ?? b?.text ?? '')
+    if (kind === 'thinking' && blockContent) {
+      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'thinking', content: blockContent, status: 'done', id: b?.id || null, name: null, inputJson: '', input: null, output: null, is_error: false }
       turn.blocks.push(block)
       v2state.blocks.push(block)
-    } else if (kind === 'main_text' && b?.text) {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: b.text, status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
+    } else if ((kind === 'main_text' || kind === 'text') && blockContent) {
+      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'text', content: blockContent, status: 'done', id: b?.id || null, name: null, inputJson: '', input: null, output: null, is_error: false }
       turn.blocks.push(block)
       v2state.blocks.push(block)
     } else if (kind === 'tool_use') {
       // SDK-derived format: flat tool_id / tool_name / input / output / is_error.
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.tool_id || null, name: b.tool_name || 'Tool', inputJson: '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
+      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'tool_use', content: '', status: 'done', id: b.id || b.tool_id || null, name: b.name || b.tool_name || 'Tool', inputJson: b.inputJson || '', input: b.input ?? null, output: b.output ?? null, is_error: Boolean(b.is_error) }
       turn.blocks.push(block)
       v2state.blocks.push(block)
     } else if (kind === 'permission_request') {
-      const block = { turnIndex: 0, blockIndex: blockIdx++, type: 'permission_request', content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false, requestId: b.request_id || '', tool_name: b.tool_name || '', risk_level: b.risk_level || 'high', title: b.title || '', summary: b.summary || '', payload_preview: b.payload_preview ?? null, decision: b.decision || 'pending', note: b.note || '', decided_at: b.decided_at || '' }
+      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'permission_request', content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false, requestId: b.requestId || b.request_id || '', tool_name: b.tool_name || '', risk_level: b.risk_level || 'high', title: b.title || '', summary: b.summary || '', payload_preview: b.payload_preview ?? null, decision: b.decision || 'pending', note: b.note || '', decided_at: b.decided_at || '' }
+      turn.blocks.push(block)
+      v2state.blocks.push(block)
+    } else if (kind === 'question_request') {
+      const block = { ...b, turnIndex: 0, blockIndex: blockIdx++, type: 'question_request', content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false, requestId: b.requestId || b.request_id || '', questions: Array.isArray(b.questions) ? b.questions : [], answers: Array.isArray(b.answers) ? b.answers : [], answered: Boolean(b.answered), answered_at: b.answered_at || '' }
       turn.blocks.push(block)
       v2state.blocks.push(block)
     }
@@ -149,7 +154,7 @@ export function buildV2StateFromStoredBlocks(item) {
   }
   // A failed run persists status === 'error' (+ error). Surface it through
   // _v2state so the error card renders on reload, not just during live streaming.
-  if (String(item?.status || '') === 'error') {
+  if (['error', 'failed'].includes(String(item?.status || ''))) {
     v2state.status = 'error'
     turn.status = 'error'
     v2state.errorText = extractErrorText(item?.error) || '会话执行失败'
@@ -168,6 +173,46 @@ function messageContent(message) {
 }
 
 const uid = () => `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+
+const normalizeAttachments = (attachments) => (Array.isArray(attachments) ? attachments : []).map((file) => ({
+  ...file,
+  name: String(file?.name || file?.relPath || file?.rel_path || ''),
+  relPath: String(file?.relPath || file?.rel_path || ''),
+  mediaType: file?.mediaType || file?.content_type || undefined,
+  size: Number(file?.size || 0) || undefined,
+}))
+
+/**
+ * Normalize a transport message into the one shape the SDK renders.
+ *
+ * A direct DataAgent transport can return stored event records while a BFF can
+ * return already-projected blocks. Replaying both here keeps MessageList free
+ * of protocol knowledge and gives a resumed run a writable `_v2state` before
+ * new stream records arrive.
+ */
+export function normalizeConversationMessage(item) {
+  const role = String(item?.role || item?.sender_type || 'user') === 'assistant' ? 'assistant' : 'user'
+  const base = {
+    ...item,
+    id: String(item?.id || item?.message_id || `${role}_${item?.seq_id || uid()}`),
+    role,
+    content: messageContent(item),
+    attachments: normalizeAttachments(item?.attachments),
+    taskId: String(item?.taskId || item?.task_id || '') || undefined,
+    createdAt: String(item?.createdAt || item?.created_at || '') || undefined,
+    feedback: String(item?.feedback || ''),
+  }
+  if (role === 'user') return base
+
+  const state = item?._v2state || buildV2StateFromStoredRecords(item)
+  return reactive({
+    ...base,
+    status: String(item?.status || 'success'),
+    error: item?.error || null,
+    blocks: state.blocks,
+    _v2state: reactive(state),
+  })
+}
 
 // Hydrate a persisted message (user or assistant) into the local message shape.
 // Returns a superset object so both surfaces find the fields they render: the

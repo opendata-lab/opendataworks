@@ -1,11 +1,15 @@
 <template>
   <div class="dac-root" part="root">
     <MessageList
+      ref="messageListRef"
       :messages="conversation.messages.value"
       :file-url="fileUrl"
       :disabled="disabled"
+      :can-rate="canRate"
       @decide="onDecide"
       @answer="onAnswer"
+      @retry="conversation.retry"
+      @feedback="({ message, value }) => conversation.submitFeedback(message, value)"
     >
       <template #empty><slot name="empty">暂无消息</slot></template>
     </MessageList>
@@ -28,7 +32,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, ref, toRef, useHost, watch } from 'vue'
+import { computed, onBeforeUnmount, provide, ref, toRef, useHost, watch } from 'vue'
 import MessageList from './MessageList.vue'
 import Composer from './Composer.vue'
 import { useEndpoint } from '../core/useEndpoint.js'
@@ -45,6 +49,7 @@ const props = defineProps({
 })
 
 const composerRef = ref(null)
+const messageListRef = ref(null)
 const host = useHost()
 
 /**
@@ -97,6 +102,21 @@ const onAnswer = ({ taskId, requestId, answers }) =>
 
 const fileUrl = computed(() => (path) => endpointApi.transport.value?.fileUrl?.(path) ?? path)
 
+/**
+ * The transport, reachable from any block a message renders.
+ *
+ * Tool cards sit arbitrarily deep inside a message, so passing it down as props
+ * would thread it through every renderer. Providing the ref rather than the
+ * current value matters: switching conversations builds a new transport, and a
+ * panel that captured the old one at setup would keep talking to the previous
+ * conversation.
+ */
+provide('agentConversationTransport', endpointApi.transport)
+
+// Capability-driven, not configuration-driven: the rating buttons exist only
+// when the host's transport can store a rating.
+const canRate = computed(() => typeof endpointApi.transport.value?.submitFeedback === 'function')
+
 const onDraft = (value) => {
   conversation.draft.value = value
   emit({ name: 'draft-change', detail: { value } })
@@ -135,6 +155,7 @@ defineExpose({
   sendMessage: (content, options) => send(content, options),
   cancel: () => conversation.cancel(),
   focus: () => composerRef.value?.focus(),
+  focusMessage: (messageId) => messageListRef.value?.focusMessage(messageId),
   getValue: () => conversation.draft.value,
   setValue: (value) => onDraft(String(value ?? ''))
 })
