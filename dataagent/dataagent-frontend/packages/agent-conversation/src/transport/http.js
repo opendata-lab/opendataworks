@@ -130,10 +130,10 @@ export function createHttpTransport({ getEndpoint }) {
           if (done) break
           buffer += decoder.decode(value, { stream: true })
 
-          let split
-          while ((split = buffer.indexOf('\n\n')) !== -1) {
-            const frame = buffer.slice(0, split)
-            buffer = buffer.slice(split + 2)
+          let match
+          while ((match = buffer.match(/\r?\n\r?\n/)) !== null) {
+            const frame = buffer.slice(0, match.index)
+            buffer = buffer.slice(match.index + match[0].length)
             const item = parseFrame(frame)
             if (!item) continue
             if (item.type === 'terminal') {
@@ -142,6 +142,14 @@ export function createHttpTransport({ getEndpoint }) {
               return
             }
             yield item
+          }
+        }
+        if (!sawTerminal && buffer.trim()) {
+          const item = parseFrame(buffer)
+          if (item?.type === 'terminal') {
+            sawTerminal = true
+            yield item
+            return
           }
         }
       } finally {
@@ -155,7 +163,7 @@ export function createHttpTransport({ getEndpoint }) {
   function parseFrame(frame) {
     let name = 'message'
     const dataLines = []
-    for (const line of frame.split('\n')) {
+    for (const line of frame.split(/\r?\n/)) {
       if (line.startsWith(':')) continue // keep-alive
       if (line.startsWith('event:')) name = line.slice(6).trim()
       else if (line.startsWith('data:')) dataLines.push(line.slice(5).trim())

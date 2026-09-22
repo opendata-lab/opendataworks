@@ -54,6 +54,8 @@
 
 <script setup>
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useCopyFeedback } from '../../utils/useCopyFeedback.js'
+import ResultDataTable from './ResultDataTable.vue'
 
 /**
  * CodeMirror is the second-heaviest thing this package can reach, after
@@ -76,8 +78,6 @@ async function loadCodeMirror() {
   cm = { ...view, ...state, ...commands, ...language, ...langSql }
   return cm
 }
-import { useCopyFeedback } from '../../utils/useCopyFeedback.js'
-import ResultDataTable from './ResultDataTable.vue'
 
 // The transport is the package's only route to the network. A host whose
 // backend has no SQL execution simply omits executeSql, and this panel

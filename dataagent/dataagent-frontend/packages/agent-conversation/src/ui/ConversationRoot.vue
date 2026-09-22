@@ -67,7 +67,7 @@ const endpointApi = useEndpoint({
   onReset: (reason) => {
     conversation.reset()
     if (reason === 'switch' && !endpointApi.ready.value) return
-    if (props.active) conversation.load()
+    if (props.active) return conversation.load()
   }
 })
 
@@ -131,7 +131,7 @@ if (endpointApi.ready.value && props.active) conversation.load()
 onBeforeUnmount(() => conversation.stopStream())
 
 defineExpose({
-  reload: () => { endpointApi.reload() },
+  reload: () => endpointApi.reload(),
   sendMessage: (content, options) => send(content, options),
   cancel: () => conversation.cancel(),
   focus: () => composerRef.value?.focus(),

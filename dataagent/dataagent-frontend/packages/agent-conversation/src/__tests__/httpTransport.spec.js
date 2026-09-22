@@ -139,6 +139,19 @@ describe('event stream', () => {
     expect(items[2].run).toMatchObject({ taskId: 't-1', status: 'finished', metadata: { mode: 'model' } })
   })
 
+  it('handles CRLF line endings from servers that emit \\r\\n', async () => {
+    fetchMock.mockResolvedValue(sseResponse([
+      'event: agent-event\r\ndata: {"seq_id":1,"kind":"text"}\r\n\r\n',
+      ': ping\r\n\r\n',
+      'event: done\r\ndata: {"task_id":"t-1","status":"finished"}\r\n\r\n'
+    ]))
+
+    const items = await drain(transport().streamEvents({ afterId: 0 }))
+    expect(items.map((i) => i.type)).toEqual(['event', 'terminal'])
+    expect(items[0].seqId).toBe(1)
+    expect(items[1].run.taskId).toBe('t-1')
+  })
+
   it('treats EOF without a done frame as an interruption, not a finished run', async () => {
     // This is the distinction the whole named-frame protocol exists for: a
     // dropped connection looks exactly like a completed stream at the byte

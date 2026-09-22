@@ -104,6 +104,26 @@ describe('methods', () => {
     })
     el.remove()
   })
+
+  it('returns a promise from reload that resolves when the conversation loads', async () => {
+    let finishedLoad = false
+    const transport = makeTransport({
+      loadConversation: async () => {
+        await new Promise((r) => setTimeout(r, 20))
+        finishedLoad = true
+        return { messages: [], run: null }
+      }
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    finishedLoad = false
+    const reloadPromise = el.reload()
+    expect(reloadPromise).toBeInstanceOf(Promise)
+    await reloadPromise
+    expect(finishedLoad).toBe(true)
+    el.remove()
+  })
 })
 
 describe('events', () => {

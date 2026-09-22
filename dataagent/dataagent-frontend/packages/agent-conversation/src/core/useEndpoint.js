@@ -75,7 +75,7 @@ export function useEndpoint({ endpoint, endpointResolver, transportFactory, onRe
     /** Same conversation, fresh load. Deliberately does not clear the address. */
     reload() {
       generation.value += 1
-      onReset?.('reload')
+      return onReset?.('reload')
     }
   }
 }
