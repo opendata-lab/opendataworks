@@ -285,11 +285,11 @@ dataagent-conversation {
 | `--dac-text-color` | `#0f172a` | Main text color |
 | `--dac-text-muted` | `#64748b` | Subdued text (timestamps, status detail) |
 | `--dac-border-color` | `#e2e8f0` | Dividers and frame borders |
-| `--dac-bubble-radius` | `12px` | Message bubble border radius |
-| `--dac-assistant-bubble-bg` | `#f8fafc` | Assistant message bubble background |
+| `--dac-bubble-radius` | `14px` | Message bubble border radius |
+| `--dac-assistant-bubble-bg` | `#f1f5f9` | Assistant message bubble background |
 | `--dac-assistant-bubble-color` | `inherit` | Assistant message bubble text color |
-| `--dac-user-bubble-bg` | `#f1f5f9` | User message bubble background |
-| `--dac-user-bubble-color` | `inherit` | User message bubble text color |
+| `--dac-user-bubble-bg` | `#ecfdf5` | User message bubble background |
+| `--dac-user-bubble-color` | `#065f46` | User message bubble text color |
 | `--dac-composer-bg` | `transparent` | Composer container background |
 | `--dac-input-bg` | `#ffffff` | Textarea input background |
 | `--dac-input-color` | `inherit` | Textarea text color |

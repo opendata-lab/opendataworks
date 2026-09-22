@@ -16,7 +16,8 @@
     "build:demo": "vite build --mode demo",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:sdk": "vitest run packages/agent-conversation"
+    "test:sdk": "vitest run packages/agent-conversation",
+    "test:sdk-types": "bash packages/agent-conversation/tests/types/check.sh"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.18.7",

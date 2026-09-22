@@ -178,6 +178,20 @@ export type ErrorCode =
   | 'stream_interrupted'
   | 'protocol_error'
 
+/**
+ * The same names as values, for comparing against `dataagent-error` details.
+ *
+ * `src/index.js` exports this object at runtime; declaring only the union type
+ * left `import { ErrorCode }` usable in a type position but not a value one,
+ * which is exactly how a consumer would want to use it.
+ */
+export declare const ErrorCode: {
+  readonly TRANSPORT_UNREACHABLE: 'transport_unreachable'
+  readonly CONVERSATION_UNAVAILABLE: 'conversation_unavailable'
+  readonly STREAM_INTERRUPTED: 'stream_interrupted'
+  readonly PROTOCOL_ERROR: 'protocol_error'
+}
+
 export declare class ConversationError extends Error {
   readonly code: ErrorCode
   readonly hint: string
@@ -210,13 +224,35 @@ export declare function createHttpTransport(
   options?: Omit<HttpTransportOptions, 'endpoint' | 'getEndpoint'>
 ): ConversationTransport
 
+/** Props the element accepts in JSX. */
+export interface AgentConversationAttributes {
+  endpoint?: string
+  placeholder?: string
+  active?: boolean
+  disabled?: boolean
+  [key: string]: unknown
+}
+
 declare global {
   interface HTMLElementTagNameMap {
     'dataagent-conversation': AgentConversationElement
   }
+
+  // React 18 and anything else that reads the global JSX namespace.
   namespace JSX {
     interface IntrinsicElements {
-      'dataagent-conversation': Record<string, any>
+      'dataagent-conversation': AgentConversationAttributes
+    }
+  }
+}
+
+// React 19 moved JSX under the React namespace, and its transform no longer
+// consults the global one — so the augmentation above is invisible to it.
+// Both spellings are needed; neither alone covers both major versions.
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      'dataagent-conversation': AgentConversationAttributes
     }
   }
 }
