@@ -11,12 +11,32 @@ import { ConversationError, ErrorCode, StreamInterrupted, errorFromResponse } fr
  *   conversation address. Called per request so a lazily-created conversation
  *   picks up its address as soon as it exists.
  */
-export function createHttpTransport({ getEndpoint }) {
+export function createHttpTransport(endpointOrOptions, maybeOptions = {}) {
+  const options = typeof endpointOrOptions === 'string'
+    ? { endpoint: endpointOrOptions, ...maybeOptions }
+    : (endpointOrOptions || {})
+
+  const {
+    endpoint: staticEndpoint,
+    getEndpoint = (staticEndpoint ? () => staticEndpoint : null),
+    headers: defaultHeaders,
+    credentials = 'same-origin',
+    fetch: customFetch = (...args) => (typeof globalThis !== 'undefined' ? globalThis.fetch : fetch)(...args)
+  } = options
+
   // fileUrl is synchronous by contract (it feeds href/src), so the last
   // resolved address is kept here for it to use.
   let cachedEndpoint = ''
 
+  const resolveHeaders = async (extra = {}) => {
+    const base = typeof defaultHeaders === 'function' ? await defaultHeaders() : (defaultHeaders || {})
+    return { ...base, ...extra }
+  }
+
   const endpoint = async () => {
+    if (typeof getEndpoint !== 'function') {
+      throw new ConversationError(ErrorCode.CONVERSATION_UNAVAILABLE, '会话地址尚未就绪')
+    }
     const value = await getEndpoint()
     if (!value) throw new ConversationError(ErrorCode.CONVERSATION_UNAVAILABLE, '会话地址尚未就绪')
     cachedEndpoint = String(value).replace(/\/$/, '')
@@ -27,10 +47,15 @@ export function createHttpTransport({ getEndpoint }) {
     const base = await endpoint()
     let response
     try {
-      response = await fetch(`${base}${path}`, {
-        credentials: 'same-origin',
+      const headers = await resolveHeaders({
+        Accept: 'application/json',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...init.headers
+      })
+      response = await customFetch(`${base}${path}`, {
+        credentials,
         ...init,
-        headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...init.headers }
+        headers
       })
     } catch (cause) {
       throw new ConversationError(
@@ -107,9 +132,10 @@ export function createHttpTransport({ getEndpoint }) {
       const base = await endpoint()
       let response
       try {
-        response = await fetch(`${base}/events?after_id=${encodeURIComponent(afterId || 0)}`, {
-          credentials: 'same-origin',
-          headers: { Accept: 'text/event-stream' },
+        const headers = await resolveHeaders({ Accept: 'text/event-stream' })
+        response = await customFetch(`${base}/events?after_id=${encodeURIComponent(afterId || 0)}`, {
+          credentials,
+          headers,
           signal
         })
       } catch (cause) {

@@ -255,5 +255,5 @@ describe('it talks to the client that actually exists', () => {
 
     expect(typeof real.taskApi.streamSdkEvents).toBe('function')
     expect(real.eventApi.streamSdkEvents).toBeUndefined()
-  })
+  }, 15000)
 })

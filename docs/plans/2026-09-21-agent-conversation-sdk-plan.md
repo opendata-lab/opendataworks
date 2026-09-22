@@ -338,6 +338,32 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 
 ---
 
+## T10 — SDK 扩展性、主题定制与文档完善（2026-09-22 留痕）
+
+**产出：** 消除 Shadow DOM 样式隔离带来的定制障碍，支持 CSS 变量与 Shadow Parts 定制，增强 Transport 鉴权扩展能力，补全 TSX/TypeScript 声明与完整开发者使用文档。
+
+**涉及文件**
+
+- 修改 `packages/agent-conversation/src/ui/ConversationRoot.vue`（增加 `part="root"`、CSS 变量支持）
+- 修改 `packages/agent-conversation/src/ui/MessageList.vue`（增加消息/气泡/折叠/附件的 Shadow Parts 与 `--dac-*` 变量）
+- 修改 `packages/agent-conversation/src/ui/Composer.vue`（增加输入框/按钮/状态区的 Shadow Parts 与 `--dac-*` 变量）
+- 修改 `packages/agent-conversation/src/transport/http.js`（支持 `endpoint` 字符串/配置对象、支持自定义 `headers`、`credentials` 与 `fetch`）
+- 修改 `packages/agent-conversation/src/index.js`（顶层 Re-export `createHttpTransport`、`ConversationError`、`RunStatus` 等）
+- 修改 `packages/agent-conversation/types/index.d.ts`（补充 `HttpTransportOptions` 扩展、`HTMLElementTagNameMap`、`JSX.IntrinsicElements` 声明）
+- 修改 `packages/agent-conversation/src/__tests__/httpTransport.spec.js`（增加自定义 headers、credentials 与重载签名测试）
+- 重写 `packages/agent-conversation/README.md`（完整 API 参考、插槽指南、主题变量表、Shadow Parts 示例、Vanilla/React/Vue3 快速上手）
+
+**步骤**
+
+- [x] UI 组件注入语义化 `part="..."` 属性，样式声明全部引入 `var(--dac-*, fallback)`。
+- [x] `createHttpTransport` 支持静态字符串或函数，透传自定义 headers（支持 async 函数）与 credentials。
+- [x] `types/index.d.ts` 补充全局 `HTMLElementTagNameMap` 与 `JSX.IntrinsicElements`。
+- [x] 补充 `httpTransport.spec.js` 测试用例（通过 17 项测试）。
+- [x] 彻底重写 `README.md`，删除过时的 T1 占位描述，提供全量开发指南。
+- [x] 全量测试验证通过（`npm run test:sdk` 77/77 绿）。
+
+---
+
 ### 一个会误导人的既有失败
 
 `src/widget/__tests__/entry.spec.js` 的 "delivers a message when sendMessage

@@ -590,3 +590,72 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 | 提取而非重写内核 | 快、行为等价 | 用黄金夹具对照 + Widget 回归双重兜底 |
 | 沿用 Widget 上下文协议 + 新增 access key | 不需要建 integration 身份体系 | DataAgent 仍须只暴露在可信内网 |
 | 公共 npm 发布，但排在 dogfood 之后 | 零基础设施，且避免发出去才发现接口要改 | 版本不可撤回；GPL 传播。见 11.2 |
+
+## 14. 扩展性增强与主题定制设计（2026-09-22 增补留痕）
+
+### 14.1 背景与问题
+
+在 v1 内核拆分与基础构建完成（PR #485）后，面向真实宿主工程（如 OntoFoundry、外部微前端等）接入审查时，发现了三项阻碍组件通用性与扩展性的关键问题：
+
+1. **Shadow DOM 样式的“不可穿透黑盒”**：
+   Shadow DOM 完全隔离了组件内外样式。SDK 原有样式中硬编码了主色调（`#10b981`）、边框（`#e2e8f0`）、气泡背景（`#f1f5f9`）、圆角与字体。宿主若想适配企业主色、暗色模式或调整输入框/气泡大小，外部 CSS 规则完全无法作用于 Shadow DOM 内部元素。
+2. **传输层认证与网络配置受限**：
+   原有内置的 `createHttpTransport` 仅接收 `{ getEndpoint: () => string }`，无法传入宿主业务所需的请求头（如 `Authorization: Bearer <token>`、租户标识 `X-Tenant-Id`），无法配置跨域 `credentials`（如跨域 BFF 需带 cookie 的 `'include'`），且未从包根路径导出。宿主若需鉴权头，不得不从头完整重写包含 6 个接口及复杂 SSE 解析的 transport。
+3. **TypeScript / TSX 宿主类型报错**：
+   React/TSX 或 Vue 3 + TS 宿主引入 `<dataagent-conversation>` 时，TypeScript 编译器因缺少 `JSX.IntrinsicElements` 和 `HTMLElementTagNameMap` 声明而报错。
+
+### 14.2 主题定制（Theming）：CSS 变量设计令牌（Design Tokens）
+
+为了让宿主能够零成本适配自身的主题（亮/暗色模式、品牌主色、圆角风格），SDK 在组件内部所有可定制区域引入 W3C 标准的 CSS Custom Properties，并保留优雅降级的默认值：
+
+| CSS 变量名 | 默认值 | 作用范围 |
+| --- | --- | --- |
+| `--dac-primary` | `#10b981` | 品牌/交互主色（发送按钮、聚焦边框等） |
+| `--dac-primary-hover` | `#059669` | 交互主色悬停态 |
+| `--dac-bg` | `#ffffff` | 会话根容器背景色 |
+| `--dac-font-family` | `system-ui, -apple-system, sans-serif` | 全局字体 |
+| `--dac-font-size` | `14px` | 全局字体大小 |
+| `--dac-text-color` | `#0f172a` | 主文本颜色 |
+| `--dac-text-muted` | `#64748b` | 次要/弱化文本颜色（时间、状态、折叠摘要） |
+| `--dac-border-color` | `#e2e8f0` | 面板分界、消息与输入框分割线 |
+| `--dac-bubble-radius` | `12px` | 消息气泡圆角 |
+| `--dac-assistant-bubble-bg` | `#f8fafc` | Agent 助手气泡背景色 |
+| `--dac-assistant-bubble-color` | `inherit` | Agent 助手气泡文本色 |
+| `--dac-user-bubble-bg` | `#f1f5f9` | 用户气泡背景色 |
+| `--dac-user-bubble-color` | `inherit` | 用户气泡文本色 |
+| `--dac-input-bg` | `#ffffff` | 输入框背景色 |
+| `--dac-input-color` | `inherit` | 输入框文本色 |
+| `--dac-input-border` | `#cbd5e1` | 输入框边框色 |
+| `--dac-input-radius` | `10px` | 输入框圆角 |
+| `--dac-send-color` | `#ffffff` | 发送按钮文字颜色 |
+| `--dac-disabled-bg` | `#cbd5e1` | 禁用态背景色 |
+| `--dac-stop-bg` | `#f1f5f9` | 停止按钮背景色 |
+| `--dac-button-radius` | `8px` | 操作按钮圆角 |
+
+CSS 变量具有跨越 Shadow DOM 边界自然继承的特性，宿主直接在页面父级或根节点声明即可全局生效。
+
+### 14.3 精确样式重写：CSS Shadow Parts (`part="..."`)
+
+针对高级定制需求（如宿主希望重写发送按钮的阴影、修改气泡的外边距或定制滚动条），SDK 在关键 DOM 节点暴露语义化 Shadow Parts：
+
+- **容器与列表**：`part="root"`、`part="messages"`、`part="empty"`
+- **消息与气泡**：`part="message"`、`part="message-user"`、`part="message-assistant"`、`part="bubble"`、`part="user-bubble"`、`part="assistant-bubble"`、`part="thinking"`、`part="attachments"`
+- **输入框与工具区**：`part="composer"`、`part="input"`、`part="footer"`、`part="actions"`、`part="controls"`、`part="run-detail"`、`part="send-button"`、`part="stop-button"`
+
+宿主可在宿主样式表中通过 `dataagent-conversation::part(send-button) { ... }` 实现像素级样式重写，兼顾封装性与极致的定制灵活性。
+
+### 14.4 传输层扩展：灵活的 `createHttpTransport`
+
+1. **多参数签名兼容**：
+   支持直接传入静态字符串 `createHttpTransport('/api/conversation', options)`，或传入包含 `endpoint` / `getEndpoint` 的配置对象 `createHttpTransport({ endpoint: '...', ...options })`。
+2. **鉴权头与跨域配置**：
+   新增 `headers` 选项（支持普通对象或异步 Getter 函数 `async () => ({ Authorization: ... })`）、`credentials` 选项（`'same-origin'` 或 `'include'`）及自定义 `fetch` 函数，全链路透传到 Snapshot 请求、POST 动作与 SSE 长连接中。
+3. **顶层导出（Re-export）**：
+   在 `src/index.js` 中导出 `createHttpTransport`、`ConversationError`、`ErrorCode`、`StreamInterrupted`、`toRunStatus`、`ACTIVE_RUN_STATUSES`、`TERMINAL_RUN_STATUSES`，方便宿主工程统一引用和装饰。
+
+### 14.5 TypeScript / TSX 全局类型扩展
+
+在 `types/index.d.ts` 增加：
+- `HTMLElementTagNameMap`: 让 `document.querySelector('dataagent-conversation')` 自动推导出 `AgentConversationElement` 及其完整属性与方法。
+- `JSX.IntrinsicElements`: 让 React / TSX 模板中直接书写 `<dataagent-conversation>` 时不报错，并支持传入全部 attributes。
+

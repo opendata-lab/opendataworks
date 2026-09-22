@@ -17,6 +17,10 @@ export declare const DEFAULT_TAG: 'dataagent-conversation'
  */
 export declare function defineAgentConversation(tagName?: string): string
 
+export declare const ACTIVE_RUN_STATUSES: ReadonlySet<RunStatus>
+export declare const TERMINAL_RUN_STATUSES: ReadonlySet<RunStatus>
+export declare function toRunStatus(raw: unknown): RunStatus
+
 /**
  * SDK-level run status. This is NOT DataAgent's raw `task_status`; transports
  * translate. `waiting_input` and `waiting_permission` are ACTIVE states — hosts
@@ -173,3 +177,46 @@ export type ErrorCode =
   | 'conversation_unavailable'
   | 'stream_interrupted'
   | 'protocol_error'
+
+export declare class ConversationError extends Error {
+  readonly code: ErrorCode
+  readonly hint: string
+  constructor(code: ErrorCode, message: string, hint?: string)
+}
+
+export declare class StreamInterrupted extends ConversationError {
+  constructor(message?: string)
+}
+
+export interface HttpTransportOptions {
+  /** Static conversation address. */
+  endpoint?: string
+  /** Resolves the conversation address. Called per request so a lazily created session picks up its address. */
+  getEndpoint?: () => string | Promise<string>
+  /** Custom request headers (or async getter) passed to API and SSE requests. */
+  headers?: Record<string, string> | (() => Record<string, string> | Promise<Record<string, string>>)
+  /** Fetch credentials policy, defaults to 'same-origin'. Set to 'include' for cross-origin BFF. */
+  credentials?: RequestCredentials
+  /** Custom fetch function. Defaults to global fetch. */
+  fetch?: typeof fetch
+}
+
+/**
+ * Creates the built-in HTTP transport speaking the host BFF protocol.
+ */
+export declare function createHttpTransport(options: HttpTransportOptions): ConversationTransport
+export declare function createHttpTransport(
+  endpoint: string,
+  options?: Omit<HttpTransportOptions, 'endpoint' | 'getEndpoint'>
+): ConversationTransport
+
+declare global {
+  interface HTMLElementTagNameMap {
+    'dataagent-conversation': AgentConversationElement
+  }
+  namespace JSX {
+    interface IntrinsicElements {
+      'dataagent-conversation': Record<string, any>
+    }
+  }
+}

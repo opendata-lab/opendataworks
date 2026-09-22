@@ -84,6 +84,42 @@ describe('request shaping', () => {
 
     expect(t.fileUrl('output/result.json')).toBe(`${ENDPOINT}/files/output/result.json`)
   })
+
+  it('attaches custom headers and credentials when provided', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ messages: [], run: null }))
+    const customT = createHttpTransport({
+      getEndpoint: () => ENDPOINT,
+      headers: () => ({ Authorization: 'Bearer test-token', 'X-Custom-Tenant': 'tenant-42' }),
+      credentials: 'include'
+    })
+
+    await customT.loadConversation()
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.credentials).toBe('include')
+    expect(init.headers.Authorization).toBe('Bearer test-token')
+    expect(init.headers['X-Custom-Tenant']).toBe('tenant-42')
+  })
+
+  it('accepts endpoint directly as a string or static endpoint property', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ messages: [], run: null }))
+    const t1 = createHttpTransport(ENDPOINT, {
+      headers: { Authorization: 'Bearer string-signature' }
+    })
+    await t1.loadConversation()
+    expect(fetchMock.mock.calls[0][0]).toBe(ENDPOINT)
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer string-signature')
+
+    fetchMock.mockClear()
+    fetchMock.mockResolvedValue(jsonResponse({ messages: [], run: null }))
+    const t2 = createHttpTransport({
+      endpoint: ENDPOINT,
+      headers: { Authorization: 'Bearer obj-signature' }
+    })
+    await t2.loadConversation()
+    expect(fetchMock.mock.calls[0][0]).toBe(ENDPOINT)
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer obj-signature')
+  })
 })
 
 describe('error mapping', () => {
