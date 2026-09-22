@@ -404,19 +404,26 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
   （错误卡片与失败重试已完成：`errorRecovery.spec.js`。同时修掉一处死锁——流失败时只标了
   消息、没结束 `run`，`isActive` 永远为真，输入框禁用、`retry()` 直接拒绝，错误可见但无法
   操作。）
-- [ ] `transport.fileUrl` 同时覆盖 Markdown 相对链接、工具输出文件和历史附件；补路径编码、
-  非工作区链接不改写的测试。
+- [x] `transport.fileUrl` 同时覆盖 Markdown 相对链接、工具输出文件和历史附件；补路径编码、
+  非工作区链接不改写的测试。（`fileLinks.spec.js`。`renderMarkdown` 一直支持重写相对链接，
+  但**没有任何调用方传入 resolver**——Agent 在回答里写的每个产物链接都是坏的。）
 - [x] 增加消息时间与复制；只有 `submitFeedback` 存在时显示点赞 / 点踩，并验证乐观更新失败
   后回滚。（`messageActions.spec.js`。`submitFeedback` 的类型签名原本与实现对不上——声明的是
   位置参数加数值，改成与实现一致的 `{ messageId, feedback }`。）
-- [ ] 定义通用附件模型和可选上传 contract；composer 支持上传状态、移除、随消息发送，
+- [x] 定义通用附件模型和可选上传 contract；composer 支持上传状态、移除、随消息发送，
   transport 负责映射到 DataAgent 工作区引用。缺少上传能力时不显示入口。
-- [ ] 增加可选文件读取 contract 和 SDK 内建预览器：图片使用可回收 Blob URL，HTML 使用
-  无权限 sandbox iframe + 默认 CSP；缺少读取能力时保留下载、隐藏预览。
-- [ ] 在 composer 内真正接入可选斜杠命令，包括输入过滤、上下键、Enter、Esc 和 IME；
-  transport 缺失时完全不渲染菜单。
-- [ ] 增加 `composerConfig`，由宿主提供 Provider / Model、权限模式、斜杠命令与预置问题；
-  SDK 渲染选择器并将当前 `settings` 随发送请求交给 transport。`setPermissionMode` 失败时回滚。
+  （`attachments.spec.js`。发送失败时暂存文件**不清空**，否则一次失败就要重新选一遍。）
+- [x] 增加可选文件读取 contract 和 SDK 内建预览器：图片使用可回收 Blob URL，HTML 使用
+  无权限 `sandbox=""` iframe；缺少读取能力时保留下载、隐藏预览。
+  （`attachmentPreview.spec.js`。不加 CSP 属性——`csp` 在 iframe 上支持面很窄，写上会让人
+  以为有一层其实不存在的防护；真正起作用的是空 sandbox 带来的不透明源与禁用脚本。）
+- [x] 在 composer 内真正接入可选斜杠命令，包括输入过滤、上下键、Enter、Esc 和 IME；
+  宿主未提供命令时完全不渲染菜单。（`useSlashMenu.js` + `composerConfig.spec.js`。Enter 在
+  这个输入框里有三种含义，顺序是 IME 候选 → 选中命令 → 发送。）
+- [x] 增加 `composerConfig`，由宿主提供 Provider / Model、权限模式、斜杠命令与预置问题；
+  SDK 渲染选择器并将当前 `settings` 随发送请求交给 transport。
+  （不再有 `setPermissionMode`：选择随消息一起发，就不存在"服务端的模式"和"用户看到的模式"
+  失败后各说各话的情况，也就没有需要回滚的第二次调用。）
 - [x] `focusMessage(messageId)` 已提供，宿主无需穿透 Shadow DOM 查询内部节点。
   （attachment-open / message-action 事件随附件与上传能力一起做。）
 - [ ] 修正文档与类型中“已声明但未接线”的能力，package contract test 锁定公开入口。

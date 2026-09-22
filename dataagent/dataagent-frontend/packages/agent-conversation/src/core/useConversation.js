@@ -249,7 +249,7 @@ export function useConversation({ transport, generation, emit }) {
     }
   }
 
-  async function send(content, { metadata, clearDraft = true, attachments = [] } = {}) {
+  async function send(content, { metadata, clearDraft = true, attachments = [], settings } = {}) {
     const text = String(content ?? draft.value).trim()
     const files = Array.isArray(attachments) ? attachments.filter((file) => file?.relPath) : []
     if ((!text && !files.length) || !canSend.value) return false
@@ -258,6 +258,7 @@ export function useConversation({ transport, generation, emit }) {
     try {
       const request = { content: text, metadata }
       if (files.length) request.attachments = files
+      if (settings && Object.keys(settings).length) request.settings = { ...settings }
       const started = await transport.value.sendMessage(request)
       if (stale(at)) return false
       if (clearDraft) draft.value = ''

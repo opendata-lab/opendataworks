@@ -79,6 +79,15 @@
       <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
         <li v-for="file in message.attachments" :key="file.relPath">
           <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
+          <!-- Preview is a host capability. Without readFile the link is all
+               there is, which is still the whole file — just not in place. -->
+          <button
+            v-if="canPreview(file)"
+            type="button"
+            class="dac-preview-open"
+            data-action="preview"
+            @click="$emit('preview', file)"
+          >预览</button>
         </li>
       </ul>
     </article>
@@ -94,15 +103,20 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import PermissionCard from './PermissionCard.vue'
 import QuestionCard from './QuestionCard.vue'
 import MessageActions from './MessageActions.vue'
+import { previewKindFor } from '../core/previewKind.js'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
   fileUrl: { type: Function, default: (p) => p },
   disabled: { type: Boolean, default: false },
   canRate: { type: Boolean, default: false },
+  canPreviewFiles: { type: Boolean, default: false },
 })
 
-defineEmits(['decide', 'answer', 'retry', 'feedback'])
+const canPreview = (file) =>
+  props.canPreviewFiles && Boolean(previewKindFor(file?.relPath || file?.name))
+
+defineEmits(['decide', 'answer', 'retry', 'feedback', 'preview'])
 
 // Copy and rating are offered once a turn has settled. Mid-stream they would
 // act on half an answer.
@@ -216,6 +230,17 @@ watch(
 }
 .dac-assistant .dac-bubble { max-width: 100%; }
 .dac-attachments { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
+.dac-preview-open {
+  margin-left: 8px;
+  padding: 0 6px;
+  border: 1px solid var(--dac-border-color, #e2e8f0);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dac-text-muted, #64748b);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
 .dac-error {
   display: flex;
   align-items: center;

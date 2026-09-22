@@ -6,13 +6,38 @@
       :file-url="fileUrl"
       :disabled="disabled"
       :can-rate="canRate"
+      :can-preview-files="canPreviewFiles"
       @decide="onDecide"
       @answer="onAnswer"
       @retry="conversation.retry"
       @feedback="({ message, value }) => conversation.submitFeedback(message, value)"
+      @preview="(file) => { previewFile = file }"
     >
       <template #empty><slot name="empty">暂无消息</slot></template>
     </MessageList>
+
+    <AttachmentPreview
+      v-if="previewFile && canPreviewFiles"
+      :file="previewFile"
+      :read-file="endpointApi.transport.value.readFile"
+      :download-url="fileUrl(previewFile.relPath)"
+      @close="previewFile = null"
+    />
+
+    <!-- Openers the host supplies, offered only while there is nothing to read.
+         Once a conversation exists they would compete with it for attention. -->
+    <div v-if="suggestions.length && !conversation.messages.value.length" class="dac-suggestions" part="suggestions">
+      <button
+        v-for="text in suggestions"
+        :key="text"
+        type="button"
+        class="dac-suggestion"
+        part="suggestion"
+        :disabled="disabled"
+        @click="send(text)"
+      >{{ text }}</button>
+    </div>
+
     <Composer
       ref="composerRef"
       :model-value="conversation.draft.value"
@@ -20,9 +45,11 @@
       :disabled="disabled || !endpointApi.ready.value && !endpointResolver"
       :active="conversation.isActive.value"
       :run-detail="conversation.run.value?.detail || ''"
+      :config="composerConfig"
       @update:modelValue="onDraft"
       @send="() => send()"
       @cancel="conversation.cancel"
+      @settings-change="(value) => { settings = value }"
     >
       <template #composer-overlay><slot name="composer-overlay" /></template>
       <template #composer-actions><slot name="composer-actions" /></template>
@@ -35,6 +62,7 @@
 import { computed, onBeforeUnmount, provide, ref, toRef, useHost, watch } from 'vue'
 import MessageList from './MessageList.vue'
 import Composer from './Composer.vue'
+import AttachmentPreview from './AttachmentPreview.vue'
 import { useEndpoint } from '../core/useEndpoint.js'
 import { useConversation } from '../core/useConversation.js'
 
@@ -45,12 +73,17 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   // Functions and objects arrive as JS properties, never as attributes.
   endpointResolver: { type: Function, default: null },
-  transportFactory: { type: Function, default: null }
+  transportFactory: { type: Function, default: null },
+  composerConfig: { type: Object, default: () => ({}) }
 })
+
+const suggestions = computed(() => props.composerConfig?.suggestions || [])
 
 const composerRef = ref(null)
 const messageListRef = ref(null)
+const previewFile = ref(null)
 const host = useHost()
+let settings = {}
 
 /**
  * Dispatch on the host element with bubbles + composed, which is what lets a
@@ -70,6 +103,7 @@ const endpointApi = useEndpoint({
   endpointResolver: toRef(props, 'endpointResolver'),
   transportFactory: toRef(props, 'transportFactory'),
   onReset: (reason) => {
+    previewFile.value = null
     conversation.reset()
     if (reason === 'switch' && !endpointApi.ready.value) return
     if (props.active) return conversation.load()
@@ -116,6 +150,7 @@ provide('agentConversationTransport', endpointApi.transport)
 // Capability-driven, not configuration-driven: the rating buttons exist only
 // when the host's transport can store a rating.
 const canRate = computed(() => typeof endpointApi.transport.value?.submitFeedback === 'function')
+const canPreviewFiles = computed(() => typeof endpointApi.transport.value?.readFile === 'function')
 
 const onDraft = (value) => {
   conversation.draft.value = value
@@ -133,7 +168,14 @@ async function send(content, options = {}) {
     const address = await endpointApi.ensure()
     if (!address) return
   }
-  await conversation.send(content, options)
+  // The composer's selection rides along with the message rather than being
+  // pushed to the server separately, so what was sent and what the user could
+  // see can never disagree.
+  const attachments = composerRef.value?.getAttachments?.() || []
+  const sent = await conversation.send(content, { settings, attachments, ...options })
+  // Only on success: a send that failed leaves the files staged so retrying
+  // does not mean picking every one of them again.
+  if (sent) composerRef.value?.clearAttachments?.()
 }
 
 // Releasing the stream when the host parks the element keeps a hidden tab from
@@ -162,6 +204,27 @@ defineExpose({
 </script>
 
 <style>
+.dac-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 4px;
+}
+.dac-suggestion {
+  padding: 6px 12px;
+  border: 1px solid var(--dac-border-color, #e2e8f0);
+  border-radius: 999px;
+  background: var(--dac-assistant-bubble-bg, #f1f5f9);
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dac-suggestion:hover:not(:disabled) {
+  border-color: var(--dac-primary, #10b981);
+}
+.dac-suggestion:disabled { cursor: not-allowed; opacity: 0.6; }
+
 .dac-root {
   position: relative;
   z-index: 0;

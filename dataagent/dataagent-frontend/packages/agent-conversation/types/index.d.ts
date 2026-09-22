@@ -54,6 +54,40 @@ export interface ConversationAttachment {
   mediaType?: string
 }
 
+/**
+ * What the composer offers, supplied by the host.
+ *
+ * Every field is optional and an omitted one renders nothing — the SDK draws
+ * the controls, the host decides which ones exist. OntoFoundry passes no
+ * providers, so it gets no model picker; DataAgent passes its own list without
+ * the SDK knowing anything about DataAgent.
+ */
+export interface ComposerConfig {
+  providers?: {
+    id: string
+    label: string
+    models?: { id: string; label: string }[]
+  }[]
+  permissionModes?: { id: string; label: string; description?: string }[]
+  /** `name` is matched against what the user types after `/`. */
+  slashCommands?: { name: string; description?: string }[]
+  /** Offered while the conversation is empty; clicking one sends it. */
+  suggestions?: string[]
+}
+
+/**
+ * The composer's current selection, sent with every message.
+ *
+ * It rides along with `sendMessage` rather than being pushed separately: a
+ * separate call would leave the server's idea of the mode and the one the user
+ * can see free to disagree whenever it failed.
+ */
+export interface ComposerSettings {
+  providerId?: string
+  model?: string
+  permissionMode?: string
+}
+
 export interface ConversationMessage {
   id: string
   role: 'user' | 'assistant'
@@ -118,6 +152,25 @@ export interface ConversationTransport {
     engine?: string
     limit?: number
   }): Promise<SqlExecutionResult>
+
+  /**
+   * Optional. When absent the composer shows no attach button.
+   *
+   * Receives the files the user picked and returns them as workspace
+   * references; the SDK sends those with the next message. Mapping a browser
+   * File onto a workspace path is the host's job — the SDK never learns where
+   * the workspace lives.
+   */
+  uploadFiles?(files: File[], options?: { signal?: AbortSignal }): Promise<ConversationAttachment[]>
+
+  /**
+   * Optional. When absent attachments stay download-only links.
+   *
+   * Supplying it lets the SDK preview an attachment in place: images through a
+   * revoked object URL, HTML inside a sandboxed iframe. It returns bytes rather
+   * than a URL so the host keeps control of authentication.
+   */
+  readFile?(relPath: string): Promise<Blob>
 
   /**
    * Optional. When absent the thumbs up / down buttons are not rendered.

@@ -241,6 +241,30 @@ is rendered that would silently discard the user's action.
 | --- | --- | --- |
 | `executeSql(input)` | SQL tool cards get a row-limit selector and an execute button | The query renders read-only — no controls at all |
 | `submitFeedback({ messageId, feedback })` | 👍 / 👎 appear under finished answers; applied optimistically and rolled back if the call rejects | No rating buttons |
+| `uploadFiles(files)` | The composer gets an attach button, upload state, and removable chips; references ride with the next message | No attach button |
+| `readFile(relPath)` | Image and HTML attachments get a **预览** button — images through a revoked object URL, HTML inside `sandbox=""` | Attachments stay download links |
+
+### Composer configuration
+
+Set the `composerConfig` property to add model, permission-mode, slash-command
+and opener controls. Every field is optional, and an omitted one renders
+nothing — the SDK draws the controls, the host decides which exist.
+
+```js
+el.composerConfig = {
+  providers: [
+    { id: 'anthropic', label: 'Anthropic', models: [{ id: 'sonnet', label: 'Sonnet' }] }
+  ],
+  permissionModes: [{ id: 'default', label: '默认', description: '写操作前确认' }],
+  slashCommands: [{ name: 'compact', description: '压缩上下文' }],
+  suggestions: ['分析最近 30 天的订单趋势']
+}
+```
+
+The current selection is sent with each message as
+`sendMessage({ content, settings: { providerId, model, permissionMode } })`
+rather than pushed separately, so what was sent and what the user could see
+cannot disagree. Suggestions are offered only while the conversation is empty.
 
 ### DOM Events
 
