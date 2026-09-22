@@ -1,0 +1,74 @@
+name: Publish agent-conversation SDK
+
+# Tag-triggered, never on push to a branch: an npm version cannot be withdrawn,
+# so publishing has to be a deliberate act rather than a side effect of merging.
+on:
+  push:
+    tags:
+      - 'sdk-v*'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # npm provenance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19'
+          registry-url: 'https://registry.npmjs.org'
+
+      # The repository root has no package.json — the npm root is the frontend
+      # package. Every step below states its directory for that reason; leaving
+      # it to the default fails immediately.
+      - name: Install
+        working-directory: dataagent/dataagent-frontend
+        run: npm ci
+
+      - name: Test
+        working-directory: dataagent/dataagent-frontend
+        run: npm run test:sdk
+
+      - name: Build
+        working-directory: dataagent/dataagent-frontend
+        run: npm run build:sdk
+
+      - name: Check the tag matches the package version
+        working-directory: dataagent/dataagent-frontend/packages/agent-conversation
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#sdk-v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "tag sdk-v$TAG_VERSION does not match package version $PKG_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Inspect the tarball before it becomes permanent
+        working-directory: dataagent/dataagent-frontend/packages/agent-conversation
+        run: |
+          npm pack --json > pack.json
+          node -e '
+            const [meta] = require("./pack.json");
+            const files = meta.files.map((f) => f.path);
+            console.log(files.join("\n"));
+
+            // Source must not ship: consumers get dist, and a stray src/ would
+            // let bundlers resolve past the published entry points.
+            const leaked = files.filter((f) => f.startsWith("src/") || f.endsWith(".map"));
+            if (leaked.length) {
+              throw new Error("tarball contains source or maps: " + leaked.join(", "));
+            }
+            for (const required of ["dist/index.js", "types/index.d.ts", "README.md"]) {
+              if (!files.includes(required)) throw new Error("tarball is missing " + required);
+            }
+          '
+
+      - name: Publish
+        working-directory: dataagent/dataagent-frontend/packages/agent-conversation
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

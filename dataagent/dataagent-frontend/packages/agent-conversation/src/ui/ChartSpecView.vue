@@ -54,44 +54,10 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as echarts from 'echarts/core'
-import { use } from 'echarts/core'
-import {
-  BarChart,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  RadarChart,
-  FunnelChart,
-  GaugeChart
-} from 'echarts/charts'
-import {
-  GridComponent,
-  LegendComponent,
-  TitleComponent,
-  TooltipComponent,
-  RadarComponent
-} from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
-import { buildChartRenderModel, parseChartSpec } from './chartSpec'
-import { downloadCsv, exportFilename } from '@/utils/tableExport'
+import { buildChartRenderModel, parseChartSpec } from '../core/chartSpec.js'
+import { downloadCsv, exportFilename } from '../utils/tableExport.js'
 import ResultDataTable from './components/ResultDataTable.vue'
-
-use([
-  CanvasRenderer,
-  LineChart,
-  BarChart,
-  PieChart,
-  ScatterChart,
-  RadarChart,
-  FunnelChart,
-  GaugeChart,
-  GridComponent,
-  TooltipComponent,
-  LegendComponent,
-  TitleComponent,
-  RadarComponent
-])
+import { loadECharts } from './echartsRuntime.js'
 
 const props = defineProps({
   spec: {
@@ -222,6 +188,7 @@ let chartRefreshFrame = 0
 let chartInstance = null
 let chartResizeObserver = null
 let appliedOption = null
+let unmounted = false
 // ECharts owns legend selection, but a notMerge setOption resets it. Keep the
 // viewer's last selection outside Vue's reactivity — a reactive copy would
 // re-trigger the option computed on every legend click — and re-apply it
@@ -307,6 +274,13 @@ const observeChartResize = (container) => {
 const refreshChart = async () => {
   if (typeof window === 'undefined') return
   await nextTick()
+  let echarts
+  try {
+    echarts = await loadECharts()
+  } catch (_error) {
+    return
+  }
+  if (unmounted) return
   if (chartRefreshFrame) window.cancelAnimationFrame(chartRefreshFrame)
   chartRefreshFrame = window.requestAnimationFrame(() => {
     const container = chartCanvasRef.value
@@ -364,6 +338,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   if (chartRefreshFrame && typeof window !== 'undefined') {
     window.cancelAnimationFrame(chartRefreshFrame)
   }

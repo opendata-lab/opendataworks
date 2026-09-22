@@ -3,7 +3,7 @@ import { effectScope, nextTick } from 'vue'
 import { useCopyFeedback } from '../useCopyFeedback'
 
 const copyTextMock = vi.fn()
-vi.mock('@/utils/clipboard', () => ({
+vi.mock('../../../packages/agent-conversation/src/utils/clipboard.js', () => ({
   copyText: (value) => copyTextMock(value)
 }))
 

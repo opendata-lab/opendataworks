@@ -108,8 +108,8 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { useCopyFeedback } from '@/utils/useCopyFeedback'
-import { buildMarkdownTable, buildTsvContent, downloadCsv } from '@/utils/tableExport'
+import { useCopyFeedback } from '../../utils/useCopyFeedback.js'
+import { buildMarkdownTable, buildTsvContent, downloadCsv } from '../../utils/tableExport.js'
 
 const props = defineProps({
   columns: { type: Array, default: () => [] },

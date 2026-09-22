@@ -1,0 +1,28 @@
+{
+  "name": "@opendataworks/agent-conversation",
+  "version": "0.1.0",
+  "description": "Embeddable agent conversation element backed by the OpenDataWorks DataAgent runtime.",
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "sideEffects": false,
+  "module": "./dist/index.js",
+  "types": "./types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "types",
+    "docs",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

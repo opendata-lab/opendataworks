@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
-import PermissionConfirmationCard from '../PermissionConfirmationCard.vue'
+import PermissionConfirmationCard from '../../../../packages/agent-conversation/src/ui/PermissionCard.vue'
 
 const planBlock = (overrides = {}) => ({
   type: 'permission_request',

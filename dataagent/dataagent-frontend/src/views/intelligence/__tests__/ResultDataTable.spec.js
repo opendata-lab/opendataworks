@@ -5,7 +5,7 @@ const exportMocks = vi.hoisted(() => ({
   downloadCsv: vi.fn()
 }))
 
-vi.mock('@/utils/tableExport', async (importOriginal) => {
+vi.mock('../../../../packages/agent-conversation/src/utils/tableExport.js', async (importOriginal) => {
   const actual = await importOriginal()
   return { ...actual, downloadCsv: exportMocks.downloadCsv }
 })
@@ -14,11 +14,11 @@ const clipboardMocks = vi.hoisted(() => ({
   copyText: vi.fn(() => Promise.resolve())
 }))
 
-vi.mock('@/utils/clipboard', () => ({
+vi.mock('../../../../packages/agent-conversation/src/utils/clipboard.js', () => ({
   copyText: clipboardMocks.copyText
 }))
 
-import ResultDataTable from '../components/ResultDataTable.vue'
+import ResultDataTable from '../../../../packages/agent-conversation/src/ui/components/ResultDataTable.vue'
 
 const columns = ['name', 'amount']
 const rows = [

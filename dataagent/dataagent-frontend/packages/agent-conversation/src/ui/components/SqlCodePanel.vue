@@ -54,17 +54,39 @@
 
 <script setup>
 import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { EditorView, keymap, placeholder } from '@codemirror/view'
-import { Compartment, EditorState } from '@codemirror/state'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { MySQL, sql } from '@codemirror/lang-sql'
-import { useCopyFeedback } from '@/utils/useCopyFeedback'
-import { createNl2SqlApiClient } from '@/api/nl2sql'
+import { useCopyFeedback } from '../../utils/useCopyFeedback.js'
 import ResultDataTable from './ResultDataTable.vue'
 
-const injectedApi = inject('nl2sqlApi', null)
+/**
+ * CodeMirror is the second-heaviest thing this package can reach, after
+ * echarts, and it is only needed when a SQL block is actually shown. Loading
+ * it on demand keeps roughly 300kB out of the main chunk for every host that
+ * never renders SQL — which includes any host whose backend has no executeSql
+ * at all, where this panel is read-only by design.
+ */
+let cm = null
+
+async function loadCodeMirror() {
+  if (cm) return cm
+  const [view, state, commands, language, langSql] = await Promise.all([
+    import('@codemirror/view'),
+    import('@codemirror/state'),
+    import('@codemirror/commands'),
+    import('@codemirror/language'),
+    import('@codemirror/lang-sql')
+  ])
+  cm = { ...view, ...state, ...commands, ...language, ...langSql }
+  return cm
+}
+
+// The transport is the package's only route to the network. A host whose
+// backend has no SQL execution simply omits executeSql, and this panel
+// degrades to read-only rather than reaching for a client of its own —
+// OntoFoundry is exactly that case: an ontology platform has no business
+// running arbitrary SQL.
+const transport = inject('agentConversationTransport', null)
 const injectedTopicId = inject('nl2sqlTopicId', ref(''))
+const canExecute = computed(() => typeof transport?.executeSql === 'function')
 
 const props = defineProps({
   sql: { type: String, default: '' },
@@ -84,10 +106,9 @@ const executeResult = ref(null)
 const executeError = ref('')
 
 let view = null
-let apiClient = null
-const editableCompartment = new Compartment()
+let editableCompartment = null
 
-const executable = computed(() => Boolean(String(props.database || '').trim()))
+const executable = computed(() => canExecute.value && Boolean(String(props.database || '').trim()))
 const exportTitle = computed(() => props.title || props.database || 'query_result')
 const executeResultMeta = computed(() => ({
   rowCount: executeResult.value?.row_count,
@@ -97,12 +118,6 @@ const executeResultMeta = computed(() => ({
   notice: executeResult.value?.notice
 }))
 
-const getApi = () => {
-  if (injectedApi) return injectedApi
-  if (!apiClient) apiClient = createNl2SqlApiClient({ timeout: 150000 })
-  return apiClient
-}
-
 const setEditorDoc = (value) => {
   if (!view) return
   const current = view.state.doc.toString()
@@ -110,9 +125,16 @@ const setEditorDoc = (value) => {
   view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
 }
 
-const createEditor = () => {
+const createEditor = async () => {
   if (!editorRef.value || typeof window === 'undefined') return
   try {
+    const {
+      EditorView, keymap, placeholder, Compartment, EditorState,
+      defaultKeymap, history, historyKeymap,
+      defaultHighlightStyle, syntaxHighlighting, MySQL, sql
+    } = await loadCodeMirror()
+    if (!editorRef.value) return
+    editableCompartment = new Compartment()
     view = new EditorView({
       state: EditorState.create({
         doc: currentSql.value,
@@ -149,8 +171,11 @@ const createEditor = () => {
 }
 
 const setEditable = (value) => {
-  if (!view) return
-  view.dispatch({ effects: editableCompartment.reconfigure(EditorView.editable.of(value)) })
+  // Only reachable after createEditor resolved, which is what populates `cm`.
+  if (!view || !cm || !editableCompartment) return
+  view.dispatch({
+    effects: editableCompartment.reconfigure(cm.EditorView.editable.of(value)),
+  })
 }
 
 const startEditing = () => {
@@ -179,7 +204,7 @@ const executeSql = async () => {
   executeError.value = ''
   try {
     const topicId = typeof injectedTopicId === 'object' && injectedTopicId !== null ? injectedTopicId.value : (injectedTopicId || '')
-    const result = await getApi().queryApi.executeSql({
+    const result = await transport.executeSql({
       sql: currentSql.value,
       database: props.database,
       engine: props.engine || undefined,
@@ -210,7 +235,7 @@ watch(
 )
 
 onMounted(() => {
-  createEditor()
+  void createEditor()
 })
 
 onBeforeUnmount(() => {

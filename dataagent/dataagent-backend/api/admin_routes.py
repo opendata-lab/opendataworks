@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import secrets
+
+import hashlib
+
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
@@ -47,6 +51,7 @@ from core.skill_discovery import resolve_skills_root_dir
 from core.slash_command_cache import get_agent_slash_commands
 from core.topic_task_store import get_topic_task_store
 from models.schemas import (
+    WidgetAccessKeyResponse,
     AdminAuthUser,
     AdminAuthUserList,
     AdminSettingsResponse,
@@ -120,13 +125,34 @@ def _provider_catalog() -> list[ProviderConfig]:
     return [ProviderConfig.model_validate(item) for item in list_provider_configs(enabled_only=False)]
 
 
+def _mask_widget_sites(sites: list) -> list:
+    """Replace each site's stored digest with a boolean before it leaves.
+
+    The admin UI sends this same shape back when saving, so anything secret in
+    it is one round-trip away from being overwritten with a masked value.
+    """
+    masked = []
+    for site in sites:
+        if not isinstance(site, dict):
+            continue
+        server_side = site.get("server_side") or {}
+        masked.append({
+            **{k: v for k, v in site.items() if k != "server_side"},
+            "server_side": {
+                "enabled": server_side.get("enabled") is True,
+                "key_configured": bool(server_side.get("access_key_hash")),
+            },
+        })
+    return masked
+
+
 def _build_admin_settings_response(updated_at: str = "") -> AdminSettingsResponse:
     payload = current_settings_payload()
     return AdminSettingsResponse(
         provider_id=str(payload.get("provider_id") or ""),
         model=str(payload.get("model") or ""),
         providers=_provider_catalog(),
-        widget_allowed_sites=payload.get("widget_allowed_sites") or [],
+        widget_allowed_sites=_mask_widget_sites(payload.get("widget_allowed_sites") or []),
         anthropic_api_key="",
         anthropic_auth_token="",
         anthropic_base_url=str(payload.get("anthropic_base_url") or ""),
@@ -147,6 +173,39 @@ def _build_admin_settings_response(updated_at: str = "") -> AdminSettingsRespons
         skills_root_dir=str(resolve_skills_root_dir()),
         updated_at=updated_at,
     )
+
+
+@settings_router.post("/widget-sites/{website_id}/access-key", response_model=WidgetAccessKeyResponse)
+def api_create_widget_access_key(website_id: str):
+    """Mint a server-side access key for a site and enable server-side access.
+
+    The plaintext is returned here and nowhere else; only its sha256 is kept.
+    Calling this again rotates the key and invalidates the previous one.
+    """
+    secret = secrets.token_urlsafe(32)
+    _update_widget_server_side(
+        website_id,
+        enabled=True,
+        access_key_hash=hashlib.sha256(secret.encode("utf-8")).hexdigest(),
+    )
+    return WidgetAccessKeyResponse(website_id=website_id, access_key=secret)
+
+
+@settings_router.delete("/widget-sites/{website_id}/access-key")
+def api_delete_widget_access_key(website_id: str):
+    """Turn server-side access off and forget the digest."""
+    _update_widget_server_side(website_id, enabled=False, access_key_hash="")
+    return {"ok": True}
+
+
+def _update_widget_server_side(website_id: str, *, enabled: bool, access_key_hash: str) -> None:
+    payload = current_settings_payload()
+    sites = [dict(site) for site in (payload.get("widget_allowed_sites") or []) if isinstance(site, dict)]
+    target = next((s for s in sites if str(s.get("website_id") or "") == website_id), None)
+    if target is None:
+        raise HTTPException(status_code=404, detail="Widget site not found")
+    target["server_side"] = {"enabled": enabled, "access_key_hash": access_key_hash}
+    persist_admin_settings({"widget_allowed_sites": sites})
 
 
 @settings_router.get("/settings", response_model=AdminSettingsResponse)
