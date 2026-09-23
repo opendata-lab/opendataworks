@@ -155,7 +155,10 @@ export function useConversation({ transport, generation, emit }) {
         }
         assistant.status = snapshot.run.status
         assistant._v2state.status = 'streaming'
-        subscribe(snapshot.run.taskId, 0, at)
+        // Resume where the persisted turn left off. Restarting at 0 replays
+        // thinking, tool calls and answer text the turn already contains, so
+        // leaving a running conversation and coming back doubled everything.
+        subscribe(snapshot.run.taskId, Number(assistant.resumeAfterSeq) || 0, at)
       }
     } catch (error) {
       if (!stale(at)) fail(error)

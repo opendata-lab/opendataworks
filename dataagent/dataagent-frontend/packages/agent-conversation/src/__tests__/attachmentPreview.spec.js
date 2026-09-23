@@ -102,11 +102,24 @@ describe('attachment preview', () => {
     el.remove()
   })
 
-  it('offers preview only for the kinds it can actually show', async () => {
-    // A CSV gets a download link and nothing else — a preview button that
-    // opens "cannot preview this" is worse than no button.
+  it('offers preview for every kind it can actually show', async () => {
+    // Images, HTML and plain-text files, matching what the shells preview
+    // today. A button that opens "cannot preview this" would be worse than no
+    // button, so the list is driven by what the previewer can render.
     const el = await mount(makeTransport({ readFile: vi.fn(async () => new Blob(['x'])) }))
-    expect(previewButtons(el)).toHaveLength(2)
+    expect(previewButtons(el)).toHaveLength(3)
+    el.remove()
+  })
+
+  it('shows a text file as text, never in a frame', async () => {
+    const readFile = vi.fn(async () => new Blob(['id,name\n1,甲'], { type: 'text/csv' }))
+    const el = await mount(makeTransport({ readFile }))
+
+    previewButtons(el)[2].click()
+    const pre = await waitFor(el, '.dac-preview-text')
+
+    expect(pre.textContent).toContain('1,甲')
+    expect(el.shadowRoot.querySelector('.dac-preview-frame')).toBeNull()
     el.remove()
   })
 
@@ -144,13 +157,20 @@ describe('attachment preview', () => {
     el.remove()
   })
 
-  it('keeps the download link available while previewing', async () => {
-    const el = await mount(makeTransport({ readFile: vi.fn(async () => new Blob(['x'])) }))
+  it('saves the file through the transport, not a bare link', async () => {
+    // A browser navigation cannot carry the headers a runtime requires, so an
+    // <a href> downloads an error page on any authenticated host. The shells
+    // already fetch to a Blob for exactly this reason.
+    const readFile = vi.fn(async () => new Blob(['x']))
+    const el = await mount(makeTransport({ readFile }))
     previewButtons(el)[0].click()
     await waitFor(el, '.dac-preview-download')
 
-    expect(el.shadowRoot.querySelector('.dac-preview-download').getAttribute('href'))
-      .toBe('/files/output/chart.png')
+    readFile.mockClear()
+    el.shadowRoot.querySelector('.dac-preview-download').click()
+    await settle()
+
+    expect(readFile).toHaveBeenCalledWith('output/chart.png')
     el.remove()
   })
 

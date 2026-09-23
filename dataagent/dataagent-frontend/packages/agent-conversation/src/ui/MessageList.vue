@@ -43,6 +43,7 @@
             <ToolOutput
               v-else-if="block.type === 'tool_use'"
               :tool="blockToToolProp(block)"
+              :file-url-resolver="fileUrl"
             />
             <PermissionCard
               v-else-if="block.type === 'permission_request'"

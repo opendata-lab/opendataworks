@@ -50,9 +50,20 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
       name: String(file?.name || file?.rel_path || ''),
       relPath: String(file?.rel_path || ''),
       mediaType: file?.content_type || undefined,
+      size: Number(file?.size) || undefined,
     })),
     taskId: row?.task_id ? String(row.task_id) : undefined,
     createdAt: row?.created_at ? String(row.created_at) : undefined,
+    // A run that already failed carries its outcome on the row. Dropping these
+    // meant reloading a failed conversation rendered an empty assistant turn
+    // with no error and nothing to retry.
+    status: row?.status ? String(row.status) : undefined,
+    error: row?.error ?? undefined,
+    feedback: row?.feedback ? String(row.feedback) : '',
+    // Where to resume the event stream for a run still in flight. Without it
+    // the SDK restarts from 0 and replays thinking, tool calls and answer text
+    // the user has already seen.
+    resumeAfterSeq: Number(row?.resume_after_seq) || 0,
   })
 
   return {
@@ -183,6 +194,39 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
 
     async setPermissionMode(mode) {
       await api.topicApi.updateTopic(topicId, { permission_mode: mode })
+    },
+
+    /**
+     * Put the picked files in the topic's workspace and hand back references.
+     *
+     * Uploaded one at a time because that is the endpoint DataAgent exposes;
+     * the SDK only needs the references back in order.
+     */
+    async uploadFiles(files) {
+      const uploaded = []
+      for (const file of files) {
+        const saved = await api.topicApi.uploadFile(topicId, file)
+        const relPath = String(saved?.rel_path || '')
+        if (!relPath) continue
+        uploaded.push({
+          name: String(saved?.name || file.name || relPath),
+          relPath,
+          mediaType: saved?.content_type || file.type || undefined,
+          size: Number(saved?.size ?? file.size) || undefined,
+        })
+      }
+      return uploaded
+    },
+
+    /**
+     * Read a workspace file as bytes, for preview and for download.
+     *
+     * Goes through fetch rather than handing out a URL because a bare browser
+     * navigation cannot carry the site and access-key headers this runtime
+     * requires — the same reason the chat surfaces already download via Blob.
+     */
+    readFile(relPath) {
+      return api.topicApi.fetchFileBlob(topicId, relPath)
     },
 
     async submitFeedback({ messageId, feedback }) {

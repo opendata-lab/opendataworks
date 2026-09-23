@@ -11,6 +11,8 @@ const makeApi = (over = {}) => ({
     fileUrl: vi.fn((topicId, relPath) => `/api/v1/nl2sql/topics/${topicId}/files/${relPath}`),
     updateTopic: vi.fn(async () => ({})),
     updateMessageFeedback: vi.fn(async () => ({})),
+    uploadFile: vi.fn(async (_topicId, file) => ({ rel_path: `uploads/${file.name}`, name: file.name, size: 7 })),
+    fetchFileBlob: vi.fn(async () => new Blob(['x'])),
     ...over.topicApi
   },
   taskApi: {
@@ -252,6 +254,8 @@ describe('it talks to the client that actually exists', () => {
     await transport.executeSql({ sql: 'SELECT 1' })
     await transport.setPermissionMode('default')
     await transport.submitFeedback({ messageId: 'm-1', feedback: 'up' })
+    await transport.uploadFiles([new File(['x'], 'a.csv')])
+    await transport.readFile('output/a.csv')
 
     expect(typeof real.taskApi.streamSdkEvents).toBe('function')
     expect(real.eventApi.streamSdkEvents).toBeUndefined()
@@ -269,5 +273,63 @@ describe('it talks to the client that actually exists', () => {
 
     expect(api.topicApi.updateMessageFeedback).toHaveBeenCalledWith(TOPIC, 'm-1', 'up')
     expect(result).toEqual({ feedback: 'up' })
+  })
+
+  it('carries the fields a reloaded conversation needs', async () => {
+    // Each of these was dropped on the way through, and each loss is only
+    // visible after a reload: no error card on a failed run, no rating
+    // highlight, and a running turn that replays from the beginning.
+    const api = makeApi({
+      topicApi: {
+        getTopicMessages: vi.fn(async () => ({
+          items: [{
+            message_id: 'a1',
+            sender_type: 'assistant',
+            content: '',
+            status: 'failed',
+            error: { message: '模型调用超时' },
+            feedback: 'like',
+            resume_after_seq: 12,
+            task_id: 'task-1',
+            attachments: [{ name: '明细.csv', rel_path: 'output/rows.csv', size: 2048 }],
+          }],
+          total: 1,
+        })),
+      },
+    })
+
+    const { messages } = await createNl2SqlTransport(api, TOPIC).loadConversation()
+
+    expect(messages[0]).toMatchObject({
+      status: 'failed',
+      feedback: 'like',
+      resumeAfterSeq: 12,
+    })
+    expect(messages[0].error).toEqual({ message: '模型调用超时' })
+    expect(messages[0].attachments[0]).toMatchObject({ relPath: 'output/rows.csv', size: 2048 })
+  })
+
+  it('uploads through the topic files endpoint and returns workspace references', async () => {
+    const api = makeApi()
+    const transport = createNl2SqlTransport(api, TOPIC)
+
+    const uploaded = await transport.uploadFiles([new File(['x'], '订单.csv', { type: 'text/csv' })])
+
+    expect(api.topicApi.uploadFile).toHaveBeenCalledWith(TOPIC, expect.any(File))
+    expect(uploaded).toEqual([
+      { name: '订单.csv', relPath: 'uploads/订单.csv', mediaType: 'text/csv', size: 7 },
+    ])
+  })
+
+  it('reads a file through fetch so the runtime headers apply', async () => {
+    // A bare URL cannot carry the site and access-key headers, which is why
+    // the chat surfaces already download via Blob rather than an <a href>.
+    const api = makeApi()
+    const transport = createNl2SqlTransport(api, TOPIC)
+
+    const blob = await transport.readFile('output/report.html')
+
+    expect(api.topicApi.fetchFileBlob).toHaveBeenCalledWith(TOPIC, 'output/report.html')
+    expect(blob).toBeInstanceOf(Blob)
   })
 })

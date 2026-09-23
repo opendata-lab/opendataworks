@@ -21,7 +21,6 @@
       v-if="previewFile && canPreviewFiles"
       :file="previewFile"
       :read-file="endpointApi.transport.value.readFile"
-      :download-url="fileUrl(previewFile.relPath)"
       @close="previewFile = null"
     />
 

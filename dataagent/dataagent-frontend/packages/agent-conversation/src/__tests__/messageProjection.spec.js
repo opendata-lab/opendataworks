@@ -150,3 +150,36 @@ describe('history projection', () => {
     expect(recordsHtml).toContain('模型调用超时')
   })
 })
+
+describe('returning to a run still in flight', () => {
+  it('resumes where the persisted turn ends instead of replaying it', async () => {
+    // Leaving a running conversation and coming back used to restart the
+    // stream at 0, so the thinking, tool calls and answer text already stored
+    // on the turn arrived a second time and rendered twice.
+    const seen = []
+    const transport = makeTransport({
+      loadConversation: vi.fn(async () => ({
+        messages: [{
+          id: 'a-1',
+          role: 'assistant',
+          content: '',
+          taskId: 't-1',
+          resumeAfterSeq: 12,
+          records: RECORDS
+        }],
+        run: { taskId: 't-1', status: 'running', detail: '' }
+      })),
+      streamEvents: vi.fn(async function* ({ afterId }) {
+        seen.push(afterId)
+        yield { type: 'terminal', run: { taskId: 't-1', status: 'finished', detail: '' } }
+      })
+    })
+    const el = document.createElement(DEFAULT_TAG)
+    Object.assign(el, { endpoint: '/conv/a', transportFactory: () => transport })
+    document.body.appendChild(el)
+    await settle()
+
+    expect(seen).toEqual([12])
+    el.remove()
+  })
+})

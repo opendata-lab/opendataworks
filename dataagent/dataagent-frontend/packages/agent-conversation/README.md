@@ -242,7 +242,7 @@ is rendered that would silently discard the user's action.
 | `executeSql(input)` | SQL tool cards get a row-limit selector and an execute button | The query renders read-only — no controls at all |
 | `submitFeedback({ messageId, feedback })` | 👍 / 👎 appear under finished answers; applied optimistically and rolled back if the call rejects | No rating buttons |
 | `uploadFiles(files)` | The composer gets an attach button, upload state, and removable chips; references ride with the next message | No attach button |
-| `readFile(relPath)` | Image and HTML attachments get a **预览** button — images through a revoked object URL, HTML inside `sandbox=""` | Attachments stay download links |
+| `readFile(relPath)` | Attachments get **预览** and **下载**: images through a revoked object URL, HTML inside `sandbox=""`, text files as plain text. Saving goes through this too, because a bare link cannot carry auth headers | Attachments stay plain links |
 
 ### Composer configuration
 
