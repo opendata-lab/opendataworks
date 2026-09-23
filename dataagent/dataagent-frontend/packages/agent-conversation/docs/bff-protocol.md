@@ -114,17 +114,21 @@ Omit what your backend cannot do; the UI degrades instead of erroring.
 | `executeSql` | SQL panel becomes read-only (highlighting and copy) |
 | `uploadFiles` | no attach button |
 | `readFile` | attachments cannot be previewed or saved in place |
+| `setPermissionMode` | the picker still works, the choice just is not saved |
 | `submitFeedback` | no feedback controls |
 
 An ontology or reporting host that cannot run arbitrary SQL should simply omit
 `executeSql` — that is the intended use of this table, not a limitation.
 
-Slash commands and the permission-mode switcher are **not** transport
-capabilities. They are host configuration, passed as `composerConfig`, because
-the command list and the available modes are things the host already knows and
-should not have to fetch through a second round trip. The composer's current
-selection travels with each message as `settings`, so there is no separate call
-whose failure could leave the server's mode and the user's view disagreeing.
+The slash-command list and the permission-mode options are **not** transport
+capabilities — they are host configuration, passed as `composerConfig`, because
+the host already knows both and should not fetch them through a second round
+trip. Persisting the chosen mode is a capability, because only the host knows
+where a conversation's settings live.
+
+The current selection also travels with each message as `settings`: that is
+what the run uses, while the persisted value is what the conversation restores
+to. A host that cannot persist simply omits `setPermissionMode`.
 
 `readFile` also backs saving, not just previewing: a bare `<a href>` cannot
 carry the headers a runtime requires, so on an authenticated host a plain link

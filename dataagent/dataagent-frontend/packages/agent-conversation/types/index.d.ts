@@ -67,6 +67,11 @@ export interface ComposerConfig {
   providers?: { provider_id: string; models?: string[] }[]
   /** As the shells already declare them (`PERMISSION_MODE_OPTIONS`). */
   permissionModes?: { value: string; label: string; desc?: string }[]
+  /**
+   * The mode this conversation is saved with. Supply it when switching
+   * conversations, or the picker keeps showing the previous one's.
+   */
+  permissionMode?: string
   /** Build these with the exported `buildCommands(names)`. */
   slashCommands?: SlashCommand[]
   /** Offered while the conversation is empty; clicking one sends it. */
@@ -186,6 +191,15 @@ export interface ConversationTransport {
    * than a URL so the host keeps control of authentication.
    */
   readFile?(relPath: string): Promise<Blob>
+
+  /**
+   * Optional. When absent the picker still works, it just does not persist —
+   * the chosen mode still travels with each message.
+   *
+   * Applied optimistically and rolled back if this rejects, so the picker never
+   * claims a mode the host did not accept.
+   */
+  setPermissionMode?(mode: string): Promise<void>
 
   /**
    * Optional. When absent the thumbs up / down buttons are not rendered.

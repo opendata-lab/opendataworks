@@ -265,3 +265,70 @@ describe('slash behaviour matches the shells it replaces', () => {
     el.remove()
   })
 })
+
+describe('permission mode', () => {
+  it('persists the choice when the host can store it', async () => {
+    const setPermissionMode = vi.fn(async () => {})
+    const transport = makeTransport({ setPermissionMode })
+    const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
+
+    const select = el.shadowRoot.querySelector('[data-control="permission-mode"]')
+    select.value = 'bypassPermissions'
+    select.dispatchEvent(new Event('change'))
+    await settle()
+
+    expect(setPermissionMode).toHaveBeenCalledWith('bypassPermissions')
+    expect(select.value).toBe('bypassPermissions')
+    el.remove()
+  })
+
+  it('rolls back when the save fails', async () => {
+    // The shell showed a toast and kept the new value on screen, so the picker
+    // claimed a mode the server had not accepted and the next run quietly used
+    // the old one.
+    const transport = makeTransport({
+      setPermissionMode: vi.fn(async () => { throw new Error('保存失败') })
+    })
+    const errors = []
+    const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
+    el.addEventListener('dataagent-error', (event) => errors.push(event.detail))
+
+    const select = el.shadowRoot.querySelector('[data-control="permission-mode"]')
+    select.value = 'bypassPermissions'
+    select.dispatchEvent(new Event('change'))
+    await settle()
+
+    expect(el.shadowRoot.querySelector('[data-control="permission-mode"]').value).toBe('default')
+    expect(errors).toHaveLength(1)
+    el.remove()
+  })
+
+  it('shows the mode this conversation was saved with', async () => {
+    // Switching conversations must not leave the previous one's mode selected.
+    const el = await mount({
+      transportFactory: () => makeTransport(),
+      composerConfig: { ...CONFIG, permissionMode: 'bypassPermissions' }
+    })
+
+    expect(el.shadowRoot.querySelector('[data-control="permission-mode"]').value)
+      .toBe('bypassPermissions')
+    el.remove()
+  })
+
+  it('still works when the host cannot persist it', async () => {
+    const transport = makeTransport()
+    const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
+
+    const select = el.shadowRoot.querySelector('[data-control="permission-mode"]')
+    select.value = 'bypassPermissions'
+    select.dispatchEvent(new Event('change'))
+    await settle()
+
+    await el.sendMessage('开始')
+    await settle()
+
+    expect(transport.sendMessage.mock.calls[0][0].settings.permission_mode)
+      .toBe('bypassPermissions')
+    el.remove()
+  })
+})

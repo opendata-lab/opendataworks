@@ -143,9 +143,11 @@ const props = defineProps({
   runDetail: { type: String, default: '' },
   config: { type: Object, default: () => ({}) }
 })
-const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-change'])
+const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-change', 'permission-error'])
 
 const inputRef = ref(null)
+
+const transport = inject('agentConversationTransport', null)
 
 const providers = computed(() =>
   (props.config?.providers || []).filter((item) => (item?.models || []).length)
@@ -183,9 +185,16 @@ watch(providers, (list) => {
   model.value = first?.models?.[0] || ''
 }, { immediate: true })
 
-watch(permissionModes, (list) => {
-  if (list.some((item) => item.value === permissionMode.value)) return
-  permissionMode.value = list[0]?.value || ''
+// The host supplies the conversation's saved mode; switching conversations
+// changes it, and the picker has to follow or it shows the previous one's.
+watch(() => [permissionModes.value, props.config?.permissionMode], ([list, saved]) => {
+  const options = list || []
+  if (saved && options.some((item) => item.value === saved)) {
+    permissionMode.value = saved
+    return
+  }
+  if (options.some((item) => item.value === permissionMode.value)) return
+  permissionMode.value = options[0]?.value || ''
 }, { immediate: true })
 
 watch(settings, (value) => emit('settings-change', value), { immediate: true })
@@ -196,11 +205,29 @@ const onModelChange = (value) => {
   model.value = name
 }
 
-const onPermissionChange = (value) => {
-  permissionMode.value = String(value)
+/**
+ * Switch permission mode, persisting it when the host can.
+ *
+ * Applied optimistically and rolled back if the save fails. The shell it
+ * replaces showed a toast and kept the new value on screen, which left the
+ * picker claiming a mode the server had not accepted — the next run would then
+ * use the old one with nothing on screen saying so.
+ */
+const onPermissionChange = async (value) => {
+  const previous = permissionMode.value
+  const next = String(value)
+  permissionMode.value = next
+
+  const save = unref(transport)?.setPermissionMode
+  if (typeof save !== 'function') return
+  try {
+    await save(next)
+  } catch (error) {
+    permissionMode.value = previous
+    emit('permission-error', error)
+  }
 }
 
-const transport = inject('agentConversationTransport', null)
 const canUpload = computed(() => typeof unref(transport)?.uploadFiles === 'function')
 
 const fileRef = ref(null)

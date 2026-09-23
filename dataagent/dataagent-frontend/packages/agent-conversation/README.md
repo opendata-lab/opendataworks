@@ -240,6 +240,7 @@ is rendered that would silently discard the user's action.
 | Transport method | When present | When absent |
 | --- | --- | --- |
 | `executeSql(input)` | SQL tool cards get a row-limit selector and an execute button | The query renders read-only — no controls at all |
+| `setPermissionMode(mode)` | The permission picker persists the choice, rolling back if the call rejects | The picker still works; the mode only travels with each message |
 | `submitFeedback({ messageId, feedback })` | 👍 / 👎 appear under finished answers; applied optimistically and rolled back if the call rejects | No rating buttons |
 | `uploadFiles(files)` | The composer gets an attach button, upload state, and removable chips; references ride with the next message | No attach button |
 | `readFile(relPath)` | Attachments get **预览** and **下载**: images through a revoked object URL, HTML inside `sandbox=""`, text files as plain text. Saving goes through this too, because a bare link cannot carry auth headers | Attachments stay plain links |
@@ -252,17 +253,17 @@ nothing — the SDK draws the controls, the host decides which exist.
 
 ```js
 el.composerConfig = {
-  providers: [
-    { id: 'anthropic', label: 'Anthropic', models: [{ id: 'sonnet', label: 'Sonnet' }] }
-  ],
-  permissionModes: [{ id: 'default', label: '默认', description: '写操作前确认' }],
-  slashCommands: [{ name: 'compact', description: '压缩上下文' }],
+  // The shapes the host already holds — pass them straight through.
+  providers: [{ provider_id: 'anthropic', models: ['sonnet', 'opus'] }],
+  permissionModes: [{ value: 'default', label: 'Default', desc: '写操作前确认' }],
+  permissionMode: 'default',
+  slashCommands: buildCommands(['compact', 'clear']),
   suggestions: ['分析最近 30 天的订单趋势']
 }
 ```
 
 The current selection is sent with each message as
-`sendMessage({ content, settings: { providerId, model, permissionMode } })`
+`sendMessage({ content, settings: { provider_id, model, permission_mode } })`
 rather than pushed separately, so what was sent and what the user could see
 cannot disagree. Suggestions are offered only while the conversation is empty.
 

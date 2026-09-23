@@ -50,6 +50,7 @@
       @send="() => send()"
       @cancel="conversation.cancel"
       @settings-change="(value) => { settings = value }"
+      @permission-error="(error) => emit({ name: 'error', detail: { code: 'PERMISSION_MODE_FAILED', message: error?.message || '切换权限模式失败' } })"
     >
       <template #composer-overlay><slot name="composer-overlay" /></template>
       <template #composer-actions><slot name="composer-actions" /></template>
