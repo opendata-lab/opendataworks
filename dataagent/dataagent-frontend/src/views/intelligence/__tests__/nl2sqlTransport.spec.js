@@ -251,9 +251,23 @@ describe('it talks to the client that actually exists', () => {
     transport.fileUrl('output/x.json')
     await transport.executeSql({ sql: 'SELECT 1' })
     await transport.setPermissionMode('default')
-    await transport.submitFeedback('m-1', 1)
+    await transport.submitFeedback({ messageId: 'm-1', feedback: 'up' })
 
     expect(typeof real.taskApi.streamSdkEvents).toBe('function')
     expect(real.eventApi.streamSdkEvents).toBeUndefined()
   }, 15000)
+
+  it('takes feedback in the shape the SDK sends it', async () => {
+    // The guard above only proves the namespaces exist; it calls each method
+    // and ignores the arguments. That let the signature drift away from the
+    // SDK's call — the rating buttons rendered, and every click sent an object
+    // where a message id belonged.
+    const api = makeApi()
+    const transport = createNl2SqlTransport(api, TOPIC)
+
+    const result = await transport.submitFeedback({ messageId: 'm-1', feedback: 'up' })
+
+    expect(api.topicApi.updateMessageFeedback).toHaveBeenCalledWith(TOPIC, 'm-1', 'up')
+    expect(result).toEqual({ feedback: 'up' })
+  })
 })

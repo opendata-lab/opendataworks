@@ -63,6 +63,30 @@ export function useConversation({ transport, generation, emit }) {
       (message) => message.role === 'assistant' && message.taskId === taskId,
     )
 
+  /**
+   * Move the open assistant turn to a terminal state alongside its run.
+   *
+   * Every way a run can end has to come through here. A turn left on
+   * 'streaming' keeps its cursor and waiting indicator, and withholds copy and
+   * rating, on an answer that is finished — so "the run ended" and "the turn
+   * ended" must not be two separate things a caller can forget to do.
+   */
+  const closeTurn = (taskId, status, detail) => {
+    const assistant = assistantFor(taskId)
+    if (!assistant) return
+    assistant.status = status
+    if (status === 'failed') {
+      assistant._v2state.status = 'error'
+      assistant._v2state.errorText = detail || '会话执行失败'
+    } else {
+      assistant._v2state.status = 'done'
+    }
+    for (const block of assistant._v2state.blocks) {
+      if (block.status === 'streaming') block.status = 'done'
+    }
+    triggerRef(messages)
+  }
+
   const fail = (error) => {
     emit({
       name: 'error',
@@ -170,17 +194,7 @@ export function useConversation({ transport, generation, emit }) {
           emit({ name: 'agent-event', detail: item.event })
           continue
         }
-        const assistant = assistantFor(taskId)
-        if (assistant) {
-          assistant.status = item.run.status
-          if (item.run.status === 'failed') {
-            assistant._v2state.status = 'error'
-            assistant._v2state.errorText = item.run.detail || '会话执行失败'
-          } else if (TERMINAL_RUN_STATUSES.has(item.run.status)) {
-            assistant._v2state.status = 'done'
-          }
-          triggerRef(messages)
-        }
+        closeTurn(taskId, item.run.status, item.run.detail)
         setRun({ ...item.run, metadata: item.run.metadata || runMetadata.get(item.run.taskId) })
         await refreshMessages(at)
         return
@@ -188,13 +202,7 @@ export function useConversation({ transport, generation, emit }) {
     } catch (error) {
       if (stale(at)) return
       if (!(error instanceof StreamInterrupted)) {
-        const assistant = assistantFor(taskId)
-        if (assistant) {
-          assistant.status = 'failed'
-          assistant._v2state.status = 'error'
-          assistant._v2state.errorText = error?.message || '会话执行失败'
-          triggerRef(messages)
-        }
+        closeTurn(taskId, 'failed', error?.message)
         // The run has to end with the stream. Leaving it on its last active
         // status keeps isActive true forever, which disables the composer and
         // makes retry refuse — an error the user can see but cannot act on.
@@ -299,9 +307,14 @@ export function useConversation({ transport, generation, emit }) {
     if (!run.value?.taskId || !transport.value) return
     const at = generation.value
     try {
-      const next = await transport.value.cancelRun({ taskId: run.value.taskId })
+      const taskId = run.value.taskId
+      const next = await transport.value.cancelRun({ taskId })
       if (stale(at)) return
       stopStream()
+      // The turn has to end with the run. Cancelling only the run leaves the
+      // open assistant streaming forever: a blinking cursor and "正在处理" on an
+      // answer that was stopped, and no copy or rating on what it did produce.
+      closeTurn(taskId, next.status, next.detail)
       setRun(next)
     } catch (error) {
       if (!stale(at)) fail(error)

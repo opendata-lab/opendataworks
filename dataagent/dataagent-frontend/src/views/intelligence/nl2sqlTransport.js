@@ -185,9 +185,9 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
       await api.topicApi.updateTopic(topicId, { permission_mode: mode })
     },
 
-    async submitFeedback(messageId, value) {
-      const feedback = value === 1 ? 'up' : value === -1 ? 'down' : ''
-      await api.topicApi.updateMessageFeedback(topicId, messageId, feedback)
+    async submitFeedback({ messageId, feedback }) {
+      const saved = await api.topicApi.updateMessageFeedback(topicId, messageId, feedback)
+      return { feedback: String(saved?.feedback ?? feedback) }
     },
   }
 }

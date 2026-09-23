@@ -114,3 +114,56 @@ describe('a run that fails', () => {
     el.remove()
   })
 })
+
+describe('a run the user stops', () => {
+  it('ends the turn, not just the run', async () => {
+    // Cancelling only the run left the open turn on 'streaming': a blinking
+    // cursor and a waiting indicator over an answer that was stopped, with
+    // copy and rating withheld because the turn still looked unfinished.
+    let release
+    const transport = makeTransport({
+      streamEvents: async function* () {
+        yield {
+          type: 'event',
+          seqId: 1,
+          event: { record_type: 'stream', data: { type: 'message_start' } }
+        }
+        yield {
+          type: 'event',
+          seqId: 2,
+          event: {
+            record_type: 'stream',
+            data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } }
+          }
+        }
+        yield {
+          type: 'event',
+          seqId: 3,
+          event: {
+            record_type: 'stream',
+            data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: '写到一半' } }
+          }
+        }
+        await new Promise((resolve) => { release = resolve })
+      },
+      cancelRun: vi.fn(async () => ({ taskId: 't-1', status: 'cancelled', detail: '已取消' }))
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('开始建模')
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-cursor')).toBeTruthy()
+
+    await el.cancel()
+    await settle()
+
+    expect(el.shadowRoot.querySelector('.dac-cursor')).toBeNull()
+    expect(el.shadowRoot.querySelector('.dac-activity')).toBeNull()
+    // What it did produce stays, and is now actionable.
+    expect(el.shadowRoot.textContent).toContain('写到一半')
+    expect(el.shadowRoot.querySelector('[data-action="copy"]')).toBeTruthy()
+    release?.()
+    el.remove()
+  })
+})
