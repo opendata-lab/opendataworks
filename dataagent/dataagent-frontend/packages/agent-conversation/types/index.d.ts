@@ -55,6 +55,16 @@ export interface ConversationAttachment {
   size?: number
 }
 
+/** Persisted block names are the backend's canonical names, not UI aliases. */
+export interface ConversationBlock {
+  type: string
+  text?: string
+  tool_id?: string
+  tool_name?: string
+  request_id?: string
+  [key: string]: unknown
+}
+
 /**
  * What the composer offers, supplied by the host.
  *
@@ -116,10 +126,16 @@ export interface ConversationMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
-  blocks?: unknown[]
+  blocks?: ConversationBlock[]
+  records?: unknown[]
   attachments?: ConversationAttachment[]
   taskId?: string
   createdAt?: string
+  status?: string
+  error?: unknown
+  feedback?: string
+  /** Last persisted stream sequence already represented by this message. */
+  resumeAfterSeq?: number
 }
 
 export interface ConversationSnapshot {

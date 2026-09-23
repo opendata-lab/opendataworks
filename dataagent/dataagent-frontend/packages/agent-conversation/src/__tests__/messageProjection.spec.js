@@ -152,7 +152,10 @@ describe('history projection', () => {
 })
 
 describe('returning to a run still in flight', () => {
-  it('resumes where the persisted turn ends instead of replaying it', async () => {
+  it.each([
+    ['public shape', { resumeAfterSeq: 12 }],
+    ['DataAgent/BFF row', { resume_after_seq: 12 }],
+  ])('resumes where the persisted %s ends instead of replaying it', async (_shape, resumeField) => {
     // Leaving a running conversation and coming back used to restart the
     // stream at 0, so the thinking, tool calls and answer text already stored
     // on the turn arrived a second time and rendered twice.
@@ -164,7 +167,7 @@ describe('returning to a run still in flight', () => {
           role: 'assistant',
           content: '',
           taskId: 't-1',
-          resumeAfterSeq: 12,
+          ...resumeField,
           records: RECORDS
         }],
         run: { taskId: 't-1', status: 'running', detail: '' }

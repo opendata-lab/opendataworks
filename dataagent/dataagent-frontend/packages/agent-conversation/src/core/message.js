@@ -233,6 +233,11 @@ export function normalizeConversationMessage(item) {
     taskId: String(item?.taskId || item?.task_id || '') || undefined,
     createdAt: String(item?.createdAt || item?.created_at || '') || undefined,
     feedback: String(item?.feedback || ''),
+    // Direct transports already return the public camelCase field, while the
+    // host BFF protocol commonly passes DataAgent's persisted snake_case row
+    // through unchanged. Normalize both here: useConversation resumes from
+    // this field, and falling back to 0 silently replays the whole live turn.
+    resumeAfterSeq: Number(item?.resumeAfterSeq ?? item?.resume_after_seq ?? 0) || 0,
   }
   if (role === 'user') return base
 
