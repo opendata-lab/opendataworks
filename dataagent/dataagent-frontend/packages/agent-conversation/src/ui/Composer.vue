@@ -1,5 +1,6 @@
 <template>
   <div class="dac-composer" part="composer">
+    <div class="dac-composer-inner" part="composer-inner">
     <!-- Above the input: overlays that must sit against it, such as a slash
          command menu. Empty for hosts that have none. -->
     <slot name="composer-overlay" />
@@ -57,22 +58,40 @@
             multiple
             @change="onFilesPicked"
           />
+          <!-- The same plus the shells have always shown. A paperclip would
+               be a perfectly good icon and still the wrong one: the control
+               has to stay recognisable to people who used the old page. -->
           <button
             type="button"
             class="dac-action-btn"
             part="attach-button"
             data-action="attach"
-            aria-label="添加附件"
+            title="上传文件"
+            aria-label="上传文件"
             :disabled="disabled || uploading"
             @click="fileRef?.click()"
-          >📎</button>
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </button>
         </template>
 
         <!-- Rendered only when the host supplies the options. A picker over an
              empty list is a control that looks broken. -->
+        <!-- Borderless pickers with an icon, the way the shells have always
+             drawn them. Native <select> underneath so keyboard and screen
+             readers keep working; only the chrome is restyled. -->
+        <label v-if="providers.length" class="dac-picker" part="model-picker" title="切换模型">
+          <svg class="dac-picker-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true">
+            <path d="M12 2V4" />
+            <rect x="4" y="6" width="16" height="12" rx="2" />
+            <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
+            <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
+          </svg>
         <select
-          v-if="providers.length"
-          class="dac-select"
+          class="dac-picker-select"
           part="model-select"
           data-control="model"
           aria-label="模型"
@@ -88,10 +107,12 @@
             >{{ name }}</option>
           </optgroup>
         </select>
+        </label>
 
+        <label v-if="permissionModes.length" class="dac-picker" part="permission-picker" title="权限模式">
+          <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
         <select
-          v-if="permissionModes.length"
-          class="dac-select"
+          class="dac-picker-select"
           part="permission-select"
           data-control="permission-mode"
           aria-label="权限模式"
@@ -106,6 +127,7 @@
             :title="mode.desc || ''"
           >{{ mode.label }}</option>
         </select>
+        </label>
 
         <slot name="composer-actions" />
       </div>
@@ -127,6 +149,7 @@
          the SDK has no opinion about, so it supplies the space rather than the
          controls. -->
     <slot name="composer-toolbar" />
+    </div>
   </div>
 </template>
 
@@ -349,8 +372,15 @@ const onKeydown = (event) => {
 <style>
 .dac-composer {
   border-top: 1px solid var(--dac-border-color, #e2e8f0);
-  padding: 10px 14px 12px;
   background: var(--dac-composer-bg, transparent);
+}
+.dac-composer-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dac-content-max-width, none);
+  margin: 0 auto;
+  padding-block: 10px 12px;
+  padding-inline: var(--dac-content-padding-inline, 14px);
 }
 .dac-input {
   width: 100%;
@@ -383,17 +413,46 @@ const onKeydown = (event) => {
   align-items: center;
   gap: 8px;
 }
-.dac-select {
-  height: 28px;
+/* Geometry and colours copied from the shells' `.v2-model-btn` / `.v2-perm-pill`. */
+.dac-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--dac-icon-color, #8a96a6);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.dac-picker:hover {
+  background: var(--dac-icon-hover-bg, #eef1f5);
+  color: var(--dac-icon-hover-color, #4a5568);
+}
+.dac-picker-icon { flex: none; }
+.dac-picker-select {
+  appearance: none;
   max-width: 180px;
-  padding: 0 6px;
-  border: 1px solid var(--dac-input-border, #cbd5e1);
-  border-radius: var(--dac-button-radius, 8px);
-  background: var(--dac-input-bg, #ffffff);
-  color: var(--dac-input-color, inherit);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
   font: inherit;
   font-size: 12px;
+  cursor: pointer;
 }
+.dac-picker-select:disabled { cursor: not-allowed; }
+/* The mode is legible at a glance from the dot alone, as it was before. */
+.dac-perm-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dac-perm-dot-color, #e6a23c);
+}
+.dac-perm-dot.is-default { background: #409eff; }
+.dac-perm-dot.is-acceptEdits { background: #e6a23c; }
+.dac-perm-dot.is-plan { background: #909399; }
+.dac-perm-dot.is-bypassPermissions { background: #c0392b; }
 .dac-slash {
   margin: 0 0 8px;
   padding: 4px;
@@ -418,15 +477,24 @@ const onKeydown = (event) => {
   background: var(--dac-assistant-bubble-bg, #f1f5f9);
 }
 .dac-file-input { display: none; }
+/* Geometry and colours copied from the shells' own `.v2-attach-btn`. */
 .dac-action-btn {
-  height: 28px;
-  width: 28px;
-  border: 1px solid var(--dac-input-border, #cbd5e1);
-  border-radius: var(--dac-button-radius, 8px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border: none;
+  border-radius: 6px;
   background: transparent;
-  font-size: 14px;
-  line-height: 1;
+  color: var(--dac-icon-color, #8a96a6);
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.dac-action-btn:hover:not(:disabled) {
+  background: var(--dac-icon-hover-bg, #eef1f5);
+  color: var(--dac-icon-hover-color, #4a5568);
 }
 .dac-action-btn:disabled { cursor: not-allowed; opacity: 0.5; }
 .dac-chips {

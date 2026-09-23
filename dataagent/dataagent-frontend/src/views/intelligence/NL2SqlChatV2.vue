@@ -1783,6 +1783,15 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   min-width: 0;
+
+  /* The page's own measurements, handed to the element. They were
+     `.v2-messages-inner` and `.v2-composer-wrap` before the migration, and
+     sharing one pair of values is what keeps the message column and the
+     composer aligned with each other. */
+  --dac-content-max-width: 1280px;
+  --dac-content-padding-inline: clamp(40px, 5%, 64px);
+  --dac-content-padding-block: 24px;
+  --dac-message-gap: 24px;
 }
 
 .v2-main-top-bar {

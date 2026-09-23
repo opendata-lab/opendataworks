@@ -273,7 +273,10 @@ describe('host slots', () => {
     // Position matters as much as presence: the overlay has to precede the
     // input and the toolbar has to follow the footer, or the widget's layout
     // cannot be reproduced.
-    const composer = shadow.querySelector('.dac-composer')
+    // The row that holds them is `.dac-composer-inner`: the outer element
+    // carries the border and background, the inner one the content width the
+    // host sets, and the slots live with the content.
+    const composer = shadow.querySelector('.dac-composer-inner')
     const order = [...composer.children].map((child) =>
       child.tagName === 'SLOT' ? child.getAttribute('name') : child.className,
     )

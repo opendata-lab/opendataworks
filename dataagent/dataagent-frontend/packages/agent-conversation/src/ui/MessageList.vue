@@ -1,5 +1,6 @@
 <template>
   <div class="dac-messages" part="messages" ref="scrollRef" @scroll="handleScroll">
+    <div class="dac-messages-inner" part="messages-inner">
     <div v-if="!messages.length" class="dac-empty" part="empty">
       <slot name="empty">暂无消息</slot>
     </div>
@@ -139,6 +140,7 @@
         />
       </div>
     </article>
+    </div>
   </div>
 </template>
 
@@ -308,9 +310,19 @@ watch(
 </script>
 
 <style>
-.dac-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
+.dac-messages { flex: 1; min-height: 0; overflow-y: auto; }
+/* Width and gutters are the host's call — the message column and the composer
+   read the same two tokens so the two stay aligned with each other. */
+.dac-messages-inner {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dac-content-max-width, none);
+  margin: 0 auto;
+  padding-block: var(--dac-content-padding-block, 16px);
+  padding-inline: var(--dac-content-padding-inline, 16px);
+}
 .dac-empty { color: var(--dac-text-muted, #64748b); font-size: 14px; }
-.dac-message { margin-bottom: 14px; display: flex; }
+.dac-message { margin-bottom: var(--dac-message-gap, 14px); display: flex; }
 .dac-message-user { justify-content: flex-end; }
 .dac-user {
   display: flex;

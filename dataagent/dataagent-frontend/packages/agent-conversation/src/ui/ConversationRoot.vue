@@ -1,5 +1,5 @@
 <template>
-  <div class="dac-root" part="root">
+  <div class="dac-root" part="root" :class="{ 'is-empty': !conversation.messages.value.length }">
     <MessageList
       ref="messageListRef"
       :messages="conversation.messages.value"
@@ -232,8 +232,9 @@ defineExpose({
 .dac-suggestions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
-  padding: 0 14px 4px;
+  padding: 0 14px 12px;
 }
 .dac-suggestion {
   padding: 6px 12px;
@@ -249,6 +250,13 @@ defineExpose({
   border-color: var(--dac-primary, #10b981);
 }
 .dac-suggestion:disabled { cursor: not-allowed; opacity: 0.6; }
+
+/* A conversation with nothing in it is a landing page: greeting, openers and
+   composer sit together in the middle, the way the shells have always drawn a
+   new chat. Leaving the message area at `flex: 1` pins the greeting to the top
+   and strands the composer at the bottom with a gap between them. */
+.dac-root.is-empty { justify-content: center; }
+.dac-root.is-empty .dac-messages { flex: 0 1 auto; overflow: visible; }
 
 .dac-root {
   position: relative;
