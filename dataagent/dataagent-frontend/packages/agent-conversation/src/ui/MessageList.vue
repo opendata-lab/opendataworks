@@ -329,7 +329,7 @@ watch(
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
-  max-width: 82%;
+  max-width: 72%;
 }
 .dac-user .dac-bubble { max-width: 100%; }
 .dac-attachment-size {
@@ -342,21 +342,57 @@ watch(
   outline: 2px solid var(--dac-accent, #0f766e);
   outline-offset: 4px;
 }
-.dac-assistant { width: 100%; display: flex; flex-direction: column; gap: 8px; }
+.dac-assistant {
+  width: 100%;
+  max-width: 88%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .dac-bubble {
-  max-width: 82%;
-  padding: 10px 13px;
-  border-radius: var(--dac-bubble-radius, 14px);
-  background: var(--dac-assistant-bubble-bg, #f1f5f9);
-  color: var(--dac-assistant-bubble-color, inherit);
-  line-height: 1.65;
+  max-width: 100%;
   word-break: break-word;
 }
 .dac-message-user .dac-bubble {
+  padding: 10px 16px;
+  border-radius: 16px 16px 4px 16px;
   background: var(--dac-user-bubble-bg, #ecfdf5);
   color: var(--dac-user-bubble-color, #065f46);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
-.dac-assistant .dac-bubble { max-width: 100%; }
+.dac-assistant .dac-bubble {
+  max-width: 100%;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #162131;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.dac-assistant .dac-bubble p { margin: 0 0 10px; }
+.dac-assistant .dac-bubble p:last-child { margin: 0; }
+.dac-assistant .dac-bubble pre {
+  background: #f3f7fb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  font-size: 13px;
+}
+.dac-assistant .dac-bubble code {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--dac-primary, #10b981) 8%, transparent);
+  color: var(--dac-primary, #10b981);
+}
+.dac-assistant .dac-bubble table { border-collapse: collapse; width: 100%; margin: 10px 0; }
+.dac-assistant .dac-bubble th,
+.dac-assistant .dac-bubble td { border: 1px solid #dbe3ef; padding: 6px 12px; font-size: 13px; }
+.dac-assistant .dac-bubble th { background: #f4f7fb; font-weight: 600; }
 .dac-attachments { margin: 6px 0 0; padding-left: 18px; font-size: 13px; }
 .dac-cursor {
   display: inline-block;

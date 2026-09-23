@@ -273,17 +273,20 @@ describe('host slots', () => {
     // Position matters as much as presence: the overlay has to precede the
     // input and the toolbar has to follow the footer, or the widget's layout
     // cannot be reproduced.
-    // The row that holds them is `.dac-composer-inner`: the outer element
-    // carries the border and background, the inner one the content width the
-    // host sets, and the slots live with the content.
-    const composer = shadow.querySelector('.dac-composer-inner')
-    const order = [...composer.children].map((child) =>
-      child.tagName === 'SLOT' ? child.getAttribute('name') : child.className,
-    )
-    expect(order.indexOf('composer-overlay')).toBeLessThan(order.indexOf('dac-input'))
-    expect(order.indexOf('composer-toolbar')).toBeGreaterThan(
-      order.indexOf('dac-composer-footer'),
-    )
+    // They all stay inside `.dac-composer-inner`, whose content width is set
+    // by the host while the outer composer supplies the fade into the page.
+    const overlay = named('composer-overlay')
+    const input = shadow.querySelector('.dac-input')
+    const footer = shadow.querySelector('.dac-composer-footer')
+    const toolbar = named('composer-toolbar')
+    expect(overlay.compareDocumentPosition(input) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(footer.compareDocumentPosition(toolbar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // The migrated composer keeps the original input-card affordances: the
+    // shortcut hint and icon-only send control live inside the same card.
+    const inputCard = shadow.querySelector('.dac-input-card')
+    expect(inputCard.querySelector('.dac-composer-hint').textContent).toBe('Enter 发送，Shift + Enter 换行')
+    expect(inputCard.querySelector('.dac-send[aria-label="发送"] svg')).toBeTruthy()
     el.remove()
   })
 

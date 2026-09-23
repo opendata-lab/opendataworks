@@ -234,26 +234,35 @@ defineExpose({
 
 <style>
 .dac-suggestions {
+  width: 100%;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 8px;
-  padding: 0 14px 12px;
+  gap: 10px;
+  margin-bottom: 28px;
 }
 .dac-suggestion {
-  padding: 6px 12px;
-  border: 1px solid var(--dac-border-color, #e2e8f0);
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 14px;
+  border: 1px solid var(--dac-primary, #10b981);
   border-radius: 999px;
-  background: var(--dac-assistant-bubble-bg, #f1f5f9);
-  color: inherit;
-  font: inherit;
-  font-size: 13px;
+  background: #ffffff;
+  color: var(--dac-primary, #10b981);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  white-space: nowrap;
 }
 .dac-suggestion:hover:not(:disabled) {
-  border-color: var(--dac-primary, #10b981);
+  background: var(--dac-primary, #10b981);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
 }
-.dac-suggestion:disabled { cursor: not-allowed; opacity: 0.6; }
+.dac-suggestion:disabled { cursor: not-allowed; opacity: 0.45; }
 
 /* A conversation with nothing in it is a landing page: greeting, openers and
    composer sit together in the middle, the way the shells have always drawn a

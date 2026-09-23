@@ -36,19 +36,72 @@
     </ul>
     <p v-if="uploadError" class="dac-upload-error" role="alert">{{ uploadError }}</p>
 
-    <textarea
-      ref="inputRef"
-      class="dac-input"
-      part="input"
-      :value="modelValue"
-      :placeholder="placeholder"
-      :disabled="disabled || !hasConfiguredModel"
-      rows="1"
-      @input="onInput($event.target.value)"
-      @keydown="onKeydown"
-    />
+    <div class="dac-input-card">
+      <textarea
+        ref="inputRef"
+        class="dac-input"
+        part="input"
+        :value="modelValue"
+        :placeholder="placeholder"
+        :disabled="disabled || !hasConfiguredModel"
+        rows="1"
+        @input="onInput($event.target.value)"
+        @keydown="onKeydown"
+      />
+      <div class="dac-composer-inline">
+        <span class="dac-composer-hint">Enter 发送，Shift + Enter 换行</span>
+        <button
+          v-if="active"
+          type="button"
+          class="dac-stop dac-send-control"
+          part="stop-button"
+          title="停止"
+          aria-label="停止"
+          @click="$emit('cancel')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true">
+            <rect x="8" y="8" width="8" height="8" rx="1.5" />
+          </svg>
+        </button>
+        <button
+          v-else
+          type="button"
+          class="dac-send dac-send-control"
+          part="send-button"
+          title="发送"
+          aria-label="发送"
+          :disabled="disabled || !hasConfiguredModel || uploading || (!modelValue.trim() && !attachments.length)"
+          @click="$emit('send')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true">
+            <line x1="12" y1="19" x2="12" y2="5" />
+            <polyline points="5 12 12 5 19 12" />
+          </svg>
+        </button>
+      </div>
+    </div>
     <div class="dac-composer-footer" part="footer">
       <div class="dac-composer-actions" part="actions">
+        <label v-if="permissionModes.length" class="dac-picker dac-permission-picker" part="permission-picker" title="权限模式">
+          <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
+          <select
+            class="dac-picker-select"
+            part="permission-select"
+            data-control="permission-mode"
+            aria-label="权限模式"
+            :disabled="disabled"
+            :value="permissionMode"
+            @change="onPermissionChange($event.target.value)"
+          >
+            <option
+              v-for="mode in permissionModes"
+              :key="mode.value"
+              :value="mode.value"
+              :title="mode.desc || ''"
+            >{{ mode.label }}</option>
+          </select>
+        </label>
+
         <!-- Attaching exists only when the host can store a file. -->
         <template v-if="canUpload">
           <input
@@ -77,6 +130,11 @@
             </svg>
           </button>
         </template>
+
+        <slot name="composer-actions" />
+      </div>
+      <div class="dac-composer-right" part="controls">
+        <span v-if="runDetail" class="dac-run-detail" part="run-detail">{{ runDetail }}</span>
 
         <!-- Rendered only when the host supplies the options. A picker over an
              empty list is a control that looks broken. -->
@@ -108,40 +166,6 @@
           </optgroup>
         </select>
         </label>
-
-        <label v-if="permissionModes.length" class="dac-picker" part="permission-picker" title="权限模式">
-          <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
-        <select
-          class="dac-picker-select"
-          part="permission-select"
-          data-control="permission-mode"
-          aria-label="权限模式"
-          :disabled="disabled"
-          :value="permissionMode"
-          @change="onPermissionChange($event.target.value)"
-        >
-          <option
-            v-for="mode in permissionModes"
-            :key="mode.value"
-            :value="mode.value"
-            :title="mode.desc || ''"
-          >{{ mode.label }}</option>
-        </select>
-        </label>
-
-        <slot name="composer-actions" />
-      </div>
-      <div class="dac-composer-right" part="controls">
-        <span v-if="runDetail" class="dac-run-detail" part="run-detail">{{ runDetail }}</span>
-        <button v-if="active" type="button" class="dac-stop" part="stop-button" @click="$emit('cancel')">停止</button>
-        <button
-          v-else
-          type="button"
-          class="dac-send"
-          part="send-button"
-          :disabled="disabled || !hasConfiguredModel || uploading || (!modelValue.trim() && !attachments.length)"
-          @click="$emit('send')"
-        >发送</button>
       </div>
     </div>
     <!-- Below the footer: a host's own composer controls. The widget puts its
@@ -371,9 +395,12 @@ const onKeydown = (event) => {
 
 <style>
 .dac-composer {
-  border-top: 1px solid var(--dac-border-color, #e2e8f0);
-  background: var(--dac-composer-bg, transparent);
+  border-top: none;
+  padding-top: 32px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.85) 30%, #ffffff 50%);
+  transition: background 0.3s ease;
 }
+.dac-root.is-empty .dac-composer { padding-top: 0; background: transparent; }
 .dac-composer-inner {
   box-sizing: border-box;
   width: 100%;
@@ -382,31 +409,60 @@ const onKeydown = (event) => {
   padding-block: 10px 12px;
   padding-inline: var(--dac-content-padding-inline, 14px);
 }
+.dac-input-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  padding: 12px 14px 10px 16px;
+  border: 1px solid #dde2ea;
+  border-radius: 16px;
+  background: #ffffff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+}
+.dac-input-card:focus-within {
+  border-color: #b0bbcc;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+}
 .dac-input {
+  flex: none;
   width: 100%;
-  border: 1px solid var(--dac-input-border, #cbd5e1);
-  border-radius: var(--dac-input-radius, 10px);
-  padding: 9px 11px;
-  font: inherit;
+  min-width: 0;
+  border: none;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  font-family: inherit;
   resize: none;
   outline: none;
   box-sizing: border-box;
-  background: var(--dac-input-bg, #ffffff);
-  color: var(--dac-input-color, inherit);
-  transition: border-color 0.15s ease;
-  min-height: 38px;
+  background: transparent;
+  color: #162131;
+  min-height: 22px;
   max-height: 160px;
   overflow-y: auto;
 }
-.dac-input:focus {
-  border-color: var(--dac-input-focus-border, var(--dac-primary, #10b981));
+.dac-input::placeholder { color: #A0AABF; }
+.dac-composer-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.dac-composer-hint {
+  color: #9aa5b1;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 .dac-composer-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-top: 8px;
+  margin-top: 6px;
+  padding-inline: 4px;
 }
 .dac-composer-actions {
   display: flex;
@@ -423,6 +479,7 @@ const onKeydown = (event) => {
   color: var(--dac-icon-color, #8a96a6);
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease;
+  max-width: 160px;
 }
 .dac-picker:hover {
   background: var(--dac-icon-hover-bg, #eef1f5);
@@ -441,6 +498,7 @@ const onKeydown = (event) => {
   cursor: pointer;
 }
 .dac-picker-select:disabled { cursor: not-allowed; }
+.dac-permission-picker { gap: 6px; }
 /* The mode is legible at a glance from the dot alone, as it was before. */
 .dac-perm-dot {
   width: 8px;
@@ -544,34 +602,30 @@ const onKeydown = (event) => {
   color: var(--dac-text-muted, #64748b);
   font-size: 12px;
 }
-.dac-send, .dac-stop {
-  height: 32px;
-  padding: 0 16px;
-  border-radius: var(--dac-button-radius, 8px);
+.dac-send-control {
+  width: 30px;
+  height: 30px;
   border: none;
-  font-size: 13px;
-  font-weight: 600;
+  border-radius: 8px;
+  background: #e8eaed;
+  color: #606878;
   cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
-.dac-send {
-  background: var(--dac-primary, #10b981);
-  color: var(--dac-send-color, #ffffff);
+.dac-send:not(:disabled) {
+  background: linear-gradient(135deg, var(--dac-primary, #10b981) 0%, var(--dac-primary-dark, #059669) 100%);
+  color: #fff;
 }
-.dac-send:hover:not(:disabled) {
-  background: var(--dac-primary-hover, #059669);
-}
-.dac-send:disabled {
-  background: var(--dac-disabled-bg, #cbd5e1);
-  color: var(--dac-disabled-color, #ffffff);
-  cursor: not-allowed;
-}
+.dac-send-control:disabled { opacity: 0.4; cursor: default; }
+.dac-send-control:not(:disabled):hover { transform: scale(1.06); }
+.dac-send-control:active { transform: scale(0.94); }
 .dac-stop {
-  background: var(--dac-stop-bg, #f1f5f9);
-  color: var(--dac-stop-color, #0f172a);
-  border: 1px solid var(--dac-border-color, #e2e8f0);
-}
-.dac-stop:hover {
-  background: var(--dac-stop-hover-bg, #e2e8f0);
+  background: linear-gradient(135deg, #7f1d1d 0%, #b91c1c 100%);
+  color: #fff;
 }
 </style>

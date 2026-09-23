@@ -1781,6 +1781,10 @@ watch(
   --dac-content-padding-inline: clamp(40px, 5%, 64px);
   --dac-content-padding-block: 24px;
   --dac-message-gap: 24px;
+  --dac-primary: var(--odw-primary);
+  --dac-primary-dark: var(--odw-primary-dark);
+  --dac-user-bubble-bg: linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
+  --dac-user-bubble-color: #ffffff;
 }
 
 .v2-main-top-bar {
