@@ -183,3 +183,26 @@ describe('attachments', () => {
     el.remove()
   })
 })
+
+describe('attachments across conversations', () => {
+  it('does not carry staged files into the next conversation', async () => {
+    // Files were picked for a particular conversation. The shell used to clear
+    // them on every switch; once the composer owns staging, the element has to.
+    const transport = makeTransport({
+      uploadFiles: vi.fn(async (files) => files.map((f) => ({ name: f.name, relPath: `uploads/${f.name}` })))
+    })
+    const el = document.createElement(DEFAULT_TAG)
+    Object.assign(el, { endpoint: '/conv/a', transportFactory: () => transport })
+    document.body.appendChild(el)
+    await settle()
+
+    await pickFiles(el, [file('订单.csv')])
+    expect(chips(el)).toHaveLength(1)
+
+    el.endpoint = '/conv/b'
+    await settle()
+
+    expect(chips(el)).toHaveLength(0)
+    el.remove()
+  })
+})

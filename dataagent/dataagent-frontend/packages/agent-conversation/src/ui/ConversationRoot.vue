@@ -117,6 +117,10 @@ const endpointApi = useEndpoint({
   transportFactory: toRef(props, 'transportFactory'),
   onReset: (reason) => {
     previewFile.value = null
+    // Files staged for a message belong to the conversation they were staged
+    // in. The shell used to clear them on every switch; that responsibility
+    // moved here with the composer.
+    composerRef.value?.clearAttachments?.()
     conversation.reset()
     // A lazily-created conversation is known to be empty. Loading it here
     // races the first send and can overwrite the local user/assistant turns

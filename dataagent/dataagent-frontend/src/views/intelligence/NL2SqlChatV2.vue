@@ -355,7 +355,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient, DATAAGENT_CLIENT_HEADERS } from '@/api/nl2sql'
@@ -1220,19 +1220,15 @@ watch(() => route.query.agent_id, async (rawAgentId) => {
   if (agentLoading.value) return
   const nextAgentId = normalizeQueryValue(rawAgentId)
   if (!nextAgentId) {
-    if (isStreaming.value) detach()
     agentSelectValue.value = ''
     initializedAgentId.value = ''
-    pendingAttachments.value = []
     resetActiveConversationView()
     return
   }
   const matched = agents.value.find((agent) => agent.agent_id === nextAgentId)
   if (!matched) {
-    if (isStreaming.value) detach()
     agentSelectValue.value = ''
     initializedAgentId.value = ''
-    pendingAttachments.value = []
     resetActiveConversationView()
     ElMessage.warning('当前助手已不可用，请重新选择')
     const navigation = replaceRouteAgent('')
@@ -1240,8 +1236,6 @@ watch(() => route.query.agent_id, async (rawAgentId) => {
     return
   }
   if (agentSelectValue.value !== nextAgentId) {
-    if (isStreaming.value) detach()
-    pendingAttachments.value = []
     resetActiveConversationView()
     agentSelectValue.value = nextAgentId
     initializedAgentId.value = ''
@@ -1263,7 +1257,6 @@ watch(
     const validTopicId = await validateRequestedTopic(normalizedTopicId)
     if (!validTopicId) return
     if (validTopicId !== activeTopicId.value) {
-      if (isStreaming.value) detach()
       await selectTopic(validTopicId, { messageId: normalizedMessageId })
       return
     }
@@ -1273,10 +1266,6 @@ watch(
     if (normalizedMessageId) focusMessage(normalizedMessageId)
   }
 )
-
-onBeforeUnmount(() => {
-  detach()
-})
 </script>
 
 <style scoped>
