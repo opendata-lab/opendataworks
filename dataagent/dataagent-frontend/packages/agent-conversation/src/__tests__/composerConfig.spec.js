@@ -115,6 +115,26 @@ describe('composer configuration', () => {
     el.remove()
   })
 
+  it('uses the runtime configured provider and model instead of array order', async () => {
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: {
+        ...CONFIG,
+        default_provider_id: 'deepseek',
+        default_model: 'v4-pro'
+      }
+    })
+
+    await el.sendMessage('你好')
+    await settle()
+
+    expect(transport.sendMessage.mock.calls[0][0].settings).toEqual({
+      provider_id: 'deepseek', model: 'v4-pro', permission_mode: 'default'
+    })
+    el.remove()
+  })
+
   it('offers the host openers only while the conversation is empty', async () => {
     const transport = makeTransport()
     const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })

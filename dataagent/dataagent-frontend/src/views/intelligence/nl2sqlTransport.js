@@ -13,17 +13,9 @@ import { StreamInterrupted } from '../../../packages/agent-conversation/src/tran
  * @param {string} topicId conversation this transport is bound to
  * @param {object} [context] run parameters the shell owns
  * @param {() => string} [context.getAgentId]
- * @param {() => string} [context.getProviderId]
- * @param {() => string} [context.getModel]
- * @param {() => string} [context.getPermissionMode]
  */
 export function createNl2SqlTransport(api, topicId, context = {}) {
-  const {
-    getAgentId = () => '',
-    getProviderId = () => '',
-    getModel = () => '',
-    getPermissionMode = () => '',
-  } = context
+  const { getAgentId = () => '' } = context
 
   const toRunRef = (task, metadata) => {
     if (!task) return null
@@ -96,17 +88,23 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
       }
     },
 
-    async sendMessage({ content, metadata }) {
-      // The shell owns agent, provider, model and permission mode; omitting
-      // them would submit to the default agent at the interactive timeout
-      // tier, which is not what the user selected.
+    async sendMessage({ content, metadata, attachments = [], settings = {} }) {
+      const files = attachments.filter((file) => file?.relPath)
+      const text = String(content || '').trim() || (files.length ? '请分析我上传的文件。' : '')
+      const attachmentNote = files.length
+        ? `\n\n[附件] 用户上传了以下文件（位于当前工作区，可直接读取）：\n${files.map((file) => `- ${file.relPath}`).join('\n')}`
+        : ''
+
+      // Provider/model/permission mode come from the SDK composer's one
+      // authoritative settings object. Reading shell getters here would create
+      // a second state that can disagree with the controls the user operated.
       const submitted = await api.taskApi.deliverMessage({
         topic_id: topicId,
-        content,
-        provider_id: getProviderId() || undefined,
-        model: getModel() || undefined,
+        content: text + attachmentNote,
+        provider_id: settings.provider_id || undefined,
+        model: settings.model || undefined,
         agent_id: getAgentId() || undefined,
-        permission_mode: getPermissionMode() || undefined,
+        permission_mode: settings.permission_mode || undefined,
         debug: false,
         execution_mode: 'auto',
       })

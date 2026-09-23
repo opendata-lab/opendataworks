@@ -102,6 +102,50 @@ describe('status translation', () => {
 
     expect(run.metadata).toEqual({ mode: 'model' })
   })
+
+  it('delivers the SDK settings and attachment references in the real client shape', async () => {
+    const api = makeApi()
+    const transport = createNl2SqlTransport(api, TOPIC, {
+      getAgentId: () => 'agent_opendataworks'
+    })
+
+    await transport.sendMessage({
+      content: '分析订单',
+      attachments: [
+        { name: '订单.csv', relPath: 'uploads/orders.csv', size: 2048 }
+      ],
+      settings: {
+        provider_id: 'openai',
+        model: 'gpt-4o',
+        permission_mode: 'acceptEdits'
+      }
+    })
+
+    expect(api.taskApi.deliverMessage).toHaveBeenCalledWith({
+      topic_id: TOPIC,
+      content: '分析订单\n\n[附件] 用户上传了以下文件（位于当前工作区，可直接读取）：\n- uploads/orders.csv',
+      provider_id: 'openai',
+      model: 'gpt-4o',
+      agent_id: 'agent_opendataworks',
+      permission_mode: 'acceptEdits',
+      debug: false,
+      execution_mode: 'auto'
+    })
+  })
+
+  it('uses the established attachment-only prompt when no text was entered', async () => {
+    const api = makeApi()
+
+    await createNl2SqlTransport(api, TOPIC).sendMessage({
+      content: '',
+      attachments: [{ name: '订单.csv', relPath: 'uploads/orders.csv' }],
+      settings: {}
+    })
+
+    expect(api.taskApi.deliverMessage.mock.calls[0][0].content).toBe(
+      '请分析我上传的文件。\n\n[附件] 用户上传了以下文件（位于当前工作区，可直接读取）：\n- uploads/orders.csv'
+    )
+  })
 })
 
 describe('the event stream', () => {

@@ -72,6 +72,33 @@ describe('attachments', () => {
     el.remove()
   })
 
+  it('creates a lazy conversation before the first upload', async () => {
+    const uploadFiles = vi.fn(async (files) =>
+      files.map((item) => ({ name: item.name, relPath: `uploads/${item.name}` }))
+    )
+    const transport = makeTransport({ uploadFiles })
+    const resolver = vi.fn(async () => 'topic-created-for-upload')
+    const factory = vi.fn(() => transport)
+    const el = document.createElement(DEFAULT_TAG)
+    Object.assign(el, {
+      endpointResolver: resolver,
+      transportFactory: factory,
+      composerConfig: { uploadBeforeConversation: true }
+    })
+    document.body.appendChild(el)
+    await settle()
+
+    expect(el.shadowRoot.querySelector('[data-action="attach"]')).toBeTruthy()
+    const picked = file('订单.csv')
+    await pickFiles(el, [picked])
+
+    expect(resolver).toHaveBeenCalledWith({ reason: 'upload', files: [picked] })
+    expect(factory).toHaveBeenCalledWith('topic-created-for-upload')
+    expect(uploadFiles).toHaveBeenCalledWith([picked])
+    expect(chips(el)[0].textContent).toContain('订单.csv')
+    el.remove()
+  })
+
   it('keeps the files staged when the send fails', async () => {
     // Otherwise a failed send silently discards the upload and the user has to
     // pick every file again.

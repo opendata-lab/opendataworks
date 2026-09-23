@@ -46,6 +46,8 @@
       :active="conversation.isActive.value"
       :run-detail="conversation.run.value?.detail || ''"
       :config="composerConfig"
+      :endpoint-ready="endpointApi.ready.value"
+      :ensure-endpoint="endpointApi.ensure"
       @update:modelValue="onDraft"
       @send="() => send()"
       @cancel="conversation.cancel"
@@ -168,15 +170,21 @@ const onDraft = (value) => {
  * host from minting an empty conversation just because a user opened the page.
  */
 async function send(content, options = {}) {
+  const messageContent = String(content ?? conversation.draft.value)
+  const attachments = composerRef.value?.getAttachments?.() || []
+  const activeSettings = options.settings ?? settings
   if (!endpointApi.ready.value) {
-    const address = await endpointApi.ensure()
+    const address = await endpointApi.ensure({
+      reason: 'send',
+      content: messageContent,
+      settings: activeSettings,
+    })
     if (!address) return
   }
   // The composer's selection rides along with the message rather than being
   // pushed to the server separately, so what was sent and what the user could
   // see can never disagree.
-  const attachments = composerRef.value?.getAttachments?.() || []
-  const sent = await conversation.send(content, { settings, attachments, ...options })
+  const sent = await conversation.send(content, { ...options, settings: activeSettings, attachments })
   // Only on success: a send that failed leaves the files staged so retrying
   // does not mean picking every one of them again.
   if (sent) composerRef.value?.clearAttachments?.()

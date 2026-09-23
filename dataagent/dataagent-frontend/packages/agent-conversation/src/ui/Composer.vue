@@ -141,7 +141,9 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   active: { type: Boolean, default: false },
   runDetail: { type: String, default: '' },
-  config: { type: Object, default: () => ({}) }
+  config: { type: Object, default: () => ({}) },
+  endpointReady: { type: Boolean, default: false },
+  ensureEndpoint: { type: Function, default: null },
 })
 const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-change', 'permission-error'])
 
@@ -175,14 +177,22 @@ const settings = computed(() => {
   return value
 })
 
-// Default to the first option the host offers. Leaving them unset would send a
-// message with no model while the picker plainly shows one selected.
-watch(providers, (list) => {
+// Restore the runtime's configured defaults. Falling back to the first enabled
+// option is only for a genuinely absent/invalid default, matching the existing
+// NL2SqlChatV2 loadConfig path.
+watch(() => [
+  providers.value,
+  props.config?.default_provider_id || '',
+  props.config?.default_model || '',
+], ([list, defaultProviderId, defaultModel], previous = []) => {
+  const defaultsChanged = defaultProviderId !== previous[1] || defaultModel !== previous[2]
   const current = list.find((item) => item.provider_id === providerId.value)
-  if (current?.models?.includes(model.value)) return
-  const first = list[0]
-  providerId.value = first?.provider_id || ''
-  model.value = first?.models?.[0] || ''
+  if (!defaultsChanged && current?.models?.includes(model.value)) return
+  const selected = list.find((item) => item.provider_id === defaultProviderId) || list[0]
+  providerId.value = selected?.provider_id || ''
+  model.value = selected?.models?.includes(defaultModel)
+    ? defaultModel
+    : (selected?.models?.includes(selected?.default_model) ? selected.default_model : (selected?.models?.[0] || ''))
 }, { immediate: true })
 
 // The host supplies the conversation's saved mode; switching conversations
@@ -228,7 +238,10 @@ const onPermissionChange = async (value) => {
   }
 }
 
-const canUpload = computed(() => typeof unref(transport)?.uploadFiles === 'function')
+const canUpload = computed(() =>
+  typeof unref(transport)?.uploadFiles === 'function' ||
+  (!props.endpointReady && props.config?.uploadBeforeConversation === true && typeof props.ensureEndpoint === 'function')
+)
 
 const fileRef = ref(null)
 const attachments = ref([])
@@ -245,7 +258,15 @@ const onFilesPicked = async (event) => {
   uploading.value = true
   uploadError.value = ''
   try {
-    const uploaded = await unref(transport).uploadFiles(picked)
+    if (!props.endpointReady) {
+      const address = await props.ensureEndpoint?.({ reason: 'upload', files: picked })
+      if (!address) throw new Error('无法创建会话，文件未上传')
+    }
+    const activeTransport = unref(transport)
+    if (typeof activeTransport?.uploadFiles !== 'function') {
+      throw new Error('当前会话不支持文件上传')
+    }
+    const uploaded = await activeTransport.uploadFiles(picked)
     const known = new Set(attachments.value.map((file) => file.relPath))
     for (const file of uploaded || []) {
       if (!file?.relPath || known.has(file.relPath)) continue

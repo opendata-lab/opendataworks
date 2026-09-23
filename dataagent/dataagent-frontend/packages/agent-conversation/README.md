@@ -213,7 +213,7 @@ const sendPrompt = () => {
 | `active` | `boolean` | `active` | Default `true`. Set to `false` when conversation tab is hidden to release SSE connections and pause polling. |
 | `disabled` | `boolean` | `disabled` | Disables input and submission while still allowing message browsing. |
 | `value` | `string` | — | Getter & setter for current draft text in composer textarea. |
-| `endpointResolver` | `() => string \| Promise<string>` | — | Lazy session resolver. If `endpoint` is empty, consulted once on first user message to lazily provision a backend conversation. |
+| `endpointResolver` | `(context) => string \| Promise<string>` | — | Lazy session resolver. If `endpoint` is empty, consulted on the first send, or on the first upload when `composerConfig.uploadBeforeConversation` is enabled. |
 | `transportFactory` | `(endpoint: string) => ConversationTransport` | — | Factory creating custom transport for the given endpoint. Defaults to built-in HTTP transport. |
 
 > [!IMPORTANT]
@@ -265,11 +265,15 @@ nothing — the SDK draws the controls, the host decides which exist.
 ```js
 el.composerConfig = {
   // The shapes the host already holds — pass them straight through.
-  providers: [{ provider_id: 'anthropic', models: ['sonnet', 'opus'] }],
+  providers: [{ provider_id: 'anthropic', models: ['sonnet', 'opus'], default_model: 'sonnet' }],
+  default_provider_id: 'anthropic',
+  default_model: 'opus',
   permissionModes: [{ value: 'default', label: 'Default', desc: '写操作前确认' }],
   permissionMode: 'default',
   slashCommands: buildCommands(['compact', 'clear']),
-  suggestions: ['分析最近 30 天的订单趋势']
+  suggestions: ['分析最近 30 天的订单趋势'],
+  // DataAgent can provision a Topic before the first upload.
+  uploadBeforeConversation: true
 }
 ```
 
@@ -277,6 +281,10 @@ The current selection is sent with each message as
 `sendMessage({ content, settings: { provider_id, model, permission_mode } })`
 rather than pushed separately, so what was sent and what the user could see
 cannot disagree. Suggestions are offered only while the conversation is empty.
+When lazy creation is enabled, the resolver receives either
+`{ reason: 'send', content, settings }` or `{ reason: 'upload', files }`; this
+lets the host title a new conversation from the real first prompt and create a
+workspace before uploading without inventing a second provisional transport.
 
 ### DOM Events
 

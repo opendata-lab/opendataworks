@@ -188,7 +188,7 @@ export function defineAgentConversation(tagName = 'dataagent-conversation') {
   - 流在未收到 `done` 的情况下结束 → 抛 `StreamInterrupted`
 - [ ] **实现设计 §6.1 的会话地址生命周期**：
   - `endpoint` 非空 → 挂载即 `loadConversation()`；`endpoint` 变化 → abort 当前流、清空消息与运行状态、装载新会话。旧流的后续事件必须被丢弃（用 generation 计数守卫）。
-  - `endpoint` 为空且只有 `endpointResolver` → 挂载不调用；首次 `sendMessage()` 调用一次并把结果写回 `endpoint`，之后走正常路径。
+  - `endpoint` 为空且只有 `endpointResolver` → 挂载不调用；首次发送调用一次并在元素内部采用结果，之后走正常路径；显式启用首次上传时可由上传先触发。
   - `reload()` 只重拉当前 `endpoint`，不清除它。
 - [ ] 中断恢复：捕获 `StreamInterrupted` → 派发 `dataagent-error` code `stream_interrupted` → 按 1s/2s/4s 退避用 `afterId` 重订；三次失败后每 3 秒 `loadConversation()` 轮询直到终态。
 - [ ] 错误映射：非 2xx 读 `{message, hint}` → `conversation_unavailable`；网络异常 → `transport_unreachable`；结构不符 → `protocol_error`。
@@ -229,7 +229,7 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - 保留外壳（`entry.js`、`OpenDataWorksWidget.vue`、`useWidgetGeometry.js`、`tracking.js`、
   `config.js`）与 Topic 列表（`useTopicList.js`），只换中间会话区。
 - 通过 `ref` 设 `transportFactory = (endpoint) => createNl2SqlTransport(api, parseTopicKey(endpoint))`。
-- **切换会话只改 `endpoint`**（直连场景用 `topic://{topic_id}` 作会话键），不替换
+- **切换会话只改 `endpoint`**（直连场景直接用 `topic_id` 作会话键），不替换
   transport 对象、不调 `reload()`。全仓库只有这一条切换路径。
 - playwright 脚本目前在 `output/playwright/` 且**未纳入 Git**，产物路径还写死成
   `frontend/dist/widget`（实际在 `dataagent/dataagent-frontend/dist/widget`）。搬进
@@ -424,8 +424,8 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
   这个输入框里有三种含义，顺序是 IME 候选 → 选中命令 → 发送。）
 - [x] 增加 `composerConfig`，由宿主提供 Provider / Model、权限模式、斜杠命令与预置问题；
   SDK 渲染选择器并将当前 `settings` 随发送请求交给 transport。
-  （不再有 `setPermissionMode`：选择随消息一起发，就不存在"服务端的模式"和"用户看到的模式"
-  失败后各说各话的情况，也就没有需要回滚的第二次调用。）
+  发送时 `settings` 是本次运行的权威输入；宿主若还需要把权限模式持久化到 Topic，可提供
+  `setPermissionMode`，失败时 SDK 回滚选择并提示，不能用持久化值覆盖本次发送值。
 - [x] `focusMessage(messageId)` 已提供，宿主无需穿透 Shadow DOM 查询内部节点。
   （attachment-open / message-action 事件随附件与上传能力一起做。）
 - [x] 修正文档与类型中“已声明但未接线”的能力，package contract test 锁定公开入口。
@@ -438,12 +438,23 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - [x] 历史加载与实时观看同一条运行，最终 DOM 结构和可操作能力一致。
 - [x] 思考、完成后的工具输出默认折叠；交互卡片在等待状态可操作。
 - [x] 文本图表、SQL、附件、相对文件链接、错误重试、复制和反馈各有独立回归用例。
-- [~] SDK 的 jsdom 测试全通过（136 个）。**真实浏览器 Shadow DOM 冒烟尚未做**：目前仓库里
+- [~] SDK 的 jsdom 测试全通过（166 个）。**真实浏览器 Shadow DOM 冒烟尚未做**：目前仓库里
   没有任何页面挂载这个元素——`NL2SqlChatV2` 与 `WidgetChat` 都还是旧实现，所以在 T11-B
   之前无处可冒烟。这一条随 T11-B 一起验收，不得在迁移中默认它已通过。
 - [ ] 在该阶段完成前，不开始删除 `NL2SqlChatV2.vue` / `WidgetChat.vue` 的旧展示。
 
 ### T11-B — 迁移 `NL2SqlChatV2.vue`
+
+**B0 前置修复（先于页面替换）：**
+
+- [x] `endpointResolver(context)` 在首次发送时收到 `content/settings`，在允许首次上传时收到
+  `files`；空 Topic 上传先创建 Topic 再调用真实 transport，不能因为 transport 尚未创建而隐藏
+  DataAgent 明确支持的上传能力。
+- [x] `composerConfig` 能按运行时配置恢复 `default_provider_id/default_model`，不能永远选择数组
+  第一项。
+- [x] `createNl2SqlTransport.sendMessage` 直接消费 SDK 传入的 `settings/attachments`；不再从宿主
+  getter 读取另一份 Provider / Model / 权限状态。附件沿用现有宿主的工作区提示文本契约。
+- [x] 上述三项各有 SDK 集成测试和真实 `nl2sqlTransport` 参数形状测试，完成后才替换页面模板。
 
 **保留在 SPA**
 
@@ -457,8 +468,8 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - [ ] 在 Vue 编译配置中声明 `dataagent-*` 为 custom element，并在应用入口幂等注册元素。
 - [ ] 用 `<dataagent-conversation>` 替换当前消息循环和 composer；模型、权限等宿主控件
   通过明确的属性、事件或插槽连接，不访问 shadowRoot 内部节点。
-- [ ] `transportFactory(endpoint)` 解析 `topic://{topic_id}` 并创建
-  `createNl2SqlTransport`；新会话使用 `endpointResolver` 延迟创建 Topic。
+- [ ] `transportFactory(topicId)` 直接创建 `createNl2SqlTransport`；新会话使用
+  `endpointResolver(context)` 延迟创建 Topic，不增加 `topic://` 伪协议。
 - [ ] Topic 切换只修改 `endpoint`；新建会话清空 endpoint；不得手工替换 transport、调用
   `reload()` 模拟切换或并行保留 `useNl2SqlChat` 流状态机。
 - [ ] 用 `dataagent-run-change` 更新 Topic 状态，用 `dataagent-complete` 刷新 Topic / 产物，用
@@ -479,7 +490,7 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 
 ### T11-C — 迁移 `WidgetChat.vue` 并删除分叉
 
-- [ ] 复用同一个元素、同一个 `createNl2SqlTransport` 和 `topic://` 切换语义。
+- [ ] 复用同一个元素、同一个 `createNl2SqlTransport` 和原始 `topic_id` 切换语义。
 - [ ] 保留 Widget 登录、历史抽屉、悬浮几何、宿主事件与埋点；删除消息区和 composer 重复实现。
 - [ ] 修复并纳管三形态 Playwright 基线，不再依赖 `output/playwright/` 中未跟踪脚本。
 - [ ] SPA、Widget、mock BFF、React tarball 四条消费路径通过后，确认仓库中只有 SDK 一份消息

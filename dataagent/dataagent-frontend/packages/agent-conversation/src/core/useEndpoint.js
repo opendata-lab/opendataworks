@@ -11,11 +11,12 @@ import { createHttpTransport } from '../transport/http.js'
  * widget quietly keep talking to its previous topic.
  *
  * A host that has not created its conversation yet leaves `endpoint` empty and
- * supplies `endpointResolver`, which is consulted once, on first send.
+ * supplies `endpointResolver`, which is consulted once, on the first operation
+ * that needs a backing conversation.
  *
  * @param {object} options
  * @param {import('vue').Ref<string>} options.endpoint
- * @param {import('vue').Ref<(() => string | Promise<string>) | null>} options.endpointResolver
+ * @param {import('vue').Ref<((context?: object) => string | Promise<string>) | null>} options.endpointResolver
  * @param {import('vue').Ref<((endpoint: string) => object) | null>} options.transportFactory
  * @param {(reason: 'switch' | 'reload') => void} options.onReset
  */
@@ -59,15 +60,16 @@ export function useEndpoint({ endpoint, endpointResolver, transportFactory, onRe
     ready: computed(() => Boolean(resolved.value)),
 
     /**
-     * Resolve the address for a send. Consults `endpointResolver` only when no
-     * endpoint is set, and adopts the result so subsequent sends and the
-     * host's own re-render converge on the same value.
+     * Resolve the address for a send or enabled first upload. Consults
+     * `endpointResolver` only when no endpoint is set, and adopts the result so
+     * subsequent operations and the host's own re-render converge on the same
+     * value.
      */
-    async ensure() {
+    async ensure(context) {
       if (resolved.value) return resolved.value
       const resolver = endpointResolver?.value
       if (typeof resolver !== 'function') return ''
-      const address = String((await resolver()) || '')
+      const address = String((await resolver(context)) || '')
       if (address) adopt(address, 'switch')
       return address
     },

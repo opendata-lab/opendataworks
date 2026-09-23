@@ -57,6 +57,20 @@ describe('a conversation that does not exist yet', () => {
     expect(endpointResolver.value).toHaveBeenCalledTimes(1)
     expect(api.ready.value).toBe(true)
   })
+
+  it('passes the real triggering operation to the resolver', async () => {
+    const { api, endpointResolver } = setup('')
+    endpointResolver.value = vi.fn(async () => A)
+    const context = {
+      reason: 'send',
+      content: '最近 30 天工作流发布次数趋势',
+      settings: { provider_id: 'openai', model: 'gpt-4o' }
+    }
+
+    await api.ensure(context)
+
+    expect(endpointResolver.value).toHaveBeenCalledWith(context)
+  })
 })
 
 describe('switching conversations', () => {

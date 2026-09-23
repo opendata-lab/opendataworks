@@ -149,7 +149,7 @@ defineAgentConversation('my-chat') // 可选：自定义标签名，避免多版
 | 情形 | 宿主怎么做 | 元素行为 |
 | --- | --- | --- |
 | 会话已存在 | 设 `endpoint` 属性为该会话地址 | **挂载时立即装载**历史与当前任务 |
-| 会话尚未创建 | 只设 `endpointResolver` 属性，`endpoint` 留空 | 挂载时**不**调用 resolver，不发任何请求；首次 `sendMessage()` 时调用一次，把结果写回 `endpoint` 属性，随后走正常装载路径 |
+| 会话尚未创建 | 只设 `endpointResolver` 属性，`endpoint` 留空 | 挂载时**不**调用 resolver，不发任何请求；首次发送或首次上传时携带操作上下文调用一次，在元素内部采用返回的会话键并创建 transport，随后走正常路径 |
 | 切换到另一个会话 | **改 `endpoint` 属性**（不要调 `reload()`） | 检测到属性变化 → abort 当前流 → 清空消息与运行状态 → 装载新会话 |
 
 `endpoint` 属性变化是会话切换的**唯一**信号。宿主不需要、也不应该在切换时调用 `reload()`——那会与 React 状态更新产生竞态。`reload()` 只用于"同一会话、重新拉取"。
@@ -180,13 +180,13 @@ JS 属性（经 `ref` 设置）：
 
 | 属性 | 类型 | 说明 |
 | --- | --- | --- |
-| `endpointResolver` | `() => string \| Promise<string>` | 仅在 `endpoint` 为空且发生首次发送时调用一次 |
+| `endpointResolver` | `(context) => string \| Promise<string>` | 仅在 `endpoint` 为空且发生首次发送或宿主显式允许的首次上传时调用一次；发送上下文含 `content/settings`，上传上下文含 `files` |
 | `transportFactory` | `(endpoint: string) => ConversationTransport` | 自定义网络层。**不改变 `endpoint` 的地位**——`endpoint` 仍是会话键，变化时元素用新值重新调用工厂并重置状态。缺省实现是内置 HTTP transport |
 | `value` | string | 输入框当前草稿，可读可写 |
 
 **为什么是 `transportFactory` 而不是 `transport`。** 早期方案让宿主直接塞一个 `transport` 对象并"忽略 `endpoint`"，结果是两套互斥的会话切换模型：用 `endpoint` 的宿主改属性切换，用 `transport` 的宿主只能自己替换对象——而"替换 transport 是否重置内部状态"没有定义，Widget 照着实现会继续用旧 Topic。改成工厂后，**`endpoint` 在两种模式下都是唯一会话键**，切换语义只有一条。
 
-Widget 这类直连场景把 `endpoint` 用作 topic 标识即可（例如 `topic://{topic_id}`），工厂据此构造直连 DataAgent 的 transport。元素不解析 `endpoint` 的内容，只把它当作不透明的会话键做相等性比较。
+Widget / SPA 这类直连场景直接把 `topic_id` 作为 `endpoint`，工厂据此构造直连 DataAgent 的 transport。元素不解析 `endpoint` 的内容，只把它当作不透明的会话键做相等性比较。没有多种合法会话键上游，因此不增加 `topic://` 这类只负责包一层再拆一层的伪协议。
 
 ### 6.2.1 自定义元素的 JS 接口如何落地
 
@@ -469,7 +469,7 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 
 - `WidgetChat.vue` 渲染 `<dataagent-conversation>`，设置 `transportFactory`——它接收 `endpoint` 并返回由 `createNl2SqlApiClient` 适配出的直连 transport（实现全部可选方法，含 `executeSql`）。
 - 该 transport 的 `streamEvents` 把裸 `data:` 帧解析成 `{type:'event'}`，EOF 后调用 `getTask`，**仅在终态时**合成 `{type:'terminal'}`，并按 §7.1 做状态转换。
-- Topic 列表/新建/切换改用 `useTopicList.js`（§5.1）。**切换会话统一改元素的 `endpoint`**（直连场景用 `topic://{topic_id}` 作为会话键），由元素触发 abort + 重置 + 用新键重新调用工厂。Widget 不自己替换 transport 对象，也不调 `reload()`——切换语义全仓库只有一条。
+- Topic 列表/新建/切换改用 `useTopicList.js`（§5.1）。**切换会话统一改元素的 `endpoint`**（直连场景直接使用 `topic_id`），由元素触发 abort + 重置 + 用新键重新调用工厂。Widget 不自己替换 transport 对象，也不调 `reload()`——切换语义全仓库只有一条。
 - `entry.js`、`OpenDataWorksWidget.vue`、`useWidgetGeometry.js`、`tracking.js`、`config.js` 全部保留：外壳不属于 SDK。
 - `styles.js` 中属于消息区/输入区的样式迁入包内，外壳样式留在 Widget。
 
@@ -553,7 +553,7 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 - 方法代理：四个方法在元素上可直接调用并作用于内部实例。
 - 会话地址生命周期（§6.1 三种情形各一组）：
   - 设了 `endpoint` → 挂载即发起 `loadConversation`。
-  - 只设 `endpointResolver` → 挂载零请求；首次 `sendMessage()` 调用 resolver 一次并写回 `endpoint`；第二次发送不再调用。
+  - 只设 `endpointResolver` → 挂载零请求；首次发送调用 resolver 一次并在元素内部采用结果；第二次发送不再调用。启用首次上传时，同一规则由上传先触发。
   - 改 `endpoint` → abort 旧流、清空消息、装载新会话，且旧流的后续事件不会污染新会话。
 - 插槽投影：Light DOM 中 `slot="composer-actions"` 的真实按钮渲染在输入框 footer 内且可点击。
 - `sendMessage()` 语义：无参取 `value`；`value` 空且无参不发请求；`clearDraft: false` 保留草稿。
@@ -582,7 +582,7 @@ Widget 保持对外行为与接入方式完全兼容（`data-*` 属性、`window
 | --- | --- | --- |
 | 一个完整元素而非 controller + 可组合组件 | 宿主接入成本最低，定制粒度粗 | 用两个插槽覆盖已知定制需求；更细的拆分等第二个真实诉求 |
 | `defineCustomElement` 而非 `createApp().mount()` | 必须用它才能投影插槽 | 方法与可写 `value` 不会自动暴露，需要包装类代理（§6.2.1）；Element Plus 弹层必须关 teleport（§11.1）。两者都已定死规则并配测试 |
-| `transportFactory(endpoint)` 而非静态 `transport` | `endpoint` 成为两种模式下唯一的会话键，切换语义只有一条 | 直连场景要自造会话键（`topic://{id}`），略显别扭，但换来 Widget 与宿主应用共用同一套切换路径 |
+| `transportFactory(endpoint)` 而非静态 `transport` | `endpoint` 成为两种模式下唯一的会话键，切换语义只有一条 | 直连场景直接使用已有 `topic_id`，不再自造第二种字符串形状 |
 | 样式内联进 JS | 接入零配置、ESM/UMD 都成立 | 包体积增大；Element Plus 全量样式需按需引入控制 |
 | `streamEvents` 吐解析后的对象 + 显式终态 | 线格式差异关在 transport 内 | BFF 必须做格式转换，不能图省事字节透传 |
 | Vue 打进包内 | 包体积增大 | 下游是内网业务后台；Shadow DOM 保证不冲突 |
@@ -769,7 +769,7 @@ SDK 不硬编码 DataAgent 的模型、权限文案或预置问题。宿主通�
 
 1. 先补 SDK 能力和契约测试，保持 SPA / Widget 旧展示不动，建立功能对等基线。
 2. 再让 `NL2SqlChatV2.vue` 保留产品外壳，只用 `<dataagent-conversation>` 替换消息区与
-   composer；切换 Topic 只更新 `endpoint=topic://{topic_id}`。
+   composer；切换 Topic 只更新 `endpoint=topic_id`。
 3. SPA 稳定后迁移 `WidgetChat.vue`，保留登录、历史抽屉、悬浮几何与埋点。
 4. 两个外壳都通过回归后，删除旧消息模板、旧 composer、重复状态机和对应样式；不得长期
    保留“新旧两套都能走”的兼容分支。

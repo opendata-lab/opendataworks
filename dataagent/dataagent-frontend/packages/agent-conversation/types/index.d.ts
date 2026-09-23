@@ -65,7 +65,10 @@ export interface ConversationAttachment {
  */
 export interface ComposerConfig {
   /** As the runtime config returns them — pass `settings.providers` unchanged. */
-  providers?: { provider_id: string; models?: string[] }[]
+  providers?: { provider_id: string; models?: string[]; default_model?: string }[]
+  /** Runtime defaults, using the same field names as the existing config API. */
+  default_provider_id?: string
+  default_model?: string
   /** As the shells already declare them (`PERMISSION_MODE_OPTIONS`). */
   permissionModes?: { value: string; label: string; desc?: string }[]
   /**
@@ -77,6 +80,8 @@ export interface ComposerConfig {
   slashCommands?: SlashCommand[]
   /** Offered while the conversation is empty; clicking one sends it. */
   suggestions?: string[]
+  /** Allow the first upload to lazily create a conversation through `endpointResolver`. */
+  uploadBeforeConversation?: boolean
 }
 
 export interface SlashCommand {
@@ -137,6 +142,10 @@ export interface SendOptions {
   /** Clear the composer after a successful send. Defaults to true. */
   clearDraft?: boolean
 }
+
+export type EndpointResolveContext =
+  | { reason: 'send'; content: string; settings?: ComposerSettings }
+  | { reason: 'upload'; files: File[] }
 
 export interface ConversationTransport {
   loadConversation(): Promise<ConversationSnapshot>
@@ -239,11 +248,12 @@ export interface AgentConversationElement extends HTMLElement {
   /** Composer draft; readable and writable. */
   value: string
   /**
-   * Resolves the endpoint lazily on first send. Only consulted while `endpoint`
-   * is empty, so a host can defer creating the backing conversation until the
-   * user actually sends something.
+   * Resolves the endpoint lazily on first send, or on first upload when the
+   * composer explicitly enables that flow. Only consulted while `endpoint` is
+   * empty, so a host can defer creating the backing conversation until it is
+   * actually needed.
    */
-  endpointResolver?: () => string | Promise<string>
+  endpointResolver?: (context: EndpointResolveContext) => string | Promise<string>
   /**
    * Builds the transport for a given endpoint. Defaults to the built-in HTTP
    * transport. `endpoint` stays the conversation key in both modes.

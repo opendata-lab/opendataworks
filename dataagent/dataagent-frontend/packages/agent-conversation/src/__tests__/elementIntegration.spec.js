@@ -178,6 +178,11 @@ describe('lazy conversation creation', () => {
     await settle()
 
     expect(resolver).toHaveBeenCalledTimes(1)
+    expect(resolver).toHaveBeenCalledWith({
+      reason: 'send',
+      content: 'first',
+      settings: {},
+    })
     expect(transport.sendMessage).toHaveBeenCalled()
     el.remove()
   })
