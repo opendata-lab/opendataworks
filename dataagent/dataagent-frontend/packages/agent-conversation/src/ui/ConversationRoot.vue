@@ -233,8 +233,16 @@ defineExpose({
 </script>
 
 <style>
+/* Openers sit above the composer and have to line up with it, so they read the
+   same gutters the message column and the composer read. With no inline
+   padding they spanned the full element and hung past the input card on both
+   sides. */
 .dac-suggestions {
+  box-sizing: border-box;
   width: 100%;
+  max-width: var(--dac-content-max-width, none);
+  margin-inline: auto;
+  padding-inline: var(--dac-content-padding-inline, 0);
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
