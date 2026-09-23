@@ -33,7 +33,7 @@
         type="button"
         class="dac-suggestion"
         part="suggestion"
-        :disabled="disabled"
+        :disabled="disabled || !hasConfiguredModel"
         @click="send(text)"
       >{{ text }}</button>
     </div>
@@ -83,6 +83,14 @@ const props = defineProps({
 })
 
 const suggestions = computed(() => props.composerConfig?.suggestions || [])
+// Omitting providers means the host has no model picker and may rely on its
+// own fixed backend model. Supplying an array makes that array authoritative:
+// if every provider is disabled or empty, no request has a legal model.
+const hasConfiguredModel = computed(() => {
+  const configured = props.composerConfig?.providers
+  if (!Array.isArray(configured)) return true
+  return configured.some((item) => item?.enabled !== false && Array.isArray(item?.models) && item.models.length)
+})
 
 const composerRef = ref(null)
 const messageListRef = ref(null)
@@ -110,6 +118,10 @@ const endpointApi = useEndpoint({
   onReset: (reason) => {
     previewFile.value = null
     conversation.reset()
+    // A lazily-created conversation is known to be empty. Loading it here
+    // races the first send and can overwrite the local user/assistant turns
+    // with an empty snapshot when the load finishes second.
+    if (reason === 'resolve') return
     if (reason === 'switch' && !endpointApi.ready.value) return
     if (props.active) return conversation.load()
   }
@@ -170,6 +182,7 @@ const onDraft = (value) => {
  * host from minting an empty conversation just because a user opened the page.
  */
 async function send(content, options = {}) {
+  if (!hasConfiguredModel.value) return false
   const messageContent = String(content ?? conversation.draft.value)
   const attachments = composerRef.value?.getAttachments?.() || []
   const activeSettings = options.settings ?? settings

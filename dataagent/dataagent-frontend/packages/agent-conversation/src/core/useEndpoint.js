@@ -18,7 +18,7 @@ import { createHttpTransport } from '../transport/http.js'
  * @param {import('vue').Ref<string>} options.endpoint
  * @param {import('vue').Ref<((context?: object) => string | Promise<string>) | null>} options.endpointResolver
  * @param {import('vue').Ref<((endpoint: string) => object) | null>} options.transportFactory
- * @param {(reason: 'switch' | 'reload') => void} options.onReset
+ * @param {(reason: 'switch' | 'resolve' | 'reload') => void} options.onReset
  */
 export function useEndpoint({ endpoint, endpointResolver, transportFactory, onReset }) {
   // Bumped on every switch. Anything in flight compares against it and drops
@@ -27,6 +27,9 @@ export function useEndpoint({ endpoint, endpointResolver, transportFactory, onRe
   const generation = ref(0)
   const resolved = ref(String(endpoint?.value || ''))
   const transport = shallowRef(null)
+  let resolving = false
+  let resolution = null
+  let endpointDuringResolution
 
   const buildTransport = (address) => {
     const factory = transportFactory?.value
@@ -44,6 +47,12 @@ export function useEndpoint({ endpoint, endpointResolver, transportFactory, onRe
   watch(
     () => String(endpoint?.value || ''),
     (next) => {
+      if (resolving) {
+        // Defer deciding whether this is the resolver's expected host write or
+        // a genuine user-initiated switch until the resolver returns its key.
+        endpointDuringResolution = next
+        return
+      }
       if (next === resolved.value) return
       adopt(next, 'switch')
     }
@@ -67,11 +76,43 @@ export function useEndpoint({ endpoint, endpointResolver, transportFactory, onRe
      */
     async ensure(context) {
       if (resolved.value) return resolved.value
+      if (resolution) return resolution
       const resolver = endpointResolver?.value
       if (typeof resolver !== 'function') return ''
-      const address = String((await resolver(context)) || '')
-      if (address) adopt(address, 'switch')
-      return address
+      resolving = true
+      endpointDuringResolution = undefined
+      resolution = (async () => {
+        try {
+          const address = String((await resolver(context)) || '')
+          const hostAddress = endpointDuringResolution
+          // A different host address means the user switched conversations while
+          // creation was in flight. Honor that switch and abort the original
+          // send/upload instead of delivering it into the newly selected topic.
+          if (hostAddress !== undefined && hostAddress !== address) {
+            if (hostAddress !== resolved.value) adopt(hostAddress, 'switch')
+            return ''
+          }
+          // A matching host write is the normal routing update for the Topic the
+          // resolver just created. Adopt it exactly once and skip empty history.
+          const next = hostAddress ?? address
+          if (!resolved.value && next) adopt(next, 'resolve')
+          return resolved.value || address
+        } catch (error) {
+          // A route switch remains authoritative even when the unrelated lazy
+          // creation failed; the watcher will not fire a second time for the
+          // already-written prop, so adopt it before rethrowing.
+          const hostAddress = endpointDuringResolution
+          if (hostAddress !== undefined && hostAddress !== resolved.value) {
+            adopt(hostAddress, 'switch')
+          }
+          throw error
+        }
+      })().finally(() => {
+        resolving = false
+        endpointDuringResolution = undefined
+        resolution = null
+      })
+      return resolution
     },
 
     /** Same conversation, fresh load. Deliberately does not clear the address. */

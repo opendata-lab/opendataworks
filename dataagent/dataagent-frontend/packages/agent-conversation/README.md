@@ -265,7 +265,7 @@ nothing — the SDK draws the controls, the host decides which exist.
 ```js
 el.composerConfig = {
   // The shapes the host already holds — pass them straight through.
-  providers: [{ provider_id: 'anthropic', models: ['sonnet', 'opus'], default_model: 'sonnet' }],
+  providers: [{ provider_id: 'anthropic', models: ['sonnet', 'opus'], default_model: 'sonnet', enabled: true }],
   default_provider_id: 'anthropic',
   default_model: 'opus',
   permissionModes: [{ value: 'default', label: 'Default', desc: '写操作前确认' }],
@@ -276,6 +276,11 @@ el.composerConfig = {
   uploadBeforeConversation: true
 }
 ```
+
+Omitting `providers` means the host does not require a model picker and can use
+its own fixed backend model. Supplying the array makes it authoritative:
+providers with `enabled: false` are excluded, and the composer cannot send when
+no enabled provider offers a model.
 
 The current selection is sent with each message as
 `sendMessage({ content, settings: { provider_id, model, permission_mode } })`
@@ -294,7 +299,7 @@ All events bubble and compose across Shadow DOM (`bubbles: true, composed: true`
 | --- | --- | --- |
 | `dataagent-ready` | `{}` | Emitted when conversation snapshot finishes loading. |
 | `dataagent-draft-change` | `{ value: string }` | Emitted whenever user edits the input text. |
-| `dataagent-run-change` | `{ taskId: string, status: RunStatus, detail: string }` | Emitted when the task status or progress description changes. |
+| `dataagent-run-change` | `{ taskId: string, status: RunStatus, detail: string }` | Emitted when the task status changes, including live `waiting_permission` / `waiting_input` transitions and their return to `running`. |
 | `dataagent-complete` | `{ taskId: string, status: RunStatus, metadata?: object }` | Emitted when a run reaches terminal status. |
 | `dataagent-error` | `{ code: ErrorCode, message: string, hint?: string }` | Emitted when transport or protocol errors occur. |
 

@@ -186,6 +186,32 @@ describe('streaming', () => {
     expect(named(events, 'complete')).toHaveLength(1)
   })
 
+  it('reports live permission and question waits from the real record shapes', async () => {
+    const { api, events } = setup(makeTransport({
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start' } } }
+        yield { type: 'event', seqId: 2, event: { record_type: 'permission_request', data: { request_id: 'p-1' } } }
+        yield { type: 'event', seqId: 3, event: { record_type: 'permission_decision', data: { request_id: 'p-1', decision: 'allow' } } }
+        yield { type: 'event', seqId: 4, event: { record_type: 'question_request', data: { request_id: 'q-1', questions: [] } } }
+        yield { type: 'event', seqId: 5, event: { record_type: 'question_answer', data: { request_id: 'q-1', answers: [] } } }
+        yield { type: 'terminal', run: runRef({ status: 'finished' }) }
+      }
+    }))
+
+    await api.send('go')
+    await settle()
+
+    expect(named(events, 'run-change').map((event) => event.detail.status)).toEqual([
+      'queued',
+      'running',
+      'waiting_permission',
+      'running',
+      'waiting_input',
+      'running',
+      'finished',
+    ])
+  })
+
   it('reports an interrupted stream without completing the run', async () => {
     // An interruption must never look like completion: the run is still going.
     const { api, events } = setup(makeTransport({

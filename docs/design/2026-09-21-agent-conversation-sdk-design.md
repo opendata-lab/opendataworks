@@ -149,7 +149,7 @@ defineAgentConversation('my-chat') // 可选：自定义标签名，避免多版
 | 情形 | 宿主怎么做 | 元素行为 |
 | --- | --- | --- |
 | 会话已存在 | 设 `endpoint` 属性为该会话地址 | **挂载时立即装载**历史与当前任务 |
-| 会话尚未创建 | 只设 `endpointResolver` 属性，`endpoint` 留空 | 挂载时**不**调用 resolver，不发任何请求；首次发送或首次上传时携带操作上下文调用一次，在元素内部采用返回的会话键并创建 transport，随后走正常路径 |
+| 会话尚未创建 | 只设 `endpointResolver` 属性，`endpoint` 留空 | 挂载时**不**调用 resolver，不发任何请求；首次发送或首次上传时携带操作上下文调用一次，在元素内部采用返回的会话键并创建 transport，随后走正常路径。resolver 内同步回写宿主 `endpoint` 时只采用一次，不额外加载这个刚创建的空会话 |
 | 切换到另一个会话 | **改 `endpoint` 属性**（不要调 `reload()`） | 检测到属性变化 → abort 当前流 → 清空消息与运行状态 → 装载新会话 |
 
 `endpoint` 属性变化是会话切换的**唯一**信号。宿主不需要、也不应该在切换时调用 `reload()`——那会与 React 状态更新产生竞态。`reload()` 只用于"同一会话、重新拉取"。
@@ -224,7 +224,7 @@ interface SendOptions {
 | --- | --- | --- |
 | `dataagent-ready` | `{}` | 一次会话装载完成（切换会话后会再次触发） |
 | `dataagent-draft-change` | `{ value: string }` | 输入框内容变化 |
-| `dataagent-run-change` | `{ taskId, status, detail }` | 运行状态变化 |
+| `dataagent-run-change` | `{ taskId, status, detail }` | 运行状态变化；实时记录中的 permission/question request 必须分别推进到 `waiting_permission` / `waiting_input`，对应 decision/answer 或后续进展恢复为 `running` |
 | `dataagent-complete` | `{ taskId, status, metadata }` | 任务到达终态 |
 | `dataagent-error` | `{ code, message, hint? }` | 网络或协议错误 |
 
@@ -287,6 +287,10 @@ const TERMINAL: RunStatus[] = ['finished', 'cancelled', 'failed']
 ```
 
 `waiting_input` 与 `waiting_permission` 属于**活动**状态。宿主的"禁止编辑业务数据"互斥条件必须覆盖全部四个活动状态，不能只判 `running`。
+
+直连 transport 的实时流不会为每次暂停额外发送一条 task 快照，所以 SDK 必须从既有的
+`permission_request` / `question_request` 及其回复记录推进上述活动状态；不能让实时运行从
+`queued` 一直跳到终态，否则宿主的会话列表无法展示“待确认 / 待输入”。
 
 ### 7.2 接口
 
@@ -723,6 +727,10 @@ SDK 不硬编码 DataAgent 的模型、权限文案或预置问题。宿主通�
 初始值，SDK 持有单会话内的当前选择；发送时统一写入 `settings`。权限模式已有会话的即时
 持久化走可选 `setPermissionMode`，失败时 SDK 回滚选择并报告错误。Agent 选择仍留在外壳，
 因为它同时决定 Topic 集合、路由和整个 capability 配置。
+
+`providers` 省略表示宿主不要求模型选择；显式传数组则表示模型由该配置负责。此时
+`enabled: false` 的 Provider 必须排除，且过滤后没有任何 Model 时输入与发送保持禁用，不能把
+一个没有合法模型的请求交给 transport。
 
 ### 15.3 当前能力差距
 

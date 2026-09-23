@@ -184,6 +184,7 @@ describe('lazy conversation creation', () => {
       settings: {},
     })
     expect(transport.sendMessage).toHaveBeenCalled()
+    expect(transport.loadConversation).not.toHaveBeenCalled()
     el.remove()
   })
 })

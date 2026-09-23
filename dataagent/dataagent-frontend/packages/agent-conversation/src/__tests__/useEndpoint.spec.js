@@ -71,6 +71,68 @@ describe('a conversation that does not exist yet', () => {
 
     expect(endpointResolver.value).toHaveBeenCalledWith(context)
   })
+
+  it('shares one resolution across concurrent first operations', async () => {
+    const { api, endpointResolver } = setup('')
+    let release
+    endpointResolver.value = vi.fn(() => new Promise((resolve) => { release = resolve }))
+
+    const first = api.ensure({ reason: 'send', content: 'first' })
+    const second = api.ensure({ reason: 'upload', files: [] })
+    release(A)
+
+    await expect(Promise.all([first, second])).resolves.toEqual([A, A])
+    expect(endpointResolver.value).toHaveBeenCalledTimes(1)
+  })
+
+  it('adopts a host endpoint write during resolution only once', async () => {
+    const { api, endpoint, endpointResolver, transportFactory, resets } = setup('')
+    transportFactory.value = vi.fn(() => ({}))
+    endpointResolver.value = vi.fn(async () => {
+      endpoint.value = A
+      await nextTick()
+      return A
+    })
+
+    await expect(api.ensure({ reason: 'send', content: 'first' })).resolves.toBe(A)
+
+    expect(transportFactory.value).toHaveBeenCalledTimes(1)
+    expect(resets).toEqual(['resolve'])
+    expect(api.generation.value).toBe(1)
+  })
+
+  it('honors a different host switch and aborts the pending first operation', async () => {
+    const { api, endpoint, endpointResolver, transportFactory, resets } = setup('')
+    let release
+    transportFactory.value = vi.fn(() => ({}))
+    endpointResolver.value = vi.fn(() => new Promise((resolve) => { release = resolve }))
+
+    const pending = api.ensure({ reason: 'send', content: 'first' })
+    endpoint.value = B
+    await nextTick()
+    release(A)
+
+    await expect(pending).resolves.toBe('')
+    expect(api.resolved.value).toBe(B)
+    expect(transportFactory.value).toHaveBeenCalledTimes(1)
+    expect(transportFactory.value).toHaveBeenCalledWith(B)
+    expect(resets).toEqual(['switch'])
+  })
+
+  it('keeps a host switch when the concurrent resolver fails', async () => {
+    const { api, endpoint, endpointResolver, resets } = setup('')
+    let rejectResolution
+    endpointResolver.value = vi.fn(() => new Promise((_resolve, reject) => { rejectResolution = reject }))
+
+    const pending = api.ensure({ reason: 'send', content: 'first' })
+    endpoint.value = B
+    await nextTick()
+    rejectResolution(new Error('create failed'))
+
+    await expect(pending).rejects.toThrow('create failed')
+    expect(api.resolved.value).toBe(B)
+    expect(resets).toEqual(['switch'])
+  })
 })
 
 describe('switching conversations', () => {

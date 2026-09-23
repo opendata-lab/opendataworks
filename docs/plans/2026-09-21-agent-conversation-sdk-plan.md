@@ -438,7 +438,7 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - [x] 历史加载与实时观看同一条运行，最终 DOM 结构和可操作能力一致。
 - [x] 思考、完成后的工具输出默认折叠；交互卡片在等待状态可操作。
 - [x] 文本图表、SQL、附件、相对文件链接、错误重试、复制和反馈各有独立回归用例。
-- [~] SDK 的 jsdom 测试全通过（166 个）。**真实浏览器 Shadow DOM 冒烟尚未做**：目前仓库里
+- [~] SDK 的 jsdom 测试全通过（174 个）。**真实浏览器 Shadow DOM 冒烟尚未做**：目前仓库里
   没有任何页面挂载这个元素——`NL2SqlChatV2` 与 `WidgetChat` 都还是旧实现，所以在 T11-B
   之前无处可冒烟。这一条随 T11-B 一起验收，不得在迁移中默认它已通过。
 - [ ] 在该阶段完成前，不开始删除 `NL2SqlChatV2.vue` / `WidgetChat.vue` 的旧展示。
@@ -455,6 +455,12 @@ DataAgent 客户端适配成 SDK transport 契约，14 个契约测试。**dogfo
 - [x] `createNl2SqlTransport.sendMessage` 直接消费 SDK 传入的 `settings/attachments`；不再从宿主
   getter 读取另一份 Provider / Model / 权限状态。附件沿用现有宿主的工作区提示文本契约。
 - [x] 上述三项各有 SDK 集成测试和真实 `nl2sqlTransport` 参数形状测试，完成后才替换页面模板。
+- [x] resolver 创建 Topic 时若宿主同步回写同一个 `endpoint`，SDK 只构造 / reset 一次，且不与
+  首次发送并发加载空历史；并发的首次操作共享同一个 resolver Promise。
+- [x] 实时 permission/question request 与回复记录驱动 `dataagent-run-change` 的
+  `waiting_permission` / `waiting_input` / `running` 转换，锁住会话列表待处理徽标语义。
+- [x] `composerConfig.providers` 排除 `enabled: false`；显式提供但无可用 Model 时禁止建议词、
+  输入和发送。省略 providers 的无模型选择宿主仍可正常发送。
 
 **保留在 SPA**
 

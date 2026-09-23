@@ -41,7 +41,7 @@
       part="input"
       :value="modelValue"
       :placeholder="placeholder"
-      :disabled="disabled"
+      :disabled="disabled || !hasConfiguredModel"
       rows="1"
       @input="onInput($event.target.value)"
       @keydown="onKeydown"
@@ -117,7 +117,7 @@
           type="button"
           class="dac-send"
           part="send-button"
-          :disabled="disabled || uploading || (!modelValue.trim() && !attachments.length)"
+          :disabled="disabled || !hasConfiguredModel || uploading || (!modelValue.trim() && !attachments.length)"
           @click="$emit('send')"
         >发送</button>
       </div>
@@ -152,8 +152,11 @@ const inputRef = ref(null)
 const transport = inject('agentConversationTransport', null)
 
 const providers = computed(() =>
-  (props.config?.providers || []).filter((item) => (item?.models || []).length)
+  (props.config?.providers || []).filter(
+    (item) => item?.enabled !== false && Array.isArray(item?.models) && item.models.length,
+  )
 )
+const hasConfiguredModel = computed(() => !Array.isArray(props.config?.providers) || providers.value.length > 0)
 const permissionModes = computed(() => props.config?.permissionModes || [])
 const slashCommands = computed(() => props.config?.slashCommands || [])
 

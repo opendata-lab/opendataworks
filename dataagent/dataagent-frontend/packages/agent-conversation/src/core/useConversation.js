@@ -6,6 +6,16 @@ import { ErrorCode, StreamInterrupted } from '../transport/errors.js'
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000]
 const POLL_INTERVAL_MS = 3000
+const PROGRESS_RECORD_TYPES = new Set(['stream', 'tool_result', 'pi_event', 'agent_event'])
+
+const runStatusFromEvent = (event, currentStatus) => {
+  const type = String(event?.record_type || '')
+  if (type === 'permission_request') return 'waiting_permission'
+  if (type === 'question_request') return 'waiting_input'
+  if (type === 'permission_decision' || type === 'question_answer') return 'running'
+  if (PROGRESS_RECORD_TYPES.has(type) && currentStatus !== 'running') return 'running'
+  return ''
+}
 
 /**
  * A single conversation: its messages, the run in flight, and the stream that
@@ -192,6 +202,15 @@ export function useConversation({ transport, generation, emit, settings }) {
         if (stale(at)) return
         if (item.type === 'event') {
           lastSeq = Math.max(lastSeq, item.seqId || 0)
+          const eventStatus = runStatusFromEvent(item.event, run.value?.status)
+          if (
+            eventStatus
+            && run.value?.taskId === taskId
+            && !TERMINAL_RUN_STATUSES.has(run.value.status)
+            && run.value.status !== eventStatus
+          ) {
+            setRun({ ...run.value, status: eventStatus })
+          }
           // Reduce into the open assistant turn so tool calls, thinking and
           // text appear as they stream. Emitting the raw event and nothing
           // else is what left the element showing an empty conversation until

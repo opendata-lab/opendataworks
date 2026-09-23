@@ -135,6 +135,67 @@ describe('composer configuration', () => {
     el.remove()
   })
 
+  it('excludes disabled runtime providers before choosing the default', async () => {
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: {
+        providers: [
+          { provider_id: 'disabled', models: ['old-model'], enabled: false },
+          { provider_id: 'ready', models: ['live-model'], enabled: true },
+        ],
+        default_provider_id: 'disabled',
+        default_model: 'old-model',
+      }
+    })
+
+    const options = [...el.shadowRoot.querySelectorAll('[data-control="model"] option')]
+    expect(options.map((option) => option.value)).toEqual(['ready::live-model'])
+
+    await el.sendMessage('你好')
+    await settle()
+
+    expect(transport.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      settings: { provider_id: 'ready', model: 'live-model' }
+    }))
+    el.remove()
+  })
+
+  it('blocks suggestions, typing and programmatic send when an explicit provider list has no model', async () => {
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: {
+        providers: [{ provider_id: 'disabled', models: ['old-model'], enabled: false }],
+        suggestions: ['分析订单'],
+      }
+    })
+
+    expect(el.shadowRoot.querySelector('.dac-input').disabled).toBe(true)
+    expect(el.shadowRoot.querySelector('.dac-send').disabled).toBe(true)
+    expect(el.shadowRoot.querySelector('.dac-suggestion').disabled).toBe(true)
+
+    await el.sendMessage('不应发送')
+    await settle()
+
+    expect(transport.sendMessage).not.toHaveBeenCalled()
+    el.remove()
+  })
+
+  it('still sends when providers are omitted for a fixed-model host', async () => {
+    const transport = makeTransport()
+    const el = await mount({ transportFactory: () => transport, composerConfig: {} })
+
+    expect(el.shadowRoot.querySelector('.dac-input').disabled).toBe(false)
+    await el.sendMessage('使用宿主固定模型')
+    await settle()
+
+    expect(transport.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: '使用宿主固定模型'
+    }))
+    el.remove()
+  })
+
   it('offers the host openers only while the conversation is empty', async () => {
     const transport = makeTransport()
     const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })

@@ -65,7 +65,7 @@ export interface ConversationAttachment {
  */
 export interface ComposerConfig {
   /** As the runtime config returns them — pass `settings.providers` unchanged. */
-  providers?: { provider_id: string; models?: string[]; default_model?: string }[]
+  providers?: { provider_id: string; models?: string[]; default_model?: string; enabled?: boolean }[]
   /** Runtime defaults, using the same field names as the existing config API. */
   default_provider_id?: string
   default_model?: string
