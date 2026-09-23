@@ -41,7 +41,8 @@
       />
     </div>
 
-    <div v-if="editable" class="v2-q-actions">
+    <div v-if="!answered" class="v2-q-actions">
+      <span v-if="block._submitFailed" class="v2-q-failed-hint">提交失败，请重试</span>
       <button type="button" class="v2-q-submit" :disabled="disabled || submitting || !hasAnySelection" @click="submit">
         提交选择
       </button>
@@ -51,7 +52,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps({
   block: { type: Object, required: true },
@@ -60,6 +61,10 @@ const props = defineProps({
 const emit = defineEmits(['answer'])
 
 const submitting = ref(false)
+
+watch(() => props.block._submitFailed, (failed) => {
+  if (failed) submitting.value = false
+})
 const selections = reactive({}) // qi -> Set of labels
 const otherText = reactive({}) // qi -> string
 const otherActive = reactive({}) // qi -> bool
@@ -164,5 +169,6 @@ const resultLabel = computed(() => {
 .v2-q-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .v2-q-submit { border: none; border-radius: 6px; padding: 6px 18px; font-size: 13px; cursor: pointer; background: #2f7bf0; color: #fff; }
 .v2-q-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+.v2-q-failed-hint { font-size: 12px; color: #c0392b; align-self: center; margin-right: auto; }
 .v2-q-result { margin-top: 8px; font-size: 13px; font-weight: 600; color: #2c9c5a; white-space: pre-wrap; }
 </style>

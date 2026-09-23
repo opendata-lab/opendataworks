@@ -332,3 +332,37 @@ describe('permission mode', () => {
     el.remove()
   })
 })
+
+describe('textarea auto-resize', () => {
+  it('starts at rows=1 and auto-resizes up to 160px', async () => {
+    const el = await mount({ transportFactory: () => makeTransport() })
+    const textarea = el.shadowRoot.querySelector('.dac-input')
+
+    expect(textarea.getAttribute('rows')).toBe('1')
+
+    // Simulate multi-line input expanding scrollHeight
+    Object.defineProperty(textarea, 'scrollHeight', { value: 120, configurable: true, writable: true })
+    textarea.value = 'line 1\nline 2\nline 3'
+    textarea.dispatchEvent(new Event('input'))
+    await settle()
+
+    expect(textarea.style.height).toBe('120px')
+
+    // Very long input capped at 160px
+    textarea.scrollHeight = 300
+    textarea.dispatchEvent(new Event('input'))
+    await settle()
+
+    expect(textarea.style.height).toBe('160px')
+
+    // Cleared content shrinks back down
+    textarea.scrollHeight = 38
+    textarea.value = ''
+    textarea.dispatchEvent(new Event('input'))
+    await settle()
+
+    expect(textarea.style.height).toBe('38px')
+
+    el.remove()
+  })
+})

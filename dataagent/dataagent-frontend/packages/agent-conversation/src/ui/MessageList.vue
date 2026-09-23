@@ -1,5 +1,5 @@
 <template>
-  <div class="dac-messages" part="messages" ref="scrollRef">
+  <div class="dac-messages" part="messages" ref="scrollRef" @scroll="handleScroll">
     <div v-if="!messages.length" class="dac-empty" part="empty">
       <slot name="empty">暂无消息</slot>
     </div>
@@ -14,7 +14,28 @@
     >
       <!-- A user turn is plain text. Rendering it as markdown would let a
            pasted snippet change how the page looks. -->
-      <div v-if="message.role === 'user'" class="dac-bubble" part="bubble user-bubble">{{ message.content }}</div>
+      <div v-if="message.role === 'user'" class="dac-user" part="user-turn">
+        <div class="dac-bubble" part="bubble user-bubble">{{ message.content }}</div>
+        <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
+          <li v-for="file in message.attachments" :key="file.relPath">
+            <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
+            <span v-if="file.size != null" class="dac-attachment-size" part="attachment-size">{{ formatBytes(file.size) }}</span>
+            <!-- Preview is a host capability. Without readFile the link is all
+                 there is, which is still the whole file — just not in place. -->
+            <button
+              v-if="canPreview(file)"
+              type="button"
+              class="dac-preview-open"
+              data-action="preview"
+              @click="$emit('preview', file)"
+            >预览</button>
+          </li>
+        </ul>
+        <MessageActions
+          :message="message"
+          :can-rate="false"
+        />
+      </div>
 
       <div v-else class="dac-assistant" part="assistant-turn">
         <!-- Blocks are the live shape: a streaming turn has them before it has
@@ -41,23 +62,31 @@
               :block="block"
             />
             <ToolOutput
-              v-else-if="block.type === 'tool_use'"
+              v-else-if="block.type === 'tool_use' && !isAskUserQuestionBlock(block)"
               :tool="blockToToolProp(block)"
               :file-url-resolver="fileUrl"
             />
             <PermissionCard
               v-else-if="block.type === 'permission_request'"
               :block="block"
-              :disabled="disabled"
+              :disabled="disabled || message._v2state?.status !== 'streaming'"
               @decide="(payload) => $emit('decide', { ...payload, taskId: message.taskId })"
             />
             <QuestionCard
               v-else-if="block.type === 'question_request'"
               :block="block"
-              :disabled="disabled"
+              :disabled="disabled || message._v2state?.status !== 'streaming'"
               @answer="(payload) => $emit('answer', { ...payload, taskId: message.taskId })"
             />
           </template>
+
+          <!-- Trailing activity cue: keeps a loading indicator visible
+               when the active run has already rendered content but its tail
+               block is not actively streaming (between turns / tool calls).
+               Suppressed when waiting for user permission or question input. -->
+          <p v-if="showTrailingActivity(message)" class="dac-activity" part="activity">
+            <span class="dac-activity-dot" aria-hidden="true" />{{ activityLabel }}
+          </p>
         </template>
 
         <!-- An open turn that has not produced anything yet. Without this the
@@ -73,6 +102,20 @@
             <ChartSpecView v-else :spec="segment.spec" />
           </template>
         </div>
+
+        <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
+          <li v-for="file in message.attachments" :key="file.relPath">
+            <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
+            <span v-if="file.size != null" class="dac-attachment-size" part="attachment-size">{{ formatBytes(file.size) }}</span>
+            <button
+              v-if="canPreview(file)"
+              type="button"
+              class="dac-preview-open"
+              data-action="preview"
+              @click="$emit('preview', file)"
+            >预览</button>
+          </li>
+        </ul>
 
         <!-- A failed turn keeps whatever it managed to produce; the card is
              appended rather than replacing it, so a run that died mid-answer
@@ -95,21 +138,6 @@
           @feedback="(payload) => $emit('feedback', payload)"
         />
       </div>
-
-      <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
-        <li v-for="file in message.attachments" :key="file.relPath">
-          <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
-          <!-- Preview is a host capability. Without readFile the link is all
-               there is, which is still the whole file — just not in place. -->
-          <button
-            v-if="canPreview(file)"
-            type="button"
-            class="dac-preview-open"
-            data-action="preview"
-            @click="$emit('preview', file)"
-          >预览</button>
-        </li>
-      </ul>
     </article>
   </div>
 </template>
@@ -219,20 +247,63 @@ const focusMessage = async (messageId) => {
   return true
 }
 
-defineExpose({ focusMessage })
+const isAskUserQuestionBlock = (block) => String(block?.name || '') === 'AskUserQuestion'
+
+const isBlockActivelyProgressing = (block) => {
+  if (!block) return false
+  if (block.type === 'text' || block.type === 'thinking') return block.status === 'streaming'
+  if (block.type === 'tool_use') return block.output == null
+  return false
+}
+
+const showTrailingActivity = (message) => {
+  if (!isStreaming(message)) return false
+  const state = message?._v2state
+  if (!state || state.status === 'done' || state.status === 'error') return false
+  const blocks = blocksOf(message)
+  if (!blocks.length) return false
+  const lastBlock = blocks[blocks.length - 1]
+  if (lastBlock?.type === 'permission_request' && (lastBlock.decision === 'pending' || !lastBlock.decision)) return false
+  if (lastBlock?.type === 'question_request' && !lastBlock.answered) return false
+  return !isBlockActivelyProgressing(lastBlock)
+}
+
+const formatBytes = (size) => {
+  const n = Number(size) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`
+}
+
+const autoScroll = ref(true)
+
+const handleScroll = (event) => {
+  const el = event?.target || scrollRef.value
+  if (!el) return
+  const scrollTop = event?.scrollTop ?? el.scrollTop ?? 0
+  const scrollHeight = event?.scrollHeight ?? el.scrollHeight ?? 0
+  const clientHeight = event?.clientHeight ?? el.clientHeight ?? 0
+  autoScroll.value = scrollHeight - scrollTop - clientHeight < 60
+}
+
+const scrollToBottom = (force = false) => {
+  if (!force && !autoScroll.value) return
+  nextTick(() => {
+    const el = scrollRef.value
+    if (el) {
+      el.scrollTop = el.scrollHeight
+    }
+  })
+}
+
+defineExpose({ focusMessage, scrollToBottom })
 
 // Follow the conversation as it grows, but only when already near the bottom,
 // so reading back through history is not yanked away by an arriving message.
 watch(
-  () => [props.messages.length, props.messages.at(-1)?._v2state?.blocks?.length],
-  async () => {
-    const el = scrollRef.value
-    if (!el) return
-    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
-    if (!nearBottom) return
-    await nextTick()
-    el.scrollTop = el.scrollHeight
-  },
+  () => props.messages,
+  () => scrollToBottom(),
+  { deep: true, flush: 'post' },
 )
 </script>
 
@@ -241,6 +312,19 @@ watch(
 .dac-empty { color: var(--dac-text-muted, #64748b); font-size: 14px; }
 .dac-message { margin-bottom: 14px; display: flex; }
 .dac-message-user { justify-content: flex-end; }
+.dac-user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  max-width: 82%;
+}
+.dac-user .dac-bubble { max-width: 100%; }
+.dac-attachment-size {
+  margin-left: 6px;
+  color: var(--dac-text-muted, #64748b);
+  font-size: 12px;
+}
 .dac-message.is-focused {
   border-radius: var(--dac-bubble-radius, 14px);
   outline: 2px solid var(--dac-accent, #0f766e);

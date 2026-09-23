@@ -10,7 +10,7 @@
       :activity-label="activityLabel"
       @decide="onDecide"
       @answer="onAnswer"
-      @retry="conversation.retry"
+      @retry="(message) => conversation.retry(message, { settings })"
       @feedback="({ message, value }) => conversation.submitFeedback(message, value)"
       @preview="(file) => { previewFile = file }"
     >
@@ -116,7 +116,8 @@ const endpointApi = useEndpoint({
 const conversation = useConversation({
   transport: endpointApi.transport,
   generation: endpointApi.generation,
-  emit
+  emit,
+  settings: () => settings,
 })
 
 // Without these the two waiting states have no exit: a run parked on

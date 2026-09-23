@@ -245,6 +245,17 @@ is rendered that would silently discard the user's action.
 | `uploadFiles(files)` | The composer gets an attach button, upload state, and removable chips; references ride with the next message | No attach button |
 | `readFile(relPath)` | Attachments get **预览** and **下载**: images through a revoked object URL, HTML inside `sandbox=""`, text files as plain text. Saving goes through this too, because a bare link cannot carry auth headers | Attachments stay plain links |
 
+`uploadFiles` and message history use the same attachment shape:
+
+```ts
+interface ConversationAttachment {
+  name: string
+  relPath: string
+  mediaType?: string
+  size?: number // bytes; rendered beside the filename when present
+}
+```
+
 ### Composer configuration
 
 Set the `composerConfig` property to add model, permission-mode, slash-command
@@ -362,7 +373,7 @@ dataagent-conversation::part(input) {
 #### Available Parts
 
 - **Containers & List**: `root`, `messages`, `empty`
-- **Messages & Content**: `message`, `message-user`, `message-assistant`, `bubble`, `user-bubble`, `assistant-bubble`, `thinking`, `thinking-toggle`, `thinking-content`, `attachments`
+- **Messages & Content**: `message`, `message-user`, `message-assistant`, `user-turn`, `assistant-turn`, `bubble`, `user-bubble`, `assistant-bubble`, `thinking`, `thinking-toggle`, `thinking-content`, `attachments`, `attachment-size`, `activity`
 - **Composer & Controls**: `composer`, `input`, `footer`, `actions`, `controls`, `run-detail`, `send-button`, `stop-button`
 
 ---

@@ -52,6 +52,7 @@ export interface ConversationAttachment {
   name: string
   relPath: string
   mediaType?: string
+  size?: number
 }
 
 /**

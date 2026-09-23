@@ -130,4 +130,29 @@ describe('attachments', () => {
     expect(send.disabled).toBe(false)
     el.remove()
   })
+
+  it('displays human-readable attachment size on messages', async () => {
+    const transport = makeTransport({
+      loadConversation: async () => ({
+        messages: [
+          {
+            id: 'u-1',
+            role: 'user',
+            content: '看文件',
+            attachments: [
+              { name: 'small.txt', relPath: 'uploads/small.txt', size: 500 },
+              { name: 'data.csv', relPath: 'uploads/data.csv', size: 2048 },
+              { name: 'large.zip', relPath: 'uploads/large.zip', size: 3145728 }
+            ]
+          }
+        ],
+        run: null
+      })
+    })
+    const el = await mount(transport)
+
+    const sizes = [...el.shadowRoot.querySelectorAll('.dac-attachment-size')].map((s) => s.textContent)
+    expect(sizes).toEqual(['500 B', '2.0 KB', '3.0 MB'])
+    el.remove()
+  })
 })

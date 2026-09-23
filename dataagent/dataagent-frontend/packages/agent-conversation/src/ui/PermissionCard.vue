@@ -33,6 +33,7 @@
     <div v-if="isPending" class="v2-perm-actions">
       <button type="button" class="v2-perm-btn deny" :disabled="disabled || submitting" @click="decide('deny')">{{ isPlan ? '继续完善' : '拒绝' }}</button>
       <button type="button" class="v2-perm-btn allow" :disabled="disabled || submitting" @click="decide('allow')">{{ isPlan ? '批准并执行' : '允许' }}</button>
+      <span v-if="block._submitFailed" class="v2-perm-failed-hint">提交失败，请重试</span>
     </div>
     <div v-else class="v2-perm-result" :class="block.decision">{{ resultLabel }}</div>
   </div>
@@ -258,4 +259,5 @@ function decide(decision) {
 .v2-perm-result { margin-top: 6px; font-size: 13px; font-weight: 600; }
 .v2-perm-result.allow { color: #2c9c5a; }
 .v2-perm-result.deny, .v2-perm-result.timeout { color: #c0392b; }
+.v2-perm-failed-hint { font-size: 12px; color: #c0392b; align-self: center; margin-right: auto; }
 </style>

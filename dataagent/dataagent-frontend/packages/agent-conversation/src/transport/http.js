@@ -96,10 +96,13 @@ export function createHttpTransport(endpointOrOptions, maybeOptions = {}) {
       return { messages: payload.messages, run: toRunRef(payload.run) }
     },
 
-    async sendMessage({ content, metadata }) {
+    async sendMessage({ content, metadata, attachments, settings }) {
+      const body = { content, metadata }
+      if (Array.isArray(attachments) && attachments.length) body.attachments = attachments
+      if (settings && Object.keys(settings).length) body.settings = settings
       return toRunRef(await json('/messages', {
         method: 'POST',
-        body: JSON.stringify({ content, metadata })
+        body: JSON.stringify(body)
       }))
     },
 

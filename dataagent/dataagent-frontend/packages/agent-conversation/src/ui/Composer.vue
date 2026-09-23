@@ -42,7 +42,7 @@
       :value="modelValue"
       :placeholder="placeholder"
       :disabled="disabled"
-      rows="3"
+      rows="1"
       @input="onInput($event.target.value)"
       @keydown="onKeydown"
     />
@@ -131,7 +131,7 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, unref, watch } from 'vue'
+import { computed, inject, nextTick, onMounted, ref, unref, watch } from 'vue'
 import { isPlainEnterSubmit } from '../core/message.js'
 import { useSlashCommands } from '../core/slashCommands.js'
 
@@ -268,9 +268,20 @@ const removeAttachment = (relPath) => {
 // a tick after `update:modelValue` is emitted, so the menu would filter one
 // keystroke behind and never open on the first `/`.
 const localDraft = ref(props.modelValue)
+
+function autoResize() {
+  const el = inputRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+}
+
 watch(() => props.modelValue, (value) => {
   if (value !== localDraft.value) localDraft.value = value
+  nextTick(autoResize)
 })
+
+onMounted(() => nextTick(autoResize))
 
 const inputText = computed({
   get: () => localDraft.value,
@@ -283,16 +294,17 @@ const inputText = computed({
 const slash = useSlashCommands({
   getCommands: () => slashCommands.value,
   inputText,
-  focusInput: () => inputRef.value?.focus()
+  focusInput: () => nextTick(() => { inputRef.value?.focus(); autoResize() })
 })
 
 const onInput = (value) => {
   inputText.value = value
   slash.syncFromInput()
+  autoResize()
 }
 
 defineExpose({
-  focus: () => inputRef.value?.focus(),
+  focus: () => nextTick(() => { inputRef.value?.focus(); autoResize() }),
   getSettings: () => settings.value,
   getAttachments: () => attachments.value,
   clearAttachments: () => { attachments.value = [] }
@@ -328,6 +340,9 @@ const onKeydown = (event) => {
   background: var(--dac-input-bg, #ffffff);
   color: var(--dac-input-color, inherit);
   transition: border-color 0.15s ease;
+  min-height: 38px;
+  max-height: 160px;
+  overflow-y: auto;
 }
 .dac-input:focus {
   border-color: var(--dac-input-focus-border, var(--dac-primary, #10b981));

@@ -65,6 +65,38 @@ describe('request shaping', () => {
     expect(JSON.parse(init.body)).toEqual({ content: '开始建模', metadata: { mode: 'model' } })
   })
 
+  it('sends the real attachment and composer-setting shapes to the BFF', async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ task_id: 't-2', status: 'queued', detail: '' }))
+
+    await transport().sendMessage({
+      content: '继续分析',
+      metadata: { mode: 'analysis' },
+      attachments: [
+        { name: 'orders.csv', relPath: 'uploads/orders.csv', mediaType: 'text/csv', size: 2048 }
+      ],
+      settings: {
+        provider_id: 'openai',
+        model: 'gpt-4o',
+        permission_mode: 'acceptEdits'
+      }
+    })
+
+    const [url, init] = fetchMock.mock.calls[0]
+    expect(url).toBe(`${ENDPOINT}/messages`)
+    expect(JSON.parse(init.body)).toEqual({
+      content: '继续分析',
+      metadata: { mode: 'analysis' },
+      attachments: [
+        { name: 'orders.csv', relPath: 'uploads/orders.csv', mediaType: 'text/csv', size: 2048 }
+      ],
+      settings: {
+        provider_id: 'openai',
+        model: 'gpt-4o',
+        permission_mode: 'acceptEdits'
+      }
+    })
+  })
+
   it('sends interactions with snake_case keys the BFF expects', async () => {
     fetchMock.mockResolvedValue(jsonResponse({ ok: true }))
 

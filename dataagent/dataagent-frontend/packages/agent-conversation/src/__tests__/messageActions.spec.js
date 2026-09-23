@@ -55,11 +55,61 @@ describe('message actions', () => {
   it('copies the answer text', async () => {
     const el = await mount(makeTransport())
 
-    el.shadowRoot.querySelector('[data-action="copy"]').click()
+    el.shadowRoot.querySelector('.dac-message-assistant [data-action="copy"]').click()
     await settle()
 
     expect(writeText).toHaveBeenCalledWith('订单量环比增长 12%。')
-    expect(el.shadowRoot.querySelector('[data-action="copy"]').textContent).toContain('已复制')
+    expect(el.shadowRoot.querySelector('.dac-message-assistant [data-action="copy"]').textContent).toContain('已复制')
+    el.remove()
+  })
+
+  it('copies the user question', async () => {
+    const el = await mount(makeTransport())
+
+    el.shadowRoot.querySelector('.dac-message-user [data-action="copy"]').click()
+    await settle()
+
+    expect(writeText).toHaveBeenCalledWith('最近 30 天的订单趋势')
+    expect(el.shadowRoot.querySelector('.dac-message-user [data-action="copy"]').textContent).toContain('已复制')
+    el.remove()
+  })
+
+  it('shows the time for user messages when available', async () => {
+    const el = await mount(makeTransport({
+      loadConversation: async () => ({
+        messages: [
+          { id: 'u-1', role: 'user', content: 'hello', created_at: '2026-09-22T09:00:00.000Z' },
+          { id: 'a-1', role: 'assistant', content: 'world', created_at: '2026-09-22T09:05:00.000Z' }
+        ],
+        run: null
+      })
+    }))
+
+    const times = el.shadowRoot.querySelectorAll('.dac-time')
+    expect(times).toHaveLength(2)
+    el.remove()
+  })
+
+  it('strips chart_spec json when copying assistant answer', async () => {
+    const el = await mount(makeTransport({
+      loadConversation: async () => ({
+        messages: [
+          { id: 'u-1', role: 'user', content: '画个图' },
+          {
+            id: 'a-1',
+            role: 'assistant',
+            content: '这是分析结果：\n```chart\n{"type":"bar","data":[{"x":"A","y":10}]}\n```\n以上是趋势。',
+            created_at: '2026-09-22T09:05:00.000Z'
+          }
+        ],
+        run: null
+      })
+    }))
+
+    el.shadowRoot.querySelector('.dac-message-assistant [data-action="copy"]').click()
+    await settle()
+
+    expect(writeText).toHaveBeenCalledWith('这是分析结果：\n\n以上是趋势。')
     el.remove()
   })
 

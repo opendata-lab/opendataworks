@@ -412,4 +412,336 @@ describe('waiting states have a way out', () => {
     )
     el.remove()
   })
+
+  it('releases submitting state and displays hint when interaction submission fails', async () => {
+    let shouldFail = true
+    const transport = makeTransport({
+      sendMessage: async () => ({ taskId: 't-fail', status: 'queued', detail: '' }),
+      submitInteraction: vi.fn(async () => {
+        if (shouldFail) {
+          throw new Error('网络断开')
+        }
+      }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+        yield {
+          type: 'event',
+          seqId: 2,
+          event: {
+            record_type: 'permission_request',
+            data: { request_id: 'req-fail-1', tool_name: 'drop-table', input: {} },
+          },
+        }
+        await new Promise(() => {})
+      },
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('删表')
+    await settle(30)
+
+    const allowBtn = [...el.shadowRoot.querySelectorAll('button')].find((b) =>
+      /允许|同意|allow/i.test(b.textContent || ''),
+    )
+    expect(allowBtn).toBeTruthy()
+    expect(allowBtn.disabled).toBe(false)
+
+    // First attempt fails
+    allowBtn.click()
+    await settle(30)
+
+    expect(transport.submitInteraction).toHaveBeenCalledTimes(1)
+    // Submitting must be released so the button can be clicked again
+    expect(allowBtn.disabled).toBe(false)
+    // Card must display the retry hint
+    expect(el.shadowRoot.querySelector('.v2-perm-failed-hint').textContent).toContain('提交失败，请重试')
+
+    // Retry should work
+    shouldFail = false
+    allowBtn.click()
+    await settle(30)
+
+    expect(transport.submitInteraction).toHaveBeenCalledTimes(2)
+    el.remove()
+  })
+
+  it('releases submitting state and displays hint when question submission fails', async () => {
+    let shouldFail = true
+    const transport = makeTransport({
+      sendMessage: async () => ({ taskId: 't-q', status: 'queued', detail: '' }),
+      submitInteraction: vi.fn(async () => {
+        if (shouldFail) {
+          throw new Error('提交问题超时')
+        }
+      }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+        yield {
+          type: 'event',
+          seqId: 2,
+          event: {
+            record_type: 'question_request',
+            data: {
+              request_id: 'req-q-1',
+              questions: [{ question: '你想要哪种图表？', options: ['折线图', '柱状图'] }]
+            },
+          },
+        }
+        await new Promise(() => {})
+      },
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('画图')
+    await settle(30)
+
+    const opt = el.shadowRoot.querySelector('.v2-q-opt')
+    expect(opt).toBeTruthy()
+    opt.click()
+    await settle(10)
+
+    const submitBtn = el.shadowRoot.querySelector('.v2-q-submit')
+    expect(submitBtn).toBeTruthy()
+    expect(submitBtn.disabled).toBe(false)
+
+    // First submit fails
+    submitBtn.click()
+    await settle(30)
+
+    expect(transport.submitInteraction).toHaveBeenCalledTimes(1)
+    expect(submitBtn.disabled).toBe(false)
+    expect(el.shadowRoot.querySelector('.v2-q-failed-hint').textContent).toContain('提交失败，请重试')
+
+    // Retry submit
+    shouldFail = false
+    submitBtn.click()
+    await settle(30)
+
+    expect(transport.submitInteraction).toHaveBeenCalledTimes(2)
+    el.remove()
+  })
+
+  it('disables pending cards when loaded from history', async () => {
+    const transport = makeTransport({
+      loadConversation: async () => ({
+        messages: [
+          {
+            id: 'a-history',
+            role: 'assistant',
+            status: 'success',
+            _v2state: {
+              status: 'done',
+              blocks: [
+                {
+                  type: 'permission_request',
+                  requestId: 'perm-hist',
+                  tool_name: 'run-sql',
+                  decision: 'pending'
+                },
+                {
+                  type: 'question_request',
+                  requestId: 'q-hist',
+                  answered: false,
+                  questions: [{ question: '历史问题', options: ['A', 'B'] }]
+                }
+              ]
+            }
+          }
+        ],
+        run: null
+      })
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    const permBtn = el.shadowRoot.querySelector('.v2-perm-btn.allow')
+    expect(permBtn).toBeTruthy()
+    expect(permBtn.disabled).toBe(true)
+    permBtn.click()
+
+    const qOption = el.shadowRoot.querySelector('.v2-q-opt')
+    expect(qOption).toBeTruthy()
+    expect(qOption.disabled).toBe(true)
+    qOption.click()
+    const qBtn = el.shadowRoot.querySelector('.v2-q-submit')
+    expect(qBtn).toBeTruthy()
+    expect(qBtn.disabled).toBe(true)
+    qBtn.click()
+    await settle()
+
+    expect(transport.submitInteraction).not.toHaveBeenCalled()
+
+    el.remove()
+  })
+})
+
+describe('tool rendering and activity cues', () => {
+  it('suppresses raw AskUserQuestion tool_use block and only renders QuestionCard', async () => {
+    const transport = makeTransport({
+      loadConversation: async () => ({
+        messages: [
+          {
+            id: 'a-tool',
+            role: 'assistant',
+            _v2state: {
+              status: 'streaming',
+              blocks: [
+                {
+                  type: 'tool_use',
+                  id: 'tu-ask',
+                  name: 'AskUserQuestion',
+                  input: { questions: [] }
+                },
+                {
+                  type: 'tool_use',
+                  id: 'tu-sql',
+                  name: 'run_sql',
+                  input: { sql: 'SELECT 1' }
+                },
+                {
+                  type: 'question_request',
+                  requestId: 'q-1',
+                  answered: false,
+                  questions: [{ question: '选一个', options: ['1', '2'] }]
+                }
+              ]
+            }
+          }
+        ],
+        run: null
+      })
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    // Only run_sql tool should be rendered as a tool output
+    const toolOutputs = el.shadowRoot.querySelectorAll('.tool-output')
+    expect(toolOutputs).toHaveLength(1)
+    expect(toolOutputs[0].textContent).toContain('run_sql')
+
+    // Question card should be rendered
+    expect(el.shadowRoot.querySelector('.v2-q-card')).toBeTruthy()
+    el.remove()
+  })
+
+  it('shows trailing activity cue when tool finishes but run continues, hides during waiting states', async () => {
+    let stateRef
+    const transport = makeTransport({
+      loadConversation: async () => ({
+        messages: [
+          {
+            id: 'a-active',
+            role: 'assistant',
+            taskId: 't-cue',
+            _v2state: stateRef
+          }
+        ],
+        run: { taskId: 't-cue', status: 'running', detail: '' }
+      })
+    })
+
+    // 1. Tool finished with output, turn still streaming -> shows activity cue
+    stateRef = {
+      status: 'streaming',
+      blocks: [
+        { type: 'tool_use', id: 'tu-1', name: 'query_db', output: 'ok' }
+      ]
+    }
+    let el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-activity')).toBeTruthy()
+    el.remove()
+
+    // 2. Waiting permission -> activity cue suppressed
+    stateRef = {
+      status: 'streaming',
+      blocks: [
+        { type: 'tool_use', id: 'tu-1', name: 'query_db', output: 'ok' },
+        { type: 'permission_request', requestId: 'p-1', decision: 'pending' }
+      ]
+    }
+    el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-activity')).toBeNull()
+    el.remove()
+
+    // 3. Waiting question -> activity cue suppressed
+    stateRef = {
+      status: 'streaming',
+      blocks: [
+        { type: 'tool_use', id: 'tu-1', name: 'query_db', output: 'ok' },
+        { type: 'question_request', requestId: 'q-1', answered: false, questions: [] }
+      ]
+    }
+    el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-activity')).toBeNull()
+    el.remove()
+
+    // 4. Actively streaming text block -> activity cue suppressed (cursor conveys progress)
+    stateRef = {
+      status: 'streaming',
+      blocks: [
+        { type: 'tool_use', id: 'tu-1', name: 'query_db', output: 'ok' },
+        { type: 'text', content: '正在写回答...', status: 'streaming' }
+      ]
+    }
+    el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-activity')).toBeNull()
+    el.remove()
+  })
+})
+
+describe('auto scroll', () => {
+  it('deep watches message content changes to follow streaming output when near bottom', async () => {
+    let streamPush
+    const transport = makeTransport({
+      sendMessage: async () => ({ taskId: 't-scroll', status: 'queued', detail: '' }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start', usage: {} } } }
+        yield { type: 'event', seqId: 2, event: { record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'text' } } } }
+        while (true) {
+          const delta = await new Promise((resolve) => { streamPush = resolve })
+          if (!delta) break
+          yield { type: 'event', seqId: 3, event: { record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: delta } } } }
+        }
+        yield { type: 'terminal', run: { taskId: 't-scroll', status: 'finished', detail: '' } }
+      }
+    })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport })
+    await settle()
+
+    await el.sendMessage('问长文')
+    await settle(30)
+
+    const scrollContainer = el.shadowRoot.querySelector('.dac-messages')
+    Object.defineProperty(scrollContainer, 'clientHeight', { value: 300, configurable: true })
+    Object.defineProperty(scrollContainer, 'scrollHeight', { value: 600, writable: true, configurable: true })
+    scrollContainer.scrollTop = 250 // 600 - 250 - 300 = 50 < 60 (near bottom)
+    scrollContainer.dispatchEvent(new Event('scroll'))
+
+    // Stream new tokens into the same text block
+    streamPush('更多新文字到来')
+    scrollContainer.scrollHeight = 800
+    await settle(30)
+
+    expect(scrollContainer.scrollTop).toBe(800)
+
+    // Scrolled far up (> 60 from bottom)
+    scrollContainer.scrollTop = 100 // 800 - 100 - 300 = 400 >= 60
+    scrollContainer.dispatchEvent(new Event('scroll'))
+    scrollContainer.scrollHeight = 1000
+    streamPush('用户正在往上看历史')
+    await settle(30)
+
+    // Must NOT jump to bottom
+    expect(scrollContainer.scrollTop).toBe(100)
+
+    streamPush(null)
+    await settle(30)
+    el.remove()
+  })
 })

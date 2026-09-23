@@ -14,7 +14,7 @@ Point the element at a base path and implement these six endpoints under it:
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
 | GET | `{endpoint}` | — | `ConversationSnapshot` |
-| POST | `{endpoint}/messages` | `{ content, metadata }` | `RunRef` |
+| POST | `{endpoint}/messages` | `{ content, metadata, attachments?, settings? }` | `RunRef` |
 | GET | `{endpoint}/events?after_id={n}` | — | SSE, see below |
 | POST | `{endpoint}/cancel` | `{ task_id }` | `RunRef` |
 | POST | `{endpoint}/interactions` | `{ task_id, kind, request_id, payload }` | `{ "ok": true }` |

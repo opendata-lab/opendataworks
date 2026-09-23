@@ -71,6 +71,62 @@ describe('a run that fails', () => {
     el.remove()
   })
 
+  it('retries with the current composer settings', async () => {
+    let callCount = 0
+    const transport = makeTransport({
+      sendMessage: vi.fn(async () => {
+        callCount += 1
+        return { taskId: `t-${callCount}`, status: 'running', detail: '' }
+      }),
+      streamEvents: async function* () {
+        if (callCount === 1) throw new Error('模型超时')
+      }
+    })
+    const el = mount({
+      endpoint: '/conv/a',
+      transportFactory: () => transport,
+      composerConfig: {
+        providers: [
+          { provider_id: 'openai', models: ['gpt-4o', 'gpt-4o-mini'] },
+          { provider_id: 'anthropic', models: ['claude-3-5-sonnet'] }
+        ]
+      }
+    })
+    await settle()
+
+    const select = el.shadowRoot.querySelector('select[data-control="model"]')
+    select.value = 'anthropic::claude-3-5-sonnet'
+    select.dispatchEvent(new Event('change'))
+    await settle()
+
+    await el.sendMessage('开始建模')
+    await settle()
+
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1)
+    expect(transport.sendMessage.mock.calls[0][0].settings).toMatchObject({
+      provider_id: 'anthropic',
+      model: 'claude-3-5-sonnet'
+    })
+
+    // Change model before clicking retry
+    select.value = 'openai::gpt-4o-mini'
+    select.dispatchEvent(new Event('change'))
+    await settle()
+
+    el.shadowRoot.querySelector('.dac-retry').click()
+    await settle()
+
+    expect(transport.sendMessage).toHaveBeenCalledTimes(2)
+    expect(transport.sendMessage.mock.calls[1][0]).toMatchObject({
+      content: '开始建模',
+      settings: {
+        provider_id: 'openai',
+        model: 'gpt-4o-mini'
+      }
+    })
+    el.remove()
+  })
+
   it('reports a run that already failed before the page was opened', async () => {
     // Reloading onto a failed run has to look the same as watching it fail;
     // otherwise history quietly renders an empty assistant turn.

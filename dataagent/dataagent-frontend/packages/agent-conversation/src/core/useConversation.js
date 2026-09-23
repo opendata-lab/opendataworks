@@ -22,12 +22,19 @@ const POLL_INTERVAL_MS = 3000
  *   conversation changes; anything in flight drops its result if it no longer
  *   matches, so a slow response from the previous conversation cannot land here.
  * @param {(payload: object) => void} options.emit
+ * @param {import('vue').Ref<object>|(() => object)|object} [options.settings]
  */
-export function useConversation({ transport, generation, emit }) {
+export function useConversation({ transport, generation, emit, settings }) {
   const messages = ref([])
   const run = shallowRef(null)
   const draft = ref('')
   const loading = ref(false)
+
+  const resolveSettings = () => {
+    if (typeof settings === 'function') return settings()
+    if (settings && typeof settings === 'object' && 'value' in settings) return settings.value
+    return settings || {}
+  }
 
   // Metadata the host attached when starting a run, remembered so it can be
   // handed back on completion. Rebuilt from the snapshot on load, because
@@ -264,16 +271,17 @@ export function useConversation({ transport, generation, emit }) {
     }
   }
 
-  async function send(content, { metadata, clearDraft = true, attachments = [], settings } = {}) {
+  async function send(content, { metadata, clearDraft = true, attachments = [], settings: callSettings } = {}) {
     const text = String(content ?? draft.value).trim()
     const files = Array.isArray(attachments) ? attachments.filter((file) => file?.relPath) : []
     if ((!text && !files.length) || !canSend.value) return false
     const at = generation.value
 
     try {
+      const activeSettings = callSettings ?? resolveSettings()
       const request = { content: text, metadata }
       if (files.length) request.attachments = files
-      if (settings && Object.keys(settings).length) request.settings = { ...settings }
+      if (activeSettings && Object.keys(activeSettings).length) request.settings = { ...activeSettings }
       const started = await transport.value.sendMessage(request)
       if (stale(at)) return false
       if (clearDraft) draft.value = ''
@@ -284,7 +292,13 @@ export function useConversation({ transport, generation, emit }) {
       // length of the run.
       messages.value = [
         ...messages.value,
-        { id: `local-user-${Date.now()}`, role: 'user', content: text, attachments: files },
+        {
+          id: `local-user-${Date.now()}`,
+          role: 'user',
+          content: text,
+          attachments: files,
+          createdAt: new Date().toISOString(),
+        },
         openAssistant(started?.taskId),
       ]
       if (started?.taskId) subscribe(started.taskId, 0, at)
@@ -295,13 +309,18 @@ export function useConversation({ transport, generation, emit }) {
     }
   }
 
-  async function retry(message) {
+  async function retry(message, options = {}) {
     if (!message || isActive.value) return false
     const index = messages.value.findIndex((item) => item.id === message.id)
     for (let cursor = (index < 0 ? messages.value.length : index) - 1; cursor >= 0; cursor -= 1) {
       const candidate = messages.value[cursor]
       if (candidate?.role !== 'user') continue
-      return send(candidate.content, { attachments: candidate.attachments || [] })
+      const activeSettings = options.settings ?? resolveSettings()
+      return send(candidate.content, {
+        attachments: candidate.attachments || [],
+        settings: activeSettings,
+        ...options,
+      })
     }
     return false
   }
@@ -329,6 +348,26 @@ export function useConversation({ transport, generation, emit }) {
     try {
       await transport.value.submitInteraction(payload)
     } catch (error) {
+      const { requestId, kind } = payload || {}
+      if (requestId) {
+        for (const msg of messages.value) {
+          const blocks = msg?._v2state?.blocks || []
+          for (const block of blocks) {
+            if (block.requestId === requestId) {
+              block._submitFailed = Date.now()
+              if (kind === 'permission' || block.type === 'permission_request') {
+                if ((block.decision || 'pending') === 'pending') {
+                  const summaryText = block.summary || ''
+                  if (!summaryText.includes('[提交失败，请重试]')) {
+                    block.summary = summaryText ? `${summaryText}\n[提交失败，请重试]` : '[提交失败，请重试]'
+                  }
+                }
+              }
+            }
+          }
+        }
+        triggerRef(messages)
+      }
       fail(error)
     }
   }

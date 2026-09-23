@@ -5,6 +5,7 @@
 import { reactive } from 'vue'
 import { marked } from 'marked'
 import { createChatState, processV2Record } from './streamParser.js'
+import { stripChartSpecsFromText } from './chartSpec.js'
 
 marked.setOptions({ breaks: true, gfm: true })
 
@@ -277,7 +278,7 @@ export function hydrateMessageFromApi(item) {
 export function getMessageCopyText(message, options = {}) {
   const cleanText = typeof options.cleanText === 'function'
     ? options.cleanText
-    : (value) => String(value || '').trim()
+    : (value) => stripChartSpecsFromText(String(value || '')).trim()
   let text = String(message?.content || '')
   if (message?._v2state?.turns) {
     const texts = []
@@ -291,6 +292,8 @@ export function getMessageCopyText(message, options = {}) {
       }
     }
     if (texts.length) text = texts.join('\n\n')
+  } else {
+    text = cleanText(text)
   }
   return text.trim()
 }
