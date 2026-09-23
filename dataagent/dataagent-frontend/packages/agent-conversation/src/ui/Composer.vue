@@ -84,6 +84,7 @@
       <div class="dac-composer-actions" part="actions">
         <label v-if="permissionModes.length" class="dac-picker dac-permission-picker" part="permission-picker" title="权限模式">
           <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
+          <span class="dac-picker-label">{{ permissionModeLabel }}</span>
           <select
             class="dac-picker-select"
             part="permission-select"
@@ -148,6 +149,7 @@
             <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
             <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
           </svg>
+          <span class="dac-picker-label">{{ model }}</span>
         <select
           class="dac-picker-select"
           part="model-select"
@@ -273,6 +275,10 @@ const onModelChange = (value) => {
  * picker claiming a mode the server had not accepted — the next run would then
  * use the old one with nothing on screen saying so.
  */
+const permissionModeLabel = computed(() =>
+  permissionModes.value.find((item) => item.value === permissionMode.value)?.label || ''
+)
+
 const onPermissionChange = async (value) => {
   const previous = permissionMode.value
   const next = String(value)
@@ -471,6 +477,7 @@ const onKeydown = (event) => {
 }
 /* Geometry and colours copied from the shells' `.v2-model-btn` / `.v2-perm-pill`. */
 .dac-picker {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -486,15 +493,24 @@ const onKeydown = (event) => {
   color: var(--dac-icon-hover-color, #4a5568);
 }
 .dac-picker-icon { flex: none; }
+/* The visible label sets the width; the select lies on top of it, invisible.
+   A native <select> is as wide as its longest option, so "Bypass permissions"
+   was sizing the control even while it read "Default" — which pushed the
+   attach button and the whole left group out of place. */
+.dac-picker-label {
+  font-size: 12px;
+  white-space: nowrap;
+}
 .dac-picker-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
   appearance: none;
-  max-width: 180px;
-  padding: 0;
   border: none;
   background: transparent;
-  color: inherit;
   font: inherit;
-  font-size: 12px;
   cursor: pointer;
 }
 .dac-picker-select:disabled { cursor: not-allowed; }
