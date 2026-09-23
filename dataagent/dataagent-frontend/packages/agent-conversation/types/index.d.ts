@@ -63,17 +63,30 @@ export interface ConversationAttachment {
  * the SDK knowing anything about DataAgent.
  */
 export interface ComposerConfig {
-  providers?: {
-    id: string
-    label: string
-    models?: { id: string; label: string }[]
-  }[]
-  permissionModes?: { id: string; label: string; description?: string }[]
-  /** `name` is matched against what the user types after `/`. */
-  slashCommands?: { name: string; description?: string }[]
+  /** As the runtime config returns them — pass `settings.providers` unchanged. */
+  providers?: { provider_id: string; models?: string[] }[]
+  /** As the shells already declare them (`PERMISSION_MODE_OPTIONS`). */
+  permissionModes?: { value: string; label: string; desc?: string }[]
+  /** Build these with the exported `buildCommands(names)`. */
+  slashCommands?: SlashCommand[]
   /** Offered while the conversation is empty; clicking one sends it. */
   suggestions?: string[]
 }
+
+export interface SlashCommand {
+  /** The token inserted, including the leading slash: `/compact`. */
+  id: string
+  label: string
+  hint: string
+  insertText: string
+}
+
+/** Turn the names an agent reports into menu entries. */
+export declare function buildCommands(names: string[]): SlashCommand[]
+export declare function buildCommand(name: string): SlashCommand | null
+export declare function filterCommands(commands: SlashCommand[], query: string): SlashCommand[]
+/** The text after `/` when the draft is a bare command token, else null. */
+export declare function parseSlashQuery(text: string): string | null
 
 /**
  * The composer's current selection, sent with every message.
@@ -83,9 +96,9 @@ export interface ComposerConfig {
  * can see free to disagree whenever it failed.
  */
 export interface ComposerSettings {
-  providerId?: string
+  provider_id?: string
   model?: string
-  permissionMode?: string
+  permission_mode?: string
 }
 
 export interface ConversationMessage {
@@ -126,6 +139,8 @@ export interface ConversationTransport {
     metadata?: Record<string, unknown>
     /** Present only when the user attached files to this message. */
     attachments?: ConversationAttachment[]
+    /** The composer's current selection, when the host configured pickers. */
+    settings?: ComposerSettings
   }): Promise<RunRef>
   streamEvents(input: {
     taskId: string
@@ -219,6 +234,10 @@ export interface AgentConversationElement extends HTMLElement {
    * transport. `endpoint` stays the conversation key in both modes.
    */
   transportFactory?: (endpoint: string) => ConversationTransport
+  /** Model, permission-mode, slash-command and opener options. */
+  composerConfig?: ComposerConfig
+  /** Wording for the indicator shown before a turn's first token. */
+  activityLabel?: string
 
   /** Reload the current conversation. Does not change `endpoint`. */
   reload(): Promise<void>
@@ -226,6 +245,12 @@ export interface AgentConversationElement extends HTMLElement {
   sendMessage(content?: string, options?: SendOptions): Promise<void>
   cancel(): Promise<void>
   focus(): void
+  /**
+   * Scroll one message into view and highlight it. Resolves false when that
+   * message is not in this conversation. Use this instead of reaching through
+   * the shadow root, which couples the host to internal markup.
+   */
+  focusMessage(messageId: string): Promise<boolean>
 }
 
 /**

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest'
 import { nextTick } from 'vue'
 import { defineAgentConversation, DEFAULT_TAG } from '../element.js'
+import { buildCommands } from '../core/slashCommands.js'
 
 beforeAll(() => {
   defineAgentConversation()
@@ -22,19 +23,18 @@ const makeTransport = (over = {}) => ({
 })
 
 const CONFIG = {
+  // The exact shapes NL2SqlChatV2 already holds: `settings.providers` from the
+  // runtime config, PERMISSION_MODE_OPTIONS, and buildCommands() output. A host
+  // passes what it has; nothing here needs an adapter.
   providers: [
-    { id: 'anthropic', label: 'Anthropic', models: [{ id: 'sonnet', label: 'Sonnet' }, { id: 'opus', label: 'Opus' }] },
-    { id: 'deepseek', label: 'DeepSeek', models: [{ id: 'v4-pro', label: 'V4 Pro' }] }
+    { provider_id: 'anthropic', models: ['sonnet', 'opus'] },
+    { provider_id: 'deepseek', models: ['v4-pro'] }
   ],
   permissionModes: [
-    { id: 'default', label: '默认', description: '写操作前确认' },
-    { id: 'auto', label: '自动放行' }
+    { value: 'default', label: 'Default', desc: '写操作前确认' },
+    { value: 'bypassPermissions', label: 'Bypass permissions' }
   ],
-  slashCommands: [
-    { name: 'compact', description: '压缩上下文' },
-    { name: 'clear', description: '清空会话' },
-    { name: 'cost', description: '查看用量' }
-  ],
+  slashCommands: buildCommands(['compact', 'clear', 'cost']),
   suggestions: ['分析最近 30 天的订单趋势']
 }
 
@@ -55,6 +55,20 @@ const key = (el, init) => {
 
 const items = (el) => [...el.shadowRoot.querySelectorAll('.dac-slash-item')]
 
+/**
+ * Type into the composer the way a person does.
+ *
+ * The menu opens on input, not on the draft changing: setting `element.value`
+ * from host code is not typing, and should not pop a command menu over the
+ * conversation.
+ */
+const type = async (el, text) => {
+  const input = el.shadowRoot.querySelector('.dac-input')
+  input.value = text
+  input.dispatchEvent(new Event('input'))
+  await settle()
+}
+
 describe('composer configuration', () => {
   it('renders nothing extra when the host configures nothing', async () => {
     // Capability-driven: OntoFoundry has one model and no slash commands, and
@@ -72,7 +86,7 @@ describe('composer configuration', () => {
     const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
 
     const select = el.shadowRoot.querySelector('[data-control="model"]')
-    select.value = 'deepseek/v4-pro'
+    select.value = 'deepseek::v4-pro'
     select.dispatchEvent(new Event('change'))
     await settle()
 
@@ -81,7 +95,7 @@ describe('composer configuration', () => {
 
     expect(transport.sendMessage).toHaveBeenCalledWith(expect.objectContaining({
       content: '开始建模',
-      settings: { providerId: 'deepseek', model: 'v4-pro', permissionMode: 'default' }
+      settings: { provider_id: 'deepseek', model: 'v4-pro', permission_mode: 'default' }
     }))
     el.remove()
   })
@@ -96,7 +110,7 @@ describe('composer configuration', () => {
     await settle()
 
     expect(transport.sendMessage.mock.calls[0][0].settings).toEqual({
-      providerId: 'anthropic', model: 'sonnet', permissionMode: 'default'
+      provider_id: 'anthropic', model: 'sonnet', permission_mode: 'default'
     })
     el.remove()
   })
@@ -122,8 +136,7 @@ describe('composer configuration', () => {
 describe('slash commands', () => {
   it('stays hidden when the host supplies none', async () => {
     const el = await mount({ transportFactory: () => makeTransport() })
-    el.value = '/comp'
-    await settle()
+    await type(el, '/comp')
 
     expect(el.shadowRoot.querySelector('.dac-slash')).toBeNull()
     el.remove()
@@ -132,24 +145,20 @@ describe('slash commands', () => {
   it('filters as the user types', async () => {
     const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
 
-    el.value = '/c'
-    await settle()
+    await type(el, '/c')
     expect(items(el).map((n) => n.textContent)).toHaveLength(3)
 
-    el.value = '/co'
-    await settle()
+    await type(el, '/co')
     expect(items(el)).toHaveLength(2)
 
-    el.value = '/comp'
-    await settle()
+    await type(el, '/comp')
     expect(items(el)).toHaveLength(1)
     el.remove()
   })
 
   it('does not open for prose that merely contains a slash', async () => {
     const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
-    el.value = '统计 2026/09 的订单'
-    await settle()
+    await type(el, '统计 2026/09 的订单')
 
     expect(el.shadowRoot.querySelector('.dac-slash')).toBeNull()
     el.remove()
@@ -159,8 +168,7 @@ describe('slash commands', () => {
     const transport = makeTransport()
     const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
 
-    el.value = '/c'
-    await settle()
+    await type(el, '/c')
     key(el, { key: 'ArrowDown' })
     await settle()
     expect(items(el)[1].classList.contains('is-active')).toBe(true)
@@ -177,8 +185,7 @@ describe('slash commands', () => {
     // Enter has three meanings in this input. Committing a Chinese candidate
     // must never be read as picking a command.
     const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
-    el.value = '/c'
-    await settle()
+    await type(el, '/c')
 
     const event = key(el, { key: 'Enter', keyCode: 229 })
     await settle()
@@ -191,27 +198,70 @@ describe('slash commands', () => {
   it('closes on Escape and reopens when the user keeps typing', async () => {
     const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
 
-    el.value = '/c'
-    await settle()
+    await type(el, '/c')
     key(el, { key: 'Escape' })
     await settle()
     expect(el.shadowRoot.querySelector('.dac-slash')).toBeNull()
 
-    el.value = '/cl'
-    await settle()
+    await type(el, '/cl')
     expect(el.shadowRoot.querySelector('.dac-slash')).toBeTruthy()
     el.remove()
   })
 
   it('accepts a command by clicking it', async () => {
     const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
-    el.value = '/co'
-    await settle()
+    await type(el, '/co')
 
     items(el)[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
     await settle()
 
     expect(el.value).toBe('/cost ')
+    el.remove()
+  })
+})
+
+describe('slash behaviour matches the shells it replaces', () => {
+  it('matches anywhere in the name, not just the start', async () => {
+    // The existing menu filters by case-insensitive substring. A prefix-only
+    // match silently drops commands a user is used to finding by their middle
+    // (`/opendataworks-platform-tools` typed as "platform").
+    const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
+    await type(el, '/ost')
+
+    expect(items(el)).toHaveLength(1)
+    expect(items(el)[0].textContent).toContain('/cost')
+    el.remove()
+  })
+
+  it('accepts with Tab as well as Enter', async () => {
+    const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
+    await type(el, '/comp')
+    key(el, { key: 'Tab' })
+    await settle()
+
+    expect(el.value).toBe('/compact ')
+    el.remove()
+  })
+
+  it('follows the pointer, so clicking picks what is highlighted', async () => {
+    const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
+    await type(el, '/c')
+
+    items(el)[2].dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }))
+    await settle()
+    expect(items(el)[2].classList.contains('is-active')).toBe(true)
+
+    key(el, { key: 'Enter' })
+    await settle()
+    expect(el.value).toBe('/cost ')
+    el.remove()
+  })
+
+  it('shows the hint the shells show for built-ins', async () => {
+    const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
+    await type(el, '/compact')
+
+    expect(items(el)[0].textContent).toContain('压缩对话历史')
     el.remove()
   })
 })

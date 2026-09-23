@@ -28,7 +28,11 @@ const PUBLIC_API = [
   'StreamInterrupted',
   'toRunStatus',
   'ACTIVE_RUN_STATUSES',
-  'TERMINAL_RUN_STATUSES'
+  'TERMINAL_RUN_STATUSES',
+  'buildCommand',
+  'buildCommands',
+  'filterCommands',
+  'parseSlashQuery'
 ]
 
 describe('package contract', () => {

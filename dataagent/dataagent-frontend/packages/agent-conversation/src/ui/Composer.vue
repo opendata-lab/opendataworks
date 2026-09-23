@@ -4,18 +4,20 @@
          command menu. Empty for hosts that have none. -->
     <slot name="composer-overlay" />
 
-    <ul v-if="slash.open.value" class="dac-slash" part="slash-menu" role="listbox">
+    <ul v-if="slash.visible.value" class="dac-slash" part="slash-menu" role="listbox">
       <li
-        v-for="(command, index) in slash.matches.value"
-        :key="command.name"
+        v-for="(command, index) in slash.filtered.value"
+        :key="command.id"
         class="dac-slash-item"
         :class="{ 'is-active': index === slash.activeIndex.value }"
         role="option"
         :aria-selected="index === slash.activeIndex.value"
-        @mousedown.prevent="acceptCommand(index)"
+        @mouseenter="slash.setActive(index)"
+        @mousedown.prevent="slash.select(command)"
       >
-        <span class="dac-slash-name">/{{ command.name }}</span>
-        <span v-if="command.description" class="dac-slash-desc">{{ command.description }}</span>
+        <span class="dac-slash-name">{{ command.id }}</span>
+        <span v-if="command.label" class="dac-slash-label">{{ command.label }}</span>
+        <span v-if="command.hint" class="dac-slash-desc">{{ command.hint }}</span>
       </li>
     </ul>
 
@@ -41,7 +43,7 @@
       :placeholder="placeholder"
       :disabled="disabled"
       rows="3"
-      @input="$emit('update:modelValue', $event.target.value)"
+      @input="onInput($event.target.value)"
       @keydown="onKeydown"
     />
     <div class="dac-composer-footer" part="footer">
@@ -78,12 +80,12 @@
           :value="modelKey"
           @change="onModelChange($event.target.value)"
         >
-          <optgroup v-for="provider in providers" :key="provider.id" :label="provider.label">
+          <optgroup v-for="provider in providers" :key="provider.provider_id" :label="provider.provider_id">
             <option
-              v-for="model in provider.models || []"
-              :key="`${provider.id}/${model.id}`"
-              :value="`${provider.id}/${model.id}`"
-            >{{ model.label }}</option>
+              v-for="name in provider.models || []"
+              :key="`${provider.provider_id}::${name}`"
+              :value="`${provider.provider_id}::${name}`"
+            >{{ name }}</option>
           </optgroup>
         </select>
 
@@ -99,9 +101,9 @@
         >
           <option
             v-for="mode in permissionModes"
-            :key="mode.id"
-            :value="mode.id"
-            :title="mode.description || ''"
+            :key="mode.value"
+            :value="mode.value"
+            :title="mode.desc || ''"
           >{{ mode.label }}</option>
         </select>
 
@@ -129,9 +131,9 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, toRef, unref, watch } from 'vue'
+import { computed, inject, ref, unref, watch } from 'vue'
 import { isPlainEnterSubmit } from '../core/message.js'
-import { useSlashMenu } from '../core/useSlashMenu.js'
+import { useSlashCommands } from '../core/slashCommands.js'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -155,39 +157,43 @@ const providerId = ref('')
 const model = ref('')
 const permissionMode = ref('')
 
-// One <select> cannot hold two values, so provider and model travel as one key
-// and are split apart on the way out.
-const modelKey = computed(() => (providerId.value && model.value ? `${providerId.value}/${model.value}` : ''))
+// `provider_id::model` is the same composite key the existing dropdown uses; a
+// <select> cannot hold two values, and reusing the separator keeps host code
+// that already parses it working.
+const modelKey = computed(() => (providerId.value && model.value ? `${providerId.value}::${model.value}` : ''))
 
+// Snake_case because these are the host's own option objects, handed straight
+// back. Asking a host to rename fields it already has is the kind of adapter
+// that makes adopting the element a rewrite rather than a swap.
 const settings = computed(() => {
   const value = {}
-  if (providerId.value) value.providerId = providerId.value
+  if (providerId.value) value.provider_id = providerId.value
   if (model.value) value.model = model.value
-  if (permissionMode.value) value.permissionMode = permissionMode.value
+  if (permissionMode.value) value.permission_mode = permissionMode.value
   return value
 })
 
 // Default to the first option the host offers. Leaving them unset would send a
 // message with no model while the picker plainly shows one selected.
 watch(providers, (list) => {
-  const current = list.find((item) => item.id === providerId.value)
-  if (current?.models?.some((item) => item.id === model.value)) return
+  const current = list.find((item) => item.provider_id === providerId.value)
+  if (current?.models?.includes(model.value)) return
   const first = list[0]
-  providerId.value = first?.id || ''
-  model.value = first?.models?.[0]?.id || ''
+  providerId.value = first?.provider_id || ''
+  model.value = first?.models?.[0] || ''
 }, { immediate: true })
 
 watch(permissionModes, (list) => {
-  if (list.some((item) => item.id === permissionMode.value)) return
-  permissionMode.value = list[0]?.id || ''
+  if (list.some((item) => item.value === permissionMode.value)) return
+  permissionMode.value = list[0]?.value || ''
 }, { immediate: true })
 
 watch(settings, (value) => emit('settings-change', value), { immediate: true })
 
 const onModelChange = (value) => {
-  const separator = String(value).indexOf('/')
-  providerId.value = separator < 0 ? '' : String(value).slice(0, separator)
-  model.value = separator < 0 ? '' : String(value).slice(separator + 1)
+  const [provider = '', name = ''] = String(value).split('::')
+  providerId.value = provider
+  model.value = name
 }
 
 const onPermissionChange = (value) => {
@@ -230,13 +236,32 @@ const removeAttachment = (relPath) => {
   attachments.value = attachments.value.filter((file) => file.relPath !== relPath)
 }
 
-const slash = useSlashMenu(toRef(props, 'modelValue'), slashCommands)
+// A local mirror of the draft, because the menu has to read the text the user
+// just typed. Reading the prop would read the previous value: the prop updates
+// a tick after `update:modelValue` is emitted, so the menu would filter one
+// keystroke behind and never open on the first `/`.
+const localDraft = ref(props.modelValue)
+watch(() => props.modelValue, (value) => {
+  if (value !== localDraft.value) localDraft.value = value
+})
 
-const acceptCommand = (index) => {
-  const text = slash.accept(index)
-  if (text === null) return
-  emit('update:modelValue', text)
-  inputRef.value?.focus()
+const inputText = computed({
+  get: () => localDraft.value,
+  set: (value) => {
+    localDraft.value = value
+    emit('update:modelValue', value)
+  }
+})
+
+const slash = useSlashCommands({
+  getCommands: () => slashCommands.value,
+  inputText,
+  focusInput: () => inputRef.value?.focus()
+})
+
+const onInput = (value) => {
+  inputText.value = value
+  slash.syncFromInput()
 }
 
 defineExpose({
@@ -247,13 +272,9 @@ defineExpose({
 })
 
 const onKeydown = (event) => {
-  // The menu gets first refusal: while it is open, Enter picks a command
-  // rather than sending, and the arrows move through it instead of the text.
-  const consumed = slash.handleKeydown(event)
-  if (consumed !== null) {
-    if (consumed) emit('update:modelValue', consumed)
-    return
-  }
+  // The menu gets first refusal: while it is open, Enter and Tab pick a
+  // command rather than sending, and the arrows move through it.
+  if (slash.handleKeydown(event)) return
   // isPlainEnterSubmit already accounts for IME composition — during Chinese
   // input Enter commits the candidate rather than sending.
   if (!isPlainEnterSubmit(event)) return
@@ -375,6 +396,7 @@ const onKeydown = (event) => {
   font-size: 12px;
 }
 .dac-slash-name { font-weight: 600; }
+.dac-slash-label { color: var(--dac-text-color, #0f172a); }
 .dac-slash-desc {
   color: var(--dac-text-muted, #64748b);
   font-size: 12px;
