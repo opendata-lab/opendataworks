@@ -21,6 +21,7 @@ export function normalizeTopic(topic) {
     last_message_preview: String(topic?.last_message_preview || ''),
     current_task_id: String(topic?.current_task_id || ''),
     current_task_status: String(topic?.current_task_status || ''),
+    permission_mode: String(topic?.permission_mode || ''),
     created_at: String(topic?.created_at || new Date().toISOString()),
     updated_at: String(topic?.updated_at || new Date().toISOString()),
   }

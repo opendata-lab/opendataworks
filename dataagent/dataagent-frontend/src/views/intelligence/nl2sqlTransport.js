@@ -1,6 +1,41 @@
 import { toRunStatus } from '../../../packages/agent-conversation/src/core/runStatus.js'
 import { StreamInterrupted } from '../../../packages/agent-conversation/src/transport/errors.js'
 
+/** Map the real DataAgent message row into the SDK's public shape. */
+const toConversationMessage = (row) => ({
+  id: String(row?.message_id || row?.id || ''),
+  role: String(row?.sender_type) === 'user' ? 'user' : 'assistant',
+  content: String(row?.content || ''),
+  blocks: Array.isArray(row?.blocks) ? row.blocks : undefined,
+  records: Array.isArray(row?.records) ? row.records : undefined,
+  attachments: (row?.attachments || []).map((file) => ({
+    name: String(file?.name || file?.rel_path || ''),
+    relPath: String(file?.rel_path || ''),
+    mediaType: file?.content_type || undefined,
+    size: Number(file?.size) || undefined,
+  })),
+  taskId: row?.task_id ? String(row.task_id) : undefined,
+  createdAt: row?.created_at ? String(row.created_at) : undefined,
+  status: row?.status ? String(row.status) : undefined,
+  error: row?.error ?? undefined,
+  feedback: row?.feedback ? String(row.feedback) : '',
+  resumeAfterSeq: Number(row?.resume_after_seq) || 0,
+})
+
+const loadAllMessages = async (loader) => {
+  const rows = []
+  let page = 1
+  for (;;) {
+    const payload = await loader(page)
+    const items = Array.isArray(payload?.items) ? payload.items : []
+    rows.push(...items)
+    const total = Number(payload?.total || 0)
+    if (!items.length || rows.length >= total) break
+    page += 1
+  }
+  return rows.map(toConversationMessage)
+}
+
 /**
  * Adapts this application's DataAgent client to the SDK transport contract.
  *
@@ -27,37 +62,6 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
     }
   }
 
-  /**
-   * DataAgent's message rows are not the SDK's shape. Mapping explicitly beats
-   * passing them through: `sender_type` is not `role`, and a renderer reading
-   * `message.role` would silently treat every row as an assistant turn.
-   */
-  const toMessage = (row) => ({
-    id: String(row?.message_id || row?.id || ''),
-    role: String(row?.sender_type) === 'user' ? 'user' : 'assistant',
-    content: String(row?.content || ''),
-    blocks: Array.isArray(row?.blocks) ? row.blocks : undefined,
-    records: Array.isArray(row?.records) ? row.records : undefined,
-    attachments: (row?.attachments || []).map((file) => ({
-      name: String(file?.name || file?.rel_path || ''),
-      relPath: String(file?.rel_path || ''),
-      mediaType: file?.content_type || undefined,
-      size: Number(file?.size) || undefined,
-    })),
-    taskId: row?.task_id ? String(row.task_id) : undefined,
-    createdAt: row?.created_at ? String(row.created_at) : undefined,
-    // A run that already failed carries its outcome on the row. Dropping these
-    // meant reloading a failed conversation rendered an empty assistant turn
-    // with no error and nothing to retry.
-    status: row?.status ? String(row.status) : undefined,
-    error: row?.error ?? undefined,
-    feedback: row?.feedback ? String(row.feedback) : '',
-    // Where to resume the event stream for a run still in flight. Without it
-    // the SDK restarts from 0 and replays thinking, tool calls and answer text
-    // the user has already seen.
-    resumeAfterSeq: Number(row?.resume_after_seq) || 0,
-  })
-
   return {
     /**
      * DataAgent pages history at 200 per request and caps at 500, so a single
@@ -66,22 +70,15 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
     async loadConversation() {
       if (!topicId) return { messages: [], run: null }
 
-      const rows = []
-      let page = 1
-      for (;;) {
-        const payload = await api.topicApi.getTopicMessages(topicId, { page, page_size: 500 })
-        const items = Array.isArray(payload?.items) ? payload.items : []
-        rows.push(...items)
-        const total = Number(payload?.total || 0)
-        if (!items.length || rows.length >= total) break
-        page += 1
-      }
+      const messages = await loadAllMessages(
+        (page) => api.topicApi.getTopicMessages(topicId, { page, page_size: 500 }),
+      )
 
       const topic = await api.topicApi.getTopic(topicId)
       const currentTaskId = String(topic?.current_task_id || '')
 
       return {
-        messages: rows.map(toMessage),
+        messages,
         run: currentTaskId
           ? toRunRef({ task_id: currentTaskId, task_status: topic?.current_task_status })
           : null,
@@ -230,6 +227,36 @@ export function createNl2SqlTransport(api, topicId, context = {}) {
     async submitFeedback({ messageId, feedback }) {
       const saved = await api.topicApi.updateMessageFeedback(topicId, messageId, feedback)
       return { feedback: String(saved?.feedback ?? feedback) }
+    },
+  }
+}
+
+/**
+ * Read-only adapter for the SPA's widget/all audit views. The admin endpoint
+ * owns history access; no mutating capability is exposed, so a disabled SDK
+ * element cannot accidentally act on somebody else's conversation.
+ */
+export function createNl2SqlAuditTransport(api, adminApi, topicId) {
+  const readonly = async () => {
+    throw new Error('审计会话为只读')
+  }
+
+  return {
+    async loadConversation() {
+      if (!topicId) return { messages: [], run: null }
+      const messages = await loadAllMessages(
+        (page) => adminApi.getWidgetTopicMessages(topicId, { page, page_size: 500, order: 'asc' }),
+      )
+      return { messages, run: null }
+    },
+    sendMessage: readonly,
+    cancelRun: readonly,
+    submitInteraction: readonly,
+    fileUrl(relPath) {
+      return api.topicApi.fileUrl(topicId, relPath)
+    },
+    readFile(relPath) {
+      return api.topicApi.fetchFileBlob(topicId, relPath)
     },
   }
 }

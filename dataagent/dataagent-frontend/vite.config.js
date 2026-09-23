@@ -47,7 +47,20 @@ export default defineConfig(() => {
   return {
     base,
     plugins: [
-      vue(),
+      vue({
+        // The SDK is aliased to its source so it keeps HMR in this monorepo.
+        // Compiling those SFCs in custom-element mode is what turns their
+        // <style> blocks into strings the element injects into its shadow
+        // root; as ordinary components the styles land in document.head,
+        // where the shadow boundary blocks them and the conversation renders
+        // with raw browser defaults.
+        customElement: /packages\/agent-conversation\/src\/.*\.vue$/,
+        template: {
+          compilerOptions: {
+            isCustomElement: (tag) => tag.startsWith('dataagent-')
+          }
+        }
+      }),
       {
         name: 'serve-widget-dist',
         configureServer(server) {

@@ -3,11 +3,14 @@ import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 import { setDataagentUnauthorizedHandler } from './api/dataagent'
+import { defineAgentConversation } from '@opendataworks/agent-conversation'
 import './styles/variables.css'
 import 'font-awesome/css/font-awesome.min.css'
 
 const app = createApp(App)
 const pinia = createPinia()
+
+defineAgentConversation()
 
 app.use(pinia)
 app.use(router)

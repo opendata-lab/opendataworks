@@ -31,8 +31,8 @@
         <el-select
           :model-value="agentSelectValue"
           class="v2-agent-select"
-          :disabled="!sortedAgents.length || isUploading || agentTransitioning"
-          :title="isUploading ? '文件上传完成后可切换助手' : '切换助手'"
+          :disabled="!sortedAgents.length || agentTransitioning"
+          title="切换助手"
           @change="requestAgentChange"
         >
           <template #prefix>
@@ -204,351 +204,42 @@
         </button>
       </div>
 
-      <el-scrollbar v-show="messages.length" ref="messagesScrollbarRef" class="v2-messages" @scroll="handleScroll">
-        <!-- 点击代理：拦截 v-html/markdown 与工具输出里的工作区文件链接，走 Blob 下载 -->
-        <div class="v2-messages-inner" @click="handleWorkspaceFileClick">
-          <!-- Message loop -->
-          <template v-for="msg in messages" :key="msg.id">
-            <!-- User message -->
-            <div
-              v-if="msg.role === 'user'"
-              class="v2-msg-row v2-msg-user"
-              :class="{ 'is-target-message': msg.id === targetMessageId }"
-              :data-message-id="msg.id"
-            >
-              <div class="v2-user-shell">
-                <div class="v2-user-bubble">{{ msg.content }}</div>
-                <div class="v2-msg-footer">
-                  <span v-if="msg.created_at" class="v2-msg-time">{{ formatMessageTime(msg.created_at) }}</span>
-                  <button type="button" class="v2-message-tool" title="复制" aria-label="复制消息" @click.stop="handleCopyMessage(msg)">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Assistant message -->
-            <div
-              v-else
-              class="v2-msg-row v2-msg-assistant"
-              :class="{ 'is-target-message': msg.id === targetMessageId }"
-              :data-message-id="msg.id"
-            >
-              <div class="v2-assistant-body">
-                <!-- Streaming: render turns from v2 state -->
-                <template v-if="msg._v2state">
-                  <!-- Loading indicator: live run with no rendered content yet
-                       (initial send or a resumed run re-entered while waiting) -->
-                  <div v-if="showTypingIndicator(msg)" class="v2-typing-indicator">
-                    <span /><span /><span />
-                  </div>
-
-                  <template v-for="(turn, ti) in msg._v2state.turns" :key="ti">
-                    <template v-for="block in turn.blocks" :key="block.blockIndex + '-' + ti">
-                      <!-- Thinking block -->
-                      <div v-if="block.type === 'thinking'" class="v2-process-panel">
-                        <button
-                          class="v2-process-summary"
-                          type="button"
-                          @click="toggleThinking(msg.id + '-' + ti + '-' + block.blockIndex)"
-                        >
-                          <span class="v2-process-label">
-                            <span v-if="block.status === 'streaming'" class="v2-badge-dot" />
-                            深度思考
-                          </span>
-                          <span v-if="!thinkingExpanded[msg.id + '-' + ti + '-' + block.blockIndex]" class="v2-process-preview">
-                            {{ block.content.slice(0, 80) }}
-                          </span>
-                          <svg class="v2-chevron" :class="{ expanded: thinkingExpanded[msg.id + '-' + ti + '-' + block.blockIndex] }" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6" /></svg>
-                        </button>
-                        <el-scrollbar v-if="thinkingExpanded[msg.id + '-' + ti + '-' + block.blockIndex]" class="v2-process-content">
-                          <div class="v2-process-thought" v-html="renderMarkdown(block.content)" />
-                          <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
-                        </el-scrollbar>
-                      </div>
-
-                      <!-- Tool use block (chart-producing tools render their chart directly below the block) -->
-                      <div v-else-if="block.type === 'tool_use' && !isAskUserQuestionBlock(block)" class="v2-tool-row">
-                        <ToolOutputRenderer :tool="blockToToolProp(block)" :file-url-resolver="resolveWorkspaceFileHref" />
-                      </div>
-
-                      <!-- Generic Chat V2 permission confirmation card -->
-                      <PermissionConfirmationCard
-                        v-else-if="block.type === 'permission_request'"
-                        :block="block"
-                        :disabled="msg._v2state.status !== 'streaming'"
-                        @decide="(payload) => handlePermissionDecision(msg, payload)"
-                      />
-
-                      <!-- AskUserQuestion selection card -->
-                      <QuestionSelectionCard
-                        v-else-if="block.type === 'question_request'"
-                        :block="block"
-                        :disabled="msg._v2state.status !== 'streaming'"
-                        @answer="(payload) => handleQuestionAnswer(msg, payload)"
-                      />
-
-                      <!-- Text block (inline chart_spec rendered as a real chart) -->
-                      <div v-else-if="block.type === 'text' && block.content" class="v2-text-block">
-                        <template v-for="(seg, si) in answerSegments(block.content)" :key="si">
-                          <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
-                          <ChartSpecView v-else :spec="seg.spec" />
-                        </template>
-                        <span v-if="block.status === 'streaming'" class="v2-cursor">|</span>
-                      </div>
-                    </template>
-                  </template>
-
-                  <!-- Trailing activity cue: keeps a loading indicator visible
-                       at the bottom for the whole run once content has started
-                       rendering, so the user always sees that work continues
-                       between turns / tool calls (the pre-content case uses the
-                       top indicator above). -->
-                  <div v-if="showTrailingActivity(msg)" class="v2-typing-indicator v2-typing-indicator-trailing">
-                    <span /><span /><span />
-                  </div>
-
-                  <!-- Error from stream -->
-                  <div v-if="msg._v2state.status === 'error'" class="v2-error-card">
-                    <span class="v2-error-label">错误</span>
-                    <span class="v2-error-text">{{ msg._v2state.errorText || '流式处理出错' }}</span>
-                    <button
-                      v-if="!isWidgetMode"
-                      type="button"
-                      class="v2-error-retry"
-                      :disabled="isStreaming"
-                      @click="handleRetry(msg)"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 4v5h-5" /></svg>
-                      重试
-                    </button>
-                  </div>
-                </template>
-
-                <!-- Fallback for non-assistant or empty v2state -->
-                <template v-else>
-                  <div v-if="msg.content" class="v2-text-block">
-                    <template v-for="(seg, si) in answerSegments(msg.content)" :key="si">
-                      <div v-if="seg.type === 'text'" v-html="renderMarkdown(seg.value)" />
-                      <ChartSpecView v-else :spec="seg.spec" />
-                    </template>
-                  </div>
-                </template>
-
-                <!-- Files generated by this run -->
-                <div v-if="msg.attachments?.length" class="v2-msg-attachments">
-                  <template v-if="isWidgetMode">
-                    <a
-                      v-for="file in msg.attachments"
-                      :key="file.rel_path"
-                      class="v2-msg-attachment"
-                      href="#"
-                      :title="'下载 ' + file.name"
-                      @click.prevent="downloadArtifact(file)"
-                    >
-                      <svg class="v2-msg-attachment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
-                      <span class="v2-msg-attachment-name">{{ file.name }}</span>
-                      <span class="v2-msg-attachment-size">{{ formatBytes(file.size) }}</span>
-                    </a>
-                  </template>
-                  <template v-else>
-                    <div
-                      v-for="file in msg.attachments"
-                      :key="file.rel_path"
-                      class="v2-msg-attachment is-clickable"
-                      :title="'预览 ' + file.name"
-                      @click="openArtifact(file)"
-                    >
-                      <svg class="v2-msg-attachment-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></svg>
-                      <span class="v2-msg-attachment-name">{{ file.name }}</span>
-                      <span class="v2-msg-attachment-size">{{ formatBytes(file.size) }}</span>
-                      <span class="v2-msg-attachment-actions">
-                        <button
-                          type="button"
-                          class="v2-msg-attachment-btn"
-                          title="预览"
-                          aria-label="预览"
-                          @click.stop="openArtifact(file)"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" /><circle cx="12" cy="12" r="3" /></svg>
-                        </button>
-                        <a
-                          class="v2-msg-attachment-btn"
-                          href="#"
-                          title="下载"
-                          aria-label="下载"
-                          @click.stop.prevent="downloadArtifact(file)"
-                        >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>
-                        </a>
-                      </span>
-                    </div>
-                  </template>
-                </div>
-
-                <!-- Message footer -->
-                <div class="v2-msg-footer">
-                  <span v-if="msg.created_at" class="v2-msg-time">{{ formatMessageTime(msg.created_at) }}</span>
-                  <button type="button" class="v2-message-tool" title="复制" aria-label="复制消息" @click.stop="handleCopyMessage(msg)">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><rect x="9" y="9" width="10" height="10" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" /></svg>
-                  </button>
-                  <button type="button" class="v2-message-tool v2-message-feedback-like" :class="{ active: msg.feedback === 'like' }" title="有帮助" aria-label="有帮助" @click.stop="toggleMessageFeedback(msg, 'like')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M7 11v10H4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2h3Z" /><path d="M7 11 12 2a3 3 0 0 1 3 3v4h4a2 2 0 0 1 2 2l-1 8a2 2 0 0 1-2 2H7" /></svg>
-                  </button>
-                  <button type="button" class="v2-message-tool v2-message-feedback-dislike" :class="{ active: msg.feedback === 'dislike' }" title="没帮助" aria-label="没帮助" @click.stop="toggleMessageFeedback(msg, 'dislike')">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path d="M17 13V3h3a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-3Z" /><path d="M17 13 12 22a3 3 0 0 1-3-3v-4H5a2 2 0 0 1-2-2l1-8a2 2 0 0 1 2-2h11" /></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </template>
-        </div>
-      </el-scrollbar>
-
       <!-- Read-only banner for widget sessions -->
       <div v-if="isWidgetMode" class="v2-readonly-bar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="14" height="14"><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
         <span>Widget 会话为只读审计视图，不能发送消息</span>
       </div>
 
-      <!-- Composer -->
-      <div v-else class="v2-composer-bar" :class="{ 'is-landing': !messages.length }">
-        <div class="v2-composer-wrap">
-          <template v-if="!messages.length">
+      <!-- `.prop` writes the key verbatim, so these must be camelCase: the
+           kebab spelling lands on `el['transport-factory']`, a property nothing
+           reads, and the element silently runs with no transport at all. -->
+      <dataagent-conversation
+        ref="conversationRef"
+        class="v2-conversation"
+        :class="{ 'is-readonly': isWidgetMode }"
+        :endpoint="activeTopicId"
+        :disabled="isWidgetMode"
+        placeholder="输入数据问题…（输入 / 调用命令）"
+        :transportFactory.prop="conversationTransportFactory"
+        :endpointResolver.prop="isWidgetMode ? null : resolveConversationEndpoint"
+        :composerConfig.prop="conversationComposerConfig"
+        @dataagent-run-change="handleConversationRunChange"
+        @dataagent-complete="handleConversationComplete"
+        @dataagent-error="handleConversationError"
+        @dataagent-ready="handleConversationReady"
+      >
+        <div slot="empty" class="v2-sdk-empty">
+          <template v-if="!isWidgetMode">
             <div v-if="!settings.providers.length" class="v2-config-empty">
               <div class="v2-config-empty-title">还没有可用的模型</div>
               <div class="v2-config-empty-text">请先完成模型配置。</div>
             </div>
             <div class="v2-landing-greeting">您好，我是<span class="v2-landing-agent-name">{{ currentAgentName }}</span>。</div>
-
             <div class="v2-landing-suggestions-title">您可以问我以下问题</div>
-            <div class="v2-landing-suggestions">
-              <button
-                v-for="s in suggestions"
-                :key="s"
-                class="v2-suggestion-pill"
-                :disabled="isStreaming"
-                @click="handleSuggestion(s)"
-              >{{ s }}</button>
-            </div>
           </template>
-
-          <!-- Attachment chips -->
-          <div v-if="pendingAttachments.length" class="v2-attach-chips">
-            <span
-              v-for="(att, i) in pendingAttachments"
-              :key="i"
-              class="v2-attach-chip"
-              :class="{ 'is-error': att.error, 'is-uploading': att.uploading }"
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M21 12.5 12.5 21a4 4 0 0 1-5.66-5.66l8.49-8.49a2.5 2.5 0 0 1 3.54 3.54l-8.49 8.49a1 1 0 0 1-1.41-1.41l7.78-7.78" /></svg>
-              <span class="v2-attach-name">{{ att.name }}</span>
-              <span v-if="att.uploading" class="v2-attach-state">上传中…</span>
-              <span v-else-if="att.error" class="v2-attach-state">失败</span>
-              <button type="button" class="v2-attach-remove" title="移除" @click="removeAttachment(att)">×</button>
-            </span>
-          </div>
-
-          <!-- Input bar -->
-          <div class="v2-composer" :class="{ 'is-focused': inputText }">
-            <SlashCommandMenu
-              :visible="slash.visible.value"
-              :commands="slash.filtered.value"
-              :active-index="slash.activeIndex.value"
-              @select="slash.select"
-              @hover="slash.setActive"
-            />
-            <input
-              ref="fileInputRef"
-              type="file"
-              multiple
-              class="v2-file-input"
-              @change="handleFilesSelected"
-            />
-            <textarea
-              ref="textareaRef"
-              v-model="inputText"
-              class="v2-textarea"
-              placeholder="输入数据问题…（输入 / 调用命令）"
-              :disabled="!availableModels.length"
-              rows="1"
-              @keydown="onComposerKeydown"
-              @input="onComposerInput"
-            />
-            <div class="v2-composer-inline">
-              <span class="v2-composer-hint">Enter 发送，Shift + Enter 换行</span>
-              <button
-                type="button"
-                class="v2-send-btn"
-                :class="{ 'v2-cancel-btn': activeTaskId }"
-                :disabled="activeTaskId ? false : !canSendV2"
-                @click="activeTaskId ? handleCancel() : handleSend()"
-              >
-                <svg v-if="activeTaskId" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><rect x="8" y="8" width="8" height="8" rx="1.5" /></svg>
-                <svg v-else viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></svg>
-              </button>
-            </div>
-          </div>
-          <!-- Bottom toolbar -->
-          <div class="v2-composer-toolbar">
-            <div class="v2-composer-toolbar-left">
-              <el-dropdown trigger="click" @command="changePermissionMode">
-                <button type="button" class="v2-perm-pill" title="会话权限模式">
-                  <span class="v2-perm-pill-dot" :class="permissionMode"></span>
-                  {{ permissionModeLabel }}
-                </button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="opt in PERMISSION_MODE_OPTIONS"
-                      :key="opt.value"
-                      :command="opt.value"
-                      :class="{ 'is-active': opt.value === permissionMode }"
-                    >
-                      <div class="v2-perm-opt">
-                        <span class="v2-perm-opt-label">{{ opt.label }}</span>
-                        <span v-if="opt.desc" class="v2-perm-opt-desc">{{ opt.desc }}</span>
-                      </div>
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-              <button
-                type="button"
-                class="v2-attach-btn"
-                :disabled="isStreaming"
-                title="上传文件"
-                @click="triggerFilePicker"
-              >
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-              </button>
-            </div>
-            <div class="v2-composer-toolbar-right">
-              <el-dropdown trigger="click" @command="handleModelCommand">
-                <button type="button" class="v2-model-btn" title="切换模型">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M12 2V4" /><rect x="4" y="6" width="16" height="12" rx="2" /><circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" /><circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" /></svg>
-                  <span class="v2-model-label">{{ selectedModel || '默认' }}</span>
-                </button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <template v-for="provider in settings.providers" :key="provider.provider_id">
-                      <el-dropdown-item
-                        v-for="model in provider.models"
-                        :key="model"
-                        :command="provider.provider_id + '::' + model"
-                        :class="{ active: selectedProvider === provider.provider_id && selectedModel === model }"
-                      >
-                        {{ model }}
-                      </el-dropdown-item>
-                    </template>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </div>
-
+          <span v-else>暂无消息</span>
         </div>
-      </div>
+      </dataagent-conversation>
     </main>
 
     <!-- Right-side conversation artifact panel -->
@@ -664,26 +355,17 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { createNl2SqlApiClient, DATAAGENT_CLIENT_HEADERS } from '@/api/nl2sql'
 import { dataagentApi } from '@/api/dataagent'
 import { useAuthStore } from '@/stores/auth'
-import ToolOutputRenderer from '../../../packages/agent-conversation/src/ui/ToolOutput.vue'
-import ChartSpecView from '../../../packages/agent-conversation/src/ui/ChartSpecView.vue'
-import PermissionConfirmationCard from '../../../packages/agent-conversation/src/ui/PermissionCard.vue'
-import QuestionSelectionCard from '../../../packages/agent-conversation/src/ui/QuestionCard.vue'
-import { blockToToolProp } from './v2StreamParser'
-import { splitChartSpecText, stripChartSpecsFromText } from './chartSpec'
 import { topicStatusKind } from './topicStatus'
-import { hydrateMessageFromApi, isPlainEnterSubmit, normalizeTopic, renderMarkdown as renderMarkdownBase } from './chatMessage'
-import { useNl2SqlChat } from './useNl2SqlChat'
-import { createNl2SqlTransport } from './nl2sqlTransport'
-import { useChatMessageActions } from './useChatMessageActions'
-import SlashCommandMenu from './SlashCommandMenu.vue'
+import { normalizeTopic } from './chatMessage'
+import { createNl2SqlAuditTransport, createNl2SqlTransport } from './nl2sqlTransport'
 import AgentSelector from './AgentSelector.vue'
-import { useSlashCommands, buildCommands } from './useSlashCommands'
+import { buildCommands } from '@opendataworks/agent-conversation'
 
 const route = useRoute()
 const router = useRouter()
@@ -704,7 +386,6 @@ const api = createNl2SqlApiClient({
   },
 })
 const { topicApi, agentApi } = api
-provide('nl2sqlApi', api)
 
 // ── State ────────────────────────────────────────────────────────────────────
 const agents = ref([])
@@ -724,44 +405,12 @@ const PERMISSION_MODE_OPTIONS = [
   { value: 'bypassPermissions', label: 'Bypass permissions', desc: '全部自动执行，不再确认' },
 ]
 const searchKeyword = ref('')
-const autoScroll = ref(true)
-
-// Shared NL2SQL conversation engine. The portal keeps its own routing, session
-// audit facets, agent selector, feedback, copy, and scroll; the engine owns the
-// send -> deliver -> stream -> reconcile -> detach/cancel lifecycle and the
-// shared conversation refs.
-const chat = useNl2SqlChat({
-  api,
-  getAgentId: () => agentSelectValue.value || '',
-  getPermissionMode: () => permissionMode.value || '',
-  topicTitleLength: 60,
-  afterRun: () => { loadTopics(); void loadSlashCommands() },
-  onTopicEnsured: (id) => { if (!isWidgetMode.value) replaceRouteTopic(id) },
-  notifyError: (message) => ElMessage.error('请求失败: ' + message),
-})
-const {
-  topics, topicId: activeTopicId, messages, inputText,
-  providers, defaultProviderId, defaultModel, selectedProvider, selectedModel,
-  availableModels, canSend, isBusy: isStreaming, activeTaskId,
-  thinkingExpanded, toggleThinking,
-  send: engineSend, retryMessage, cancel: engineCancel, detach,
-  resumeActiveTopicTask,
-  loadConfig,
-} = chat
-const { handleCopyMessage, toggleMessageFeedback } = useChatMessageActions({
-  api,
-  topicId: activeTopicId,
-  cleanText: cleanTextForDisplay,
-  notifyCopied: (message) => ElMessage.success(message),
-  notifyError: (message) => ElMessage.error(message),
-})
-// The SQL panel reaches the network only through this. Until the page itself
-// moves onto the SDK element (T11-B), the shell still has to supply one, or the
-// panel silently loses its execute button: it was left injecting a transport
-// nobody provided, so execution had been dead since the panel moved into the
-// package. A computed rebuilds it per topic, which is the ref contract the
-// panel follows.
-provide('agentConversationTransport', computed(() => createNl2SqlTransport(api, activeTopicId.value)))
+const topics = ref([])
+const activeTopicId = ref('')
+const activeTaskId = ref('')
+const isStreaming = computed(() => Boolean(activeTaskId.value))
+const conversationRef = ref(null)
+const pendingMessageId = ref('')
 
 // Session-list source / filter / sort. Portal sessions stay editable; widget
 // sessions are a read-only audit view served by the admin endpoint.
@@ -790,9 +439,6 @@ const hasValidAgent = computed(() => (
   !agentLoading.value && !agentLoadError.value && Boolean(activeAgent.value)
 ))
 const currentAgentName = computed(() => activeAgent.value?.name || '智能数据助手')
-const messagesScrollbarRef = ref(null)
-const textareaRef = ref(null)
-const targetMessageId = ref('')
 
 // ── Computed ─────────────────────────────────────────────────────────────────
 // Status filter values map to topicStatusKind(): '' (finished/none) is the
@@ -875,7 +521,6 @@ const isTopicWorking = (topic) =>
   topicStatusKind(topic?.current_task_status) === 'running'
 const topicBadgeKind = (topic) => topicStatusKind(topic?.current_task_status)
 
-const agentSelectOptions = computed(() => agents.value.map((a) => ({ label: a.name, value: a.agent_id })))
 
 // ── Time formatting ────────────────────────────────────────────────────────
 function formatTime(dateStr) {
@@ -889,32 +534,9 @@ function formatTime(dateStr) {
   return d.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' })
 }
 
-function formatMessageTime(dateStr) {
-  if (!dateStr) return ''
-  const d = new Date(dateStr)
-  if (isNaN(d.getTime())) return ''
-  return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
-}
-
-// ── Auto-resize textarea ───────────────────────────────────────────────────
-function autoResize() {
-  const el = textareaRef.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 160) + 'px'
-}
-
 // ── Slash commands ─────────────────────────────────────────────────────────
-// Typing "/" opens a menu of the agent's authoritative SDK slash commands
-// (built-ins + skills + custom commands), fetched from the backend. Selecting
-// one autocompletes the "/<name> " token for the user to send.
 const slashCommandNames = ref([])
 const slashCommands = computed(() => buildCommands(slashCommandNames.value))
-const slash = useSlashCommands({
-  getCommands: () => slashCommands.value,
-  inputText,
-  focusInput: () => nextTick(() => { textareaRef.value?.focus(); autoResize() }),
-})
 
 async function loadSlashCommands() {
   const id = String(agentSelectValue.value || '').trim()
@@ -928,31 +550,6 @@ async function loadSlashCommands() {
   } catch {
     slashCommandNames.value = []
   }
-}
-
-function onComposerInput() {
-  slash.syncFromInput()
-  autoResize()
-}
-
-function onComposerKeydown(event) {
-  if (slash.handleKeydown(event)) return
-  if (event.key === 'Enter' || event.keyCode === 13) onEnterKey(event)
-}
-
-// ── Scroll ─────────────────────────────────────────────────────────────────
-function scrollToBottom(force = false) {
-  if (!force && !autoScroll.value) return
-  nextTick(() => {
-    const sb = messagesScrollbarRef.value
-    if (sb?.setScrollTop) {
-      sb.setScrollTop(999999)
-    }
-  })
-}
-
-function handleScroll({ scrollTop, scrollHeight, clientHeight }) {
-  autoScroll.value = scrollHeight - scrollTop - clientHeight < 60
 }
 
 function normalizeQueryValue(value) {
@@ -1008,37 +605,10 @@ function replaceRouteTopic(topicId, messageId = '') {
   }
 }
 
-function messageRootElement() {
-  const scrollbar = messagesScrollbarRef.value
-  return scrollbar?.$el || scrollbar?.wrapRef || null
-}
-
-function findMessageElement(messageId) {
-  const normalizedMessageId = normalizeQueryValue(messageId)
-  const root = messageRootElement()
-  if (!root || !normalizedMessageId) return null
-  return Array.from(root.querySelectorAll('[data-message-id]'))
-    .find((el) => el.getAttribute('data-message-id') === normalizedMessageId) || null
-}
-
 function focusMessage(messageId) {
   const normalizedMessageId = normalizeQueryValue(messageId)
-  if (!normalizedMessageId) {
-    targetMessageId.value = ''
-    scrollToBottom(true)
-    return
-  }
-
-  targetMessageId.value = normalizedMessageId
-  nextTick(() => {
-    const el = findMessageElement(normalizedMessageId)
-    if (el?.scrollIntoView) {
-      el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-      return
-    }
-    targetMessageId.value = ''
-    scrollToBottom(true)
-  })
+  if (!normalizedMessageId) return
+  nextTick(() => conversationRef.value?.focusMessage?.(normalizedMessageId))
 }
 
 // ── Data loading ───────────────────────────────────────────────────────────
@@ -1048,13 +618,13 @@ async function loadSettings() {
     // default already repaired to an enabled provider/model. Deriving the
     // default from admin settings instead would surface disabled providers
     // and a stale default pointing at a provider the user has not enabled.
-    const config = await loadConfig()
+    const config = await api.runtimeApi.getConfig()
     const enabledProviders = Array.isArray(config?.providers)
       ? config.providers.filter((p) => p?.enabled !== false && Array.isArray(p?.models) && p.models.length)
       : []
     settings.providers = enabledProviders
-    settings.default_provider_id = defaultProviderId.value
-    settings.default_model = defaultModel.value
+    settings.default_provider_id = String(config?.default_provider_id || enabledProviders[0]?.provider_id || '')
+    settings.default_model = String(config?.default_model || enabledProviders[0]?.default_model || enabledProviders[0]?.models?.[0] || '')
   } catch {
     // non-fatal
   }
@@ -1160,8 +730,8 @@ async function validateRequestedTopic(topicId) {
 
 function resetActiveConversationView() {
   activeTopicId.value = ''
-  messages.value = []
-  targetMessageId.value = ''
+  activeTaskId.value = ''
+  pendingMessageId.value = ''
   searchKeyword.value = ''
   closeArtifactPreview()
 }
@@ -1233,32 +803,11 @@ async function ensureTopicListed(topicId) {
 async function selectTopic(topicId, options = {}) {
   const normalizedTopicId = normalizeQueryValue(topicId)
   if (!normalizedTopicId) return
+  pendingMessageId.value = normalizeQueryValue(options.messageId)
+  activeTaskId.value = ''
   activeTopicId.value = normalizedTopicId
   if (!isWidgetMode.value) {
     await ensureTopicListed(normalizedTopicId)
-  }
-  try {
-    const data = isWidgetMode.value
-      ? await dataagentApi.getWidgetTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
-      : await topicApi.getTopicMessages(normalizedTopicId, { page: 1, page_size: 500, order: 'asc' })
-    const list = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : [])
-    messages.value = list.map(hydrateMessageFromApi)
-    // Re-attach to a still-running task so re-entering a live conversation keeps
-    // streaming and exposes the stop button. Widget mode is a read-only audit
-    // view of other users' sessions, so it never resumes a live stream.
-    if (!isWidgetMode.value) {
-      resumeActiveTopicTask(normalizedTopicId)
-    }
-    const messageId = normalizeQueryValue(options.messageId)
-    if (messageId) {
-      focusMessage(messageId)
-    } else {
-      targetMessageId.value = ''
-      scrollToBottom(true)
-    }
-  } catch {
-    messages.value = []
-    targetMessageId.value = ''
   }
 }
 
@@ -1266,66 +815,21 @@ async function selectTopic(topicId, options = {}) {
 // ── Chart spec helpers ────────────────────────────────────────────────────
 // Inline chart_spec written into the model's prose is stripped from display;
 // charts must come from a real tool call (rendered below that tool block).
-function cleanTextForDisplay(content) {
-  return stripChartSpecsFromText(String(content || '')).trim()
-}
-
-// Split answer prose into ordered text/chart segments so an inline chart_spec
-// (fenced, tagged, or raw JSON) renders as a real chart instead of leaking JSON.
-function answerSegments(content) {
-  return splitChartSpecText(String(content || ''))
-}
-
 // The "thinking" dots show while a run is live but has not rendered any content
 // yet. Keying off rendered blocks (not turn count) keeps the indicator visible
 // after switching away and back: a resumed run rehydrates its assistant message
 // from the still-empty persisted placeholder, whose _v2state already carries one
 // empty turn, so `turns.length` is no longer 0 even though nothing has streamed.
-function hasRenderedBlocks(msg) {
-  const turns = msg?._v2state?.turns
-  return Array.isArray(turns) && turns.some((t) => Array.isArray(t.blocks) && t.blocks.length > 0)
-}
-
-function showTypingIndicator(msg) {
-  if (!isStreaming.value) return false
-  if (msg?._v2state?.status === 'error') return false
-  if (hasRenderedBlocks(msg)) return false
-  // Scope to the live message: the resumed/active task, or the just-sent message
-  // whose backend task id has not been assigned yet (task_id still '').
-  const taskId = String(msg?.task_id || '')
-  return taskId ? taskId === activeTaskId.value : true
-}
-
 // A block conveys its own live progress: streaming text/thinking shows the
 // blinking cursor (or the "深度思考" badge dot) and a running tool_use shows its
 // own pending state. While one of those is the tail block, trailing dots would
 // duplicate that cue.
-function isBlockActivelyProgressing(block) {
-  if (!block) return false
-  if (block.type === 'text' || block.type === 'thinking') return block.status === 'streaming'
-  if (block.type === 'tool_use') return block.output == null
-  return false
-}
-
 // Keep a loading cue at the bottom of the reply for the whole run, not just
 // before the first block: show trailing dots whenever the active run has already
 // rendered content but its tail block is not itself streaming (between turns,
 // before a new turn's first block, after a tool/text block settled). The
 // pre-content case is covered by showTypingIndicator; a pending permission /
 // question card means the run is parked on the user, so suppress.
-function showTrailingActivity(msg) {
-  if (!isStreaming.value) return false
-  if (String(msg?.task_id || '') !== activeTaskId.value || !activeTaskId.value) return false
-  if (!hasRenderedBlocks(msg)) return false
-  const state = msg?._v2state
-  if (!state || state.status === 'done' || state.status === 'error') return false
-  const lastTurn = state.turns?.[state.turns.length - 1]
-  const lastBlock = lastTurn?.blocks?.[lastTurn.blocks.length - 1]
-  if (lastBlock?.type === 'permission_request' && lastBlock.decision === 'pending') return false
-  if (lastBlock?.type === 'question_request' && !lastBlock.answered) return false
-  return !isBlockActivelyProgressing(lastBlock)
-}
-
 // ── Suggestions ───────────────────────────────────────────────────────────
 const DEFAULT_SUGGESTIONS = [
   '最近 30 天工作流发布次数趋势',
@@ -1340,20 +844,13 @@ const suggestions = computed(() => {
   return questions.length ? questions : DEFAULT_SUGGESTIONS
 })
 
-function handleSuggestion(text) {
-  if (isStreaming.value || isWidgetMode.value) return
-  inputText.value = text
-  nextTick(() => handleSend())
-}
-
 // ── Source / filter ──────────────────────────────────────────────────────
 async function handleSourceChange(mode) {
   if (mode === sourceMode.value) return
-  if (isStreaming.value) detach()
   sourceMode.value = mode
   activeTopicId.value = ''
-  messages.value = []
-  targetMessageId.value = ''
+  activeTaskId.value = ''
+  pendingMessageId.value = ''
   searchKeyword.value = ''
   filterStatus.value = ''
   filterUser.value = ''
@@ -1368,7 +865,7 @@ async function handleSourceChange(mode) {
 watch(filterUser, async () => {
   if (sourceMode.value !== 'widget') return
   activeTopicId.value = ''
-  messages.value = []
+  activeTaskId.value = ''
   await loadWidgetTopics()
 })
 
@@ -1384,9 +881,6 @@ function resetFilters() {
 // ── Topic management ───────────────────────────────────────────────────────
 async function handleNewTopic() {
   if (isWidgetMode.value) return
-  // Leaving a running conversation detaches it (the backend task keeps running,
-  // recoverable from history) instead of blocking, matching the widget.
-  if (isStreaming.value) detach()
   resetActiveConversationView()
   replaceRouteTopic('')
 }
@@ -1394,12 +888,11 @@ async function handleNewTopic() {
 async function handleSelectTopic(topicId) {
   if (topicId === activeTopicId.value) {
     if (!isWidgetMode.value) {
-      targetMessageId.value = ''
+      pendingMessageId.value = ''
       replaceRouteTopic(topicId)
     }
     return
   }
-  if (isStreaming.value) detach()
   await selectTopic(topicId)
   if (!isWidgetMode.value) replaceRouteTopic(topicId)
 }
@@ -1408,16 +901,10 @@ async function requestAgentChange(agentId) {
   const value = normalizeQueryValue(agentId)
   if (!value || value === agentSelectValue.value || agentTransitioning.value) return
   if (!agents.value.some((agent) => agent.agent_id === value)) return
-  if (isUploading.value) {
-    ElMessage.warning('文件上传完成后再切换助手')
-    return
-  }
 
   agentTransitioning.value = true
   transitioningAgentId.value = value
   try {
-    if (isStreaming.value) detach()
-    pendingAttachments.value = []
     resetActiveConversationView()
     agentSelectValue.value = value
     initializedAgentId.value = ''
@@ -1448,128 +935,107 @@ async function retryLoadAgents() {
   if (agentSelectValue.value) await initializeWorkspace(agentSelectValue.value)
 }
 
-function handleModelCommand(command) {
-  const [providerId, model] = String(command || '').split('::')
-  if (providerId && model) {
-    selectedProvider.value = providerId
-    selectedModel.value = model
-  }
-}
-
 // ── Send message ───────────────────────────────────────────────────────────
 // The send -> deliver -> stream -> reconcile lifecycle lives in the shared
 // engine. Routing (onTopicEnsured), scroll (messages watcher), topic-list
 // refresh (reloadTopicsAfterRun), and error toasts (notifyError) are wired
 // through the engine options at setup.
-async function handleSend() {
-  slash.close()
-  if (isWidgetMode.value) return
-  if (isStreaming.value || isUploading.value) return
-  const ready = pendingAttachments.value.filter((a) => a.rel_path && !a.uploading)
-  if (!inputText.value.trim() && !ready.length) return
-  const attachments = ready.map((a) => ({ name: a.name, rel_path: a.rel_path }))
-  pendingAttachments.value = []
-  await engineSend({ attachments })
-}
-
 // Enter 发送，Shift + Enter 换行;输入法组合输入期间的回车用于确认候选词,不发送。
-function onEnterKey(event) {
-  if (!isPlainEnterSubmit(event)) return
-  event.preventDefault()
-  handleSend()
-}
-
 // Explicit stop: cancel the backend task (engine marks the topic suspended).
-function handleCancel() {
-  void engineCancel()
-}
-
 // Generic Chat V2 permission confirmation: post the user's allow/deny for a
 // paused run. The streamed permission_decision record reconciles the card state.
-async function handlePermissionDecision(msg, payload) {
-  const taskId = String(msg?.task_id || activeTaskId.value || '').trim()
-  const requestId = String(payload?.requestId || '').trim()
-  const decision = payload?.decision
-  if (!taskId || !requestId || (decision !== 'allow' && decision !== 'deny')) return
-  try {
-    await api.taskApi.submitPermissionDecision(taskId, requestId, decision)
-  } catch (err) {
-    const block = (msg?._v2state?.blocks || []).find(
-      (b) => b.type === 'permission_request' && b.requestId === requestId,
-    )
-    if (block && block.decision === 'pending') {
-      block.summary = (block.summary || '') + '\n[提交失败，请重试]'
-      block._submitFailed = Date.now()
-    }
-  }
-}
-
 // The built-in AskUserQuestion tool_use streams as its own block, but it is
 // rendered as the QuestionSelectionCard (driven by the question_request record),
 // so the raw tool block is suppressed to avoid a duplicate.
-function isAskUserQuestionBlock(block) {
-  return String(block?.name || '') === 'AskUserQuestion'
-}
-
 // AskUserQuestion: post the user's selection for a run paused in waiting_input.
 // The streamed question_answer record reconciles the card into its answered state.
-async function handleQuestionAnswer(msg, payload) {
-  const taskId = String(msg?.task_id || activeTaskId.value || '').trim()
-  const requestId = String(payload?.requestId || '').trim()
-  const answers = Array.isArray(payload?.answers) ? payload.answers : []
-  if (!taskId || !requestId) return
-  try {
-    await api.taskApi.submitQuestionAnswer(taskId, requestId, answers)
-  } catch (err) {
-    const block = (msg?._v2state?.blocks || []).find(
-      (b) => b.type === 'question_request' && b.requestId === requestId,
-    )
-    if (block && !block.answered) {
-      block._submitFailed = Date.now()
-    }
-  }
-}
-
 // Permission mode pill: reflects the active topic's latest selection and pushes
 // switches immediately (the next task picks up the new mode; deliver-message also
 // carries it as a fallback). New (topic-less) sessions use the pill value at create.
-const permissionModeLabel = computed(() => {
-  const opt = PERMISSION_MODE_OPTIONS.find((o) => o.value === permissionMode.value)
-  return opt ? opt.label : '逐步确认'
-})
 const currentTopic = computed(() => (topics.value || []).find((t) => t.topic_id === activeTopicId.value) || null)
 watch(currentTopic, (topic) => {
   if (topic && topic.permission_mode) permissionMode.value = topic.permission_mode
 }, { immediate: true })
-async function changePermissionMode(mode) {
-  if (!mode || mode === permissionMode.value) {
-    permissionMode.value = mode || permissionMode.value
-    return
-  }
-  permissionMode.value = mode
-  if (activeTopicId.value) {
-    try {
-      await topicApi.updateTopic(activeTopicId.value, { permission_mode: mode })
-    } catch (err) {
-      ElMessage.error('切换权限模式失败')
-    }
-  }
-}
-
 // Retry from a failed reply's error card: the engine re-asks the question that
 // produced it as a new turn, so the conversation can continue.
-function handleRetry(msg) {
-  if (isWidgetMode.value || isStreaming.value) return
-  void retryMessage(msg)
+// ── Conversation files: composer upload + right-side artifact panel ──────────
+const conversationComposerConfig = computed(() => ({
+  providers: settings.providers,
+  default_provider_id: settings.default_provider_id,
+  default_model: settings.default_model,
+  permissionModes: PERMISSION_MODE_OPTIONS,
+  permissionMode: currentTopic.value?.permission_mode || permissionMode.value,
+  slashCommands: slashCommands.value,
+  suggestions: suggestions.value,
+  uploadBeforeConversation: true,
+}))
+
+function conversationTransportFactory(topicId) {
+  return isWidgetMode.value
+    ? createNl2SqlAuditTransport(api, dataagentApi, topicId)
+    : createNl2SqlTransport(api, topicId, { getAgentId: () => agentSelectValue.value })
 }
 
-// ── Conversation files: composer upload + right-side artifact panel ──────────
-const fileInputRef = ref(null)
-const pendingAttachments = ref([])       // [{ name, rel_path, size, uploading, error }]
-const isUploading = computed(() => pendingAttachments.value.some((a) => a.uploading))
-const canSendV2 = computed(
-  () => !isUploading.value && (canSend.value || pendingAttachments.value.some((a) => a.rel_path && !a.uploading)),
-)
+async function resolveConversationEndpoint(context = {}) {
+  if (isWidgetMode.value) return ''
+  if (activeTopicId.value) return activeTopicId.value
+  const content = String(context.content || '').trim()
+  const created = normalizeTopic(await topicApi.createTopic(content ? content.slice(0, 60) : '新话题', {
+    agent_id: agentSelectValue.value || undefined,
+    permission_mode: context.settings?.permission_mode || permissionMode.value || undefined,
+  }))
+  if (!created.topic_id) throw new Error('创建话题未返回 topic_id')
+  topics.value = [created, ...topics.value.filter((topic) => topic.topic_id !== created.topic_id)]
+  activeTopicId.value = created.topic_id
+  permissionMode.value = created.permission_mode || permissionMode.value
+  replaceRouteTopic(created.topic_id)
+  return created.topic_id
+}
+
+const SDK_TO_TOPIC_STATUS = {
+  queued: 'waiting',
+  running: 'running',
+  waiting_input: 'waiting_input',
+  waiting_permission: 'waiting_permission',
+  finished: 'finished',
+  failed: 'error',
+  cancelled: 'suspended',
+}
+
+function updateActiveTopicRun(detail = {}) {
+  const topic = currentTopic.value
+  if (!topic) return
+  topic.current_task_id = String(detail.taskId || topic.current_task_id || '')
+  topic.current_task_status = SDK_TO_TOPIC_STATUS[detail.status] || String(detail.status || '')
+  topic.updated_at = new Date().toISOString()
+}
+
+function handleConversationRunChange(event) {
+  const detail = event?.detail || {}
+  const active = ['queued', 'running', 'waiting_input', 'waiting_permission'].includes(detail.status)
+  activeTaskId.value = active ? String(detail.taskId || '') : ''
+  updateActiveTopicRun(detail)
+}
+
+async function handleConversationComplete(event) {
+  const detail = event?.detail || {}
+  activeTaskId.value = ''
+  updateActiveTopicRun(detail)
+  if (artifactsPanelOpen.value) await refreshArtifacts()
+  await loadTopics({ selectDefault: false, skipRouteTopic: true })
+}
+
+function handleConversationError(event) {
+  const message = String(event?.detail?.message || '会话请求失败')
+  ElMessage.error(`请求失败: ${message}`)
+}
+
+function handleConversationReady() {
+  if (!pendingMessageId.value) return
+  const messageId = pendingMessageId.value
+  pendingMessageId.value = ''
+  focusMessage(messageId)
+}
 
 const ARTIFACTS_PREF_KEY = 'nl2sql.artifactsPanelOpen'
 const artifactsPanelOpen = ref(readArtifactsPref())
@@ -1634,46 +1100,6 @@ function readArtifactsPref() {
   try { return localStorage.getItem(ARTIFACTS_PREF_KEY) === '1' } catch (_e) { return false }
 }
 
-function triggerFilePicker() {
-  if (isStreaming.value) return
-  fileInputRef.value?.click()
-}
-
-async function handleFilesSelected(event) {
-  const files = Array.from(event?.target?.files || [])
-  if (event?.target) event.target.value = ''
-  if (!files.length) return
-  let topicId = activeTopicId.value
-  if (!topicId) {
-    try {
-      topicId = await chat.ensureTopic('新话题')
-      if (!isWidgetMode.value) replaceRouteTopic(topicId)
-    } catch (error) {
-      ElMessage.error('创建话题失败: ' + (error?.message || error))
-      return
-    }
-  }
-  for (const file of files) {
-    const entry = reactive({ name: file.name, rel_path: '', size: file.size, uploading: true, error: '' })
-    pendingAttachments.value.push(entry)
-    try {
-      const meta = await topicApi.uploadFile(topicId, file)
-      entry.name = meta.name
-      entry.rel_path = meta.rel_path
-      entry.size = meta.size
-      entry.uploading = false
-    } catch (error) {
-      entry.uploading = false
-      entry.error = String(error?.message || '上传失败')
-      ElMessage.error(`上传 ${file.name} 失败: ${entry.error}`)
-    }
-  }
-}
-
-function removeAttachment(entry) {
-  pendingAttachments.value = pendingAttachments.value.filter((a) => a !== entry)
-}
-
 function toggleArtifactsPanel() {
   artifactsPanelOpen.value = !artifactsPanelOpen.value
   try { localStorage.setItem(ARTIFACTS_PREF_KEY, artifactsPanelOpen.value ? '1' : '0') } catch (_e) { /* ignore */ }
@@ -1718,33 +1144,6 @@ function downloadArtifact(file) {
   return downloadArtifactBlob(file?.rel_path, file?.name)
 }
 
-// markdown/v-html 里的工作区文件链接以自描述 fragment 表示
-// （#odw-file=<encodeURIComponent(relPath)>），由消息容器上的点击代理拦截后
-// 走 Blob 下载。encodeURIComponent 保证写入 HTML 属性时无引号/尖括号/& 注入。
-const WORKSPACE_FILE_FRAGMENT = '#odw-file='
-
-// Message markdown: workspace-relative file links the agent emits
-// (`output/...`, `uploads/...`) become download URLs for the active topic.
-function renderMarkdown(text) {
-  return renderMarkdownBase(text, { resolveFileHref: resolveWorkspaceFileHref })
-}
-function resolveWorkspaceFileHref(relPath) {
-  return activeTopicId.value ? `${WORKSPACE_FILE_FRAGMENT}${encodeURIComponent(String(relPath || ''))}` : ''
-}
-
-// 消息区点击代理：命中文件 fragment 链接（markdown 链接、sql_export 下载等
-// 所有经 resolveWorkspaceFileHref 产出的 <a>）时改走带标记头的 Blob 下载。
-function handleWorkspaceFileClick(event) {
-  const anchor = event.target?.closest?.('a[href*="#odw-file="]')
-  if (!anchor) return
-  const href = anchor.getAttribute('href') || ''
-  const index = href.indexOf(WORKSPACE_FILE_FRAGMENT)
-  if (index < 0) return
-  event.preventDefault()
-  let relPath = href.slice(index + WORKSPACE_FILE_FRAGMENT.length)
-  try { relPath = decodeURIComponent(relPath) } catch { /* keep raw */ }
-  void downloadArtifactBlob(relPath)
-}
 function isHtmlArtifact(file) {
   return /text\/html/.test(file?.content_type || '') || /\.html?$/i.test(file?.name || '')
 }
@@ -1806,14 +1205,10 @@ watch(activeTopicId, () => {
   else artifacts.value = []
 })
 
-// Keep the view pinned to the latest content as the engine streams (the engine
-// triggers messages reactively); reloads / focus still force-scroll explicitly.
-watch(messages, () => scrollToBottom(), { deep: true, flush: 'post' })
-
-// The engine clears inputText on send; resize the composer back down.
-watch(inputText, (value) => {
-  if (!value) nextTick(() => autoResize())
-})
+// Following the stream and resizing the composer now belong to the element:
+// it owns the scroll container and the textarea, so the shell has nothing to
+// pin or measure. The watchers that did it here referenced the old engine's
+// refs and were left behind when it was removed.
 
 // ── Lifecycle ─────────────────────────────────────────────────────────────
 onMounted(async () => {
@@ -1864,10 +1259,7 @@ watch(
     if (isWidgetMode.value) return
     const normalizedTopicId = normalizeQueryValue(topicId)
     const normalizedMessageId = normalizeQueryValue(messageId)
-    if (!normalizedTopicId) {
-      targetMessageId.value = ''
-      return
-    }
+    if (!normalizedTopicId) return
     const validTopicId = await validateRequestedTopic(normalizedTopicId)
     if (!validTopicId) return
     if (validTopicId !== activeTopicId.value) {
@@ -1875,11 +1267,10 @@ watch(
       await selectTopic(validTopicId, { messageId: normalizedMessageId })
       return
     }
-    if (normalizedMessageId) {
-      focusMessage(normalizedMessageId)
-    } else {
-      targetMessageId.value = ''
-    }
+    // Nothing to clear when there is no target: the element highlights the
+    // message briefly and lets the highlight expire on its own, so the shell
+    // no longer tracks which message it pointed at.
+    if (normalizedMessageId) focusMessage(normalizedMessageId)
   }
 )
 
@@ -2372,8 +1763,26 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* A grid item defaults to `min-width: auto`, i.e. min-content, so one long
+     shell command in a tool block stretches this column past its track and the
+     grid clips the overflow. The old shell never hit it because it rendered
+     messages itself inside a width-constrained container; the element passes
+     that content straight through. */
+  min-width: 0;
   background: #ffffff;
   position: relative;
+}
+
+/* The element manages its own internal scrolling, but only inside the box the
+   host gives it. Without these it is a `flex: 0 1 auto` item sized by content:
+   a long shell command in a tool block widens it past the viewport, and the
+   messages grow downward until the composer is pushed off screen. `min-width`
+   is the one that stops wide content from expanding a flex item. */
+.v2-conversation {
+  display: block;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
 }
 
 .v2-main-top-bar {

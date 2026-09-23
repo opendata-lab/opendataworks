@@ -1,7 +1,26 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia } from 'pinia'
+import { defineAgentConversation } from '@opendataworks/agent-conversation'
+
+// The page renders the conversation as a custom element. Registering it is the
+// application's job (`main.js`), which a component test never runs — without
+// this the tag mounts as an inert unknown element: no transport calls, no
+// messages, and every assertion about the conversation fails for one reason.
+beforeAll(() => {
+  defineAgentConversation()
+})
+
+/** The conversation element inside the page. */
+const conversation = (wrapper) => wrapper.element.querySelector('dataagent-conversation')
+
+/** Everything the element renders, which lives in its shadow root. */
+const conversationText = (wrapper) => conversation(wrapper)?.shadowRoot?.textContent || ''
+
+/** Query inside the element, where the messages and composer now live. */
+const inConversation = (wrapper, selector) =>
+  conversation(wrapper)?.shadowRoot?.querySelector(selector) || null
 
 const apiMocks = vi.hoisted(() => ({
   topicApi: {
