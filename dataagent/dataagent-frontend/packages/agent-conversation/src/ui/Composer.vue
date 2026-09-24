@@ -82,7 +82,7 @@
     </div>
     <div class="dac-composer-footer" part="footer">
       <div class="dac-composer-actions" part="actions">
-        <label v-if="permissionModes.length" class="dac-picker dac-permission-picker" part="permission-picker" title="权限模式">
+        <label v-if="shows('permissionMode') && permissionModes.length" class="dac-picker dac-permission-picker" part="permission-picker" title="权限模式">
           <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
           <span class="dac-picker-label">{{ permissionModeLabel }}</span>
           <select
@@ -142,7 +142,7 @@
         <!-- Borderless pickers with an icon, the way the shells have always
              drawn them. Native <select> underneath so keyboard and screen
              readers keep working; only the chrome is restyled. -->
-        <label v-if="providers.length" class="dac-picker" part="model-picker" title="切换模型">
+        <label v-if="shows('model') && providers.length" class="dac-picker" part="model-picker" title="切换模型">
           <svg class="dac-picker-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true">
             <path d="M12 2V4" />
             <rect x="4" y="6" width="16" height="12" rx="2" />
@@ -199,6 +199,15 @@ const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-chang
 const inputRef = ref(null)
 
 const transport = inject('agentConversationTransport', null)
+
+/**
+ * Whether a composer control is offered at all.
+ *
+ * A control still needs its capability — a model picker without providers has
+ * nothing to pick. This only lets a host withhold one it could have shown, so
+ * omitting `controls` keeps every capable control visible.
+ */
+const shows = (name) => props.config?.controls?.[name] !== false
 
 const providers = computed(() =>
   (props.config?.providers || []).filter(
@@ -295,8 +304,10 @@ const onPermissionChange = async (value) => {
 }
 
 const canUpload = computed(() =>
-  typeof unref(transport)?.uploadFiles === 'function' ||
-  (!props.endpointReady && props.config?.uploadBeforeConversation === true && typeof props.ensureEndpoint === 'function')
+  shows('attach') && (
+    typeof unref(transport)?.uploadFiles === 'function' ||
+    (!props.endpointReady && props.config?.uploadBeforeConversation === true && typeof props.ensureEndpoint === 'function')
+  )
 )
 
 const fileRef = ref(null)

@@ -17,21 +17,13 @@
            pasted snippet change how the page looks. -->
       <div v-if="message.role === 'user'" class="dac-user" part="user-turn">
         <div class="dac-bubble" part="bubble user-bubble">{{ message.content }}</div>
-        <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
-          <li v-for="file in message.attachments" :key="file.relPath">
-            <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
-            <span v-if="file.size != null" class="dac-attachment-size" part="attachment-size">{{ formatBytes(file.size) }}</span>
-            <!-- Preview is a host capability. Without readFile the link is all
-                 there is, which is still the whole file — just not in place. -->
-            <button
-              v-if="canPreview(file)"
-              type="button"
-              class="dac-preview-open"
-              data-action="preview"
-              @click="$emit('preview', file)"
-            >预览</button>
-          </li>
-        </ul>
+        <MessageAttachments
+          v-if="showAttachments && message.attachments?.length"
+          :attachments="message.attachments"
+          :file-url="fileUrl"
+          :can-preview-files="canPreviewFiles"
+          @preview="(file) => $emit('preview', file)"
+        />
         <MessageActions
           :message="message"
           :can-rate="false"
@@ -104,19 +96,13 @@
           </template>
         </div>
 
-        <ul v-if="message.attachments?.length" class="dac-attachments" part="attachments">
-          <li v-for="file in message.attachments" :key="file.relPath">
-            <a :href="fileUrl(file.relPath)" target="_blank" rel="noreferrer">{{ file.name }}</a>
-            <span v-if="file.size != null" class="dac-attachment-size" part="attachment-size">{{ formatBytes(file.size) }}</span>
-            <button
-              v-if="canPreview(file)"
-              type="button"
-              class="dac-preview-open"
-              data-action="preview"
-              @click="$emit('preview', file)"
-            >预览</button>
-          </li>
-        </ul>
+        <MessageAttachments
+          v-if="showAttachments && message.attachments?.length"
+          :attachments="message.attachments"
+          :file-url="fileUrl"
+          :can-preview-files="canPreviewFiles"
+          @preview="(file) => $emit('preview', file)"
+        />
 
         <!-- A failed turn keeps whatever it managed to produce; the card is
              appended rather than replacing it, so a run that died mid-answer
@@ -153,7 +139,7 @@ import ThinkingBlock from './ThinkingBlock.vue'
 import PermissionCard from './PermissionCard.vue'
 import QuestionCard from './QuestionCard.vue'
 import MessageActions from './MessageActions.vue'
-import { previewKindFor } from '../core/previewKind.js'
+import MessageAttachments from './MessageAttachments.vue'
 import { splitChartSpecText } from '../core/chartSpec.js'
 import ChartSpecView from './ChartSpecView.vue'
 
@@ -163,6 +149,8 @@ const props = defineProps({
   disabled: { type: Boolean, default: false },
   canRate: { type: Boolean, default: false },
   canPreviewFiles: { type: Boolean, default: false },
+  /** Hosts that surface generated files elsewhere turn the cards off. */
+  showAttachments: { type: Boolean, default: true },
   /** Shown while an open turn has produced nothing yet. */
   activityLabel: { type: String, default: '正在处理…' },
 })
@@ -174,9 +162,6 @@ const props = defineProps({
  * the whole block as one markdown string puts the raw JSON on screen.
  */
 const segmentsOf = (text) => splitChartSpecText(text)
-
-const canPreview = (file) =>
-  props.canPreviewFiles && Boolean(previewKindFor(file?.relPath || file?.name))
 
 defineEmits(['decide', 'answer', 'retry', 'feedback', 'preview'])
 
@@ -270,13 +255,6 @@ const showTrailingActivity = (message) => {
   return !isBlockActivelyProgressing(lastBlock)
 }
 
-const formatBytes = (size) => {
-  const n = Number(size) || 0
-  if (n < 1024) return `${n} B`
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
-  return `${(n / (1024 * 1024)).toFixed(1)} MB`
-}
-
 const autoScroll = ref(true)
 
 const handleScroll = (event) => {
@@ -332,11 +310,6 @@ watch(
   max-width: 72%;
 }
 .dac-user .dac-bubble { max-width: 100%; }
-.dac-attachment-size {
-  margin-left: 6px;
-  color: var(--dac-text-muted, #64748b);
-  font-size: 12px;
-}
 .dac-message.is-focused {
   border-radius: var(--dac-bubble-radius, 14px);
   outline: 2px solid var(--dac-accent, #0f766e);

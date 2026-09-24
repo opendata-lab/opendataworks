@@ -81,6 +81,46 @@ describe('composer configuration', () => {
     el.remove()
   })
 
+  it('withholds the controls the host switches off, keeping the rest', async () => {
+    // OntoFoundry's case: the platform picks the model and there is nothing to
+    // upload through the chat, but the permission mode still belongs to the
+    // person driving the run.
+    const el = await mount({
+      transportFactory: () => makeTransport({ uploadFiles: vi.fn(async () => []) }),
+      composerConfig: { ...CONFIG, controls: { attach: false, model: false } }
+    })
+
+    expect(el.shadowRoot.querySelector('[data-action="attach"]')).toBeNull()
+    expect(el.shadowRoot.querySelector('input[type="file"]')).toBeNull()
+    expect(el.shadowRoot.querySelector('[data-control="model"]')).toBeNull()
+    expect(el.shadowRoot.querySelector('[data-control="permission-mode"]')).not.toBeNull()
+    el.remove()
+  })
+
+  it('still sends the configured model when its picker is hidden', async () => {
+    // Hiding the picker withholds the choice, not the model: a run with no
+    // model is a run the backend rejects.
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: {
+        ...CONFIG,
+        default_provider_id: 'deepseek',
+        default_model: 'v4-pro',
+        controls: { model: false }
+      }
+    })
+
+    await el.sendMessage('开始建模')
+    await settle()
+
+    expect(transport.sendMessage.mock.calls[0][0].settings).toMatchObject({
+      provider_id: 'deepseek',
+      model: 'v4-pro'
+    })
+    el.remove()
+  })
+
   it('sends the current model and permission mode with the message', async () => {
     const transport = makeTransport()
     const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })

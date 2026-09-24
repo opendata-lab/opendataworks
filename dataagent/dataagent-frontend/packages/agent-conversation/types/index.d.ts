@@ -92,6 +92,19 @@ export interface ComposerConfig {
   suggestions?: string[]
   /** Allow the first upload to lazily create a conversation through `endpointResolver`. */
   uploadBeforeConversation?: boolean
+  /**
+   * Withhold a toolbar control the host could otherwise show. A control still
+   * needs its capability — setting `model: true` shows no picker without
+   * `providers`. Omit this, or any key in it, to keep that control visible.
+   */
+  controls?: {
+    /** The paperclip. Needs the transport's `uploadFiles`. */
+    attach?: boolean
+    /** The model picker. Needs `providers`. */
+    model?: boolean
+    /** The permission-mode picker. Needs `permissionModes`. */
+    permissionMode?: boolean
+  }
 }
 
 export interface SlashCommand {
@@ -277,6 +290,12 @@ export interface AgentConversationElement extends HTMLElement {
   transportFactory?: (endpoint: string) => ConversationTransport
   /** Model, permission-mode, slash-command and opener options. */
   composerConfig?: ComposerConfig
+  /**
+   * Render the attachment cards under a message. Defaults to true. Turn it off
+   * in a host that already lists generated files in a panel of its own, so a
+   * deliverable is not offered twice.
+   */
+  showAttachments?: boolean
   /** Wording for the indicator shown before a turn's first token. */
   activityLabel?: string
 

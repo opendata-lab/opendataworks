@@ -76,7 +76,21 @@ describe('workspace file links', () => {
 
   it('resolves history attachments through the same transport', async () => {
     const el = await mountWith('见附件。', [{ name: '明细.csv', rel_path: 'output/明细.csv' }])
+    expect(el.shadowRoot.querySelector('.dac-attachment')).not.toBeNull()
     expect(hrefs(el)).toContain('/api/topics/t-1/files/output/明细.csv')
+    el.remove()
+  })
+
+  // A host that lists generated files in its own panel would otherwise show
+  // every deliverable twice.
+  it('drops the attachment cards when the host opts out', async () => {
+    const el = await mountWith('见附件。', [{ name: '明细.csv', rel_path: 'output/明细.csv' }])
+    el.showAttachments = false
+    await settle()
+
+    expect(el.shadowRoot.querySelector('.dac-attachment')).toBeNull()
+    // The prose is untouched; only the cards go.
+    expect(el.shadowRoot.textContent).toContain('见附件。')
     el.remove()
   })
 })

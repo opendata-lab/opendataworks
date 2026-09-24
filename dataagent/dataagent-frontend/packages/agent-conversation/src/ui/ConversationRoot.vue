@@ -7,6 +7,7 @@
       :disabled="disabled"
       :can-rate="canRate"
       :can-preview-files="canPreviewFiles"
+      :show-attachments="showAttachments"
       :activity-label="activityLabel"
       @decide="onDecide"
       @answer="onAnswer"
@@ -78,6 +79,8 @@ const props = defineProps({
   endpointResolver: { type: Function, default: null },
   transportFactory: { type: Function, default: null },
   composerConfig: { type: Object, default: () => ({}) },
+  /** Hosts that surface generated files elsewhere turn the cards off. */
+  showAttachments: { type: Boolean, default: true },
   /** Shown while an open turn has produced nothing yet. */
   activityLabel: { type: String, default: '正在处理…' }
 })
