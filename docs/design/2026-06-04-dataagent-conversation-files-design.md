@@ -73,6 +73,17 @@ All three reuse `resolve_topic_workspace(topic_id)` for the root and a shared
 configurable upload size cap (`DATAAGENT_UPLOAD_MAX_BYTES`, default 20 MiB) and an
 allowed-extension denylist for executables.
 
+The upload size limit is a chain, not a single knob: the nginx reverse proxy in
+front of the backend caps the request body first, and its default
+`client_max_body_size` is only 1 MiB. Both frontend nginx configs
+(`frontend/nginx.conf` for the embedded widget at :8081 and
+`dataagent/dataagent-frontend/nginx.conf` for the standalone SPA at :8901, plus
+their host-managed copies under `deploy/docker/nginx/`) therefore set
+`client_max_body_size 25m` on the routes proxied to `dataagent-backend` —
+deliberately above `DATAAGENT_UPLOAD_MAX_BYTES` so a genuinely oversized file is
+rejected by the backend with a readable JSON 413 instead of nginx's blank error
+page. When raising `DATAAGENT_UPLOAD_MAX_BYTES`, raise the nginx value with it.
+
 ### How the agent sees uploads
 
 The backend uploads files **before** the task runs (frontend uploads on select,
