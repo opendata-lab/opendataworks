@@ -79,7 +79,8 @@ front of the backend caps the request body first, and its default
 (`frontend/nginx.conf` for the embedded widget at :8081 and
 `dataagent/dataagent-frontend/nginx.conf` for the standalone SPA at :8901, plus
 their host-managed copies under `deploy/docker/nginx/`) therefore set
-`client_max_body_size 25m` on the routes proxied to `dataagent-backend` —
+`client_max_body_size 25m` on the routes proxied to `dataagent-backend`
+(including `/api/v1/dataagent/` for skill imports in the portal) —
 deliberately above `DATAAGENT_UPLOAD_MAX_BYTES` so a genuinely oversized file is
 rejected by the backend with a readable JSON 413 instead of nginx's blank error
 page. When raising `DATAAGENT_UPLOAD_MAX_BYTES`, raise the nginx value with it.

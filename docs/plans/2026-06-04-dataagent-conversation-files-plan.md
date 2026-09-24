@@ -51,6 +51,10 @@ standalone chat `NL2SqlChatV2.vue`, built on the existing per-topic workspace.
 
 ## Verification
 
+- Confirm both embedded-portal nginx configs allow 25 MiB on all three
+  DataAgent proxy routes (`/api/v1/dataagent/`, `/api/v1/nl2sql-admin/`, and
+  `/api/v1/nl2sql/`) while leaving the Java `/api/` route unchanged.
+
 - Backend: `pytest tests/test_topic_files.py` plus existing topic/route tests.
 - Frontend: `nvm use` then `vitest run` for the new/updated specs.
 - Local e2e smoke (when Docker available): start MySQL/Redis/backend/frontend,
