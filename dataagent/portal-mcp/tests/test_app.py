@@ -317,7 +317,7 @@ async def test_inlined_schema_keeps_fields_and_extra_forbid():
     tools = {tool.name: tool for tool in await mcp.list_tools()}
 
     params = tools["portal_get_table_ddl"].inputSchema["properties"]["params"]
-    assert set(params["properties"]) == {"database", "table", "table_id"}
+    assert set(params["properties"]) == {"database", "table", "table_id", "description"}
     # extra="forbid" survives as additionalProperties:false, which is what stops
     # a guessed field like table_name from being silently accepted.
     assert params["additionalProperties"] is False
@@ -352,7 +352,7 @@ async def test_inlined_schema_keeps_fields_and_extra_forbid():
     tools = {tool.name: tool for tool in await mcp.list_tools()}
 
     params = tools["portal_get_table_ddl"].inputSchema["properties"]["params"]
-    assert set(params["properties"]) == {"database", "table", "table_id"}
+    assert set(params["properties"]) == {"database", "table", "table_id", "description"}
     # extra="forbid" survives as additionalProperties:false — this is what stops
     # a guessed field like table_name from being silently accepted.
     assert params["additionalProperties"] is False
@@ -495,3 +495,28 @@ async def test_strict_mode_raises_so_ci_blocks_the_regression():
 
     with pytest.raises(SchemaInlineError):
         _inline_tool_schema_refs(mcp, strict=True)
+
+
+@pytest.mark.anyio
+async def test_display_description_is_accepted_but_not_forwarded():
+    # The display-only description must be accepted by the strict (extra="forbid")
+    # schema yet stripped from the payload sent to the backend.
+    backend = FakeBackendClient()
+
+    await _call_mcp_tool(
+        create_app(settings=_settings(), backend_client=backend),
+        tool_name="portal_search_tables",
+        arguments={"keyword": "发布", "description": "搜索发布相关表"},
+    )
+    assert backend.calls[-1] == ("inspect", {"keyword": "发布", "tableLimit": 12})
+
+    result, _ = await _call_mcp_tool(
+        create_app(settings=_settings(), backend_client=backend),
+        tool_name="portal_query_readonly",
+        arguments={"database": "dw", "sql": "SELECT 1", "description": "执行只读查询"},
+    )
+    assert backend.calls[-1] == (
+        "query_readonly",
+        {"database": "dw", "sql": "SELECT 1", "limit": 1000, "timeoutSeconds": 30},
+    )
+    assert result.structuredContent["kind"] == "query_result"
