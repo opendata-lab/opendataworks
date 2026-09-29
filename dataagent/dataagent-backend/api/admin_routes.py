@@ -41,6 +41,7 @@ from core.skill_admin_service import (
 from core.mcp_admin_service import (
     annotate_mcp_servers,
     create_mcp_server,
+    detect_mcp_server,
     delete_mcp_server,
     import_mcp_servers,
     list_mcp_servers,
@@ -71,6 +72,7 @@ from models.schemas import (
     ModelDetectionRequest,
     ModelDetectionResponse,
     McpServerCreateRequest,
+    McpServerDetectionResponse,
     McpServerListResponse,
     McpServerUpdateRequest,
     ProviderConfig,
@@ -312,6 +314,15 @@ def delete_mcp_server_endpoint(server_id: str):
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True}
+
+
+@skills_router.post("/mcp/servers/{server_id}/detections", response_model=McpServerDetectionResponse)
+async def detect_mcp_server_endpoint(server_id: str):
+    try:
+        result = await detect_mcp_server(server_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return McpServerDetectionResponse.model_validate(result)
 
 
 @skills_router.post("/mcp/servers/import")

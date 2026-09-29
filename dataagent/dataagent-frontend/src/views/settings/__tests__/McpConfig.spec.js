@@ -6,6 +6,7 @@ const apiMocks = vi.hoisted(() => ({
   createMcpServer: vi.fn(),
   updateMcpServer: vi.fn(),
   deleteMcpServer: vi.fn(),
+  detectMcpServer: vi.fn(),
   importMcpServers: vi.fn()
 }))
 
@@ -140,6 +141,7 @@ describe('McpConfig', () => {
     apiMocks.createMcpServer.mockReset()
     apiMocks.updateMcpServer.mockReset()
     apiMocks.deleteMcpServer.mockReset()
+    apiMocks.detectMcpServer.mockReset()
     apiMocks.importMcpServers.mockReset()
     messageMocks.success.mockReset()
     messageMocks.warning.mockReset()
@@ -152,6 +154,15 @@ describe('McpConfig', () => {
     apiMocks.createMcpServer.mockResolvedValue({ server_id: 'new-srv' })
     apiMocks.updateMcpServer.mockResolvedValue({ ok: true })
     apiMocks.deleteMcpServer.mockResolvedValue({ ok: true })
+    apiMocks.detectMcpServer.mockResolvedValue({
+      server_id: 'srv-filesystem',
+      status: 'verified',
+      message: 'MCP 检测通过，发现 3 个工具',
+      tool_count: 3,
+      tool_names: ['read_file', 'write_file', 'list_files'],
+      latency_ms: 28,
+      checked_at: '2026-09-27T12:00:00+00:00'
+    })
     apiMocks.importMcpServers.mockResolvedValue({ imported: 1 })
   })
 
@@ -227,6 +238,25 @@ describe('McpConfig', () => {
     expect(messageMocks.success).toHaveBeenCalledWith('服务「filesystem」已删除')
   })
 
+  it('detects a saved MCP server and renders the protocol result', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    const server = wrapper.vm.filteredConfiguredServers[0]
+    await wrapper.vm.handleDetectServer(server)
+    await flushPromises()
+
+    expect(apiMocks.detectMcpServer).toHaveBeenCalledWith('srv-filesystem')
+    expect(wrapper.vm.detectionResults['srv-filesystem']).toMatchObject({
+      status: 'verified',
+      tool_count: 3,
+      latency_ms: 28
+    })
+    expect(wrapper.text()).toContain('MCP 检测通过，发现 3 个工具')
+    expect(wrapper.text()).toContain('28 ms')
+    expect(messageMocks.success).toHaveBeenCalledWith('MCP 检测通过，发现 3 个工具')
+  })
+
   it('adds stdio server via form mode', async () => {
     const wrapper = mountConfig()
     await flushPromises()
@@ -284,6 +314,38 @@ describe('McpConfig', () => {
       oauth_required: false
     })
     expect(messageMocks.success).toHaveBeenCalledWith('远程 MCP 服务已添加')
+  })
+
+  it('shows and updates headers when editing a remote server', async () => {
+    const wrapper = mountConfig()
+    await flushPromises()
+
+    const server = wrapper.vm.filteredConfiguredServers.find((item) => item.server_id === 'srv-github-remote')
+    wrapper.vm.openEditDialog(server)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.editForm.headerList).toEqual([
+      { key: 'Authorization', value: 'Bearer token123' }
+    ])
+    expect(wrapper.find('.el-dialog-stub').text()).toContain('认证与自定义 Header（可选）')
+    expect(wrapper.find('.el-dialog-stub').html()).toContain('Authorization')
+    expect(wrapper.find('.el-dialog-stub').html()).toContain('Bearer token123')
+
+    wrapper.vm.editForm.headerList.push({ key: 'X-Tenant', value: 'tenant-42' })
+    await wrapper.vm.handleSubmit()
+    await flushPromises()
+
+    expect(apiMocks.updateMcpServer).toHaveBeenCalledWith('srv-github-remote', {
+      name: 'github-remote',
+      transport: 'sse',
+      command: '',
+      args: [],
+      url: 'https://mcp.github.com/sse',
+      headers: {
+        Authorization: 'Bearer token123',
+        'X-Tenant': 'tenant-42'
+      }
+    })
   })
 
   it('imports full configuration via JSON mode (mcpServers structure)', async () => {

@@ -152,6 +152,17 @@ def resolve_cell_command(cfg: Any = None) -> list[str]:
     return [node_bin, str(entrypoint)]
 
 
+def resolve_mcp_probe_command(cfg: Any = None) -> list[str]:
+    """Locate the MCP probe built alongside the Pi Cell."""
+    cell_command = resolve_cell_command(cfg)
+    entrypoint = Path(cell_command[1]).parent / "mcp" / "probe-cli.js"
+    if not entrypoint.exists():
+        raise PiRuntimeUnavailable(
+            f"MCP 检测入口不存在：{entrypoint}（请重新构建 dataagent-runtime-pi）"
+        )
+    return [cell_command[0], str(entrypoint)]
+
+
 def _frame(frame_type: str, payload: dict[str, Any] | None = None) -> str:
     return json.dumps(
         {"protocol_version": PROTOCOL_VERSION, "type": frame_type, "payload": payload or {}},

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { connectMcpServers, createMcpTransport } from "../src/mcp/portal-mcp-client.js";
+import { connectMcpServers, createMcpTransport, probeMcpServer } from "../src/mcp/portal-mcp-client.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 test("connectMcpServers returns empty tools when servers list is empty or undefined", async () => {
@@ -46,6 +46,57 @@ test("createMcpTransport rejects incomplete stdio config", () => {
   assert.throws(
     () => createMcpTransport({ name: "broken", type: "stdio" }),
     /missing command/
+  );
+});
+
+test("probeMcpServer completes initialize and tools/list over stdio", async () => {
+  const fixture = String.raw`
+const readline = require("node:readline");
+const lines = readline.createInterface({ input: process.stdin });
+lines.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        protocolVersion: "2025-03-26",
+        capabilities: { tools: {} },
+        serverInfo: { name: "probe-fixture", version: "1.0.0" }
+      }
+    }) + "\n");
+  } else if (message.method === "tools/list") {
+    process.stdout.write(JSON.stringify({
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        tools: [{ name: "echo", description: "Echo", inputSchema: { type: "object" } }]
+      }
+    }) + "\n");
+  }
+});`;
+
+  const result = await probeMcpServer({
+    name: "stdio-fixture",
+    type: "stdio",
+    command: process.execPath,
+    args: ["-e", fixture],
+  }, { timeoutMs: 2_000 });
+
+  assert.equal(result.toolCount, 1);
+  assert.deepEqual(result.toolNames, ["echo"]);
+  assert.ok(result.latencyMs >= 0);
+});
+
+test("probeMcpServer times out a stalled stdio server", async () => {
+  await assert.rejects(
+    probeMcpServer({
+      name: "stalled-fixture",
+      type: "stdio",
+      command: process.execPath,
+      args: ["-e", "process.stdin.resume()"],
+    }, { timeoutMs: 100 }),
+    /timed out after 100ms/
   );
 });
 

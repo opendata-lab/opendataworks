@@ -128,6 +128,10 @@ export const dataagentApi = {
     return dataagentRequest.delete(`/v1/dataagent/mcp/servers/${encodeURIComponent(serverId)}`)
   },
 
+  detectMcpServer(serverId) {
+    return dataagentRequest.post(`/v1/dataagent/mcp/servers/${encodeURIComponent(serverId)}/detections`)
+  },
+
   importMcpServers(data) {
     return dataagentRequest.post('/v1/dataagent/mcp/servers/import', data)
   },

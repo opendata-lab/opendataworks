@@ -44,6 +44,16 @@
                 <span class="server-meta">{{ serverMeta(server) }}</span>
               </div>
               <p class="mcp-row__description">{{ serverDescription(server) }}</p>
+              <p
+                v-if="detectionResults[server.server_id]"
+                class="mcp-detection-result"
+                :class="`is-${detectionResults[server.server_id].status}`"
+              >
+                {{ detectionResults[server.server_id].message }}
+                <span v-if="detectionResults[server.server_id].latency_ms">
+                  · {{ detectionResults[server.server_id].latency_ms }} ms
+                </span>
+              </p>
             </div>
             <div class="mcp-row__actions">
               <el-button
@@ -54,6 +64,15 @@
                 @click="handleOAuth(server)"
               >
                 授权
+              </el-button>
+              <el-button
+                v-if="canManage"
+                size="small"
+                plain
+                :loading="Boolean(detectingServerIds[server.server_id])"
+                @click="handleDetectServer(server)"
+              >
+                {{ detectionResults[server.server_id] ? '重新检测' : '检测' }}
               </el-button>
               <el-switch
                 v-if="canManage"
@@ -121,6 +140,16 @@
                 <span class="server-meta">{{ serverMeta(server) }}</span>
               </div>
               <p class="mcp-row__description">{{ pluginServerDescription(server) }}</p>
+              <p
+                v-if="detectionResults[server.server_id]"
+                class="mcp-detection-result"
+                :class="`is-${detectionResults[server.server_id].status}`"
+              >
+                {{ detectionResults[server.server_id].message }}
+                <span v-if="detectionResults[server.server_id].latency_ms">
+                  · {{ detectionResults[server.server_id].latency_ms }} ms
+                </span>
+              </p>
             </div>
             <div class="mcp-row__actions">
               <el-button
@@ -131,6 +160,15 @@
                 @click="handleOAuth(server)"
               >
                 授权
+              </el-button>
+              <el-button
+                v-if="canManage"
+                size="small"
+                plain
+                :loading="Boolean(detectingServerIds[server.server_id])"
+                @click="handleDetectServer(server)"
+              >
+                {{ detectionResults[server.server_id] ? '重新检测' : '检测' }}
               </el-button>
               <span
                 class="mcp-managed-status"
@@ -300,6 +338,20 @@
             <el-form-item label="服务 URL">
               <el-input v-model="editForm.url" />
             </el-form-item>
+
+            <div class="dynamic-list-block">
+              <div class="dynamic-list-title">认证与自定义 Header（可选）</div>
+              <div
+                v-for="(item, idx) in editForm.headerList"
+                :key="idx"
+                class="dynamic-list-row"
+              >
+                <el-input v-model="item.key" placeholder="Header 名，如 Authorization" class="key-input" />
+                <el-input v-model="item.value" placeholder="Header 值，如 Bearer token" class="val-input" />
+                <el-button text type="danger" @click="removeEditHeaderItem(idx)">删除</el-button>
+              </div>
+              <el-button text :icon="Plus" @click="addEditHeaderItem">添加 Header</el-button>
+            </div>
           </template>
         </el-form>
       </div>
@@ -342,6 +394,8 @@ const initialLoading = computed(() => loading.value && !initialLoaded.value)
 const isInitialLoading = useDeferredLoading(initialLoading)
 const submitting = ref(false)
 const updatingServerId = ref('')
+const detectingServerIds = reactive({})
+const detectionResults = reactive({})
 const searchKeyword = ref('')
 const configuredServers = ref([])
 const pluginServers = ref([])
@@ -379,7 +433,8 @@ const editForm = reactive({
   transport: 'stdio',
   command: '',
   argsStr: '',
-  url: ''
+  url: '',
+  headerList: []
 })
 
 const totalServerCount = computed(() => configuredServers.value.length + pluginServers.value.length)
@@ -493,6 +548,7 @@ const openEditDialog = (server) => {
   editForm.command = server.command || ''
   editForm.argsStr = Array.isArray(server.args) ? server.args.join(' ') : ''
   editForm.url = server.url || ''
+  editForm.headerList = objToList(server.headers)
   dialogVisible.value = true
 }
 
@@ -512,12 +568,46 @@ const removeHeaderItem = (idx) => {
   formRemote.headerList.splice(idx, 1)
 }
 
+const addEditHeaderItem = () => {
+  editForm.headerList.push({ key: '', value: '' })
+}
+
+const removeEditHeaderItem = (idx) => {
+  editForm.headerList.splice(idx, 1)
+}
+
 const handleOAuth = (server) => {
   ElMessageBox.alert(
     `服务「${server.name}」已打开 OAuth 认证流程。若浏览器未弹出授权窗口，请检查弹窗拦截设置。`,
     'OAuth 授权',
     { confirmButtonText: '已知晓' }
   )
+}
+
+const handleDetectServer = async (server) => {
+  const serverId = server.server_id
+  detectingServerIds[serverId] = true
+  try {
+    const result = await dataagentApi.detectMcpServer(serverId)
+    detectionResults[serverId] = result
+    if (result?.status === 'verified') {
+      server.tool_count = Number(result.tool_count || 0)
+      ElMessage.success(result.message || `服务「${server.name}」检测通过`)
+    } else {
+      ElMessage.error(result?.message || `服务「${server.name}」检测失败`)
+    }
+  } catch (error) {
+    detectionResults[serverId] = {
+      status: 'failed',
+      message: error?.response?.data?.detail || error?.message || '检测请求失败',
+      latency_ms: 0
+    }
+    if (!error?.__odwNotified) {
+      ElMessage.error(detectionResults[serverId].message)
+    }
+  } finally {
+    delete detectingServerIds[serverId]
+  }
 }
 
 const toggleServerEnabled = async (server, enabled) => {
@@ -567,7 +657,8 @@ const handleSubmit = async () => {
         transport: editForm.transport,
         command: editForm.command,
         args: parseArgs(editForm.argsStr),
-        url: editForm.url
+        url: editForm.url,
+        headers: editForm.transport === 'stdio' ? {} : listToObj(editForm.headerList)
       }
       await dataagentApi.updateMcpServer(editingServerId.value, payload)
       ElMessage.success('MCP 服务已更新')
@@ -850,6 +941,20 @@ onMounted(async () => {
   line-height: 1.45;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.mcp-detection-result {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mcp-detection-result.is-verified {
+  color: #15803d;
+}
+
+.mcp-detection-result.is-failed {
+  color: #b91c1c;
 }
 
 .mcp-row__actions {

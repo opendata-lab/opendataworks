@@ -100,6 +100,9 @@ MUST_BE_ASYNC = {
     },
     "api/admin_routes.py": {
         "create_model_detection",
+        # Awaits the bounded MCP probe subprocess; its registry read is
+        # explicitly moved to a worker thread in mcp_admin_service.
+        "detect_mcp_server_endpoint",
         "import_skill",
     },
 }

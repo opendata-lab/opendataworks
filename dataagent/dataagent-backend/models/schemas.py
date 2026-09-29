@@ -298,6 +298,16 @@ class McpServerListResponse(BaseModel):
     plugin: List[McpServerConfig] = Field(default_factory=list)
 
 
+class McpServerDetectionResponse(BaseModel):
+    server_id: str
+    status: str
+    message: str
+    tool_count: int = 0
+    tool_names: List[str] = Field(default_factory=list)
+    latency_ms: int = 0
+    checked_at: str
+
+
 class ModelDetectionRequest(BaseModel):
     provider_id: str
     model: str

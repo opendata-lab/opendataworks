@@ -11,6 +11,28 @@ export interface McpBridgeResult {
   close: () => Promise<void>;
 }
 
+export interface McpProbeResult {
+  toolCount: number;
+  toolNames: string[];
+  latencyMs: number;
+}
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
+
 export function createMcpTransport(server: McpServerConfig) {
   if (server.type === "stdio") {
     if (!server.command) {
@@ -38,6 +60,47 @@ export function createMcpTransport(server: McpServerConfig) {
   return new StreamableHTTPClientTransport(url, {
     requestInit: { headers },
   });
+}
+
+/**
+ * Connect one MCP server with the same SDK transports used by the Pi Cell and
+ * prove that tool discovery works. No business tool is invoked.
+ */
+export async function probeMcpServer(
+  server: McpServerConfig,
+  options?: { timeoutMs?: number }
+): Promise<McpProbeResult> {
+  const timeoutMs = options?.timeoutMs ?? 10_000;
+  const startedAt = Date.now();
+  const transport = createMcpTransport(server);
+  const client = new Client(
+    { name: "opendataworks-mcp-probe", version: "0.1.0" },
+    { capabilities: {} }
+  );
+
+  try {
+    const toolsList = await withTimeout(
+      (async () => {
+        await client.connect(transport);
+        return client.listTools();
+      })(),
+      timeoutMs,
+      `Connection to MCP server '${server.name}' timed out after ${timeoutMs}ms`
+    );
+    const toolNames = toolsList.tools.map((tool) => String(tool.name || "")).filter(Boolean);
+    return {
+      toolCount: toolNames.length,
+      toolNames,
+      latencyMs: Math.max(0, Date.now() - startedAt),
+    };
+  } finally {
+    try {
+      await withTimeout(client.close(), 1_000, "Timed out while closing MCP probe client");
+    } catch {
+      // The outer probe process is short-lived; closing is best-effort after a
+      // failed or timed-out handshake and must not replace the useful error.
+    }
+  }
 }
 
 export function resolveRef(ref: string, rootSchema: Record<string, unknown>): Record<string, unknown> | undefined {

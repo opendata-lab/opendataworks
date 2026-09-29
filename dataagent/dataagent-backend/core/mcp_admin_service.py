@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import asyncio
+import json
+import logging
 import re
 import uuid
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
 
 from config import get_settings
 from core.data_scope import encode_scope_header
+from core.pi_runtime import resolve_mcp_probe_command
 from core.runtime_registry_store import get_runtime_registry_store
 
 MCP_TRANSPORTS = {"http", "sse", "stdio"}
@@ -14,6 +19,8 @@ MCP_SOURCES = {"configured", "plugin"}
 PORTAL_MCP_SERVER_ID = "portal"
 PORTAL_MCP_TOOL_COUNT = 6
 _SERVER_ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+MCP_DETECTION_PROCESS_TIMEOUT_SECONDS = 13
+logger = logging.getLogger(__name__)
 
 
 def _string_list(raw: Any) -> list[str]:
@@ -189,6 +196,93 @@ def delete_mcp_server(server_id: str) -> None:
     if existing.get("source") != "configured":
         raise ValueError("plugin MCP server is read-only")
     store.delete_mcp_server(server_id)
+
+
+def _mcp_detection_result(
+    server_id: str,
+    *,
+    status: str,
+    message: str,
+    tool_count: int = 0,
+    tool_names: list[str] | None = None,
+    latency_ms: int = 0,
+) -> dict[str, Any]:
+    return {
+        "server_id": server_id,
+        "status": "verified" if status == "verified" else "failed",
+        "message": str(message or "MCP 检测失败").strip()[:500],
+        "tool_count": max(0, int(tool_count or 0)),
+        "tool_names": [str(name) for name in (tool_names or []) if str(name).strip()][:100],
+        "latency_ms": max(0, int(latency_ms or 0)),
+        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+async def detect_mcp_server(server_id: str) -> dict[str, Any]:
+    """Verify MCP initialize + tools/list using the production Pi SDK transport."""
+    normalized_id = str(server_id or "").strip()
+    # Registry access uses PyMySQL. Keep it off FastAPI's event loop before
+    # awaiting the probe subprocess itself.
+    row = await asyncio.to_thread(get_runtime_registry_store().get_mcp_server, normalized_id)
+    if not row:
+        raise KeyError("MCP server not found")
+
+    server = {
+        "name": str(row.get("name") or normalized_id),
+        "type": str(row.get("transport") or "stdio"),
+        "url": str(row.get("url") or ""),
+        "headers": dict(row.get("headers") or {}),
+        "command": str(row.get("command") or ""),
+        "args": list(row.get("args") or []),
+        "env": dict(row.get("env") or {}),
+    }
+    started = asyncio.get_running_loop().time()
+    try:
+        command = resolve_mcp_probe_command(get_settings())
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(json.dumps(server, ensure_ascii=False).encode("utf-8")),
+                timeout=MCP_DETECTION_PROCESS_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            latency_ms = round((asyncio.get_running_loop().time() - started) * 1000)
+            return _mcp_detection_result(
+                normalized_id,
+                status="failed",
+                message=f"MCP 检测超时（{MCP_DETECTION_PROCESS_TIMEOUT_SECONDS} 秒）",
+                latency_ms=latency_ms,
+            )
+
+        raw_result = stdout.decode("utf-8", errors="replace").strip()
+        if not raw_result:
+            error = stderr.decode("utf-8", errors="replace").strip()[:500]
+            raise RuntimeError(error or f"MCP probe exited with code {process.returncode}")
+        result = json.loads(raw_result)
+        return _mcp_detection_result(
+            normalized_id,
+            status=str(result.get("status") or "failed"),
+            message=str(result.get("message") or "MCP 检测失败"),
+            tool_count=int(result.get("tool_count") or 0),
+            tool_names=list(result.get("tool_names") or []),
+            latency_ms=int(result.get("latency_ms") or 0),
+        )
+    except Exception as exc:
+        logger.warning("mcp_detection.failed server_id=%s error=%s", normalized_id, str(exc)[:500])
+        latency_ms = round((asyncio.get_running_loop().time() - started) * 1000)
+        return _mcp_detection_result(
+            normalized_id,
+            status="failed",
+            message=f"MCP 检测失败: {str(exc).strip()[:450] or type(exc).__name__}",
+            latency_ms=latency_ms,
+        )
 
 
 def import_mcp_servers(payload: dict[str, Any]) -> int:

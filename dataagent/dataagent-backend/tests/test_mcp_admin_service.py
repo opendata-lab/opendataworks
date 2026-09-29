@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import sys
+import asyncio
 import json
 import runpy
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,6 +39,21 @@ class FakeRegistry:
 
     def delete_mcp_server(self, server_id):
         return self.rows.pop(server_id, None) is not None
+
+
+def _remote_server_row():
+    return {
+        "server_id": "srv_remote",
+        "name": "remote",
+        "source": "configured",
+        "transport": "http",
+        "url": "https://mcp.example.test/v1",
+        "headers": {"Authorization": "Bearer secret"},
+        "command": "",
+        "args": [],
+        "env": {},
+        "enabled": True,
+    }
 
 
 def test_configured_mcp_server_crud_round_trip(monkeypatch):
@@ -91,6 +107,112 @@ def test_plugin_mcp_server_is_read_only(monkeypatch):
         mcp_admin_service.update_mcp_server("portal", {"enabled": False})
     with pytest.raises(ValueError, match="read-only"):
         mcp_admin_service.delete_mcp_server("portal")
+
+
+@pytest.mark.asyncio
+async def test_detect_mcp_server_passes_registry_config_to_probe(monkeypatch):
+    registry = FakeRegistry([_remote_server_row()])
+    captured = {}
+
+    class FakeProcess:
+        returncode = 0
+
+        async def communicate(self, payload):
+            captured["payload"] = json.loads(payload)
+            return (
+                json.dumps({
+                    "status": "verified",
+                    "message": "MCP 检测通过，发现 2 个工具",
+                    "tool_count": 2,
+                    "tool_names": ["search", "query"],
+                    "latency_ms": 31,
+                }).encode(),
+                b"",
+            )
+
+    async def _spawn(*command, **kwargs):
+        captured["command"] = command
+        return FakeProcess()
+
+    monkeypatch.setattr(mcp_admin_service, "get_runtime_registry_store", lambda: registry)
+    monkeypatch.setattr(mcp_admin_service, "resolve_mcp_probe_command", lambda cfg: ["node", "probe.js"])
+    monkeypatch.setattr(mcp_admin_service.asyncio, "create_subprocess_exec", _spawn)
+
+    result = await mcp_admin_service.detect_mcp_server("srv_remote")
+
+    assert captured["command"] == ("node", "probe.js")
+    assert captured["payload"] == {
+        "name": "remote",
+        "type": "http",
+        "url": "https://mcp.example.test/v1",
+        "headers": {"Authorization": "Bearer secret"},
+        "command": "",
+        "args": [],
+        "env": {},
+    }
+    assert result["status"] == "verified"
+    assert result["tool_count"] == 2
+    assert result["tool_names"] == ["search", "query"]
+    assert result["latency_ms"] == 31
+    assert result["checked_at"].endswith("+00:00")
+
+
+@pytest.mark.asyncio
+async def test_detect_mcp_server_returns_failed_result_when_probe_cannot_start(monkeypatch):
+    registry = FakeRegistry([_remote_server_row()])
+    monkeypatch.setattr(mcp_admin_service, "get_runtime_registry_store", lambda: registry)
+    monkeypatch.setattr(
+        mcp_admin_service,
+        "resolve_mcp_probe_command",
+        lambda cfg: (_ for _ in ()).throw(RuntimeError("probe missing")),
+    )
+
+    result = await mcp_admin_service.detect_mcp_server("srv_remote")
+
+    assert result["status"] == "failed"
+    assert "probe missing" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_detect_mcp_server_kills_timed_out_probe(monkeypatch):
+    registry = FakeRegistry([_remote_server_row()])
+
+    class StalledProcess:
+        def __init__(self):
+            self.killed = False
+
+        async def communicate(self, payload):
+            await asyncio.Event().wait()
+
+        def kill(self):
+            self.killed = True
+
+        async def wait(self):
+            return -9
+
+    process = StalledProcess()
+
+    async def _spawn(*command, **kwargs):
+        return process
+
+    monkeypatch.setattr(mcp_admin_service, "get_runtime_registry_store", lambda: registry)
+    monkeypatch.setattr(mcp_admin_service, "resolve_mcp_probe_command", lambda cfg: ["node", "probe.js"])
+    monkeypatch.setattr(mcp_admin_service.asyncio, "create_subprocess_exec", _spawn)
+    monkeypatch.setattr(mcp_admin_service, "MCP_DETECTION_PROCESS_TIMEOUT_SECONDS", 0.01)
+
+    result = await mcp_admin_service.detect_mcp_server("srv_remote")
+
+    assert result["status"] == "failed"
+    assert "检测超时" in result["message"]
+    assert process.killed is True
+
+
+@pytest.mark.asyncio
+async def test_detect_mcp_server_rejects_unknown_id(monkeypatch):
+    monkeypatch.setattr(mcp_admin_service, "get_runtime_registry_store", lambda: FakeRegistry())
+
+    with pytest.raises(KeyError, match="not found"):
+        await mcp_admin_service.detect_mcp_server("missing")
 
 
 def test_import_validates_entire_payload_before_writing(monkeypatch):

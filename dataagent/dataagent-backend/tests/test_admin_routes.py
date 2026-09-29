@@ -174,6 +174,18 @@ def test_mcp_registry_routes_contract(monkeypatch):
         "import_mcp_servers",
         lambda payload: captured.setdefault("imported_payload", payload) and 1,
     )
+    async def _detect_mcp(server_id):
+        captured["detected"] = server_id
+        return {
+            "server_id": server_id,
+            "status": "verified",
+            "message": "MCP 检测通过，发现 1 个工具",
+            "tool_count": 1,
+            "tool_names": ["demo_tool"],
+            "latency_ms": 42,
+            "checked_at": "2026-09-27T12:00:00+00:00",
+        }
+    monkeypatch.setattr(admin_routes, "detect_mcp_server", _detect_mcp)
     client = TestClient(app)
 
     assert client.get("/api/v1/dataagent/mcp/servers").json()["configured"][0]["server_id"] == "srv_demo"
@@ -190,8 +202,13 @@ def test_mcp_registry_routes_contract(monkeypatch):
         json={"mcpServers": {"demo": {"command": "npx"}}},
     )
     assert imported.json() == {"imported": 1}
+    detected = client.post("/api/v1/dataagent/mcp/servers/srv_demo/detections")
+    assert detected.status_code == 200
+    assert detected.json()["status"] == "verified"
+    assert detected.json()["tool_names"] == ["demo_tool"]
     assert captured["updated"] == ("srv_demo", {"enabled": False})
     assert captured["deleted"] == "srv_demo"
+    assert captured["detected"] == "srv_demo"
 
 
 def test_skill_document_routes_contract(monkeypatch):
