@@ -73,7 +73,19 @@ export function resolveApiFormatProfile(apiFormat: string): ProviderProfile {
   return profile;
 }
 
-export function resolveModel(providerId: string, modelId: string, apiFormat: string): Model<Api> {
+/**
+ * Output ceiling per reply when the model has none configured. Kept low on
+ * purpose: a model whose real maximum is below this rejects the request, and
+ * the platform cannot know each model's maximum.
+ */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+
+export function resolveModel(
+  providerId: string,
+  modelId: string,
+  apiFormat: string,
+  maxOutputTokens?: number
+): Model<Api> {
   const profile = resolveApiFormatProfile(apiFormat);
   const baseUrl = firstEnv(profile.baseUrlEnvVars) ?? profile.defaultBaseUrl;
 
@@ -87,7 +99,8 @@ export function resolveModel(providerId: string, modelId: string, apiFormat: str
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 200_000,
-    maxTokens: 8_192,
+    maxTokens:
+      maxOutputTokens && maxOutputTokens > 0 ? Math.floor(maxOutputTokens) : DEFAULT_MAX_OUTPUT_TOKENS,
   } as unknown as Model<Api>;
 }
 
@@ -148,10 +161,11 @@ export function resolveRuntimeModel(
   providerId: string,
   modelId: string,
   apiFormat: string,
-  cacheRetention?: string
+  cacheRetention?: string,
+  maxOutputTokens?: number
 ): ResolvedRuntimeModel {
   return {
-    model: resolveModel(providerId, modelId, apiFormat),
+    model: resolveModel(providerId, modelId, apiFormat, maxOutputTokens),
     streamFn: resolveStreamFn(providerId, apiFormat, cacheRetention),
   };
 }

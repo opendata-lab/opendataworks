@@ -59,7 +59,13 @@ export type EventSink = (event: NeutralAgentEvent) => void;
 export type HeartbeatSink = (detail: Record<string, unknown>) => void;
 
 export interface RunModelFactory {
-  (providerId: string, modelId: string, apiFormat: string, cacheRetention?: string): {
+  (
+    providerId: string,
+    modelId: string,
+    apiFormat: string,
+    cacheRetention?: string,
+    maxOutputTokens?: number
+  ): {
     model: Model<Api>;
     streamFn: StreamFn;
   };
@@ -116,7 +122,8 @@ export class Cell {
         init.model.provider_id,
         init.model.model_id,
         init.model.api_format,
-        init.governance_settings?.cache_retention
+        init.governance_settings?.cache_retention,
+        init.model.max_output_tokens
       );
       const boundary = new WorkspaceBoundaryEnforcer(init.boundary_policy as unknown as BoundaryPolicy);
       const tools = createTools({
@@ -390,6 +397,16 @@ export class Cell {
       if (modelError) {
         emit(sm.createEvent("run.failed", { error_code: "PI_MODEL_ERROR", message: modelError }));
         return { terminal_status: "failed", last_sequence: sm.lastSequence, error: modelError };
+      }
+
+      // A reply cut off at the output ceiling ends the loop like a finished
+      // one: no tool call follows, so a model that spent the budget thinking
+      // looked like a successful run that produced nothing.
+      const last = agent.state.messages[agent.state.messages.length - 1] as { role?: string; stopReason?: string } | undefined;
+      if (last?.role === "assistant" && last.stopReason === "length") {
+        const message = `模型单次回复达到输出上限 ${model.maxTokens} tokens，回复被截断；请在模型配置中调大“最大输出 tokens”`;
+        emit(sm.createEvent("run.failed", { error_code: "PI_OUTPUT_TRUNCATED", message }));
+        return { terminal_status: "failed", last_sequence: sm.lastSequence, error: message };
       }
 
       emit(sm.createEvent("run.completed", { terminal_status: "success" }));

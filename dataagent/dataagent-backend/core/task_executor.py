@@ -895,6 +895,7 @@ async def _execute_task_stream_via_pi_runtime(
     provider_env: dict[str, str],
     agent_snapshot: dict[str, Any] | None,
     cancel_reason: Callable[[], Awaitable[CancelReason | None]],
+    max_output_tokens: int | None = None,
 ) -> TaskExecutionResult:
     """Run one turn on the Node Pi Cell instead of the Claude Agent SDK.
 
@@ -987,6 +988,7 @@ async def _execute_task_stream_via_pi_runtime(
         idle_timeout_seconds=int(getattr(cfg, "dataagent_run_idle_timeout_seconds", 300)),
         governance_settings=build_governance_settings(cfg, provider_env),
         max_turns=_resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0)),
+        max_output_tokens=max_output_tokens,
     )
 
     outcome = await execute_pi_run(ctx, writer=writer, cancel_reason=cancel_reason)
@@ -1109,6 +1111,7 @@ async def _execute_task_stream_local(
             provider_env=env_payload,
             agent_snapshot=agent_snapshot,
             cancel_reason=_cancel_reason,
+            max_output_tokens=runtime_target.get("max_output_tokens"),
         )
 
     if api_format != "/v1/messages":

@@ -391,3 +391,17 @@ async def test_pi_terminal_outcomes_use_platform_task_statuses(monkeypatch, tmp_
         )
         assert result.task_status == expected, outcome_status
         assert result.task_status in TERMINAL_TASK_STATUSES, outcome_status
+
+
+def test_init_payload_carries_the_output_ceiling_only_when_configured(tmp_path: Path):
+    from core.pi_runtime import PiRunContext
+
+    def ctx(**extra):
+        return PiRunContext(
+            task_id="t", topic_id="tp", provider_id="deepseek", api_format="/v1/messages",
+            model="deepseek-v4-pro", system_prompt="sys", messages=[{"role": "user", "content": "hi"}],
+            project_cwd=tmp_path, boundary_policy={}, **extra,
+        ).to_init_payload()["model"]
+
+    assert ctx(max_output_tokens=32000)["max_output_tokens"] == 32000
+    assert "max_output_tokens" not in ctx()

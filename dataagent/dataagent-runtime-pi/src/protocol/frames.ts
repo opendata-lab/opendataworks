@@ -101,6 +101,8 @@ export interface CellInitPayload {
     provider_id: string;
     api_format: "/v1/messages" | "/v1/chat/completions";
     model_id: string;
+    /** The model's configured output ceiling per reply; absent means the runtime default. */
+    max_output_tokens?: number;
   };
   workspace: { project_cwd: string };
   boundary_policy: Record<string, unknown>;

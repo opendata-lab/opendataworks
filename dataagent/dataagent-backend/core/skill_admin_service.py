@@ -983,6 +983,14 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
         selected_model = enabled_models[0] if enabled_models else ""
     if selected_model not in enabled_models:
         raise ValueError("所选模型未加入已启用模型")
+    max_output_tokens = next(
+        (
+            item.get("max_output_tokens")
+            for item in provider.get("models") or []
+            if isinstance(item, dict) and item.get("id") == selected_model
+        ),
+        None,
+    )
 
     return {
         "provider_id": normalized_provider_id,
@@ -995,6 +1003,8 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
         "supports_partial_messages": bool(
             provider.get("supports_partial_messages", normalized_provider_id != "anthropic_compatible")
         ),
+        # None when the model has no configured ceiling; the runtime then uses its default.
+        "max_output_tokens": max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else None,
     }
 
 
