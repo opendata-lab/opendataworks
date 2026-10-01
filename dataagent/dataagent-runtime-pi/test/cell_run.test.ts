@@ -261,6 +261,61 @@ test("a model stream failure is reported as failed, not success", async () => {
   assert.match(String(last.payload.message), /provider exploded/);
 });
 
+test("a reply cut off at the output ceiling is reported as failed, not success", async () => {
+  // A model that spends its whole output budget thinking ends the turn with
+  // stopReason "length" and no tool call; the loop then stops as if finished,
+  // and the run used to be persisted as a success that produced nothing.
+  const root = workspace();
+  const truncated = () => ({
+    model: { maxTokens: 8192 } as never,
+    streamFn: (() => {
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const message = {
+          role: "assistant" as const,
+          content: [{ type: "thinking" as const, thinking: "planning…" }],
+          api: "faux" as const,
+          provider: "faux",
+          model: "faux-1",
+          usage: { inputTokens: 1, outputTokens: 8192, totalTokens: 8193 },
+          stopReason: "length" as const,
+          timestamp: Date.now(),
+        };
+        stream.push({ type: "start", partial: message as never });
+        stream.push({ type: "done", reason: "length", message: message as never });
+        stream.end();
+      });
+      return stream;
+    }) as never,
+  });
+
+  const { events, result } = await runCell(initPayload(root), truncated as never);
+
+  assert.equal(result.terminal_status, "failed");
+  const last = events[events.length - 1];
+  assert.equal(last.type, "run.failed");
+  assert.equal(last.payload.error_code, "PI_OUTPUT_TRUNCATED");
+  assert.match(String(last.payload.message), /8192/);
+});
+
+test("the model's configured output ceiling reaches the model factory", async () => {
+  const root = workspace();
+  const seen: unknown[] = [];
+  const base = textStreamFactory("hello");
+  const recording = (...args: unknown[]) => {
+    seen.push(args[4]);
+    return base();
+  };
+  const init = initPayload(root, {
+    model: { provider_id: "faux", api_format: "/v1/messages", model_id: "faux-1", max_output_tokens: 32000 },
+  });
+
+  const { result } = await runCell(init, recording as never);
+
+  assert.equal(result.terminal_status, "success");
+  assert.deepEqual(seen, [32000]);
+});
+
 test("a thrown setup error is reported as an execution failure", async () => {
   // The other failure path: the model factory itself throws, before the agent
   // loop exists. It must still terminate the run rather than escape.

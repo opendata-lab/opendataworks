@@ -502,6 +502,39 @@ def test_resolve_runtime_provider_selection_returns_api_format_and_partial_capab
     assert resolved["api_format"] == "/v1/chat/completions"
     assert resolved["model"] == "claude-sonnet-4.5"
     assert resolved["supports_partial_messages"] is False
+    assert resolved["max_output_tokens"] is None
+
+
+def test_resolve_runtime_provider_selection_carries_the_models_output_ceiling(monkeypatch):
+    monkeypatch.setattr(
+        skill_admin_service,
+        "current_settings_payload",
+        lambda: {
+            "provider_id": "deepseek",
+            "model": "deepseek-v4-pro",
+            "provider_settings": {
+                "deepseek": {
+                    "provider_id": "deepseek",
+                    "provider_enabled": True,
+                    "auth_token": "token",
+                    "base_url": "https://api.example.invalid/anthropic",
+                    "api_format": "/v1/messages",
+                    "enabled_models": ["deepseek-v4-pro", "deepseek-v4-flash"],
+                    "models": [
+                        {"id": "deepseek-v4-pro", "max_output_tokens": 32000, "context_window": 1000000},
+                        {"id": "deepseek-v4-flash", "max_output_tokens": None},
+                    ],
+                    "model_detections": {},
+                }
+            },
+        },
+    )
+
+    pro = skill_admin_service.resolve_runtime_provider_selection("deepseek", "deepseek-v4-pro")
+    flash = skill_admin_service.resolve_runtime_provider_selection("deepseek", "deepseek-v4-flash")
+
+    assert pro["max_output_tokens"] == 32000
+    assert flash["max_output_tokens"] is None
 
 
 def test_delete_current_provider_persists_fallback_selection(monkeypatch):

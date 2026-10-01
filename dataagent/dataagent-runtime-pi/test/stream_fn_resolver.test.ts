@@ -4,6 +4,7 @@ import {
   resolveApiFormatProfile,
   resolveModel,
   ApiFormatNotSupportedError,
+  DEFAULT_MAX_OUTPUT_TOKENS,
 } from "../src/providers/stream-fn-resolver.js";
 
 test("resolveApiFormatProfile supports both configured API formats", () => {
@@ -54,4 +55,10 @@ test("cache retention reaches the stream options, not just the init frame", asyn
   assert.equal(toPiCacheRetention("long"), "long");
   assert.equal(toPiCacheRetention(undefined), undefined);
   assert.equal(toPiCacheRetention("nonsense"), undefined);
+});
+
+test("resolveModel uses the configured output ceiling and falls back to the default", () => {
+  assert.equal(resolveModel("p", "m", "/v1/messages", 32000).maxTokens, 32000);
+  assert.equal(resolveModel("p", "m", "/v1/messages").maxTokens, DEFAULT_MAX_OUTPUT_TOKENS);
+  assert.equal(resolveModel("p", "m", "/v1/messages", 0).maxTokens, DEFAULT_MAX_OUTPUT_TOKENS);
 });

@@ -76,6 +76,8 @@ class PiRunContext:
     idle_timeout_seconds: int = 300
     max_turns: int = 30
     max_tool_calls: int = 50
+    # The model's configured output ceiling per reply; None lets the Cell use its default.
+    max_output_tokens: int | None = None
     # Context governance, assembled by core.context_governance so the wire
     # contract has one producer. Field names mirror ``governance_settings`` in
     # ``src/protocol/frames.ts``; a rename on either side has to move in
@@ -108,6 +110,7 @@ class PiRunContext:
                 "provider_id": self.provider_id,
                 "api_format": self.api_format,
                 "model_id": self.model,
+                **({"max_output_tokens": self.max_output_tokens} if self.max_output_tokens else {}),
             },
             "workspace": {"project_cwd": str(self.project_cwd)},
             "boundary_policy": self.boundary_policy,
