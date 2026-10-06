@@ -455,14 +455,14 @@ def test_predicate_auth_enabled_matrix(monkeypatch):
 
     # 匿名/无标记客户端：等值比较，匿名池不泄漏用户会话。
     sql, params = store._topic_context_predicate({"source": "portal"}, alias="t")  # noqa: SLF001
-    assert sql == "t.source = %s AND t.auth_user_id = ''"
+    assert sql == "t.source = %s AND t.auth_user_id = '' AND t.is_agent_preview = 0"
     assert params == ["portal"]
 
     # 登录普通用户：只看自己。
     sql, params = store._topic_context_predicate(  # noqa: SLF001
         {"source": "portal", "auth_user_id": "SSO:42", "auth_role": "user"}, alias="t"
     )
-    assert sql == "t.source = %s AND t.auth_user_id = %s"
+    assert sql == "t.source = %s AND t.auth_user_id = %s AND t.is_agent_preview = 0"
     assert params == ["portal", "SSO:42"]
 
     # admin 聊天列表：portal 全量（跨源全量走管理端点 context=None）。
@@ -536,14 +536,14 @@ def test_create_topic_writes_auth_owner(monkeypatch):
 
     sql, params = conn.executed[0]
     assert "auth_user_id, auth_username" in sql
-    assert params[-1] == "alice"
-    assert params[-2:] == ["SSO:42", "alice"]
+    assert params[-2] == "alice"
+    assert params[-3:] == ["SSO:42", "alice", 0]
 
     # 匿名 portal 创建：owner 为空串。
     conn.executed.clear()
     store.create_topic(title="匿名会话", context={"source": "portal"})
     _, params = conn.executed[0]
-    assert params[-2:] == ["", ""]
+    assert params[-3:] == ["", "", 0]
 
 
 def test_admin_list_auth_users_groups_by_stable_id_and_forwards_keyword(monkeypatch):

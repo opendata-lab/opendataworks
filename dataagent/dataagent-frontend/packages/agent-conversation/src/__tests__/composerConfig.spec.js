@@ -69,6 +69,13 @@ const type = async (el, text) => {
   await settle()
 }
 
+const chooseModel = async (el, value) => {
+  el.shadowRoot.querySelector('[data-control="model"]').click()
+  await settle()
+  el.shadowRoot.querySelector(`[data-value="${value}"]`).click()
+  await settle()
+}
+
 describe('composer configuration', () => {
   it('renders nothing extra when the host configures nothing', async () => {
     // Capability-driven: OntoFoundry has one model and no slash commands, and
@@ -125,10 +132,7 @@ describe('composer configuration', () => {
     const transport = makeTransport()
     const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
 
-    const select = el.shadowRoot.querySelector('[data-control="model"]')
-    select.value = 'deepseek::v4-pro'
-    select.dispatchEvent(new Event('change'))
-    await settle()
+    await chooseModel(el, 'deepseek::v4-pro')
 
     await el.sendMessage('开始建模')
     await settle()
@@ -189,8 +193,10 @@ describe('composer configuration', () => {
       }
     })
 
-    const options = [...el.shadowRoot.querySelectorAll('[data-control="model"] option')]
-    expect(options.map((option) => option.value)).toEqual(['ready::live-model'])
+    el.shadowRoot.querySelector('[data-control="model"]').click()
+    await settle()
+    const options = [...el.shadowRoot.querySelectorAll('.dac-model-options [role="option"]')]
+    expect(options.map((option) => option.dataset.value)).toEqual(['ready::live-model'])
 
     await el.sendMessage('你好')
     await settle()
@@ -254,7 +260,61 @@ describe('composer configuration', () => {
   })
 })
 
+describe('custom model picker', () => {
+  it('supports keyboard selection, Escape and outside click without a native select', async () => {
+    const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
+    const trigger = el.shadowRoot.querySelector('[data-control="model"]')
+    expect(trigger.tagName).toBe('BUTTON')
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    await settle()
+    const first = el.shadowRoot.querySelector('[data-value="anthropic::sonnet"]')
+    first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    await settle()
+    el.shadowRoot.querySelector('[data-value="anthropic::opus"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await settle()
+    expect(trigger.textContent).toContain('opus')
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    trigger.click()
+    await settle()
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-model-options')).toBeNull()
+    trigger.click()
+    await settle()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true, composed: true }))
+    await settle()
+    expect(el.shadowRoot.querySelector('.dac-model-options')).toBeNull()
+    el.remove()
+  })
+})
+
 describe('slash commands', () => {
+  it('allows ordinary typing and editing without submitting a message', async () => {
+    const transport = makeTransport()
+    const el = await mount({ transportFactory: () => transport, composerConfig: CONFIG })
+    await type(el, '问题')
+    for (const name of ['/', 'a', 'Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab']) {
+      expect(key(el, { key: name }).defaultPrevented).toBe(false)
+      await settle()
+      expect(el.value).toBe('问题')
+      expect(transport.sendMessage).not.toHaveBeenCalled()
+    }
+    await type(el, '/')
+    expect(items(el)).toHaveLength(3)
+    expect(key(el, { key: 'c' }).defaultPrevented).toBe(false)
+    await type(el, '/comp')
+    expect(items(el)).toHaveLength(1)
+    expect(transport.sendMessage).not.toHaveBeenCalled()
+    key(el, { key: 'Enter' })
+    await settle()
+    expect(el.value).toBe('/compact ')
+    expect(transport.sendMessage).not.toHaveBeenCalled()
+    key(el, { key: 'Enter' })
+    await settle()
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1)
+    el.remove()
+  })
+
   it('stays hidden when the host supplies none', async () => {
     const el = await mount({ transportFactory: () => makeTransport() })
     await type(el, '/comp')

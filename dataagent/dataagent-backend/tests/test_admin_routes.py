@@ -432,17 +432,17 @@ def test_agent_profile_routes_contract(monkeypatch):
         "permission_modes": ["inherit", "default", "bypassPermissions"],
     })
 
-    def _create(payload, *, available_skill_folders):
+    def _create(payload, available_skill_folders):
         calls["create"] = {"payload": payload, "available_skill_folders": available_skill_folders}
         return profile
 
-    def _update(agent_id, payload, *, available_skill_folders):
+    def _update(agent_id, payload, revision, available_skill_folders):
         calls["update"] = {"agent_id": agent_id, "payload": payload, "available_skill_folders": available_skill_folders}
         return {**profile, **payload}
 
-    monkeypatch.setattr(admin_routes, "create_agent_profile", _create)
-    monkeypatch.setattr(admin_routes, "update_agent_profile", _update)
-    monkeypatch.setattr(admin_routes, "delete_agent_profile", lambda agent_id: agent_id == "agent_1")
+    monkeypatch.setattr(admin_routes.agent_drafts, "create", _create)
+    monkeypatch.setattr(admin_routes.agent_drafts, "save", _update)
+    monkeypatch.setattr(admin_routes.agent_drafts, "delete", lambda agent_id: agent_id == "agent_1")
 
     client = TestClient(app)
 
@@ -473,7 +473,7 @@ def test_agent_profile_routes_contract(monkeypatch):
     detail = client.get("/api/v1/dataagent/agents/agent_1")
     assert detail.status_code == 200
 
-    updated = client.put("/api/v1/dataagent/agents/agent_1", json={"description": "更新后"})
+    updated = client.put("/api/v1/dataagent/agents/agent_1", json={"description": "更新后", "expected_revision": 1})
     assert updated.status_code == 200
     assert calls["update"]["agent_id"] == "agent_1"
     assert updated.json()["description"] == "更新后"

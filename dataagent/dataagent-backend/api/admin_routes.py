@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+import anyio
 
 import secrets
 
@@ -10,6 +11,9 @@ from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Reques
 from fastapi.responses import Response
 
 from core.auth import AuthIdentity, is_auth_enabled, require_admin, require_user, resolve_identity
+from core.agent_draft_service import agent_drafts, DraftConflict, check_revision
+from core.task_submission_service import submit_message_task
+from core.agent_profile_service import build_agent_snapshot
 from core.agent_visibility import agent_visible_to, filter_visible_agent_profiles
 from core.agent_profile_service import (
     agent_capabilities,
@@ -67,6 +71,8 @@ from models.schemas import (
     AgentProfile,
     AgentProfileCreateRequest,
     AgentProfileUpdateRequest,
+    AgentDraftRevisionRequest,
+    AgentPreviewMessageRequest,
     AgentReadableProfile,
     AgentSlashCommandsResponse,
     ModelDetectionRequest,
@@ -483,16 +489,80 @@ def get_readable_agent_profiles(identity: AuthIdentity | None = Depends(require_
     return [AgentReadableProfile.model_validate(_readable_agent_payload(item)) for item in profiles]
 
 
-@skills_router.post("/agents", response_model=AgentProfile)
+def _draft_error(exc: ValueError) -> HTTPException:
+    status = 409 if isinstance(exc, DraftConflict) else 404 if "not found" in str(exc) else 400
+    return HTTPException(status_code=status, detail=str(exc))
+
+
+@skills_router.get("/agents/workbench")
+def list_agent_workbench():
+    return agent_drafts.list()
+
+
+@user_router.get("/agents/builtin-prompt")
+def get_agent_builtin_prompt():
+    from core.agent_runtime import _load_system_prompt_template
+    return {"content": _load_system_prompt_template()}
+
+
+@skills_router.post("/agents")
 def create_agent(request: AgentProfileCreateRequest):
     try:
-        profile = create_agent_profile(
-            request.model_dump(exclude_none=True, exclude_unset=True),
-            available_skill_folders=skill_folders_from_documents(list_documents()),
-        )
+        return agent_drafts.create(request.model_dump(exclude_none=True, exclude_unset=True),
+                                  skill_folders_from_documents(list_documents()))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return AgentProfile.model_validate(profile)
+        raise _draft_error(exc) from exc
+
+
+@skills_router.get("/agents/{agent_id}/draft")
+def get_agent_draft(agent_id: str):
+    try:
+        return agent_drafts.get(agent_id)
+    except ValueError as exc:
+        raise _draft_error(exc) from exc
+
+
+@skills_router.post("/agents/{agent_id}/publish")
+def publish_agent(agent_id: str, request: AgentDraftRevisionRequest):
+    try:
+        return agent_drafts.publish(agent_id, request.expected_revision)
+    except ValueError as exc:
+        raise _draft_error(exc) from exc
+
+
+@skills_router.post("/agents/{agent_id}/preview-topics")
+def create_agent_preview_topic(agent_id: str, request: AgentDraftRevisionRequest,
+                               identity: AuthIdentity | None = Depends(require_admin)):
+    try:
+        draft = agent_drafts.get(agent_id)
+        check_revision(draft, request.expected_revision)
+        context = {"source": "portal", "auth_user_id": identity.user_id if identity else "",
+                   "auth_display_name": identity.display_name if identity else "", "auth_role": "admin"}
+        return get_topic_task_store().create_topic(title=f"调试 · {draft['name']}",
+            agent_snapshot=build_agent_snapshot(draft), context=context, is_agent_preview=True)
+    except ValueError as exc:
+        raise _draft_error(exc) from exc
+
+
+@skills_router.post("/agents/{agent_id}/preview-tasks")
+async def submit_agent_preview(agent_id: str, request: AgentPreviewMessageRequest):
+    try:
+        draft = agent_drafts.get(agent_id)
+        check_revision(draft, request.expected_revision)
+        topic = get_topic_task_store().get_topic(request.topic_id)
+        if not topic or not topic.get("is_agent_preview") or topic.get("agent_id") != agent_id:
+            raise ValueError("preview topic not found")
+        # Row-lock acquisition must not block the event loop while another
+        # preview or publish transaction completes.
+        token = await anyio.to_thread.run_sync(agent_drafts.reserve_preview, agent_id, request.expected_revision, topic)
+        result = await submit_message_task(topic_id=request.topic_id, message_type="text",
+            message_content=request.message_content, agent_id=agent_id, provider_id=request.provider_id,
+            model=request.model, debug=True, execution_mode="auto")
+        await anyio.to_thread.run_sync(agent_drafts.register_preview, agent_id,
+                                      request.expected_revision, result["task_id"], token)
+        return result
+    except ValueError as exc:
+        raise _draft_error(exc) from exc
 
 
 @agents_public_router.get("/agents/{agent_id}", response_model=AgentCatalogProfile)
@@ -538,30 +608,22 @@ def get_agent_slash_commands_endpoint(agent_id: str, request: Request):
     return AgentSlashCommandsResponse(slash_commands=folders, source="fallback")
 
 
-@skills_router.put("/agents/{agent_id}", response_model=AgentProfile)
+@skills_router.put("/agents/{agent_id}")
 def update_agent(agent_id: str, request: AgentProfileUpdateRequest):
     try:
-        profile = update_agent_profile(
-            agent_id,
-            request.model_dump(exclude_none=True, exclude_unset=True),
-            available_skill_folders=skill_folders_from_documents(list_documents()),
-        )
+        return agent_drafts.save(agent_id, request.model_dump(exclude_none=True, exclude_unset=True,
+            exclude={"expected_revision"}), request.expected_revision, skill_folders_from_documents(list_documents()))
     except ValueError as exc:
-        message = str(exc)
-        status_code = 404 if "not found" in message else 400
-        raise HTTPException(status_code=status_code, detail=message) from exc
-    return AgentProfile.model_validate(profile)
+        raise _draft_error(exc) from exc
 
 
 @skills_router.delete("/agents/{agent_id}")
 def delete_agent(agent_id: str):
     try:
-        deleted = delete_agent_profile(agent_id)
+        agent_drafts.delete(agent_id)
+        return {"status": "ok"}
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if not deleted:
-        raise HTTPException(status_code=404, detail="agent not found")
-    return {"status": "ok"}
+        raise _draft_error(exc) from exc
 
 
 @user_router.get("/skills/documents/{document_id}", response_model=SkillDocumentDetail)

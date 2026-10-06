@@ -557,7 +557,18 @@ class AgentProfileCreateRequest(AgentProfileBase):
 
 
 class AgentProfileUpdateRequest(AgentProfileBase):
-    pass
+    expected_revision: int = Field(ge=1)
+
+
+class AgentDraftRevisionRequest(BaseModel):
+    expected_revision: int = Field(ge=1)
+
+
+class AgentPreviewMessageRequest(AgentDraftRevisionRequest):
+    topic_id: str
+    message_content: str = Field(min_length=1)
+    provider_id: Optional[str] = None
+    model: Optional[str] = None
 
 
 class AgentSkillCapability(BaseModel):

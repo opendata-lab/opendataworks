@@ -285,7 +285,8 @@ describe('host slots', () => {
     // The migrated composer keeps the original input-card affordances: the
     // shortcut hint and icon-only send control live inside the same card.
     const inputCard = shadow.querySelector('.dac-input-card')
-    expect(inputCard.querySelector('.dac-composer-hint').textContent).toBe('Enter 发送，Shift + Enter 换行')
+    expect(inputCard.querySelector('.dac-input').title).toBe('Enter 发送，Shift + Enter 换行')
+    expect(inputCard.querySelector('.dac-composer-footer')).toBeTruthy()
     expect(inputCard.querySelector('.dac-send[aria-label="发送"] svg')).toBeTruthy()
     el.remove()
   })
@@ -754,6 +755,61 @@ describe('auto scroll', () => {
 
     streamPush(null)
     await settle(30)
+    el.remove()
+  })
+})
+
+
+describe('host send preparation', () => {
+  it('awaits preparation, applies endpoint changes, and blocks duplicate submissions', async () => {
+    const oldTransport = makeTransport(), nextTransport = makeTransport()
+    let finish
+    const beforeSend = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    const el = mount({ endpoint: '/conv/old', beforeSend, transportFactory: address => address === '/conv/old' ? oldTransport : nextTransport, endpointResolver: async () => '/conv/new' })
+    await settle()
+    el.value = '保存草稿再发送'
+    const pending = el.sendMessage()
+    await settle()
+    await el.sendMessage('重复点击')
+    expect(beforeSend).toHaveBeenCalledTimes(1)
+    expect(oldTransport.sendMessage).not.toHaveBeenCalled()
+    el.endpoint = ''
+    finish(true)
+    await pending
+    await settle()
+    expect(nextTransport.sendMessage).toHaveBeenCalledWith(expect.objectContaining({ content: '保存草稿再发送' }))
+    expect(oldTransport.sendMessage).not.toHaveBeenCalled()
+    el.remove()
+  })
+  it('keeps the draft when the host rejects a send or preparation fails', async () => {
+    const transport = makeTransport()
+    const errors = []
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport, beforeSend: async () => false })
+    el.addEventListener('dataagent-error', event => errors.push(event.detail))
+    await settle()
+    el.value = '保留输入'
+    await el.sendMessage()
+    expect(el.value).toBe('保留输入')
+    expect(transport.sendMessage).not.toHaveBeenCalled()
+    el.beforeSend = async () => { throw new Error('草稿保存冲突') }
+    await settle()
+    await el.sendMessage()
+    expect(errors.at(-1).message).toBe('草稿保存冲突')
+    expect(el.value).toBe('保留输入')
+    el.remove()
+  })
+  it('runs preparation on retry and can reject retry after a configuration change', async () => {
+    const beforeSend = vi.fn(async () => true)
+    const transport = makeTransport({ streamEvents: async function* () { throw new Error('模型错误') } })
+    const el = mount({ endpoint: '/conv/a', transportFactory: () => transport, beforeSend })
+    await settle()
+    await el.sendMessage('原问题')
+    await settle()
+    beforeSend.mockResolvedValue(false)
+    el.shadowRoot.querySelector('.dac-retry').click()
+    await settle()
+    expect(beforeSend).toHaveBeenCalledTimes(2)
+    expect(transport.sendMessage).toHaveBeenCalledTimes(1)
     el.remove()
   })
 })

@@ -288,6 +288,8 @@ export interface AgentConversationElement extends HTMLElement {
    * transport. `endpoint` stays the conversation key in both modes.
    */
   transportFactory?: (endpoint: string) => ConversationTransport
+  /** Async host validation before sending or retrying; false aborts. May update endpoint before resolving. */
+  beforeSend?: (context: { content: string; settings: ComposerSettings; attachments: ConversationAttachment[] }) => boolean | void | Promise<boolean | void>
   /** Model, permission-mode, slash-command and opener options. */
   composerConfig?: ComposerConfig
   /**
@@ -329,6 +331,7 @@ export type AgentConversationSlot =
 export interface AgentConversationEventMap {
   'dataagent-ready': CustomEvent<Record<string, never>>
   'dataagent-draft-change': CustomEvent<{ value: string }>
+  'dataagent-composer-resize': CustomEvent<{ height: number }>
   'dataagent-run-change': CustomEvent<{ taskId: string; status: RunStatus; detail: string }>
   'dataagent-complete': CustomEvent<{
     taskId: string
@@ -339,6 +342,7 @@ export interface AgentConversationEventMap {
 }
 
 export type ErrorCode =
+  | 'SEND_PREPARATION_FAILED'
   | 'transport_unreachable'
   | 'conversation_unavailable'
   | 'stream_interrupted'

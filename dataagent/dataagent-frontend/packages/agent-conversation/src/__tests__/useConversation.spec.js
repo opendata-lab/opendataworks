@@ -263,6 +263,68 @@ describe('conversation switching', () => {
 })
 
 describe('cancelling', () => {
+  it('keeps the stream until an accepted cancellation reaches its terminal event', async () => {
+    let release, signal
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    const { api, events } = setup(
+      makeTransport({
+        cancelRun: async () => runRef({ status: 'running' }),
+        streamEvents: async function* (input) {
+          signal = input.signal
+          await gate
+          yield { type: 'terminal', run: runRef({ status: 'cancelled' }) }
+        },
+        loadConversation: async () =>
+          snapshot([], runRef({ status: 'cancelled' })),
+      }),
+    )
+    await api.send('go')
+    await settle()
+    await api.cancel()
+    expect(signal.aborted).toBe(false)
+    expect(api.isActive.value).toBe(true)
+    expect(named(events, 'complete')).toHaveLength(0)
+    release()
+    await settle()
+    expect(api.run.value.status).toBe('cancelled')
+    expect(api.canSend.value).toBe(true)
+    expect(named(events, 'complete')).toHaveLength(1)
+  })
+
+  it('does not revive a terminal run when cancellation acceptance arrives late', async () => {
+    let releaseCancel, releaseTerminal
+    const cancelGate = new Promise((resolve) => {
+      releaseCancel = resolve
+    })
+    const terminalGate = new Promise((resolve) => {
+      releaseTerminal = resolve
+    })
+    const { api } = setup(
+      makeTransport({
+        cancelRun: async () => {
+          await cancelGate
+          return runRef({ status: 'running' })
+        },
+        streamEvents: async function* () {
+          await terminalGate
+          yield { type: 'terminal', run: runRef({ status: 'finished' }) }
+        },
+        loadConversation: async () =>
+          snapshot([], runRef({ status: 'finished' })),
+      }),
+    )
+    await api.send('go')
+    const cancelling = api.cancel()
+    releaseTerminal()
+    await settle()
+    releaseCancel()
+    await cancelling
+    expect(api.run.value.status).toBe('finished')
+    expect(api.canSend.value).toBe(true)
+  })
+
   it('stops the stream and records the terminal status', async () => {
     const { api, events } = setup(makeTransport({
       loadConversation: async () => snapshot([], runRef({ status: 'running' })),

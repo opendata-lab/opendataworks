@@ -1,0 +1,18 @@
+.conversation-surface {
+  --dac-primary: #3b82f6;
+  --dac-primary-dark: #2563eb;
+  --dac-accent: #2563eb;
+  --dac-user-bubble-bg: #eff6ff;
+  --dac-user-bubble-color: #36577e;
+  --dac-user-bubble-radius: 8px 0 8px 8px;
+  --dac-font-family: 'Helvetica Neue', Helvetica, 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif;
+  --dac-message-gap: 22px;
+}
+.conversation-surface::part(user-bubble),
+.conversation-surface::part(assistant-bubble) {
+  font-size: 14px;
+  line-height: 1.7;
+}
+.conversation-surface::part(assistant-bubble) {
+  color: #475569;
+}

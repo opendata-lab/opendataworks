@@ -439,9 +439,9 @@ class TopicTaskStore:
                 return f"{prefix}source = %s", ["portal"]
             auth_user_id = normalized.get("auth_user_id") or ""
             if auth_user_id:
-                return f"{prefix}source = %s AND {prefix}auth_user_id = %s", ["portal", auth_user_id]
+                return f"{prefix}source = %s AND {prefix}auth_user_id = %s AND {prefix}is_agent_preview = 0", ["portal", auth_user_id]
             # 匿名池：等值比较（列 NOT NULL DEFAULT ''，可走索引），不泄漏用户会话。
-            return f"{prefix}source = %s AND {prefix}auth_user_id = ''", ["portal"]
+            return f"{prefix}source = %s AND {prefix}auth_user_id = '' AND {prefix}is_agent_preview = 0", ["portal"]
 
         if normalized["external_user_id"]:
             return (
@@ -545,6 +545,7 @@ class TopicTaskStore:
         agent_snapshot: dict[str, Any] | None = None,
         permission_mode: str | None = None,
         context: dict[str, Any] | None = None,
+        is_agent_preview: bool = False,
     ) -> dict[str, Any]:
         self._ensure_ready()
         normalized_context = self._normalize_context(context)
@@ -565,8 +566,8 @@ class TopicTaskStore:
                         current_task_id, current_task_status, last_message_seq,
                         agent_id, agent_snapshot_json, permission_mode,
                         source, website_id, external_user_id, visitor_id,
-                        auth_user_id, auth_username
-                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        auth_user_id, auth_username, is_agent_preview
+                    ) VALUES (%s, %s, %s, %s, NULL, NULL, 0, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         topic_id,
@@ -582,6 +583,7 @@ class TopicTaskStore:
                         normalized_context["visitor_id"],
                         normalized_context.get("auth_user_id") or "",
                         normalized_context.get("auth_display_name") or "",
+                        1 if is_agent_preview else 0,
                     ),
                 )
             conn.commit()
@@ -597,7 +599,7 @@ class TopicTaskStore:
     ) -> list[dict[str, Any]]:
         self._ensure_ready()
         context_sql, context_params = self._topic_context_predicate(context, alias="t")
-        filters = [context_sql]
+        filters = [context_sql, "t.is_agent_preview = 0"]
         params: list[Any] = [*context_params]
         safe_agent_id = str(agent_id or "").strip()
         if safe_agent_id:
@@ -612,7 +614,7 @@ class TopicTaskStore:
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
                            t.external_user_id, t.visitor_id, t.auth_user_id, t.auth_username, t.agent_id, t.agent_snapshot_json,
-                           t.permission_mode,
+                           t.permission_mode, t.is_agent_preview,
                            t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
@@ -665,7 +667,7 @@ class TopicTaskStore:
         semantics in `_topic_context_predicate` are never reused or weakened.
         """
         self._ensure_ready()
-        filters: list[str] = []
+        filters: list[str] = ["t.is_agent_preview = 0"]
         params: list[Any] = []
 
         safe_source = str(source or "").strip().lower()
@@ -717,7 +719,7 @@ class TopicTaskStore:
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
                            t.external_user_id, t.visitor_id, t.auth_user_id, t.auth_username, t.agent_id, t.agent_snapshot_json,
-                           t.permission_mode,
+                           t.permission_mode, t.is_agent_preview,
                            t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
@@ -902,7 +904,7 @@ class TopicTaskStore:
                     SELECT t.topic_id, t.title, t.chat_topic_id, t.chat_conversation_id,
                            t.current_task_id, t.current_task_status, t.source, t.website_id,
                            t.external_user_id, t.visitor_id, t.auth_user_id, t.auth_username, t.agent_id, t.agent_snapshot_json,
-                           t.permission_mode,
+                           t.permission_mode, t.is_agent_preview,
                            t.created_at, t.updated_at,
                            COALESCE(stats.message_count, 0) AS message_count,
                            COALESCE(stats.last_message_preview, '') AS last_message_preview
@@ -3123,6 +3125,7 @@ class TopicTaskStore:
             "agent_snapshot": snapshot,
             "agent": agent_summary_from_snapshot(snapshot),
             "permission_mode": normalize_permission_mode(row.get("permission_mode")),
+            "is_agent_preview": bool(row.get("is_agent_preview")),
             "current_task_id": str(row.get("current_task_id") or "") or None,
             "current_task_status": str(row.get("current_task_status") or "") or None,
             "source": str(row.get("source") or "portal"),

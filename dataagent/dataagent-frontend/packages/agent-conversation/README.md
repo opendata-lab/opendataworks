@@ -213,6 +213,7 @@ const sendPrompt = () => {
 | `active` | `boolean` | `active` | Default `true`. Set to `false` when conversation tab is hidden to release SSE connections and pause polling. |
 | `disabled` | `boolean` | `disabled` | Disables input and submission while still allowing message browsing. |
 | `value` | `string` | — | Getter & setter for current draft text in composer textarea. |
+| `beforeSend` | Async function | — | Validates content, settings and attachments before send/retry. False aborts and keeps the draft; may update endpoint before resolving. |
 | `endpointResolver` | `(context) => string \| Promise<string>` | — | Lazy session resolver. If `endpoint` is empty, consulted on the first send, or on the first upload when `composerConfig.uploadBeforeConversation` is enabled. |
 | `transportFactory` | `(endpoint: string) => ConversationTransport` | — | Factory creating custom transport for the given endpoint. Defaults to built-in HTTP transport. |
 
@@ -299,6 +300,7 @@ All events bubble and compose across Shadow DOM (`bubbles: true, composed: true`
 | --- | --- | --- |
 | `dataagent-ready` | `{}` | Emitted when conversation snapshot finishes loading. |
 | `dataagent-draft-change` | `{ value: string }` | Emitted whenever user edits the input text. |
+| `dataagent-composer-resize` | `{ height: number }` | Reports the composer height in pixels, including attachments and growing input, so a host debug overlay can leave the input accessible. |
 | `dataagent-run-change` | `{ taskId: string, status: RunStatus, detail: string }` | Emitted when the task status changes, including live `waiting_permission` / `waiting_input` transitions and their return to `running`. |
 | `dataagent-complete` | `{ taskId: string, status: RunStatus, metadata?: object }` | Emitted when a run reaches terminal status. |
 | `dataagent-error` | `{ code: ErrorCode, message: string, hint?: string }` | Emitted when transport or protocol errors occur. |
@@ -455,3 +457,10 @@ Explore runnable examples:
 ## License
 
 GPL-3.0-only.
+
+
+### Shared compact composer
+
+The input and toolbar share one card. Model selection sits at the lower left; send/stop sits at the right. Model selection uses a keyboard-accessible custom listbox, not a native select. Permissions, uploads and slash commands remain capability-driven. The SDK still bundles its UI and has no Element Plus dependency. `model-select` now identifies the custom model trigger; use the stable model-picker part for geometry rather than native-select styling.
+
+Hosts may assign `beforeSend` as a JavaScript property to save or validate configuration before any send, suggestion or retry. Return false to abort, or throw to emit `dataagent-error` with code `SEND_PREPARATION_FAILED`. While awaiting it, the composer blocks duplicate sends. Endpoint changes made by the hook are applied before lazy resolution. Attachments from an old workspace must be rejected by the host when it rotates the conversation.

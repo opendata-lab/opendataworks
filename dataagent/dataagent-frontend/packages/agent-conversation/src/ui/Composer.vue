@@ -1,5 +1,5 @@
 <template>
-  <div class="dac-composer" part="composer">
+  <div ref="composerElement" class="dac-composer" part="composer">
     <div class="dac-composer-inner" part="composer-inner">
     <!-- Above the input: overlays that must sit against it, such as a slash
          command menu. Empty for hosts that have none. -->
@@ -45,42 +45,11 @@
         :placeholder="placeholder"
         :disabled="disabled || !hasConfiguredModel"
         rows="1"
+        title="Enter 发送，Shift + Enter 换行"
         @input="onInput($event.target.value)"
         @keydown="onKeydown"
       />
-      <div class="dac-composer-inline">
-        <span class="dac-composer-hint">Enter 发送，Shift + Enter 换行</span>
-        <button
-          v-if="active"
-          type="button"
-          class="dac-stop dac-send-control"
-          part="stop-button"
-          title="停止"
-          aria-label="停止"
-          @click="$emit('cancel')"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true">
-            <rect x="8" y="8" width="8" height="8" rx="1.5" />
-          </svg>
-        </button>
-        <button
-          v-else
-          type="button"
-          class="dac-send dac-send-control"
-          part="send-button"
-          title="发送"
-          aria-label="发送"
-          :disabled="disabled || !hasConfiguredModel || uploading || (!modelValue.trim() && !attachments.length)"
-          @click="$emit('send')"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true">
-            <line x1="12" y1="19" x2="12" y2="5" />
-            <polyline points="5 12 12 5 19 12" />
-          </svg>
-        </button>
-      </div>
-    </div>
-    <div class="dac-composer-footer" part="footer">
+    <div class="dac-composer-footer" part="footer controls">
       <div class="dac-composer-actions" part="actions">
         <label v-if="shows('permissionMode') && permissionModes.length" class="dac-picker dac-permission-picker" part="permission-picker" title="权限模式">
           <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
@@ -133,42 +102,42 @@
         </template>
 
         <slot name="composer-actions" />
+        <ModelPicker
+          v-if="shows('model') && providers.length"
+          :model-value="modelKey" :options="modelOptions" :disabled="disabled || active"
+          @update:modelValue="onModelChange"
+        />
       </div>
-      <div class="dac-composer-right" part="controls">
-        <span v-if="runDetail" class="dac-run-detail" part="run-detail">{{ runDetail }}</span>
-
-        <!-- Rendered only when the host supplies the options. A picker over an
-             empty list is a control that looks broken. -->
-        <!-- Borderless pickers with an icon, the way the shells have always
-             drawn them. Native <select> underneath so keyboard and screen
-             readers keep working; only the chrome is restyled. -->
-        <label v-if="shows('model') && providers.length" class="dac-picker" part="model-picker" title="切换模型">
-          <svg class="dac-picker-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13" aria-hidden="true">
-            <path d="M12 2V4" />
-            <rect x="4" y="6" width="16" height="12" rx="2" />
-            <circle cx="9" cy="12" r="1.5" fill="currentColor" stroke="none" />
-            <circle cx="15" cy="12" r="1.5" fill="currentColor" stroke="none" />
-          </svg>
-          <span class="dac-picker-label">{{ model }}</span>
-        <select
-          class="dac-picker-select"
-          part="model-select"
-          data-control="model"
-          aria-label="模型"
-          :disabled="disabled"
-          :value="modelKey"
-          @change="onModelChange($event.target.value)"
+      <span v-if="runDetail" class="dac-run-detail" part="run-detail">{{ runDetail }}</span>
+        <button
+          v-if="active"
+          type="button"
+          class="dac-stop dac-send-control"
+          part="stop-button"
+          title="停止"
+          aria-label="停止"
+          @click="$emit('cancel')"
         >
-          <optgroup v-for="provider in providers" :key="provider.provider_id" :label="provider.provider_id">
-            <option
-              v-for="name in provider.models || []"
-              :key="`${provider.provider_id}::${name}`"
-              :value="`${provider.provider_id}::${name}`"
-            >{{ name }}</option>
-          </optgroup>
-        </select>
-        </label>
-      </div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true">
+            <rect x="8" y="8" width="8" height="8" rx="1.5" />
+          </svg>
+        </button>
+        <button
+          v-else
+          type="button"
+          class="dac-send dac-send-control"
+          part="send-button"
+          title="发送"
+          aria-label="发送"
+          :disabled="disabled || !hasConfiguredModel || uploading || (!modelValue.trim() && !attachments.length)"
+          @click="$emit('send')"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15" aria-hidden="true">
+            <line x1="12" y1="19" x2="12" y2="5" />
+            <polyline points="5 12 12 5 19 12" />
+          </svg>
+        </button>
+    </div>
     </div>
     <!-- Below the footer: a host's own composer controls. The widget puts its
          permission-mode and model selectors here; those are product choices
@@ -180,9 +149,10 @@
 </template>
 
 <script setup>
-import { computed, inject, nextTick, onMounted, ref, unref, watch } from 'vue'
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, unref, watch } from 'vue'
 import { isPlainEnterSubmit } from '../core/message.js'
 import { useSlashCommands } from '../core/slashCommands.js'
+import ModelPicker from './ModelPicker.vue'
 
 const props = defineProps({
   modelValue: { type: String, default: '' },
@@ -194,9 +164,17 @@ const props = defineProps({
   endpointReady: { type: Boolean, default: false },
   ensureEndpoint: { type: Function, default: null },
 })
-const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-change', 'permission-error'])
+const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-change', 'permission-error', 'resize'])
 
 const inputRef = ref(null)
+const composerElement = ref(null)
+let resizeObserver
+onMounted(() => {
+  const report = () => emit('resize', { height: composerElement.value?.getBoundingClientRect().height || 0 })
+  report()
+  if (typeof ResizeObserver === 'function') { resizeObserver = new ResizeObserver(report); resizeObserver.observe(composerElement.value) }
+})
+onBeforeUnmount(() => resizeObserver?.disconnect())
 
 const transport = inject('agentConversationTransport', null)
 
@@ -226,6 +204,9 @@ const permissionMode = ref('')
 // <select> cannot hold two values, and reusing the separator keeps host code
 // that already parses it working.
 const modelKey = computed(() => (providerId.value && model.value ? `${providerId.value}::${model.value}` : ''))
+const modelOptions = computed(() => providers.value.flatMap(provider =>
+  provider.models.map(name => ({ value: `${provider.provider_id}::${name}`, name, label: `${provider.provider_id} / ${name}` }))
+))
 
 // Snake_case because these are the host's own option objects, handed straight
 // back. Asking a host to rename fields it already has is the kind of adapter
@@ -413,8 +394,8 @@ const onKeydown = (event) => {
 <style>
 .dac-composer {
   border-top: none;
-  padding-top: 32px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.85) 30%, #ffffff 50%);
+  padding-top: 12px;
+  background: transparent;
   transition: background 0.3s ease;
 }
 .dac-root.is-empty .dac-composer { padding-top: 0; background: transparent; }
@@ -434,7 +415,7 @@ const onKeydown = (event) => {
   gap: 6px;
   padding: 12px 14px 10px 16px;
   border: 1px solid #dde2ea;
-  border-radius: 16px;
+  border-radius: 8px;
   background: #ffffff;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
@@ -450,7 +431,7 @@ const onKeydown = (event) => {
   border: none;
   padding: 0;
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.7;
   font-family: inherit;
   resize: none;
   outline: none;
@@ -462,27 +443,20 @@ const onKeydown = (event) => {
   overflow-y: auto;
 }
 .dac-input::placeholder { color: #A0AABF; }
-.dac-composer-inline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.dac-composer-hint {
-  color: #9aa5b1;
-  font-size: 11px;
-  line-height: 1.4;
-  white-space: nowrap;
-}
 .dac-composer-footer {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   margin-top: 6px;
-  padding-inline: 4px;
+  padding-inline: 0;
 }
 .dac-composer-actions {
   display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -620,11 +594,6 @@ const onKeydown = (event) => {
   color: var(--dac-text-muted, #64748b);
   font-size: 12px;
 }
-.dac-composer-right {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 .dac-run-detail {
   color: var(--dac-text-muted, #64748b);
   font-size: 12px;
@@ -632,6 +601,7 @@ const onKeydown = (event) => {
 .dac-send-control {
   width: 30px;
   height: 30px;
+  margin-left: auto;
   border: none;
   border-radius: 8px;
   background: #e8eaed;

@@ -28,6 +28,13 @@ const mount = (assign = {}) => {
   return el
 }
 
+const chooseModel = async (el, value) => {
+  el.shadowRoot.querySelector('[data-control="model"]').click()
+  await settle()
+  el.shadowRoot.querySelector(`[data-value="${value}"]`).click()
+  await settle()
+}
+
 describe('a run that fails', () => {
   it('surfaces the failure and hands the conversation back to the user', async () => {
     // The stuck state this guards against: the stream dies, the assistant turn
@@ -94,10 +101,7 @@ describe('a run that fails', () => {
     })
     await settle()
 
-    const select = el.shadowRoot.querySelector('select[data-control="model"]')
-    select.value = 'anthropic::claude-3-5-sonnet'
-    select.dispatchEvent(new Event('change'))
-    await settle()
+    await chooseModel(el, 'anthropic::claude-3-5-sonnet')
 
     await el.sendMessage('开始建模')
     await settle()
@@ -109,9 +113,7 @@ describe('a run that fails', () => {
     })
 
     // Change model before clicking retry
-    select.value = 'openai::gpt-4o-mini'
-    select.dispatchEvent(new Event('change'))
-    await settle()
+    await chooseModel(el, 'openai::gpt-4o-mini')
 
     el.shadowRoot.querySelector('.dac-retry').click()
     await settle()

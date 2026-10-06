@@ -102,7 +102,7 @@ export const routes = [
         path: 'agents/:agentId',
         name: 'IntelligentQueryAgentDetail',
         component: () => import('@/views/intelligence/AgentDetailView.vue'),
-        meta: { tab: 'agents', title: '智能体详情' }
+        meta: { tab: 'agents', title: '智能体工作台', agentWorkbench: true }
       }
     ]
   },

@@ -49,6 +49,18 @@ describe('demoAdapter intelligent query admin endpoints', () => {
     })
   })
 
+  it('isolates saved drafts from the published demo catalog', async () => {
+    const created = (await request('post', '/api/v1/dataagent/agents', { data: { name: '草稿演示助手' } })).data
+    expect(created.published_version).toBe(0)
+    const published = (await request('get', '/api/v1/dataagent/agents')).data
+    expect(published.some(agent => agent.agent_id === created.agent_id)).toBe(false)
+    const saved = (await request('put', `/api/v1/dataagent/agents/${created.agent_id}`, { data: { expected_revision: 1, name: '更新后的草稿' } })).data
+    expect(saved.revision).toBe(2)
+    expect(saved.can_publish).toBe(false)
+    expect((await request('get', '/api/v1/dataagent/agents/workbench')).data).toContainEqual(expect.objectContaining({ agent_id: created.agent_id, name: '更新后的草稿' }))
+    expect((await request('get', '/api/v1/dataagent/agents/builtin-prompt')).data.content).toContain('DataAgent')
+  })
+
   it('returns complete Skill document detail data for the detail editor', async () => {
     await expect(request('get', '/api/v1/dataagent/skills/documents/skill-doc-1')).resolves.toMatchObject({
       code: 200,
