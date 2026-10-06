@@ -5,6 +5,7 @@ const routerPush = vi.hoisted(() => vi.fn())
 const authState = vi.hoisted(() => ({ isAdmin: true }))
 const dataagentApi = vi.hoisted(() => ({
   listAgentProfiles: vi.fn(),
+  listAgentWorkbench: vi.fn(),
   createAgent: vi.fn(),
   deleteAgent: vi.fn()
 }))
@@ -47,7 +48,7 @@ describe('AgentStudio', () => {
     authState.isAdmin = true
     routerPush.mockReset()
     Object.values(dataagentApi).forEach((fn) => fn.mockReset())
-    dataagentApi.listAgentProfiles.mockResolvedValue([
+    const profiles = [
       {
         agent_id: 'agent_default',
         name: '默认智能问数助手',
@@ -59,7 +60,9 @@ describe('AgentStudio', () => {
         is_default: true,
         is_builtin: true
       }
-    ])
+    ]
+    dataagentApi.listAgentProfiles.mockResolvedValue(profiles)
+    dataagentApi.listAgentWorkbench.mockResolvedValue(profiles)
   })
 
   it('renders agent cards from the profile API', async () => {
@@ -67,11 +70,20 @@ describe('AgentStudio', () => {
 
     await flushPromises()
 
-    expect(dataagentApi.listAgentProfiles).toHaveBeenCalledTimes(1)
+    expect(dataagentApi.listAgentWorkbench).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('默认智能问数助手')
     expect(wrapper.text()).toContain('1 Skills')
     expect(wrapper.text()).toContain('1 Schema')
     expect(wrapper.text()).toContain('内置')
+  })
+
+  it('keeps unpublished drafts out of the chat entrypoint', async () => {
+    dataagentApi.listAgentWorkbench.mockResolvedValue([{ agent_id: 'draft', name: '未发布助手', published_version: 0 }])
+    const wrapper = shallowMount(AgentStudio, { global: { stubs } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('未发布')
+    wrapper.vm.handleChat({ agent_id: 'draft', published_version: 0 })
+    expect(routerPush).not.toHaveBeenCalled()
   })
 
   it('creates an agent and navigates to detail', async () => {

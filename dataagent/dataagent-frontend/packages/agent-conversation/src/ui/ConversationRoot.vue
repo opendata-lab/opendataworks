@@ -11,7 +11,7 @@
       :activity-label="activityLabel"
       @decide="onDecide"
       @answer="onAnswer"
-      @retry="(message) => conversation.retry(message, { settings })"
+      @retry="(message) => conversation.retry(message, { settings, clearDraft: false }, send)"
       @feedback="({ message, value }) => conversation.submitFeedback(message, value)"
       @preview="(file) => { previewFile = file }"
     >
@@ -43,7 +43,7 @@
       ref="composerRef"
       :model-value="conversation.draft.value"
       :placeholder="placeholder"
-      :disabled="disabled || !endpointApi.ready.value && !endpointResolver"
+      :disabled="disabled || preparing || !endpointApi.ready.value && !endpointResolver"
       :active="conversation.isActive.value"
       :run-detail="conversation.run.value?.detail || ''"
       :config="composerConfig"
@@ -53,6 +53,7 @@
       @send="() => send()"
       @cancel="conversation.cancel"
       @settings-change="(value) => { settings = value }"
+      @resize="detail => emit({ name: 'composer-resize', detail })"
       @permission-error="(error) => emit({ name: 'error', detail: { code: 'PERMISSION_MODE_FAILED', message: error?.message || '切换权限模式失败' } })"
     >
       <template #composer-overlay><slot name="composer-overlay" /></template>
@@ -63,7 +64,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, provide, ref, toRef, useHost, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, provide, ref, toRef, useHost, watch } from 'vue'
 import MessageList from './MessageList.vue'
 import Composer from './Composer.vue'
 import AttachmentPreview from './AttachmentPreview.vue'
@@ -78,6 +79,7 @@ const props = defineProps({
   // Functions and objects arrive as JS properties, never as attributes.
   endpointResolver: { type: Function, default: null },
   transportFactory: { type: Function, default: null },
+  beforeSend: { type: Function, default: null },
   composerConfig: { type: Object, default: () => ({}) },
   /** Hosts that surface generated files elsewhere turn the cards off. */
   showAttachments: { type: Boolean, default: true },
@@ -95,6 +97,8 @@ const hasConfiguredModel = computed(() => {
   return configured.some((item) => item?.enabled !== false && Array.isArray(item?.models) && item.models.length)
 })
 
+const preparing = ref(false)
+let disposed = false
 const composerRef = ref(null)
 const messageListRef = ref(null)
 const previewFile = ref(null)
@@ -189,25 +193,34 @@ const onDraft = (value) => {
  * host from minting an empty conversation just because a user opened the page.
  */
 async function send(content, options = {}) {
-  if (!hasConfiguredModel.value) return false
+  if (!hasConfiguredModel.value || preparing.value || conversation.isActive.value) return false
   const messageContent = String(content ?? conversation.draft.value)
-  const attachments = composerRef.value?.getAttachments?.() || []
+  const attachments = options.attachments ?? composerRef.value?.getAttachments?.() ?? []
   const activeSettings = options.settings ?? settings
-  if (!endpointApi.ready.value) {
-    const address = await endpointApi.ensure({
-      reason: 'send',
-      content: messageContent,
-      settings: activeSettings,
-    })
-    if (!address) return
+  if (!messageContent.trim() && !attachments.length) return false
+  preparing.value = true
+  try {
+    if (typeof props.beforeSend === 'function') {
+      const allowed = await props.beforeSend({ content: messageContent, settings: activeSettings, attachments })
+      if (allowed === false || disposed) return false
+      // A host may have cleared a stale endpoint while preparing. Apply its
+      // property write before deciding whether a fresh endpoint is needed.
+      await nextTick()
+    }
+    if (disposed) return false
+    if (!endpointApi.ready.value) {
+      const address = await endpointApi.ensure({ reason: 'send', content: messageContent, settings: activeSettings })
+      if (!address || disposed) return false
+    }
+    const sent = await conversation.send(messageContent, { ...options, settings: activeSettings, attachments })
+    if (sent && options.attachments === undefined) composerRef.value?.clearAttachments?.()
+    return sent
+  } catch (error) {
+    if (!disposed) emit({ name: 'error', detail: { code: 'SEND_PREPARATION_FAILED', message: error?.message || '无法提交消息' } })
+    return false
+  } finally {
+    preparing.value = false
   }
-  // The composer's selection rides along with the message rather than being
-  // pushed to the server separately, so what was sent and what the user could
-  // see can never disagree.
-  const sent = await conversation.send(content, { ...options, settings: activeSettings, attachments })
-  // Only on success: a send that failed leaves the files staged so retrying
-  // does not mean picking every one of them again.
-  if (sent) composerRef.value?.clearAttachments?.()
 }
 
 // Releasing the stream when the host parks the element keeps a hidden tab from
@@ -222,7 +235,7 @@ watch(() => props.active, (isActive) => {
 
 if (endpointApi.ready.value && props.active) conversation.load()
 
-onBeforeUnmount(() => conversation.stopStream())
+onBeforeUnmount(() => { disposed = true; conversation.stopStream() })
 
 defineExpose({
   reload: () => endpointApi.reload(),

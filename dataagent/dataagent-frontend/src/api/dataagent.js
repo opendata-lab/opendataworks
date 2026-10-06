@@ -40,6 +40,24 @@ dataagentRequest.interceptors.response.use(
 )
 
 export const dataagentApi = {
+  listAgentWorkbench() {
+    return dataagentRequest.get('/v1/dataagent/agents/workbench')
+  },
+  getAgentDraft(agentId) {
+    return dataagentRequest.get(`/v1/dataagent/agents/${encodeURIComponent(agentId)}/draft`)
+  },
+  getAgentBuiltinPrompt() {
+    return dataagentRequest.get('/v1/dataagent/agents/builtin-prompt')
+  },
+  publishAgent(agentId, revision) {
+    return dataagentRequest.post(`/v1/dataagent/agents/${encodeURIComponent(agentId)}/publish`, { expected_revision: revision })
+  },
+  createAgentPreviewTopic(agentId, revision) {
+    return dataagentRequest.post(`/v1/dataagent/agents/${encodeURIComponent(agentId)}/preview-topics`, { expected_revision: revision })
+  },
+  submitAgentPreview(agentId, data) {
+    return dataagentRequest.post(`/v1/dataagent/agents/${encodeURIComponent(agentId)}/preview-tasks`, data)
+  },
   getSettings() {
     return dataagentRequest.get('/v1/nl2sql-admin/settings')
   },

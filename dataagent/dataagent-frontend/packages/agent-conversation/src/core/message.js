@@ -56,7 +56,7 @@ export function renderMarkdown(text, options = {}) {
 // widget and portal composers so both handle IME candidate-selection Enter the
 // same way.
 export function isPlainEnterSubmit(event) {
-  if (!event) return false
+  if (!event || event.key !== 'Enter') return false
   if (event.isComposing || event.keyCode === 229) return false
   if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return false
   return true

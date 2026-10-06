@@ -454,62 +454,68 @@ class AgentProfileStore:
             conn.close()
         return self._normalize_row(row)
 
-    def save_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
-        self._ensure_ready()
-        agent_id = str(profile.get("agent_id") or "").strip() or _new_agent_id()
+    def write_profile(self, cur, profile: dict[str, Any]) -> None:
+        """Write the published configuration using the caller's transaction."""
+        agent_id = str(profile["agent_id"])
         is_default = bool(profile.get("is_default"))
         is_builtin = bool(profile.get("is_builtin"))
+        if is_default:
+            cur.execute("UPDATE da_agent_profile SET is_default = 0 WHERE agent_id <> %s", (agent_id,))
+        cur.execute(
+            """
+            INSERT INTO da_agent_profile (
+                agent_id, name, description, system_prompt,
+                allowed_tools_json, mcp_server_ids_json, skill_folders_json,
+                max_turns, env_vars_json, data_scope_json, visibility_json,
+                preset_questions_json,
+                is_default, is_builtin
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                name = VALUES(name),
+                description = VALUES(description),
+                system_prompt = VALUES(system_prompt),
+                allowed_tools_json = VALUES(allowed_tools_json),
+                mcp_server_ids_json = VALUES(mcp_server_ids_json),
+                skill_folders_json = VALUES(skill_folders_json),
+                max_turns = VALUES(max_turns),
+                env_vars_json = VALUES(env_vars_json),
+                data_scope_json = VALUES(data_scope_json),
+                visibility_json = VALUES(visibility_json),
+                preset_questions_json = VALUES(preset_questions_json),
+                is_default = VALUES(is_default),
+                is_builtin = VALUES(is_builtin),
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                agent_id,
+                str(profile.get("name") or ""),
+                str(profile.get("description") or ""),
+                str(profile.get("system_prompt") or ""),
+                _json_dump(_dedupe_strings(profile.get("allowed_tools"))),
+                _json_dump(_dedupe_strings(profile.get("mcp_server_ids"))),
+                _json_dump(_dedupe_strings(profile.get("skill_folders"))),
+                int(profile.get("max_turns") or 0),
+                _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
+                _json_dump(normalize_data_scope(profile.get("data_scope") or {})),
+                _json_dump(normalize_agent_visibility(profile.get("visibility") or {})),
+                _json_dump(_validate_preset_questions(profile.get("preset_questions") or [])),
+                1 if is_default else 0,
+                1 if is_builtin else 0,
+            ),
+        )
+
+    def save_profile(self, profile: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_ready()
+        profile = dict(profile)
+        profile["agent_id"] = str(profile.get("agent_id") or "").strip() or _new_agent_id()
         conn = self._connect(database=self._schema_name())
         try:
             with conn.cursor() as cur:
-                if is_default:
-                    cur.execute("UPDATE da_agent_profile SET is_default = 0 WHERE agent_id <> %s", (agent_id,))
-                cur.execute(
-                    """
-                    INSERT INTO da_agent_profile (
-                        agent_id, name, description, system_prompt,
-                        allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                        max_turns, env_vars_json, data_scope_json, visibility_json,
-                        preset_questions_json,
-                        is_default, is_builtin
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        name = VALUES(name),
-                        description = VALUES(description),
-                        system_prompt = VALUES(system_prompt),
-                        allowed_tools_json = VALUES(allowed_tools_json),
-                        mcp_server_ids_json = VALUES(mcp_server_ids_json),
-                        skill_folders_json = VALUES(skill_folders_json),
-                        max_turns = VALUES(max_turns),
-                        env_vars_json = VALUES(env_vars_json),
-                        data_scope_json = VALUES(data_scope_json),
-                        visibility_json = VALUES(visibility_json),
-                        preset_questions_json = VALUES(preset_questions_json),
-                        is_default = VALUES(is_default),
-                        is_builtin = VALUES(is_builtin),
-                        updated_at = CURRENT_TIMESTAMP
-                    """,
-                    (
-                        agent_id,
-                        str(profile.get("name") or ""),
-                        str(profile.get("description") or ""),
-                        str(profile.get("system_prompt") or ""),
-                        _json_dump(_dedupe_strings(profile.get("allowed_tools"))),
-                        _json_dump(_dedupe_strings(profile.get("mcp_server_ids"))),
-                        _json_dump(_dedupe_strings(profile.get("skill_folders"))),
-                        int(profile.get("max_turns") or 0),
-                        _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
-                        _json_dump(normalize_data_scope(profile.get("data_scope") or {})),
-                        _json_dump(normalize_agent_visibility(profile.get("visibility") or {})),
-                        _json_dump(_validate_preset_questions(profile.get("preset_questions") or [])),
-                        1 if is_default else 0,
-                        1 if is_builtin else 0,
-                    ),
-                )
+                self.write_profile(cur, profile)
             conn.commit()
         finally:
             conn.close()
-        return self.get_profile(agent_id) or {}
+        return self.get_profile(profile["agent_id"]) or {}
 
     def delete_profile(self, agent_id: str) -> bool:
         self._ensure_ready()

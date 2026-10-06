@@ -1,5 +1,5 @@
 <template>
-  <div class="intelligent-query-view">
+  <div class="intelligent-query-view" :class="{ 'is-workbench': route.meta?.agentWorkbench }">
     <aside class="intelligent-query-sidebar">
       <div class="intelligent-query-brand">
         <img
@@ -51,7 +51,7 @@
       </div>
     </aside>
 
-    <main class="intelligent-query-content" :class="{ 'is-chat': activeMenu === 'chat-v2' }">
+    <main class="intelligent-query-content" :class="{ 'is-chat': activeMenu === 'chat-v2', 'is-workbench': route.meta?.agentWorkbench }">
       <router-view />
     </main>
   </div>
@@ -225,6 +225,8 @@ const handleMenuSelect = (index) => {
 .intelligent-query-content.is-chat {
   overflow: hidden;
 }
+
+.intelligent-query-content.is-workbench { padding: 0; }
 
 @media (max-width: 768px) {
   .intelligent-query-view {

@@ -1,5 +1,5 @@
 import { computed, reactive, ref, shallowRef, triggerRef } from 'vue'
-import { ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './runStatus.js'
+import { ACTIVE_RUN_STATUSES, TERMINAL_RUN_STATUSES, isTerminal } from './runStatus.js'
 import { createChatState, processV2Record } from './streamParser.js'
 import { normalizeConversationMessage } from './message.js'
 import { ErrorCode, StreamInterrupted } from '../transport/errors.js'
@@ -328,14 +328,14 @@ export function useConversation({ transport, generation, emit, settings }) {
     }
   }
 
-  async function retry(message, options = {}) {
+  async function retry(message, options = {}, sendMessage = send) {
     if (!message || isActive.value) return false
     const index = messages.value.findIndex((item) => item.id === message.id)
     for (let cursor = (index < 0 ? messages.value.length : index) - 1; cursor >= 0; cursor -= 1) {
       const candidate = messages.value[cursor]
       if (candidate?.role !== 'user') continue
       const activeSettings = options.settings ?? resolveSettings()
-      return send(candidate.content, {
+      return sendMessage(candidate.content, {
         attachments: candidate.attachments || [],
         settings: activeSettings,
         ...options,
@@ -350,7 +350,14 @@ export function useConversation({ transport, generation, emit, settings }) {
     try {
       const taskId = run.value.taskId
       const next = await transport.value.cancelRun({ taskId })
-      if (stale(at)) return
+      if (stale(at) || run.value?.taskId !== taskId) return
+      // Cancellation may only have been accepted. Keep receiving the terminal
+      // event rather than stranding the composer on an active run with no
+      // stream. A terminal event can also win the race with this response.
+      if (!isTerminal(next.status)) {
+        if (!isTerminal(run.value?.status)) setRun(next)
+        return
+      }
       stopStream()
       // The turn has to end with the run. Cancelling only the run leaves the
       // open assistant streaming forever: a blinking cursor and "正在处理" on an

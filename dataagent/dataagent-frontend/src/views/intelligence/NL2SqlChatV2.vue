@@ -215,7 +215,7 @@
            reads, and the element silently runs with no transport at all. -->
       <dataagent-conversation
         ref="conversationRef"
-        class="v2-conversation"
+        class="v2-conversation conversation-surface"
         :class="{ 'is-readonly': isWidgetMode }"
         :endpoint="activeTopicId"
         :disabled="isWidgetMode"
@@ -1268,6 +1268,7 @@ watch(
 )
 </script>
 
+<style scoped src="./conversationPresentation.css"></style>
 <style scoped>
 /* ── Root layout ─────────────────────────────────────────────────────────── */
 .v2-agent-welcome {
@@ -1781,10 +1782,6 @@ watch(
   --dac-content-padding-inline: clamp(40px, 5%, 64px);
   --dac-content-padding-block: 24px;
   --dac-message-gap: 24px;
-  --dac-primary: var(--odw-primary);
-  --dac-primary-dark: var(--odw-primary-dark);
-  --dac-user-bubble-bg: linear-gradient(135deg, var(--odw-primary) 0%, var(--odw-primary-dark) 100%);
-  --dac-user-bubble-color: #ffffff;
 }
 
 .v2-main-top-bar {

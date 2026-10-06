@@ -329,11 +329,11 @@ watch(
 }
 .dac-message-user .dac-bubble {
   padding: 10px 16px;
-  border-radius: 16px 16px 4px 16px;
+  border-radius: var(--dac-user-bubble-radius, 16px 16px 4px 16px);
   background: var(--dac-user-bubble-bg, #ecfdf5);
   color: var(--dac-user-bubble-color, #065f46);
   font-size: 14px;
-  line-height: 1.55;
+  line-height: 1.7;
   white-space: pre-wrap;
 }
 .dac-assistant .dac-bubble {
@@ -343,7 +343,7 @@ watch(
   background: transparent;
   color: #162131;
   font-size: 14px;
-  line-height: 1.65;
+  line-height: 1.7;
 }
 .dac-assistant .dac-bubble p { margin: 0 0 10px; }
 .dac-assistant .dac-bubble p:last-child { margin: 0; }

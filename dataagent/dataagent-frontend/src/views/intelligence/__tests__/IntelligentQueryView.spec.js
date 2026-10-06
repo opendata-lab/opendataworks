@@ -70,6 +70,17 @@ describe('IntelligentQueryView', () => {
     expect(wrapper.text()).not.toContain('智能问数')
   })
 
+  it('preserves the shared sidebar on the workbench route', () => {
+    const workbench = mountView({ path: '/agents/agent_1', meta: { tab: 'agents', agentWorkbench: true } })
+    expect(workbench.find('.intelligent-query-sidebar').exists()).toBe(true)
+    expect(workbench.find('.intelligent-query-content').classes()).toContain('is-workbench')
+    workbench.unmount()
+    const chat = mountView()
+    expect(chat.find('.intelligent-query-sidebar').exists()).toBe(true)
+    expect(chat.find('.intelligent-query-content').classes()).not.toContain('is-workbench')
+    chat.unmount()
+  })
+
   it('highlights the menu entry from the matched route meta', () => {
     const wrapper = mountView({
       path: '/skills',

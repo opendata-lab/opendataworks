@@ -56,13 +56,16 @@ describe('chatMessage helpers', () => {
   })
 
   it('isPlainEnterSubmit only submits on plain Enter (guards IME and modifiers)', () => {
-    expect(isPlainEnterSubmit({})).toBe(true)
-    expect(isPlainEnterSubmit({ isComposing: true })).toBe(false)
-    expect(isPlainEnterSubmit({ keyCode: 229 })).toBe(false)
-    expect(isPlainEnterSubmit({ shiftKey: true })).toBe(false)
-    expect(isPlainEnterSubmit({ ctrlKey: true })).toBe(false)
-    expect(isPlainEnterSubmit({ altKey: true })).toBe(false)
-    expect(isPlainEnterSubmit({ metaKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ key: 'Enter' })).toBe(true)
+    for (const key of ['/', 'a', 'Backspace', 'ArrowLeft', 'Tab', undefined]) {
+      expect(isPlainEnterSubmit({ key })).toBe(false)
+    }
+    expect(isPlainEnterSubmit({ key: 'Enter', isComposing: true })).toBe(false)
+    expect(isPlainEnterSubmit({ key: 'Enter', keyCode: 229 })).toBe(false)
+    expect(isPlainEnterSubmit({ key: 'Enter', shiftKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ key: 'Enter', ctrlKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ key: 'Enter', altKey: true })).toBe(false)
+    expect(isPlainEnterSubmit({ key: 'Enter', metaKey: true })).toBe(false)
     expect(isPlainEnterSubmit(null)).toBe(false)
   })
 

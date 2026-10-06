@@ -21,6 +21,8 @@
             <div class="agent-card-tags">
               <el-tag v-if="agent.is_default" size="small" type="info">默认</el-tag>
               <span v-if="agent.is_default || agent.is_builtin" class="agent-built-in-tag">内置</span>
+              <el-tag v-if="canManage && agent.published_version === 0" size="small" type="info">未发布</el-tag>
+              <el-tag v-else-if="canManage && agent.has_changes" size="small" type="warning">有草稿</el-tag>
               <el-tag v-if="visibilityTag(agent)" size="small" type="warning">{{ visibilityTag(agent) }}</el-tag>
             </div>
           </div>
@@ -36,7 +38,7 @@
 
         <div class="agent-card-actions">
           <el-tooltip content="开启对话" placement="top">
-            <el-button :icon="ChatLineRound" circle @click="handleChat(agent)" />
+            <el-button :icon="ChatLineRound" :disabled="agent.published_version === 0" circle @click="handleChat(agent)" />
           </el-tooltip>
           <el-tooltip :content="canManage ? '查看编辑' : '查看详情'" placement="top">
             <el-button :icon="canManage ? Edit : View" circle @click="handleDetail(agent)" />
@@ -78,7 +80,7 @@ const visibilityTag = (agent) => VISIBILITY_TAG_LABELS[String(agent?.visibility_
 const loadAgents = async () => {
   loading.value = true
   try {
-    agents.value = await dataagentApi.listAgentProfiles()
+    agents.value = await (canManage.value ? dataagentApi.listAgentWorkbench() : dataagentApi.listAgentProfiles())
   } finally {
     loading.value = false
   }
@@ -116,6 +118,7 @@ const handleDetail = (agent) => {
 }
 
 const handleChat = (agent) => {
+  if (agent.published_version === 0) return
   router.push(withAgentContext({
     path: '/chat',
     query: { agent_id: agent.agent_id }

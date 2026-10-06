@@ -765,3 +765,20 @@ def test_login_with_overlong_password_returns_401(monkeypatch, tmp_path):
         json={"username": "admin", "password": "x" * 200},
     )
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize('method,path,body', [
+    ('GET', '/api/v1/dataagent/agents/workbench', None),
+    ('GET', '/api/v1/dataagent/agents/a/draft', None),
+    ('POST', '/api/v1/dataagent/agents', {'name': 'draft'}),
+    ('PUT', '/api/v1/dataagent/agents/a', {'expected_revision': 1, 'name': 'draft'}),
+    ('POST', '/api/v1/dataagent/agents/a/publish', {'expected_revision': 1}),
+    ('POST', '/api/v1/dataagent/agents/a/preview-topics', {'expected_revision': 1}),
+    ('POST', '/api/v1/dataagent/agents/a/preview-tasks', {'expected_revision': 1, 'topic_id': 't', 'message_content': 'hello'}),
+])
+def test_agent_workbench_requires_admin(monkeypatch, tmp_path, method, path, body):
+    enable_auth(monkeypatch, tmp_path)
+    client = TestClient(app)
+    assert client.request(method, path, json=body).status_code == 401
+    token = auth.issue_session_token(auth.AuthIdentity('unit:user', 'User', 'user', 'unit'))
+    assert client.request(method, path, json=body, headers={'Authorization': f'Bearer {token}'}).status_code == 403
