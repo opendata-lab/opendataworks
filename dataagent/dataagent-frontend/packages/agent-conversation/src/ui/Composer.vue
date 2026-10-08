@@ -169,12 +169,27 @@ const emit = defineEmits(['update:modelValue', 'send', 'cancel', 'settings-chang
 const inputRef = ref(null)
 const composerElement = ref(null)
 let resizeObserver
+let reportFrame = null
 onMounted(() => {
-  const report = () => emit('resize', { height: composerElement.value?.getBoundingClientRect().height || 0 })
-  report()
-  if (typeof ResizeObserver === 'function') { resizeObserver = new ResizeObserver(report); resizeObserver.observe(composerElement.value) }
+  const report = (entries = []) => {
+    const box = entries[0]?.borderBoxSize
+    const height = (Array.isArray(box) ? box[0] : box)?.blockSize
+    emit('resize', { height: height ?? composerElement.value?.getBoundingClientRect().height ?? 0 })
+    autoResize()
+  }
+  // The observer supplies the initial size after layout. Reading synchronously
+  // in mounted used to force a full conversation layout before its first paint.
+  if (typeof ResizeObserver === 'function') {
+    resizeObserver = new ResizeObserver(report)
+    resizeObserver.observe(composerElement.value)
+  } else {
+    reportFrame = requestAnimationFrame(() => { reportFrame = null; report() })
+  }
 })
-onBeforeUnmount(() => resizeObserver?.disconnect())
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  if (reportFrame !== null) cancelAnimationFrame(reportFrame)
+})
 
 const transport = inject('agentConversationTransport', null)
 
@@ -338,16 +353,29 @@ const removeAttachment = (relPath) => {
 // keystroke behind and never open on the first `/`.
 const localDraft = ref(props.modelValue)
 
+let resizeFrame = null
+let measuredText, measuredWidth
 function autoResize() {
-  const el = inputRef.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  if (resizeFrame !== null) return
+  resizeFrame = requestAnimationFrame(() => {
+    resizeFrame = null
+    const el = inputRef.value
+    if (!el) return
+    const text = el.value
+    const width = el.clientWidth
+    if (text === measuredText && width === measuredWidth) return
+    measuredText = text
+    measuredWidth = width
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+  })
 }
+
+onBeforeUnmount(() => { if (resizeFrame !== null) cancelAnimationFrame(resizeFrame) })
 
 watch(() => props.modelValue, (value) => {
   if (value !== localDraft.value) localDraft.value = value
-  nextTick(autoResize)
+  autoResize()
 })
 
 onMounted(() => nextTick(autoResize))

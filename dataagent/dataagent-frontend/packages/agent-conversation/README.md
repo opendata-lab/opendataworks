@@ -464,3 +464,10 @@ GPL-3.0-only.
 The input and toolbar share one card. Model selection sits at the lower left; send/stop sits at the right. Model selection uses a keyboard-accessible custom listbox, not a native select. Permissions, uploads and slash commands remain capability-driven. The SDK still bundles its UI and has no Element Plus dependency. `model-select` now identifies the custom model trigger; use the stable model-picker part for geometry rather than native-select styling.
 
 Hosts may assign `beforeSend` as a JavaScript property to save or validate configuration before any send, suggestion or retry. Return false to abort, or throw to emit `dataagent-error` with code `SEND_PREPARATION_FAILED`. While awaiting it, the composer blocks duplicate sends. Endpoint changes made by the hook are applied before lazy resolution. Attachments from an old workspace must be rejected by the host when it rotates the conversation.
+
+
+## Rendering performance
+
+工具和思考过程默认折叠，展开后长文本先预览最多 4000 字符（工具 Markdown 最多 5 行），可选择“展开全部”。工具命令摘要最多 160 字符；图表维持直接可见。滚动和输入框高度测量按动画帧合并，Markdown 缓存有界且文件链接按当前会话解析。复制仍保留完整内容。
+
+源码仓库提供真实浏览器基准 `bench/render.mjs`，使用外部原始 JSON 输入；执行方法、结果与验证限制见[渲染性能报告](docs/reports/2026-10-08-conversation-render-report.md)。

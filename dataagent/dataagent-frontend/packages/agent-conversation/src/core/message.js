@@ -1,8 +1,8 @@
-// Pure, stateless helpers shared by the NL2SQL chat surfaces (the portal
+// Message helpers shared by the NL2SQL chat surfaces (the portal
 // NL2SqlChatV2.vue and the embeddable WidgetChat.vue). These were previously
 // duplicated, near-verbatim, in both components.
 
-import { reactive } from 'vue'
+import { markRaw, reactive, shallowReactive } from 'vue'
 import { marked } from 'marked'
 import { createChatState, processV2Record } from './streamParser.js'
 import { stripChartSpecsFromText } from './chartSpec.js'
@@ -26,11 +26,40 @@ const isWorkspaceFileHref = (href) => Boolean(href)
   && !href.startsWith('/')
   && !href.startsWith('#')
 
+// Cache only parsed HTML, never resolved file URLs (which belong to a topic).
+// Bound both entries and characters; large explicit expansions are not retained.
+const markdownCache = new Map()
+const CACHE_ENTRIES = 128
+const CACHE_CHARACTERS = 512_000
+let cachedCharacters = 0
+
+export function clearMarkdownCache() {
+  markdownCache.clear()
+  cachedCharacters = 0
+}
+
 export function renderMarkdown(text, options = {}) {
   let html
   if (!text) return ''
   try {
-    html = marked.parse(escapeHtml(text))
+    const source = String(text)
+    html = markdownCache.get(source)
+    if (html !== undefined) {
+      markdownCache.delete(source)
+      markdownCache.set(source, html)
+    } else {
+      html = marked.parse(escapeHtml(source))
+      const size = source.length + html.length
+      if (size <= CACHE_CHARACTERS / 4) {
+        while (markdownCache.size >= CACHE_ENTRIES || cachedCharacters + size > CACHE_CHARACTERS) {
+          const oldest = markdownCache.keys().next().value
+          cachedCharacters -= oldest.length + markdownCache.get(oldest).length
+          markdownCache.delete(oldest)
+        }
+        markdownCache.set(source, html)
+        cachedCharacters += size
+      }
+    }
   } catch {
     return escapeHtml(text)
   }
@@ -242,12 +271,17 @@ export function normalizeConversationMessage(item) {
   if (role === 'user') return base
 
   const state = item?._v2state || buildV2StateFromStoredRecords(item)
-  return reactive({
+  const active = state.status === 'streaming' || ['queued', 'waiting', 'running', 'waiting_permission', 'waiting_input', 'streaming'].includes(String(item?.status || ''))
+  const liveState = active ? reactive(state) : markRaw(state)
+  // Top-level feedback stays reactive. Completed records/blocks are immutable
+  // snapshots, so Vue need not proxy every nested tool payload on first render.
+  return shallowReactive({
     ...base,
     status: String(item?.status || 'success'),
     error: item?.error || null,
-    blocks: state.blocks,
-    _v2state: reactive(state),
+    renderVersion: 0,
+    blocks: liveState.blocks,
+    _v2state: liveState,
   })
 }
 

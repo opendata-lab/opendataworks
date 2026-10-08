@@ -5,13 +5,14 @@
         v-if="traceSummaryInteractive"
         type="button"
         class="shell-trace-summary"
+        :aria-expanded="panelOpen"
         @click="togglePanel"
       >
         <svg class="tool-output-icon shell-trace-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
         </svg>
         <span class="shell-trace-summary-text">
-          {{ traceSummaryText }}
+          {{ traceSummaryPreview }}
         </span>
         <span class="shell-trace-summary-status" :class="`is-${traceStatusTone}`">
           {{ statusLabel }}
@@ -24,7 +25,7 @@
           <path v-for="(d, index) in iconPaths" :key="index" :d="d" />
         </svg>
         <span class="shell-trace-summary-text">
-          {{ traceSummaryText }}
+          {{ traceSummaryPreview }}
         </span>
         <span class="shell-trace-summary-status" :class="`is-${traceStatusTone}`">
           {{ statusLabel }}
@@ -33,23 +34,12 @@
 
       <div v-if="tracePanelVisible" class="tool-output-panel shell-trace-panel">
         <div class="tool-output-body-scroll">
-          <pre v-if="traceCommand" class="shell-trace-command"><code>{{ traceCommandPrefix }}{{ traceCommand }}</code></pre>
+          <LimitedText v-if="traceCommand" :text="traceCommandPrefix + traceCommand" class="shell-trace-command" />
           <div v-if="traceDescription && traceDescription !== traceCommand" class="shell-trace-description">
             {{ traceDescription }}
           </div>
           <template v-if="traceOutputText">
-            <div v-if="showTraceMarkdown" class="tool-markdown">
-              <div class="tool-markdown-body" v-html="traceMarkdownExpanded ? renderedTraceMarkdown : renderedTraceMarkdownPreview" />
-              <button
-                v-if="traceMarkdownCollapsible"
-                type="button"
-                class="tool-markdown-toggle"
-                @click="traceMarkdownExpanded = !traceMarkdownExpanded"
-              >
-                {{ traceMarkdownExpanded ? '收起' : '展开...' }}
-              </button>
-            </div>
-            <pre v-else class="shell-trace-output"><code>{{ traceOutputText }}</code></pre>
+            <LimitedText :text="traceOutputText" :markdown="showTraceMarkdown" :preview-lines="showTraceMarkdown ? 5 : 0" :class="showTraceMarkdown ? 'tool-markdown' : 'shell-trace-output'" />
           </template>
           <div v-else class="shell-trace-empty">无输出</div>
         </div>
@@ -142,29 +132,18 @@
         <template v-else-if="kind === 'python_execution'">
           <div v-if="stdoutText" class="tool-code-block">
             <button type="button" class="tool-code-copy" @click="copyBlock('stdout', stdoutText)">{{ copiedBlock === 'stdout' ? '已复制' : '复制' }}</button>
-            <pre class="tool-code"><code>{{ stdoutText }}</code></pre>
+            <LimitedText :text="stdoutText" class="tool-code" />
           </div>
           <div v-if="resultText" class="tool-code-block">
             <button type="button" class="tool-code-copy" @click="copyBlock('result', resultText)">{{ copiedBlock === 'result' ? '已复制' : '复制' }}</button>
-            <pre class="tool-code tool-code-light"><code>{{ resultText }}</code></pre>
+            <LimitedText :text="resultText" class="tool-code tool-code-light" />
           </div>
         </template>
 
         <template v-else-if="showRawPayload">
-          <div v-if="showRawMarkdown" class="tool-markdown">
-            <div class="tool-markdown-body" v-html="rawMarkdownExpanded ? renderedRawMarkdown : renderedRawMarkdownPreview" />
-            <button
-              v-if="rawMarkdownCollapsible"
-              type="button"
-              class="tool-markdown-toggle"
-              @click="rawMarkdownExpanded = !rawMarkdownExpanded"
-            >
-              {{ rawMarkdownExpanded ? '收起' : '展开...' }}
-            </button>
-          </div>
-          <div v-else class="tool-code-block">
-            <button type="button" class="tool-code-copy" @click="copyBlock('raw', normalizedRawText)">{{ copiedBlock === 'raw' ? '已复制' : '复制' }}</button>
-            <pre class="tool-code tool-code-light"><code>{{ normalizedRawText }}</code></pre>
+          <div class="tool-code-block">
+            <button v-if="!showRawMarkdown" type="button" class="tool-code-copy" @click="copyBlock('raw', normalizedRawText)">{{ copiedBlock === 'raw' ? '已复制' : '复制' }}</button>
+            <LimitedText :text="normalizedRawText" :markdown="showRawMarkdown" :preview-lines="showRawMarkdown ? 5 : 0" :class="showRawMarkdown ? 'tool-markdown' : 'tool-code tool-code-light'" />
           </div>
         </template>
       </div>
@@ -173,8 +152,8 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { marked } from 'marked'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import LimitedText from './LimitedText.vue'
 import { extractChartSpec, extractTextParts, parseMaybeJson } from '../core/chartSpec.js'
 import { describeToolAction, formatSkillBootstrapLabel } from '../core/toolPresentation.js'
 import { useCopyFeedback } from '../utils/useCopyFeedback.js'
@@ -194,14 +173,9 @@ const props = defineProps({
 })
 
 const panelOpen = ref(false)
-const panelTouched = ref(false)
 const nowTick = ref(Date.now())
-const traceMarkdownExpanded = ref(false)
-const rawMarkdownExpanded = ref(false)
 
 const isPlainObject = (value) => value && typeof value === 'object' && !Array.isArray(value)
-
-const MARKDOWN_PREVIEW_LINES = 5
 
 // Leading icons so each tool-call box is recognizable without expanding it.
 const TOOL_ICON_PATHS = {
@@ -216,11 +190,6 @@ const TOOL_ICON_PATHS = {
   python: ['M8 18l-6-6 6-6', 'M16 6l6 6-6 6'],
   tool: ['M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z']
 }
-
-const escapeHtml = (text) => String(text || '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
 
 const TOOL_LINE_PREFIX_PATTERN = /^\s*\d+\s*(?:→|->)\s?/
 
@@ -237,15 +206,6 @@ const stripToolLinePrefixes = (text) => {
   if (!shouldStrip) return value
 
   return lines.map((line) => line.replace(TOOL_LINE_PREFIX_PATTERN, '')).join('\n')
-}
-
-const renderMarkdown = (text) => {
-  if (!text) return ''
-  try {
-    return marked.parse(escapeHtml(text), { breaks: true, gfm: true })
-  } catch (_error) {
-    return escapeHtml(text)
-  }
 }
 
 const looksLikeMarkdown = (text) => {
@@ -380,7 +340,6 @@ const traceOutputText = computed(() => {
   if (directText) return normalizeDisplayText(directText).trim()
   return normalizedRawText.value
 })
-const traceOutputLines = computed(() => String(traceOutputText.value || '').split('\n'))
 const traceMarkdownSource = computed(() => String(traceOutputText.value || '').trim())
 const showTraceMarkdown = computed(() => {
   if (!traceOutputText.value) return false
@@ -391,23 +350,7 @@ const showTraceMarkdown = computed(() => {
   }
   return false
 })
-const traceMarkdownCollapsible = computed(() => showTraceMarkdown.value && traceOutputLines.value.length > MARKDOWN_PREVIEW_LINES)
-const traceMarkdownPreview = computed(() => {
-  if (!traceMarkdownCollapsible.value) return traceMarkdownSource.value
-  return traceOutputLines.value.slice(0, MARKDOWN_PREVIEW_LINES).join('\n')
-})
-const renderedTraceMarkdown = computed(() => renderMarkdown(traceMarkdownSource.value))
-const renderedTraceMarkdownPreview = computed(() => renderMarkdown(traceMarkdownPreview.value))
-
-const rawOutputLines = computed(() => String(normalizedRawText.value || '').split('\n'))
 const showRawMarkdown = computed(() => showRawPayload.value && looksLikeMarkdown(normalizedRawText.value))
-const rawMarkdownCollapsible = computed(() => showRawMarkdown.value && rawOutputLines.value.length > MARKDOWN_PREVIEW_LINES)
-const rawMarkdownPreview = computed(() => {
-  if (!rawMarkdownCollapsible.value) return normalizedRawText.value
-  return rawOutputLines.value.slice(0, MARKDOWN_PREVIEW_LINES).join('\n')
-})
-const renderedRawMarkdown = computed(() => renderMarkdown(normalizedRawText.value))
-const renderedRawMarkdownPreview = computed(() => renderMarkdown(rawMarkdownPreview.value))
 
 const traceCommand = computed(() => toolAction.value.detail)
 
@@ -461,6 +404,11 @@ const traceSummaryText = computed(() => {
   const leading = detail || displayLabel.value || toolName.value
   return leading ? `执行命令：${leading}` : '正在执行命令'
 })
+
+// CSS ellipsis still lays out the entire command. A shell input can contain a
+// whole generated script, so keep only a short summary in the collapsed DOM.
+const traceSummaryPreview = computed(() => traceSummaryText.value.length > 160
+  ? `${traceSummaryText.value.slice(0, 160)}…` : traceSummaryText.value)
 
 const traceStatusTone = computed(() => {
   const status = String(props.tool?.status || 'success')
@@ -608,12 +556,13 @@ const isFlat = computed(() => kind.value === 'sql_execution')
 
 const tracePanelAvailable = computed(() => {
   if (!showTrace.value) return false
-  if (traceOutputText.value) return true
+  if (props.tool?.output != null) return true
   if (['read', 'list', 'search'].includes(traceKind.value)) return false
   return Boolean(traceCommand.value || traceDescription.value)
 })
 
 const mainPanelAvailable = computed(() => {
+  if (showTrace.value) return false
   if (kind.value === 'sql_execution') return Boolean(sqlText.value || (columns.value.length && rows.value.length) || !errorText.value)
   // chart_spec has no expandable main panel; the chart renders below the block.
   if (kind.value === 'chart_spec') return false
@@ -672,50 +621,19 @@ const toolInstanceKey = computed(() => {
 
 let statusTimer = 0
 
-const shouldAutoOpenPanel = () => {
-  if (!hasExpandablePanel.value) return false
-  const status = String(props.tool?.status || 'success')
-  const callComplete = Boolean(props.tool?._callComplete)
-  if (status === 'pending' || status === 'streaming') return true
-  if (showTrace.value && !callComplete) return true
-  return false
-}
-
 const togglePanel = () => {
   if (!hasExpandablePanel.value) return
-  panelTouched.value = true
   panelOpen.value = !panelOpen.value
 }
 
-onMounted(() => {
-  panelOpen.value = shouldAutoOpenPanel()
+// Historical tool calls never need a ticking timer. Start it only for a live
+// shell; stop it when the call settles instead of waking 22 cards every second.
+watch(() => traceKind.value === 'shell' && ['pending', 'streaming'].includes(props.tool?.status), (running) => {
+  if (statusTimer) clearInterval(statusTimer)
+  statusTimer = running ? setInterval(() => { nowTick.value = Date.now() }, 1000) : 0
+}, { immediate: true })
 
-  if (typeof window !== 'undefined') {
-    statusTimer = window.setInterval(() => {
-      nowTick.value = Date.now()
-    }, 1000)
-  }
-})
-
-watch(
-  () => [props.tool?.status, props.tool?._callComplete, props.tool?._runtimeStarted, hasExpandablePanel.value],
-  () => {
-    if (panelTouched.value) return
-    panelOpen.value = shouldAutoOpenPanel()
-  },
-  { immediate: true }
-)
-
-watch(
-  () => toolInstanceKey.value,
-  () => {
-    panelTouched.value = false
-    panelOpen.value = shouldAutoOpenPanel()
-    traceMarkdownExpanded.value = false
-    rawMarkdownExpanded.value = false
-  },
-  { immediate: true }
-)
+watch(() => toolInstanceKey.value, () => { panelOpen.value = false })
 
 onBeforeUnmount(() => {
   if (statusTimer && typeof window !== 'undefined') {

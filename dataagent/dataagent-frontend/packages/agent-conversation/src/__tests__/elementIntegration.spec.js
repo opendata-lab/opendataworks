@@ -709,7 +709,7 @@ describe('tool rendering and activity cues', () => {
 })
 
 describe('auto scroll', () => {
-  it('deep watches message content changes to follow streaming output when near bottom', async () => {
+  it('follows streaming output on the next frame when near bottom', async () => {
     let streamPush
     const transport = makeTransport({
       sendMessage: async () => ({ taskId: 't-scroll', status: 'queued', detail: '' }),
@@ -740,6 +740,7 @@ describe('auto scroll', () => {
     streamPush('更多新文字到来')
     scrollContainer.scrollHeight = 800
     await settle(30)
+    await new Promise(requestAnimationFrame)
 
     expect(scrollContainer.scrollTop).toBe(800)
 
@@ -749,6 +750,7 @@ describe('auto scroll', () => {
     scrollContainer.scrollHeight = 1000
     streamPush('用户正在往上看历史')
     await settle(30)
+    await new Promise(requestAnimationFrame)
 
     // Must NOT jump to bottom
     expect(scrollContainer.scrollTop).toBe(100)

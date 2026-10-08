@@ -131,7 +131,7 @@
 </template>
 
 <script setup>
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { extractErrorText, renderMarkdown } from '../core/message.js'
 import { blockToToolProp } from '../core/streamParser.js'
 import ToolOutput from './ToolOutput.vue'
@@ -266,13 +266,19 @@ const handleScroll = (event) => {
   autoScroll.value = scrollHeight - scrollTop - clientHeight < 60
 }
 
+let scrollFrame = null
+let forceScroll = false
 const scrollToBottom = (force = false) => {
   if (!force && !autoScroll.value) return
-  nextTick(() => {
+  forceScroll ||= force
+  if (scrollFrame !== null) return
+  scrollFrame = requestAnimationFrame(() => {
+    scrollFrame = null
     const el = scrollRef.value
-    if (el) {
+    if (el && (forceScroll || autoScroll.value)) {
       el.scrollTop = el.scrollHeight
     }
+    forceScroll = false
   })
 }
 
@@ -281,10 +287,22 @@ defineExpose({ focusMessage, scrollToBottom })
 // Follow the conversation as it grows, but only when already near the bottom,
 // so reading back through history is not yanked away by an arriving message.
 watch(
-  () => props.messages,
+  () => {
+    const last = props.messages.at(-1)
+    const blocks = blocksOf(last)
+    const tail = blocks.at(-1)
+    return [props.messages, props.messages.length, last?.id, last?.renderVersion,
+      last?.status, last?._v2state?.status, last?.content, blocks.length,
+      tail?.content, tail?.status, tail?.output]
+  },
   () => scrollToBottom(),
-  { deep: true, flush: 'post' },
+  { flush: 'post', immediate: true },
 )
+
+onBeforeUnmount(() => {
+  if (scrollFrame !== null) cancelAnimationFrame(scrollFrame)
+  if (highlightTimer) clearTimeout(highlightTimer)
+})
 </script>
 
 <style>
