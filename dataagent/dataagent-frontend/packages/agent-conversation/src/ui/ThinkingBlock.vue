@@ -25,7 +25,7 @@
     </button>
 
     <div v-if="expanded" class="dac-thinking-content" part="thinking-content">
-      <div v-html="renderMarkdown(content)" />
+      <LimitedText :text="content" markdown />
       <span v-if="isStreaming" class="dac-thinking-cursor" aria-hidden="true">|</span>
     </div>
   </section>
@@ -33,7 +33,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { renderMarkdown } from '../core/message.js'
+import LimitedText from './LimitedText.vue'
 
 const props = defineProps({
   block: { type: Object, required: true },
@@ -42,7 +42,7 @@ const props = defineProps({
 const expanded = ref(false)
 const content = computed(() => String(props.block?.content || props.block?.text || ''))
 const isStreaming = computed(() => props.block?.status === 'streaming')
-const preview = computed(() => content.value.replace(/\s+/g, ' ').trim().slice(0, 80))
+const preview = computed(() => content.value.slice(0, 320).replace(/\s+/g, ' ').trim().slice(0, 80))
 </script>
 
 <style>

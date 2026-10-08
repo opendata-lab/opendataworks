@@ -70,6 +70,7 @@ export function useConversation({ transport, generation, emit, settings }) {
     // 'idle' made the turn indistinguishable from a finished one before any
     // token arrived: no waiting indicator, and copy / rating offered on an
     // answer that did not exist yet.
+    renderVersion: 0,
     _v2state: reactive({ ...createChatState(), status: 'streaming' }),
   })
 
@@ -101,6 +102,7 @@ export function useConversation({ transport, generation, emit, settings }) {
     for (const block of assistant._v2state.blocks) {
       if (block.status === 'streaming') block.status = 'done'
     }
+    assistant.renderVersion = (assistant.renderVersion || 0) + 1
     triggerRef(messages)
   }
 
@@ -170,6 +172,9 @@ export function useConversation({ transport, generation, emit, settings }) {
           assistant = openAssistant(snapshot.run.taskId)
           messages.value = [...messages.value, assistant]
         }
+        // The run is authoritative even if the stored row still says finished.
+        // Promote a completed snapshot back to a writable live state on resume.
+        assistant._v2state = reactive({ ...assistant._v2state })
         assistant.status = snapshot.run.status
         assistant._v2state.status = 'streaming'
         // Resume where the persisted turn left off. Restarting at 0 replays
@@ -218,6 +223,7 @@ export function useConversation({ transport, generation, emit, settings }) {
           const assistant = assistantFor(taskId)
           if (assistant) {
             processV2Record(assistant._v2state, item.event)
+            assistant.renderVersion = (assistant.renderVersion || 0) + 1
             triggerRef(messages)
           }
           emit({ name: 'agent-event', detail: item.event })

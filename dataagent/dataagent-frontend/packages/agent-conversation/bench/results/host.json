@@ -1,0 +1,83 @@
+{
+  "browser": "153.0.8010.12",
+  "snapshotBytes": 447843,
+  "snapshotSha256": "a50ca9ce3d044e23988a84ce17989efdff3faf2b77c413b0f86e733eacb1acc6",
+  "records": 148,
+  "samples": [
+    {
+      "renderMs": 107.90000000596046,
+      "readyMs": 45.80000001192093,
+      "longestTaskMs": 99,
+      "maxTimerGapMs": 99.10000002384186,
+      "messages": 2,
+      "tools": 22,
+      "thinking": 20,
+      "nodes": 457,
+      "answerVisible": true,
+      "openPanels": 0,
+      "toolExpandable": true,
+      "thinkingExpandable": true
+    },
+    {
+      "renderMs": 107.19999998807907,
+      "readyMs": 45.79999998211861,
+      "longestTaskMs": 98,
+      "maxTimerGapMs": 98.19999998807907,
+      "messages": 2,
+      "tools": 22,
+      "thinking": 20,
+      "nodes": 457,
+      "answerVisible": true,
+      "openPanels": 0,
+      "toolExpandable": true,
+      "thinkingExpandable": true
+    },
+    {
+      "renderMs": 109.40000000596046,
+      "readyMs": 46.10000002384186,
+      "longestTaskMs": 100,
+      "maxTimerGapMs": 100.40000000596046,
+      "messages": 2,
+      "tools": 22,
+      "thinking": 20,
+      "nodes": 457,
+      "answerVisible": true,
+      "openPanels": 0,
+      "toolExpandable": true,
+      "thinkingExpandable": true
+    },
+    {
+      "renderMs": 117.39999997615814,
+      "readyMs": 46,
+      "longestTaskMs": 100,
+      "maxTimerGapMs": 100.40000000596046,
+      "messages": 2,
+      "tools": 22,
+      "thinking": 20,
+      "nodes": 457,
+      "answerVisible": true,
+      "openPanels": 0,
+      "toolExpandable": true,
+      "thinkingExpandable": true
+    },
+    {
+      "renderMs": 107.90000000596046,
+      "readyMs": 45.400000005960464,
+      "longestTaskMs": 97,
+      "maxTimerGapMs": 97.5,
+      "messages": 2,
+      "tools": 22,
+      "thinking": 20,
+      "nodes": 457,
+      "answerVisible": true,
+      "openPanels": 0,
+      "toolExpandable": true,
+      "thinkingExpandable": true
+    }
+  ],
+  "medianRenderMs": 107.90000000596046,
+  "medianLongestTaskMs": 99,
+  "worstLongestTaskMs": 100,
+  "medianMaxTimerGapMs": 99.10000002384186,
+  "note": "Long Task API measures synchronous main-thread tasks >=50ms; 0 means <50ms. Timer gap also includes scheduling/layout. No CPU throttling."
+}

@@ -526,13 +526,16 @@ describe('textarea auto-resize', () => {
     textarea.value = 'line 1\nline 2\nline 3'
     textarea.dispatchEvent(new Event('input'))
     await settle()
+    await new Promise(requestAnimationFrame)
 
     expect(textarea.style.height).toBe('120px')
 
     // Very long input capped at 160px
     textarea.scrollHeight = 300
+    textarea.value = '更多输入\n'.repeat(20)
     textarea.dispatchEvent(new Event('input'))
     await settle()
+    await new Promise(requestAnimationFrame)
 
     expect(textarea.style.height).toBe('160px')
 
@@ -541,6 +544,7 @@ describe('textarea auto-resize', () => {
     textarea.value = ''
     textarea.dispatchEvent(new Event('input'))
     await settle()
+    await new Promise(requestAnimationFrame)
 
     expect(textarea.style.height).toBe('38px')
 
