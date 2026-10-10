@@ -363,7 +363,7 @@ const baseTasks = [
     taskType: 'stream',
     engine: 'dinky',
     dolphinNodeType: 'FLINK',
-    datasourceName: 'README 演示集群',
+    datasourceName: '演示 Doris 连接',
     datasourceType: 'MYSQL',
     taskGroupName: 'demo_realtime',
     sourceTable: 'demo_order_detail',
@@ -409,7 +409,7 @@ const baseTasks = [
     taskType: 'batch',
     engine: 'dolphin',
     dolphinNodeType: 'SQL',
-    datasourceName: 'README 演示集群',
+    datasourceName: '演示 Doris 连接',
     datasourceType: 'MYSQL',
     taskGroupName: 'demo_etl',
     sourceTable: 'demo_order_detail',
@@ -455,7 +455,7 @@ const baseTasks = [
     taskType: 'batch',
     engine: 'dolphin',
     dolphinNodeType: 'SQL',
-    datasourceName: 'README 演示集群',
+    datasourceName: '演示 Doris 连接',
     datasourceType: 'MYSQL',
     taskGroupName: 'demo_etl',
     sourceTable: 'demo_order_event_raw,demo_member_profile',
@@ -685,7 +685,7 @@ const baseQueryHistory = [
   {
     id: 90003,
     clusterId: DEMO_CLUSTER_ID,
-    clusterName: 'README 演示集群',
+    clusterName: '演示 Doris 连接',
     databaseName: DEMO_DATABASE,
     sqlText: 'SELECT city_name, SUM(order_amount) AS total_amount\nFROM `opendataworks`.`demo_order_detail`\nGROUP BY city_name\nORDER BY total_amount DESC;',
     previewRowCount: 4,
@@ -706,7 +706,7 @@ const baseQueryHistory = [
   {
     id: 90002,
     clusterId: DEMO_CLUSTER_ID,
-    clusterName: 'README 演示集群',
+    clusterName: '演示 Doris 连接',
     databaseName: DEMO_DATABASE,
     sqlText: 'SELECT *\nFROM `opendataworks`.`demo_store_sales_daily`\nLIMIT 200;',
     previewRowCount: 3,
@@ -722,7 +722,7 @@ const baseQueryHistory = [
   {
     id: 90001,
     clusterId: DEMO_CLUSTER_ID,
-    clusterName: 'README 演示集群',
+    clusterName: '演示 Doris 连接',
     databaseName: DEMO_DATABASE,
     sqlText: 'SELECT *\nFROM `opendataworks`.`demo_order_detail`\nLIMIT 200;',
     previewRowCount: 5,
@@ -814,6 +814,16 @@ const accessStatsMap = {
     dorisAuditSource: 'demo',
     note: ''
   }
+}
+
+accessStatsMap[1235] = {
+  tableId: 1235, clusterId: DEMO_CLUSTER_ID, databaseName: DEMO_DATABASE, tableName: 'demo_store_sales_daily',
+  totalAccessCount: 24, recentAccessCount: 24, accessCount7d: 24, accessCount30d: 24,
+  distinctUserCount: 3, averageDurationMs: 56, recentDays: 30, trendDays: 14,
+  lastAccessTime: '2026-03-11T14:25:10', firstAccessTime: '2026-03-08T09:30:00',
+  trend: [{ date:'2026-03-08', accessCount:3 }, { date:'2026-03-09', accessCount:5 }, { date:'2026-03-10', accessCount:7 }, { date:'2026-03-11', accessCount:9 }],
+  topUsers: [{ userId:'analyst', accessCount:12, lastAccessTime:'2026-03-11T14:25:10' }, { userId:'readme', accessCount:8, lastAccessTime:'2026-03-11T11:32:00' }, { userId:'bi', accessCount:4, lastAccessTime:'2026-03-10T17:10:00' }],
+  dorisAuditEnabled:true, dorisAuditSource:'demo', tableAccessSyncStatus:'READY', tableAccessLastSyncedAt:'2026-03-11T14:30:00', tableAccessCoverageComplete:true, note:''
 }
 
 const statisticsHistoryMap = {
@@ -1059,6 +1069,7 @@ const splitStatements = (sql) => {
 
 const inferSqlType = (sql) => {
   const normalized = String(sql || '').trim().toUpperCase()
+  if (normalized.startsWith('EXPLAIN')) return 'EXPLAIN'
   if (normalized.startsWith('SELECT')) return 'SELECT'
   if (normalized.startsWith('INSERT')) return 'INSERT'
   if (normalized.startsWith('UPDATE')) return 'UPDATE'
@@ -1695,7 +1706,7 @@ const handleDemoSettingsUpdate = (body = {}) => {
 
 const buildStatementPreview = (statement, statementIndex) => {
   const sqlType = inferSqlType(statement)
-  const blocked = sqlType !== 'SELECT'
+  const blocked = sqlType !== 'SELECT' && sqlType !== 'EXPLAIN'
   return {
     statementIndex,
     sqlSnippet: abbreviateSql(statement),
@@ -1705,7 +1716,7 @@ const buildStatementPreview = (statement, statementIndex) => {
     requiresConfirm: false,
     targetObject: extractTableNameFromSql(statement) || null,
     blocked,
-    blockedReason: blocked ? '演示环境仅支持 SELECT 查询' : null
+    blockedReason: blocked ? '演示环境仅支持 SELECT 与 EXPLAIN 查询' : null
   }
 }
 
@@ -1788,7 +1799,7 @@ const buildExecutePayload = (body) => {
   const executedAt = '2026-03-11T14:25:10.149'
   const resultSets = statements.map((statement, index) => {
     const sqlType = inferSqlType(statement)
-    if (sqlType !== 'SELECT') {
+    if (sqlType !== 'SELECT' && sqlType !== 'EXPLAIN') {
       return {
         index: index + 1,
         statementIndex: index + 1,
@@ -1799,13 +1810,17 @@ const buildExecutePayload = (body) => {
         previewRowCount: 0,
         hasMore: false,
         affectedRows: null,
-        message: '演示环境仅支持 SELECT 查询',
+        message: '演示环境仅支持 SELECT 与 EXPLAIN 查询',
         sqlSnippet: abbreviateSql(statement),
         durationMs: 0
       }
     }
 
-    const result = buildSelectResult(statement, limit)
+    const result = sqlType === 'EXPLAIN' ? {
+      columns: ['执行计划（演示）'],
+      rows: [{ '执行计划（演示）': 'PLAN FRAGMENT 0' }, { '执行计划（演示）': '  RESULT SINK' }, { '执行计划（演示）': '  0:OlapScanNode' }, { '执行计划（演示）': `    TABLE: ${extractTableNameFromSql(statement) || 'demo_store_sales_daily'}` }],
+      message: '演示执行计划'
+    } : buildSelectResult(statement, limit)
     return {
       index: index + 1,
       statementIndex: index + 1,
@@ -1831,7 +1846,7 @@ const buildExecutePayload = (body) => {
   const historyEntry = {
     id: ++queryHistorySeed,
     clusterId: Number(body.clusterId) || DEMO_CLUSTER_ID,
-    clusterName: 'README 演示集群',
+    clusterName: '演示 Doris 连接',
     databaseName: body.database || DEMO_DATABASE,
     sqlText: body.sql,
     previewRowCount: firstResultSet.rows.length,
@@ -2318,7 +2333,7 @@ export const demoAdapter = async (config) => {
     return createResponse(config, [
       {
         id: DEMO_CLUSTER_ID,
-        clusterName: 'README 演示集群',
+        clusterName: '演示 Doris 连接',
         sourceType: 'DORIS',
         feHost: 'demo-doris.local',
         fePort: 9030,
@@ -2333,7 +2348,7 @@ export const demoAdapter = async (config) => {
     return clusterId === DEMO_CLUSTER_ID
       ? createResponse(config, {
           id: DEMO_CLUSTER_ID,
-          clusterName: 'README 演示集群',
+          clusterName: '演示 Doris 连接',
           sourceType: 'DORIS',
           feHost: 'demo-doris.local',
           fePort: 9030,
@@ -2483,6 +2498,43 @@ export const demoAdapter = async (config) => {
 
   if (method === 'get' && pathname === '/v1/tables/options') {
     return createResponse(config, handleTableOptions(params))
+  }
+
+  // Data Studio 对象检查器样例；仅用于独立演示，真实接口不受影响。
+  if (pathname.match(/^\/v1\/tables\/\d+\/(partitions|freshness(?:\/(history|check))?|versions(?:\/\d+|\/compare)?)$/)) {
+    const tableId = Number(pathname.split('/')[3])
+    const table = getTableById(tableId)
+    if (!table) return createRejectedResponse(config, '表不存在', 404)
+    const snapshot = (versionNo) => ({ tableName: table.tableName, tableComment: versionNo === 1 ? '演示数据表' : table.tableComment, owner: table.owner, columns: getTableFields(tableId) })
+    const versions = [
+      { id: 3, versionNo: 3, triggerSource: 'metadata_sync', changeSummary: '同步字段定义与引擎属性', createdBy: 'readme', createdAt: '2026-03-11T10:00:00' },
+      { id: 2, versionNo: 2, triggerSource: 'manual_edit', changeSummary: '完善表描述与归属信息', createdBy: 'readme', createdAt: '2026-03-11T09:30:00' },
+      { id: 1, versionNo: 1, triggerSource: 'table_create', changeSummary: '创建表并登记元数据', createdBy: 'readme', createdAt: table.createdAt }
+    ]
+    if (method === 'get' && pathname.endsWith('/partitions')) {
+      return createResponse(config, table.partitionColumn ? [{ partitionName: 'p20260311', range: '[2026-03-11, 2026-03-12)', rowCount: table.rowCount, dataSize: `${(table.storageSize / 1024).toFixed(1)} KB`, buckets: table.bucketNum, replicationNum: table.replicaNum, state: 'NORMAL' }] : [])
+    }
+    const latest = { status: 'pass', mode: 'metadata', reason: null, ageSeconds: 1800, maxLoadedAt: '2026-03-11T10:00:00', createdAt: '2026-03-11T10:30:00', triggerType: 'schedule' }
+    if (method === 'get' && pathname.endsWith('/freshness')) {
+      const configValue = { mode: 'metadata', enabled: true, warnAfterCount: 1, warnAfterPeriod: 'day', errorAfterCount: 2, errorAfterPeriod: 'day' }
+      return createResponse(config, { configured: true, config: configValue, effective: { mode: 'metadata', warnAfter: { count: 1, period: 'day' }, errorAfter: { count: 2, period: 'day' } }, latestResult: latest })
+    }
+    if (method === 'get' && pathname.endsWith('/freshness/history')) return createResponse(config, [latest, { ...latest, createdAt: '2026-03-11T09:30:00', ageSeconds: 900 }])
+    if (method === 'post' && pathname.endsWith('/freshness/check')) return createResponse(config, { ...latest, triggerType: 'manual' })
+    if (method === 'get' && pathname.endsWith('/versions')) return createResponse(config, { records: versions, total: versions.length })
+    if (method === 'get' && pathname.match(/\/versions\/\d+$/)) {
+      const version = versions.find(v => v.id === Number(pathname.split('/').pop()))
+      return version ? createResponse(config, { ...version, metadataSnapshot: JSON.stringify(snapshot(version.versionNo)) }) : createRejectedResponse(config, '版本不存在', 404)
+    }
+    if (method === 'post' && pathname.endsWith('/versions/compare')) {
+      const left = versions.find(v => v.id === Number(body.leftVersionId))
+      const right = versions.find(v => v.id === Number(body.rightVersionId))
+      if (!left || !right) return createRejectedResponse(config, '版本不存在', 404)
+      const oldValue = snapshot(left.versionNo).tableComment
+      const newValue = snapshot(right.versionNo).tableComment
+      const changed = oldValue !== newValue
+      return createResponse(config, { leftVersionNo: left.versionNo, rightVersionNo: right.versionNo, changed, summary: { attributeChangedCount: changed ? 1 : 0 }, tableAttributeChanges: changed ? [{ name: '表描述', oldValue, newValue }] : [], columnsAdded: [], columnsRemoved: [], columnsModified: [], rawDiff: changed ? `- tableComment: ${oldValue}\n+ tableComment: ${newValue}` : '' })
+    }
   }
 
   if (method === 'get' && pathname.match(/^\/v1\/tables\/\d+$/)) {
@@ -2726,7 +2778,7 @@ export const demoAdapter = async (config) => {
         cluster_id: DEMO_CLUSTER_ID,
         source_type: 'DORIS',
         database: DEMO_DATABASE,
-        label: 'README 演示集群 / opendataworks'
+        label: '演示 Doris 连接 / opendataworks'
       }
     ])
   }

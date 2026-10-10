@@ -97,3 +97,11 @@ export const splitSqlStatements = (sqlText) => {
   if (tail) statements.push(tail)
   return statements
 }
+
+// 保留注释及已有 EXPLAIN；注释本身不构成一条可解释的语句。
+export const buildExplainSql = (sqlText) => splitSqlStatements(sqlText)
+  .flatMap((statement) => {
+    const sql = statement.replace(/^(?:\s+|--[^\r\n]*(?:\r?\n|$)|#[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)*/, '')
+    if (!sql.trim()) return []
+    return [/^EXPLAIN\b/i.test(sql) ? statement : `EXPLAIN ${statement}`]
+  }).join(';\n')

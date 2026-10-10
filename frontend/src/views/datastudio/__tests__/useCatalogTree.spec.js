@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createApp, ref } from 'vue'
+import { createApp, ref, nextTick } from 'vue'
 
 vi.mock('element-plus', () => ({ ElMessage: { warning: vi.fn(), error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/api/table', () => ({ tableApi: {} }))
-vi.mock('@/api/doris', () => ({ dorisClusterApi: {} }))
+vi.mock('@/api/doris', () => ({ dorisClusterApi: { testConnection: vi.fn().mockResolvedValue({}) } }))
 
 import { useCatalogTree } from '../composables/useCatalogTree'
 
@@ -68,4 +68,45 @@ describe('useCatalogTree (getters / filter)', () => {
     expect(api.columnStore).toBeTypeOf('object')
     unmount()
   })
+})
+
+
+it('sorts loaded leaf groups while keeping parent nodes and selected object', async () => {
+  const { api, unmount } = setup()
+  api.tableStore['1'] = { db: [{ id: 1, tableName: 'a' }, { id: 2, tableName: 'z' }] }
+  const tree = {
+    getNode: vi.fn(key => ({ loaded: key.startsWith('group:') })),
+    updateKeyChildren: vi.fn(), filter: vi.fn(), setCurrentKey: vi.fn(),
+  }
+  api.catalogTreeRef.value = tree
+  api.selectedTableKey.value = '1::db.a'
+  await nextTick()
+  tree.updateKeyChildren.mockClear()
+  api.sortOrder.value = 'desc'
+  await nextTick()
+  await nextTick()
+  const calls = tree.updateKeyChildren.mock.calls
+  expect(calls.map(([key]) => key)).toEqual(['group:1::db::table', 'group:1::db::view'])
+  expect(calls[0][1].map(node => node.table.tableName)).toEqual(['z', 'a'])
+  expect(tree.setCurrentKey).toHaveBeenLastCalledWith('1::db.a', false)
+  unmount()
+})
+
+
+it('shows activation only after successful connection and Schema object loading', async () => {
+  const { api, unmount } = setup()
+  api.dataSources.value = [{ id: 1, status: 'active' }]
+  const source = { type: 'datasource', sourceId: '1', status: 'active' }
+  const schema = { type: 'schema', sourceId: '1', schemaName: 'db' }
+  expect(api.isCatalogNodeActive(source)).toBe(false)
+  expect(api.isCatalogNodeActive(schema)).toBe(false)
+  await api.activateDatasource('1')
+  expect(api.isCatalogNodeActive(source)).toBe(true)
+  expect(api.isCatalogNodeActive(schema)).toBe(false)
+  api.tableStore['1'] = { db: [] }
+  expect(api.isCatalogNodeActive(schema)).toBe(true)
+  api.dataSources.value[0].status = 'disabled'
+  expect(api.isCatalogNodeActive({ ...source, status: 'disabled' })).toBe(false)
+  expect(api.isCatalogNodeActive(schema)).toBe(false)
+  unmount()
 })

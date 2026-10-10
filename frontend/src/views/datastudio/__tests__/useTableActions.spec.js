@@ -180,3 +180,13 @@ describe('useTableActions', () => {
     expect(tabStates.t1.metadataSyncing).toBe(false)
   })
 })
+
+
+it('saving a query task uses execution connection/schema rather than the inspected object', () => {
+  const { api, tabStates, taskDrawerRef } = setup()
+  tabStates.t1 = { table: { sourceId: 'object-source', dbName: 'object-db' }, query: { sql: 'SELECT 1', sourceId: 'query-source', dbName: 'query-db' } }
+  api.saveAsTask('t1')
+  expect(taskDrawerRef.value.open).toHaveBeenCalledWith(null, expect.objectContaining({
+    taskSql: 'SELECT 1', taskDesc: 'From DataStudio\nCluster: query-source\nDatabase: query-db',
+  }))
+})

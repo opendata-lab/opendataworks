@@ -4,43 +4,44 @@
       <!-- Left: Database Tree -->
       <aside class="studio-sidebar" :style="sidebarPaneStyle">
         <div class="sidebar-controls">
-          <div class="search-row">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索表名或注释"
-              clearable
-              size="small"
-              class="search-input"
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
+          <div class="catalog-search-row">
+            <el-input v-model="searchKeyword" placeholder="搜索表名或注释" aria-label="搜索表名或注释" clearable size="small" class="search-input">
+              <template #prefix><el-icon><Search /></el-icon></template>
             </el-input>
-            <el-button size="small" :loading="dbLoading" @click="refreshCatalog">
-              <el-icon><Refresh /></el-icon>
-              刷新
-            </el-button>
-            <el-button size="small" type="primary" :disabled="isDemoMode" @click="handleCreateTable">
-              <el-icon><Plus /></el-icon>
-              新建表
-            </el-button>
+            <el-button size="small" text :loading="dbLoading" aria-label="刷新全部连接" title="刷新全部连接" @click="refreshCatalog"><el-icon><Refresh /></el-icon></el-button>
+            <el-button size="small" text :disabled="isDemoMode" aria-label="新建表" title="新建表" @click="handleCreateTable"><el-icon><Plus /></el-icon></el-button>
+            <el-dropdown trigger="click" @command="handleCatalogSort">
+              <el-button size="small" text aria-label="目录排序选项" :title="`排序：${catalogSortOptions.find(item => item.value === sortField)?.label}，${sortOrder === 'asc' ? '升序' : '降序'}`"><el-icon><Sort /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu class="catalog-sort-menu">
+                  <el-dropdown-item disabled><span class="catalog-menu-caption">排序依据</span></el-dropdown-item>
+                  <el-dropdown-item v-for="item in catalogSortOptions" :key="item.value" :command="item.value" :aria-checked="sortField === item.value">
+                    <span class="catalog-sort-option"><el-icon class="catalog-view-check"><Check v-if="sortField === item.value" /></el-icon>{{ item.label }}</span>
+                  </el-dropdown-item>
+                  <el-dropdown-item divided disabled><span class="catalog-menu-caption">排列方向</span></el-dropdown-item>
+                  <el-dropdown-item command="asc" :aria-checked="sortOrder === 'asc'"><span class="catalog-sort-option"><el-icon class="catalog-view-check"><Check v-if="sortOrder === 'asc'" /></el-icon>升序</span></el-dropdown-item>
+                  <el-dropdown-item command="desc" :aria-checked="sortOrder === 'desc'"><span class="catalog-sort-option"><el-icon class="catalog-view-check"><Check v-if="sortOrder === 'desc'" /></el-icon>降序</span></el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+            <el-dropdown trigger="click" @command="catalogDisplayMode = $event">
+              <el-button size="small" text aria-label="目录视图选项" title="目录视图选项"><el-icon><Operation /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu class="catalog-view-menu">
+                  <el-dropdown-item command="compact" :aria-checked="catalogDisplayMode === 'compact'" role="menuitemradio">
+                    <div class="catalog-view-option"><el-icon class="catalog-view-check"><Check v-if="catalogDisplayMode === 'compact'" /></el-icon><div><span>紧凑视图</span><small>仅显示对象名称</small></div></div>
+                  </el-dropdown-item>
+                  <el-dropdown-item command="detailed" :aria-checked="catalogDisplayMode === 'detailed'" role="menuitemradio">
+                    <div class="catalog-view-option"><el-icon class="catalog-view-check"><Check v-if="catalogDisplayMode === 'detailed'" /></el-icon><div><span>完整视图</span><small>显示注释和统计信息</small></div></div>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </div>
-	          <div class="sort-row">
-	            <el-radio-group v-model="sortField" size="small" class="sort-group">
-	              <el-radio-button value="tableName">表名</el-radio-button>
-	              <el-radio-button value="createdAt">创建时间</el-radio-button>
-	              <el-radio-button value="rowCount">行数</el-radio-button>
-	              <el-radio-button value="storageSize">数据量</el-radio-button>
-	              <el-radio-button value="dorisUpdateTime">更新时间</el-radio-button>
-	            </el-radio-group>
-	            <el-radio-group v-model="sortOrder" size="small" class="sort-group">
-	              <el-radio-button value="asc">升序</el-radio-button>
-	              <el-radio-button value="desc">降序</el-radio-button>
-	            </el-radio-group>
-	          </div>
-	        </div>
 
-        <div class="db-tree" v-loading="dbLoading">
+        </div>
+
+        <div v-loading="dbLoading" class="db-tree">
           <el-scrollbar class="db-tree-scroll">
             <el-tree
               ref="catalogTreeRef"
@@ -48,9 +49,9 @@
               node-key="nodeKey"
               :props="catalogTreeProps"
               lazy
-              accordion
+              :indent="14"
               highlight-current
-              :expand-on-click-node="false"
+              :expand-on-click-node="true"
               :current-node-key="selectedTableKey"
               :filter-node-method="filterCatalogNode"
               :load="loadCatalogNode"
@@ -58,7 +59,7 @@
               @node-click="handleCatalogNodeClick"
             >
               <template #default="{ data }">
-                <DataStudioCatalogNode :data="data" />
+                <DataStudioCatalogNode :data="data" :display-mode="catalogDisplayMode" />
             </template>
             </el-tree>
           </el-scrollbar>
@@ -70,6 +71,25 @@
       <!-- Right: Workspace -->
       <section class="studio-workspace">
         <div class="workspace-body">
+          <el-tooltip v-if="openTabs.length" :content="detailsVisible ? '隐藏对象详情' : '显示对象详情'" placement="bottom" :show-after="400" :trigger="['hover', 'focus']" :trigger-keys="[]">
+            <span class="workspace-details-control">
+              <el-button
+                class="workspace-details-toggle"
+                size="small"
+                text
+                :aria-expanded="detailsVisible"
+                :aria-label="detailsVisible ? '隐藏对象详情' : '显示对象详情'"
+                aria-controls="studio-object-details"
+                @click="toggleDetails"
+              >
+                <svg class="panel-toggle-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                  <rect x="3" y="3" width="18" height="18" rx="2" />
+                  <path d="M15 3v18" />
+                  <path :d="detailsVisible ? 'm8 9 3 3-3 3' : 'm10 9-3 3 3 3'" />
+                </svg>
+              </el-button>
+            </span>
+          </el-tooltip>
           <PersistentTabs
             v-if="openTabs.length"
             v-model="activeTab"
@@ -87,17 +107,17 @@
             @close-all="handleCloseAll"
           >
             <template #label="{ tab }">
-              <div class="tab-label">
+              <div class="tab-label" :title="`${tab.tableName} · ${getTabSubtitle(tab)}`">
+                <el-icon class="tab-icon"><Document v-if="tab.kind === 'query'" /><Grid v-else /></el-icon>
                 <span class="tab-title">{{ tab.tableName }}</span>
-                <span class="tab-sub">{{ getTabSubtitle(tab) }}</span>
               </div>
             </template>
 
             <template #default="{ tab }">
               <div class="tab-grid">
                 <div
-                  class="tab-left"
                   :ref="(el) => setLeftPaneRef(tab.id, el)"
+                  class="tab-left"
                   :style="getLeftPaneStyle(tab.id)"
                 >
                   <DataStudioQueryPanel :tab="tab" />
@@ -111,21 +131,21 @@
             </template>
           </PersistentTabs>
 
-	          <div v-else class="empty-state">
-	            <el-empty description="从左侧选择表以打开工作区" :image-size="120">
-	              <el-button type="primary" @click="handleTabAdd">
-	                <el-icon><Plus /></el-icon>
-	                新建查询
-	              </el-button>
-	            </el-empty>
-	          </div>
+          <div v-else class="empty-state">
+            <el-icon class="empty-workspace-icon"><Document /></el-icon>
+            <h2>开始探索数据</h2>
+            <p>展开左侧数据源，选择一张表查看数据与结构</p>
+            <el-button type="primary" size="small" @click="handleTabAdd"><el-icon><Plus /></el-icon>新建 SQL 查询</el-button>
+            <span class="empty-workspace-hint">查询结果在下方显示 · 对象详情在右侧查看</span>
+          </div>
 	        </div>
 	      </section>
 
-      <div class="workspace-resizer" title="拖动调整宽度" @mousedown="startRightResize"></div>
+      <div v-show="detailsVisible" class="workspace-resizer" title="拖动调整宽度" @mousedown="startRightResize"></div>
 
       <!-- Right: Meta/Lineage -->
-      <aside class="studio-right" :style="rightPaneStyle">
+      <aside v-show="detailsVisible" id="studio-object-details" class="studio-right" :style="rightPaneStyle">
+        <header class="pane-heading"><span>对象详情</span></header>
         <DataStudioRightPanel visual-variant="clean-slate" />
       </aside>
     </div>
@@ -144,6 +164,7 @@ import {
   Search,
   Plus,
   Refresh,
+  Operation, Sort, Document, Grid, Check,
 } from '@element-plus/icons-vue'
 import { tableApi } from '@/api/table'
 import { taskApi } from '@/api/task'
@@ -182,6 +203,25 @@ const DataStudioRightPanel = defineAsyncComponent({
 })
 
 const clusterId = ref(null)
+const catalogDisplayMode = ref('compact')
+const catalogSortOptions = [
+  { value: 'tableName', label: '名称' },
+  { value: 'createdAt', label: '创建时间' },
+  { value: 'rowCount', label: '行数' },
+  { value: 'storageSize', label: '数据量' },
+  { value: 'dorisUpdateTime', label: '更新时间' },
+]
+const handleCatalogSort = (command) => {
+  if (command === 'asc' || command === 'desc') sortOrder.value = command
+  else sortField.value = command
+}
+const detailsVisible = ref(true)
+const toggleDetails = async () => {
+  detailsVisible.value = !detailsVisible.value
+  await nextTick()
+  if (activeTab.value) syncResultPaneLayout(activeTab.value)
+}
+
 const route = useRoute()
 const router = useRouter()
 const createDrawerVisible = ref(false)
@@ -224,6 +264,7 @@ const {
   getTableKey,
   findCachedTableById,
   isDatasourceIconInactive,
+  isCatalogNodeActive,
   getDatasourceIconUrl,
   isViewTable,
   getTableRowCount,
@@ -624,6 +665,14 @@ watch(
   }
 )
 
+const loadActiveQueryContext = async () => {
+  const query = tabStates[activeTab.value]?.query
+  const sourceId = query?.sourceId
+  if (!sourceId || !getDatasourceById(sourceId)) return
+  if (!schemaStore[sourceId] && !await loadSchemas(sourceId)) return
+  if (query.dbName) await loadTables(sourceId, query.dbName)
+}
+
 watch(
   () => activeTab.value,
   (value) => {
@@ -649,6 +698,7 @@ watch(
       selectedTableKey.value = ''
     }
     syncRouteWithTab(tab, value)
+    void loadActiveQueryContext()
   }
 )
 
@@ -670,6 +720,7 @@ watch(
 )
 
   provide('dataStudioCtx', {
+  getSourceName,
     clusterId,
     openTabs,
     activeTab,
@@ -750,6 +801,7 @@ provide('dataStudioCatalogCtx', {
   getProgressWidth,
   getDatasourceIconUrl,
   isDatasourceIconInactive,
+  isCatalogNodeActive,
   isViewTable,
   getTableCount,
   getTableCountByType,
@@ -785,6 +837,7 @@ onMounted(async () => {
   fetchHistory()
   await syncFromRoute()
   await focusActiveTableInSidebar()
+  await loadActiveQueryContext()
   if (route.query.create) {
     createDrawerVisible.value = true
     clearCreateQuery()
@@ -803,348 +856,500 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .data-studio {
-  height: calc(100vh - 84px);
+  --studio-line: var(--odw-border, #e2e8f0);
+  --studio-chrome: #f6f8fa;
+  --studio-text: #334155;
+  --studio-muted: #64748b;
+  --studio-accent: var(--odw-primary, #2c5282);
+  --studio-font-detail: 10px;
+  --studio-font-ui: 11px;
+  --studio-font-reading: 12px;
+  --el-font-size-base: var(--studio-font-ui);
+  --el-font-size-small: var(--studio-font-ui);
+  height: calc(100vh - 68px);
   min-height: 0;
-  padding: 8px;
-  background: #f3f6fb;
-  overflow: hidden;
-}
-
-.studio-layout {
-  height: 100%;
-  display: flex;
-  gap: 0;
-}
-
-.studio-sidebar {
   display: flex;
   flex-direction: column;
   background: #fff;
-  border-radius: 10px;
+  border: 1px solid var(--studio-line);
+  color: var(--studio-text);
   overflow: hidden;
-  border: 1px solid #e6e9ef;
+  box-sizing: border-box;
 }
-
-.sidebar-resizer {
-  width: 10px;
-  cursor: col-resize;
-  position: relative;
+.pane-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  min-height: 34px;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--studio-line);
+  background: var(--studio-chrome);
+}
+.pane-heading {
+  font-size: var(--studio-font-ui);
+  font-weight: 500;
+}
+.data-studio :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.studio-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 0;
+}
+.studio-sidebar {
+  --catalog-background: #fff;
+  --catalog-text: var(--studio-text);
+  --catalog-muted: var(--studio-muted);
+  --catalog-icon: #7c8999;
+  --catalog-faint: #8a96a6;
+  --catalog-line: var(--studio-line);
+  --catalog-hover: #f5f7fa;
+  --catalog-selected: #e8f0fa;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--catalog-background);
+  color: var(--catalog-text);
+  min-height: 0;
+  overflow: hidden;
+}
+.sidebar-controls {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-bottom: 1px solid var(--catalog-line);
+}
+.catalog-search-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.catalog-search-row .search-input {
+  flex: 1;
+  min-width: 0;
+}
+.catalog-search-row :deep(.el-button) {
+  flex: none;
+  padding: 4px;
+  width: 22px;
+}
+.search-input {
+  width: 100%;
+}
+.sidebar-controls :deep(.el-input__wrapper),
+.sidebar-controls :deep(.el-select__wrapper) {
+  font-size: 10px;
+  border-radius: 3px;
+}
+.db-tree {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0;
+  overflow: hidden;
+}
+.db-tree-scroll {
+  height: 100%;
+}
+.catalog-tree {
+  width: 100%;
   background: transparent;
+  --el-tree-node-content-height: 24px;
+  --el-tree-text-color: var(--catalog-text);
 }
-
+:deep(.catalog-tree .el-tree-node__content) {
+  height: auto;
+  min-height: 24px;
+  padding-right: 8px;
+  font-size: 10px;
+  border-left: 2px solid transparent;
+}
+:deep(.catalog-tree .el-tree-node__expand-icon) {
+  padding: 4px;
+  font-size: 10px;
+}
+:deep(.catalog-tree .el-tree-node__children) {
+  margin-left: 4px;
+  border-left: 1px solid var(--catalog-line);
+}
+:deep(.catalog-tree .el-tree-node__content:hover),
+:deep(.catalog-tree .el-tree-node:focus > .el-tree-node__content) {
+  background: var(--catalog-hover);
+}
+:deep(.catalog-tree .el-tree-node.is-current > .el-tree-node__content) {
+  --catalog-text: #365f91;
+  --catalog-icon: #3f648e;
+  background: var(--catalog-selected);
+  border-left-color: #3f648e;
+  color: var(--catalog-text);
+}
+.sidebar-resizer,
 .workspace-resizer {
-  width: 10px;
-  cursor: col-resize;
   position: relative;
+  flex: 0 0 5px;
+  cursor: col-resize;
   background: transparent;
+  box-sizing: border-box;
 }
-
 .sidebar-resizer::after,
 .workspace-resizer::after {
-  content: '⋮⋮';
+  content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 11px;
-  line-height: 1;
-  letter-spacing: -1px;
-  color: #94a3b8;
-  padding: 3px 4px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
-  opacity: 0;
+  top: 0;
+  bottom: 0;
+  left: calc(50% - 0.5px);
+  width: 1px;
+  background: var(--studio-line);
   pointer-events: none;
-  transition: opacity 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
-
 .sidebar-resizer:hover::after,
 .workspace-resizer:hover::after,
 .data-studio.is-resizing .sidebar-resizer::after,
 .data-studio.is-resizing .workspace-resizer::after {
-  opacity: 1;
-  color: #64748b;
+  left: calc(50% - 1px);
+  width: 2px;
+  background: #7da2cf;
 }
-
 .data-studio.is-resizing {
   user-select: none;
 }
-
-.sidebar-controls {
-  padding: 12px 14px;
-  border-bottom: 1px solid #eef1f6;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.search-input {
-  width: 100%;
-}
-
-.search-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.search-row .search-input {
-  flex: 1;
-}
-
-.sort-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-}
-
-.sort-group {
-  display: inline-flex;
-  flex-wrap: nowrap;
-}
-
-.db-tree {
-  flex: 1;
-  min-height: 0;
-  padding: 8px 8px 12px;
-  overflow: hidden;
-}
-
-.db-tree-scroll {
-  height: 100%;
-}
-
-.catalog-tree {
-  width: 100%;
-}
-
-:deep(.catalog-tree .el-tree-node__content) {
-  height: auto;
-  padding: 2px 6px;
-}
-
-:deep(.catalog-tree .el-tree-node__content:hover) {
-  background-color: transparent;
-}
-
-:deep(.catalog-tree .el-tree-node.is-current > .el-tree-node__content) {
-  background-color: transparent;
-}
-
-:deep(.catalog-tree .el-tree-node__content:hover .catalog-node--datasource),
-:deep(.catalog-tree .el-tree-node__content:hover .catalog-node--schema),
-:deep(.catalog-tree .el-tree-node__content:hover .catalog-node--object_group) {
-  background-color: var(--el-fill-color-light);
-}
-
-:deep(.catalog-tree .el-tree-node__content:hover .catalog-node--table) {
-  border-color: #667eea;
-  background-color: #f0f4ff;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.08);
-}
-
-:deep(.catalog-tree .el-tree-node.is-current > .el-tree-node__content .catalog-node--table) {
-  border-color: #667eea;
-  background-color: #f0f4ff;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.12);
-}
-
-:deep(.catalog-tree .el-tree-node__content:hover .table-progress-bg) {
-  background: linear-gradient(90deg, rgba(102, 126, 234, 0.12) 0%, rgba(102, 126, 234, 0.04) 100%);
-}
-
-:deep(.catalog-tree .el-tree-node.is-current > .el-tree-node__content .table-progress-bg) {
-  background: linear-gradient(90deg, rgba(102, 126, 234, 0.18) 0%, rgba(102, 126, 234, 0.06) 100%);
-}
-
 .studio-workspace {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   background: #fff;
-  border-radius: 10px;
-  border: 1px solid #e6e9ef;
   overflow: hidden;
 }
-
 .studio-right {
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
 }
-
+.studio-right > :deep(.right-root) {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
 .workspace-body {
-  height: 100%;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
+  position: relative;
 }
-
+.workspace-details-control {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  z-index: 2;
+  display: flex;
+  width: 26px;
+  height: 26px;
+}
+.workspace-details-toggle {
+  width: 26px;
+  height: 26px;
+  padding: 5px;
+  margin: 0;
+  color: #718096;
+  border-radius: 3px;
+}
+.workspace-details-toggle[aria-expanded='true'] {
+  color: #526f94;
+}
+.workspace-details-toggle:hover {
+  color: #365f91;
+  background: #e8eef6;
+}
+.workspace-details-toggle:focus-visible {
+  outline: 2px solid #7da2cf;
+  outline-offset: 1px;
+}
+.panel-toggle-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.workspace-body,
 .workspace-tabs {
-  height: 100%;
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-:deep(.workspace-tabs > .el-tabs) {
   height: 100%;
-  flex: 1;
+}
+:deep(.workspace-tabs) {
+  --el-tabs-header-height: 34px;
+  box-sizing: border-box;
+  height: 100%;
   min-height: 0;
-}
-
-:deep(.workspace-tabs .el-tabs__header) {
   display: flex;
-  align-items: center;
+  flex-direction: column;
 }
-
-:deep(.workspace-tabs .el-tabs__nav-wrap) {
+:deep(.workspace-tabs > .el-tabs__header) {
+  display: flex;
+  justify-content: flex-start;
+  margin: 0;
+  background: var(--studio-chrome);
+  border-bottom: 1px solid var(--studio-line);
+  padding-right: 40px;
+}
+:deep(.workspace-tabs > .el-tabs__header > .el-tabs__nav-wrap) {
   flex: 0 1 auto;
+  width: max-content;
   min-width: 0;
-  max-width: calc(100% - 72px);
+  max-width: calc(100% - 32px);
 }
-
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__nav) {
+  border: 0;
+  border-radius: 0;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__item) {
+  padding: 0 12px;
+  border-left: 0;
+  border-right: 1px solid var(--studio-line);
+  border-top: 2px solid transparent;
+  margin-bottom: -1px;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__item.is-active) {
+  background: #fff;
+  border-top-color: var(--studio-accent);
+}
 :deep(.workspace-tabs .el-tabs__new-tab) {
-  width: 32px;
-  height: 32px;
+  position: static;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
   padding: 0;
-  margin: 4px 0 4px 6px;
-  border-radius: 8px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  margin: 0 4px;
+  border: 0;
+  border-radius: 3px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
-
 :deep(.workspace-tabs .el-tabs__new-tab:hover) {
-  background: #f8fafc;
-  border-color: #c7d2fe;
+  color: var(--studio-accent);
+  background: #e8f0fa;
 }
-
-/* remove label, keep only "+" icon */
-:deep(.workspace-tabs .el-tabs__new-tab::after) {
-  content: none;
-}
-
-:deep(.workspace-tabs .el-tabs__content) {
-  height: 100%;
+:deep(.workspace-tabs > .el-tabs__content) {
   flex: 1;
   min-height: 0;
+  padding: 0;
 }
-
 :deep(.workspace-tabs .el-tab-pane) {
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
-
-:deep(.workspace-tabs .el-tabs__card) {
-  height: 100%;
-}
-
 .tab-label {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
-
+.tab-icon {
+  color: var(--studio-muted);
+  font-size: 12px;
+}
 .tab-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1f2f3d;
+  font-size: var(--studio-font-ui);
+  font-weight: 500;
+  color: var(--studio-text);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-
-.tab-sub {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
 .tab-grid {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 10px;
-  box-sizing: border-box;
   min-height: 0;
 }
-
 .tab-left {
   flex: 1;
   display: grid;
-  grid-template-rows: var(--left-top, 220px) 6px minmax(220px, 1fr);
-  gap: 0;
+  grid-template-rows: var(--left-top, 240px) 6px minmax(180px, 1fr);
   min-height: 0;
 }
-
 .left-resizer {
-  cursor: row-resize;
   position: relative;
+  cursor: row-resize;
   background: transparent;
 }
-
 .left-resizer::after {
-  content: '⋯';
+  content: '';
   position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 14px;
-  line-height: 1;
-  color: #94a3b8;
-  padding: 0 8px 2px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
+  left: 0;
+  right: 0;
+  top: calc(50% - 1px);
+  height: 2px;
+  background: #7da2cf;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
-
-.left-resizer:hover::after,
-.data-studio.is-resizing .left-resizer::after {
+.left-resizer:hover::after {
   opacity: 1;
-  color: #64748b;
 }
-
 .empty-state {
   flex: 1;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #f9fafb;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
 }
-
-@media (max-width: 1200px) {
+.empty-workspace-icon {
+  font-size: 32px;
+  color: #94a3b8;
+}
+.empty-state h2 {
+  font-size: 16px;
+  font-weight: 500;
+  margin: 4px 0 0;
+}
+.empty-state p {
+  font-size: 12px;
+  color: var(--studio-muted);
+  margin: 0 0 4px;
+}
+.empty-workspace-hint {
+  font-size: 11px;
+  color: var(--studio-muted);
+  margin-top: 12px;
+}
+@media (max-width: 900px) {
+  .data-studio {
+    height: auto;
+    min-height: calc(100vh - 68px);
+    overflow: visible;
+  }
   .studio-layout {
     flex-direction: column;
+    flex: none;
   }
-
   .studio-sidebar {
     width: 100% !important;
-    max-height: 320px;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 240px;
   }
-
+  .studio-workspace {
+    flex: none;
+    height: 650px;
+  }
   .studio-right {
     width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: 700px;
+    border-top: 1px solid var(--studio-line);
   }
-
   .sidebar-resizer,
   .workspace-resizer {
     display: none;
   }
+}
+.catalog-view-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 160px;
+  padding: 3px 0;
+}
+.catalog-view-check {
+  color: var(--odw-primary, #2c5282);
+  margin-top: 3px;
+  width: 12px;
+  flex: none;
+}
+.catalog-view-option span {
+  font-size: 12px;
+  line-height: 18px;
+  color: #334155;
+}
+.catalog-view-option small {
+  display: block;
+  font-size: 11px;
+  line-height: 18px;
+  color: #64748b;
+}
+.catalog-sort-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 130px;
+  font-size: 12px;
+}
+.catalog-sort-option .catalog-view-check {
+  margin-top: 0;
+}
+.catalog-menu-caption {
+  font-size: 10px;
+  color: #64748b;
+  letter-spacing: 0.3px;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__active-bar) {
+  display: none;
+}
+/* 标签底边直接接到白色工作区，避免 Element Plus 默认高度留出灰色缝隙。 */
+:deep(.workspace-tabs > .el-tabs__header) {
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
+  box-sizing: border-box;
+  align-items: flex-start;
+  overflow: visible;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__nav-wrap) {
+  height: 34px;
+  margin-bottom: 0;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__nav) {
+  height: 34px;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__item) {
+  margin: 0;
+  height: 34px;
+  border-bottom: 1px solid #dce2e9;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__item.is-active) {
+  border-bottom-color: #fff;
+  position: relative;
+  z-index: 1;
+}
+:deep(.workspace-tabs > .el-tabs__header .el-tabs__new-tab) {
+  margin-top: 5px;
+}
 
-  .left-resizer {
-    display: none;
-  }
-
+:deep(.catalog-tree .el-tree-node__expand-icon:not(.is-leaf)) {
+  color: var(--catalog-faint);
+}
+.catalog-search-row :deep(.el-button) {
+  color: var(--catalog-muted);
+}
+.catalog-search-row :deep(.el-button:hover) {
+  background: #edf3fb;
+  color: #3f648e;
+}
+.sidebar-controls :deep(.el-input__wrapper) {
+  background: #fff;
+  box-shadow: 0 0 0 1px var(--studio-line) inset;
+}
+.sidebar-controls :deep(.el-input__inner) {
+  color: var(--catalog-text);
+}
+.sidebar-controls :deep(.el-input__inner::placeholder) {
+  color: #8a96a6;
 }
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="version-panel" v-loading="loading">
+  <div v-loading="loading" class="version-panel">
     <div class="version-toolbar">
       <div class="version-toolbar-left">
         <el-tag v-if="compareLeft" size="small" closable @close="compareLeft = null">
@@ -19,45 +19,17 @@
     </div>
 
     <template v-if="versions.length">
-      <el-table :data="versions" border size="small" class="version-table">
-        <el-table-column label="版本" width="70">
-          <template #default="{ row }">v{{ row.versionNo }}</template>
-        </el-table-column>
-        <el-table-column prop="changeSummary" label="变更摘要" min-width="200" show-overflow-tooltip />
-        <el-table-column label="来源" width="110">
-          <template #default="{ row }">
-            <el-tag :type="triggerTagType(row.triggerSource)" size="small">
-              {{ triggerLabel(row.triggerSource) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="createdBy" label="操作人" width="100" show-overflow-tooltip />
-        <el-table-column label="时间" width="160">
-          <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="190" fixed="right">
-          <template #default="{ row }">
+      <div class="version-timeline">
+        <article v-for="row in versions" :key="row.id" class="version-entry">
+          <header><strong>v{{ row.versionNo }}</strong><time>{{ formatDateTime(row.createdAt) }}</time></header>
+          <p>{{ row.changeSummary || '元数据更新' }}</p>
+          <div class="version-entry-footer"><span>{{ triggerLabel(row.triggerSource) }} · {{ row.createdBy || '-' }}</span><div>
             <el-button link type="primary" size="small" @click="showSnapshot(row)">快照</el-button>
-            <el-button
-              link
-              size="small"
-              :type="compareLeft?.id === row.id ? 'warning' : 'primary'"
-              @click="selectLeft(row)"
-            >
-              设为左
-            </el-button>
-            <el-button
-              link
-              size="small"
-              :type="compareRight?.id === row.id ? 'warning' : 'primary'"
-              @click="selectRight(row)"
-            >
-              设为右
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-
+            <el-button link size="small" :type="compareLeft?.id === row.id ? 'primary' : ''" @click="selectLeft(row)">设为左</el-button>
+            <el-button link size="small" :type="compareRight?.id === row.id ? 'primary' : ''" @click="selectRight(row)">设为右</el-button>
+          </div></div>
+        </article>
+      </div>
       <el-pagination
         v-if="total > pageSize"
         v-model:current-page="pageNum"
@@ -83,7 +55,7 @@
       destroy-on-close
     >
       <el-scrollbar max-height="480px">
-        <pre class="snapshot-json" v-loading="snapshotLoading">{{ snapshotJson }}</pre>
+        <pre v-loading="snapshotLoading" class="snapshot-json">{{ snapshotJson }}</pre>
       </el-scrollbar>
     </el-dialog>
 
@@ -140,7 +112,6 @@ const TRIGGER_LABELS = {
 }
 
 const triggerLabel = (source) => TRIGGER_LABELS[source]?.label || source || '未知'
-const triggerTagType = (source) => TRIGGER_LABELS[source]?.type || 'info'
 
 const formatDateTime = (value) => {
   if (!value) return '-'
@@ -258,5 +229,66 @@ watch(
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+.version-timeline {
+  margin-top: 8px;
+}
+.version-entry {
+  position: relative;
+  padding: 0 0 18px 16px;
+  border-left: 1px solid #e2e8f0;
+}
+.version-entry::before {
+  content: '';
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border: 2px solid #fff;
+  background: #6c89ac;
+  border-radius: 50%;
+  left: -5px;
+  top: 3px;
+}
+.version-entry header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+.version-entry strong {
+  font-size: var(--studio-font-ui);
+  font-weight: 500;
+  color: #41536a;
+}
+.version-entry time {
+  font-size: 10px;
+  color: #94a3b8;
+}
+.version-entry p {
+  margin: 8px 0;
+  font-size: var(--studio-font-ui);
+  color: #526174;
+  line-height: 20px;
+}
+.version-entry-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+.version-entry-footer :deep(.el-button) {
+  font-size: 10px;
+  padding: 0;
+  margin-left: 7px;
+}
+
+.version-entry-footer > div {
+  display: flex;
+  gap: 8px;
 }
 </style>

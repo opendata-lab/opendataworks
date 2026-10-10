@@ -51,15 +51,15 @@ describe('Layout', () => {
     preloadRouteComponents.mockClear()
   })
 
-  it('renames the intelligent query menu entry to Agent问答', () => {
+  it('renames the intelligent query menu entry to 智能问数', () => {
     const wrapper = mount(Layout, {
       global: { plugins: [createPinia()], stubs }
     })
 
     const intelligentQueryItem = wrapper.find('[data-index="/intelligent-query"]')
     expect(intelligentQueryItem.exists()).toBe(true)
-    expect(intelligentQueryItem.text()).toContain('Agent问答')
-    expect(intelligentQueryItem.text()).not.toContain('智能问数')
+    expect(intelligentQueryItem.text()).toContain('智能问数')
+    expect(intelligentQueryItem.text()).not.toContain('Agent问答')
   })
 
   it('loads the remote DataAgent widget script and installs the floating widget', async () => {

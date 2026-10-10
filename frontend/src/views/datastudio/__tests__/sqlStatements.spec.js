@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { splitSqlStatements } from '../sqlStatements'
+import { buildExplainSql, splitSqlStatements } from '../sqlStatements'
 
 describe('splitSqlStatements', () => {
   it('splits on top-level semicolons and trims, dropping empties', () => {
@@ -27,5 +27,23 @@ describe('splitSqlStatements', () => {
 
   it('keeps the trailing statement without a closing semicolon', () => {
     expect(splitSqlStatements('select 1; select 2')).toEqual(['select 1', 'select 2'])
+  })
+})
+
+
+describe('buildExplainSql', () => {
+  it('explains each statement and preserves semicolons in strings', () => {
+    expect(buildExplainSql("select ';' as a; select 2;")).toBe("EXPLAIN select ';' as a;\nEXPLAIN select 2")
+  })
+
+  it('keeps existing EXPLAIN even after leading comments', () => {
+    const sql = '-- plan\n/* hint */ EXPLAIN SELECT 1'
+    expect(buildExplainSql(sql)).toBe(sql)
+    expect(buildExplainSql('# note\nselect 1')).toBe('EXPLAIN # note\nselect 1')
+  })
+
+  it('ignores empty input and trailing comment-only statements', () => {
+    expect(buildExplainSql(' -- comment')).toBe('')
+    expect(buildExplainSql('select 1; /* end */')).toBe('EXPLAIN select 1')
   })
 })

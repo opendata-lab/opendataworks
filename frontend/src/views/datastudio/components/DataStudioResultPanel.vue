@@ -1,9 +1,9 @@
 <template>
   <div class="result-panel">
-    <el-tabs v-model="tabStates[tab.id].resultTab" type="border-card" class="result-tabs" style="height: 100%;">
+    <el-tabs v-model="tabStates[tab.id].resultTab" type="card" class="result-tabs" style="height: 100%;">
       <el-tab-pane name="info">
         <template #label>
-          <span class="result-label"><el-icon><Document /></el-icon> 信息</span>
+          <span class="result-label"><el-icon><Document /></el-icon> 执行信息</span>
         </template>
 
         <div class="table-toolbar">
@@ -34,7 +34,6 @@
             <el-table
               v-else
               :data="tabStates[tab.id].queryResult.statementInfos || []"
-              border
               stripe
               size="small"
               height="100%"
@@ -65,66 +64,26 @@
         :name="`result-${idx}`"
       >
         <template #label>
-          <span class="result-label"><el-icon><List /></el-icon> Result {{ idx + 1 }}</span>
+          <span class="result-label"><el-icon><List /></el-icon> 结果 {{ idx + 1 }}</span>
         </template>
 
-          <div class="table-toolbar">
-            <div class="meta-info">
-            <span class="meta-item">
-              <el-icon><Timer /></el-icon>
-                {{ formatDuration(getLiveDurationMs(tab.id)) }}
-              </span>
-              <span v-if="tabStates[tab.id].queryCancelable" class="meta-item">
-                <template v-if="tabStates[tab.id].queryLoading">
-                  <el-icon><Loading /></el-icon> 查询中
-                </template>
-                <template v-else>
-                  <el-icon><Warning /></el-icon> 仍可停止
-                </template>
-              </span>
-              <template v-else>
-                <el-tag v-if="tabStates[tab.id].queryResult.cancelled" size="small" type="warning">
-                  已停止
-                </el-tag>
-              <span v-if="tabStates[tab.id].queryResult.executedAt" class="meta-item">
-                <el-icon><Clock /></el-icon>
-                {{ formatDateTime(tabStates[tab.id].queryResult.executedAt) }}
-              </span>
-              <span v-if="tabStates[tab.id].queryResult.message" class="meta-item meta-message" :title="tabStates[tab.id].queryResult.message">
-                {{ tabStates[tab.id].queryResult.message }}
-              </span>
-            </template>
-            <span class="meta-item">
-              <el-icon><Files /></el-icon>
-              {{ getResultSetCountText(resultSet) }}
-            </span>
-            <span v-if="resultSet.hasMore" class="meta-item truncate">
-              <el-icon><Warning /></el-icon> 结果已截断
-            </span>
+        <div class="table-toolbar">
+          <div class="meta-info" :title="[tabStates[tab.id].queryResult.message, formatDateTime(tabStates[tab.id].queryResult.executedAt)].filter(Boolean).join(' · ')">
+            <span class="meta-item execution-state" :class="{ 'is-running': tabStates[tab.id].queryLoading, 'is-stopped': tabStates[tab.id].queryResult.cancelled, 'is-error': tabStates[tab.id].queryResult.errorMessage, 'is-idle': !tabStates[tab.id].queryResult.executedAt && !tabStates[tab.id].queryLoading }"><span class="status-dot"></span>{{ tabStates[tab.id].queryLoading ? '查询中' : tabStates[tab.id].queryResult.cancelled ? '已停止' : tabStates[tab.id].queryResult.errorMessage ? '执行失败' : tabStates[tab.id].queryResult.executedAt ? '已完成' : '未执行' }}</span>
+            <span class="meta-item">{{ getResultSetCountText(resultSet) }}</span>
+            <span class="meta-item">{{ formatDuration(getLiveDurationMs(tab.id)) }}</span>
+            <span v-if="resultSet.hasMore" class="meta-item truncate"><el-icon><Warning /></el-icon>已截断</span>
+            <span v-if="tabStates[tab.id].queryCancelable && !tabStates[tab.id].queryLoading" class="meta-item truncate">仍可停止</span>
           </div>
           <div class="export-actions">
-            <el-radio-group
-              v-if="isResultSetType(resultSet)"
-              v-model="tabStates[tab.id].resultViewTabs[idx]"
-              size="small"
-              class="result-view-switch"
-            >
-              <el-radio-button value="table">
-                <span class="view-label"><el-icon><Grid /></el-icon> 表格</span>
-              </el-radio-button>
-              <el-radio-button value="chart">
-                <span class="view-label"><el-icon><TrendCharts /></el-icon> 图表</span>
-              </el-radio-button>
-            </el-radio-group>
-            <el-button
-              size="small"
-              :disabled="!isResultSetType(resultSet) || !(resultSet.rows || []).length"
-              @click="exportResult(tab.id, idx)"
-            >
-              导出 CSV
-            </el-button>
+            <div v-if="isResultSetType(resultSet)" class="result-view-switch" role="group" aria-label="结果展示方式">
+              <el-button size="small" text :class="{ 'is-selected': (tabStates[tab.id].resultViewTabs?.[idx] || 'table') === 'table' }" :aria-pressed="(tabStates[tab.id].resultViewTabs?.[idx] || 'table') === 'table'" @click="tabStates[tab.id].resultViewTabs[idx] = 'table'"><el-icon><Grid /></el-icon>表格</el-button>
+              <el-button size="small" text :class="{ 'is-selected': tabStates[tab.id].resultViewTabs?.[idx] === 'chart' }" :aria-pressed="tabStates[tab.id].resultViewTabs?.[idx] === 'chart'" @click="tabStates[tab.id].resultViewTabs[idx] = 'chart'"><el-icon><TrendCharts /></el-icon>图表</el-button>
+            </div>
+            <span class="result-action-divider"></span>
+            <el-button size="small" text aria-label="导出 CSV" title="导出 CSV" :disabled="!isResultSetType(resultSet) || !(resultSet.rows || []).length" @click="exportResult(tab.id, idx)"><el-icon><Download /></el-icon></el-button>
           </div>
-          </div>
+        </div>
 
         <div v-if="tabStates[tab.id].queryResult.errorMessage" class="result-message">
           <el-alert
@@ -226,7 +185,7 @@
                   <div class="hint">配置变更后自动刷新</div>
                 </div>
                 <div class="chart-canvas">
-                  <div class="chart-inner" :ref="(el) => setChartRef(tab.id, idx, el)"></div>
+                  <div :ref="(el) => setChartRef(tab.id, idx, el)" class="chart-inner"></div>
                   <div v-if="!(resultSet.rows || []).length" class="chart-empty">暂无数据</div>
                   <div v-else-if="!canRenderChart(tab.id, idx)" class="chart-empty">
                     请选择字段并执行查询
@@ -239,19 +198,18 @@
 
       <el-tab-pane name="history">
         <template #label>
-          <span class="result-label"><el-icon><Clock /></el-icon> 历史查询</span>
+          <span class="result-label"><el-icon><Clock /></el-icon> 查询历史</span>
         </template>
         <div class="history-panel">
           <el-table
+            v-loading="historyLoading"
             :data="historyData"
-            border
             size="small"
             height="100%"
-            v-loading="historyLoading"
           >
             <el-table-column prop="sqlText" label="SQL" min-width="220" show-overflow-tooltip />
             <el-table-column prop="databaseName" label="数据库" width="120" />
-            <el-table-column prop="clusterId" label="集群" width="100" />
+            <el-table-column prop="clusterId" label="连接" width="100" />
             <el-table-column label="执行时间" width="160">
               <template #default="{ row }">
                 {{ formatDateTime(row.executedAt || row.createdAt) }}
@@ -294,11 +252,9 @@ import {
   Timer,
   Clock,
   List,
-  Loading,
   Warning,
-  Files,
   Grid,
-  TrendCharts
+  TrendCharts, Download
 } from '@element-plus/icons-vue'
 import DataStudioResultGrid from './DataStudioResultGrid.vue'
 import { formatDuration, formatDateTime } from '../tableFormat'
@@ -353,7 +309,7 @@ const {
   display: flex;
   flex-direction: column;
   border: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  box-shadow: none;
 }
 
 :deep(.result-tabs .el-tabs__content) {
@@ -379,9 +335,7 @@ const {
 }
 
 .table-toolbar {
-  padding: 8px 12px;
   background-color: #fff;
-  border-bottom: 1px solid #ebeef5;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -403,9 +357,6 @@ const {
 
 .meta-info {
   display: flex;
-  gap: 16px;
-  font-size: 12px;
-  color: #606266;
 }
 
 .meta-item {
@@ -417,7 +368,6 @@ const {
 .export-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
 }
 
 .truncate {
@@ -463,7 +413,7 @@ const {
 .history-panel {
   flex: 1;
   min-height: 0;
-  padding: 8px;
+  padding: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -487,7 +437,6 @@ const {
 }
 
 .chart-config {
-  width: 220px;
   border-right: 1px solid #eef1f6;
   padding: 12px;
   display: flex;
@@ -529,5 +478,154 @@ const {
   justify-content: center;
   color: #94a3b8;
 }
+.table-toolbar {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.meta-info,
+.export-actions {
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
+.table-toolbar {
+  min-height: 32px;
+  box-sizing: border-box;
+  padding: 4px 10px;
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+}
+.meta-info {
+  font-size: 11px;
+  color: #64748b;
+  gap: 12px;
+}
+.execution-state {
+  color: #475569;
+}
+.status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #4e9e7c;
+  margin-right: 2px;
+}
+.is-idle .status-dot {
+  background: #94a3b8;
+}
+.is-running .status-dot {
+  background: #4587d1;
+}
+.is-stopped .status-dot {
+  background: #c99445;
+}
+.is-error .status-dot {
+  background: #d45d5d;
+}
+.export-actions {
+  gap: 5px;
+  flex-shrink: 0;
+}
+.export-actions :deep(.el-button) {
+  height: 24px;
+  padding: 3px 6px;
+  margin-left: 0;
+  font-size: 11px;
+  color: #64748b;
+}
+.result-view-switch {
+  display: flex;
+  gap: 2px;
+}
+.result-view-switch :deep(.is-selected) {
+  color: #3f6fa7;
+  background: #edf3fb;
+}
+.result-view-switch :deep(.el-icon) {
+  margin-right: 4px;
+}
+.result-action-divider {
+  height: 14px;
+  width: 1px;
+  background: #e2e8f0;
+  margin: 0 3px;
+}
+.result-tabs :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background: #e2e8f0;
+}
+.result-tabs :deep(.el-tabs__item) {
+  font-size: 11px;
+  font-weight: 400;
+}
+.result-tabs :deep(.el-tabs__item.is-active) {
+  font-weight: 500;
+  color: #3f6fa7;
+}
+.chart-config {
+  width: 180px;
+  background: #fafbfc;
+}
+
+.result-panel {
+  border: 1px solid #dce2e9;
+  border-left: 0;
+  border-right: 0;
+  box-sizing: border-box;
+}
+.result-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  padding: 0;
+  background: #f4f6f9;
+  border-bottom: 1px solid #dce2e9;
+}
+.result-tabs :deep(.el-tabs__nav) {
+  border: 0;
+  border-radius: 0;
+}
+.result-tabs :deep(.el-tabs__nav-wrap) {
+  margin-bottom: -1px;
+}
+.result-tabs :deep(.el-tabs__nav-wrap::after),
+.result-tabs :deep(.el-tabs__active-bar) {
+  display: none;
+}
+.result-tabs :deep(.el-tabs__item) {
+  border-left: 0;
+  border-right: 1px solid #dce2e9;
+  border-top: 2px solid transparent;
+  border-bottom: 1px solid #dce2e9;
+  padding: 0 12px;
+  height: 32px;
+}
+.result-tabs :deep(.el-tabs__item.is-active) {
+  background: #fff;
+  border-top-color: #517aa8;
+  border-bottom-color: #fff;
+}
+
+.result-tabs {
+  --el-tabs-header-height: 32px;
+}
+.result-tabs :deep(> .el-tabs__header) {
+  height: 32px;
+  min-height: 32px;
+  flex: 0 0 32px;
+  box-sizing: border-box;
+  align-items: flex-start;
+}
+.result-tabs :deep(> .el-tabs__header .el-tabs__nav-wrap),
+.result-tabs :deep(> .el-tabs__header .el-tabs__nav) {
+  height: 32px;
+  margin: 0;
+}
+.result-tabs :deep(> .el-tabs__header .el-tabs__item) {
+  height: 32px;
+  margin: 0;
+}
+.result-tabs :deep(> .el-tabs__header .el-tabs__item.is-active) {
+  position: relative;
+  z-index: 1;
+  border-bottom-color: #fff;
+}
 </style>

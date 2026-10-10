@@ -6,13 +6,12 @@ import { computed, reactive, ref, onMounted, onBeforeUnmount } from 'vue'
 // 依赖注入 activeTab 与 syncResultPaneLayout（后者为前向引用，以惰性包装传入）。
 export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
   const studioLayoutRef = ref(null)
-  const DEFAULT_SIDEBAR_RATIO = 0.2
-  const DEFAULT_RIGHT_RATIO = 0.3
+  const DEFAULT_SIDEBAR_RATIO = 0.22
+  const DEFAULT_RIGHT_RATIO = 0.28
   const MIN_SIDEBAR_WIDTH = 220
   const MAX_SIDEBAR_WIDTH = 840
-  // 表详情有六个 tab（表信息/Doris信息/列信息/DDL/访问情况/变更记录），
-  // 低于 400px 时 tab 栏会出现左右滚动箭头
-  const MIN_RIGHT_WIDTH = 400
+  // 窄详情栏使用原生 Tab 滚动，优先保留 SQL 编辑区空间。
+  const MIN_RIGHT_WIDTH = 320
   const MAX_RIGHT_WIDTH = 900
   const sidebarWidthRatio = ref(DEFAULT_SIDEBAR_RATIO)
   const rightPanelWidthRatio = ref(DEFAULT_RIGHT_RATIO)
@@ -37,6 +36,8 @@ export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
   }))
   const normalizePaneRatios = () => {
     const layoutWidth = getLayoutWidth()
+    // 纵向布局使用整行宽度，不让最小栏宽把桌面的比例放大。
+    if (layoutWidth <= 900) return
     sidebarWidthRatio.value = clampSidebarWidth(layoutWidth * sidebarWidthRatio.value) / layoutWidth
     rightPanelWidthRatio.value = clampRightWidth(layoutWidth * rightPanelWidthRatio.value) / layoutWidth
   }
@@ -69,12 +70,17 @@ export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
   }
 
   const startResize = (event) => {
+    if (event.button !== 0 || isResizing.value) return
     event.preventDefault()
     const startX = event.clientX
     const startWidth = getSidebarWidthPx()
     isResizing.value = true
 
     resizeMoveHandler = (moveEvent) => {
+      if (!(moveEvent.buttons & 1)) {
+        resizeUpHandler()
+        return
+      }
       const delta = moveEvent.clientX - startX
       const next = clampSidebarWidth(startWidth + delta)
       sidebarWidthRatio.value = next / getLayoutWidth()
@@ -91,12 +97,17 @@ export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
   }
 
   const startRightResize = (event) => {
+    if (event.button !== 0 || isResizing.value) return
     event.preventDefault()
     const startX = event.clientX
     const startWidth = getRightPanelWidthPx()
     isResizing.value = true
 
     resizeRightMoveHandler = (moveEvent) => {
+      if (!(moveEvent.buttons & 1)) {
+        resizeRightUpHandler()
+        return
+      }
       const delta = startX - moveEvent.clientX
       const next = clampRightWidth(startWidth + delta)
       rightPanelWidthRatio.value = next / getLayoutWidth()
@@ -113,6 +124,7 @@ export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
   }
 
   const startLeftResize = (tabId, event) => {
+    if (event.button !== 0 || isResizing.value) return
     event.preventDefault()
     const container = leftPaneRefs.value[tabId]
     if (!container) return
@@ -127,6 +139,10 @@ export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
     let layoutRaf = 0
 
     resizeLeftMoveHandler = (moveEvent) => {
+      if (!(moveEvent.buttons & 1)) {
+        resizeLeftUpHandler()
+        return
+      }
       const delta = moveEvent.clientY - startY
       let next = startHeight + delta
       const maxTop = Math.max(minTop, containerRect.height - minBottom - resizerHeight)
@@ -148,12 +164,20 @@ export function useResizablePanes({ activeTab, syncResultPaneLayout }) {
     window.addEventListener('mouseup', resizeLeftUpHandler)
   }
 
+  const stopResize = () => {
+    resizeUpHandler?.()
+    resizeRightUpHandler?.()
+    resizeLeftUpHandler?.()
+  }
+
   onMounted(() => {
     window.addEventListener('resize', handleResize)
+    window.addEventListener('blur', stopResize)
   })
 
   onBeforeUnmount(() => {
     window.removeEventListener('resize', handleResize)
+    window.removeEventListener('blur', stopResize)
     if (resizeMoveHandler) {
       window.removeEventListener('mousemove', resizeMoveHandler)
       resizeMoveHandler = null

@@ -4,7 +4,7 @@ import { dataQueryApi } from '@/api/query'
 import { buildCsvContent } from '../csvExport'
 import { buildResultGridRows } from '../components/resultGridModel'
 import { abbreviateSql } from '../tableFormat'
-import { splitSqlStatements } from '../sqlStatements'
+import { buildExplainSql, splitSqlStatements } from '../sqlStatements'
 
 const INFO_TAB_NAME = 'info'
 const RESULT_TYPE_RESULT_SET = 'RESULT_SET'
@@ -204,7 +204,17 @@ export function useQueryExecution({
   const handleQuerySourceSelect = async (tabId, value) => {
     const state = tabStates[tabId]
     const tab = getTabItemById(tabId)
-    if (!state || !tab || tab.kind !== 'query') return
+    if (!state || !tab) return
+    if (tab.kind !== 'query') {
+      const sourceId = value ? String(value) : ''
+      state.query.sourceId = sourceId
+      state.query.dbName = ''
+      if (sourceId && await loadSchemas(sourceId) && state.query.sourceId === sourceId) {
+        state.query.dbName = activeSchema[sourceId] || schemaStore[sourceId]?.[0] || ''
+        if (state.query.dbName) await loadTables(sourceId, state.query.dbName)
+      }
+      return
+    }
 
     const sourceId = value ? String(value) : ''
     state.table.sourceId = sourceId
@@ -246,7 +256,13 @@ export function useQueryExecution({
   const handleQueryDatabaseSelect = async (tabId, value) => {
     const state = tabStates[tabId]
     const tab = getTabItemById(tabId)
-    if (!state || !tab || tab.kind !== 'query') return
+    if (!state || !tab) return
+    if (tab.kind !== 'query') {
+      state.query.dbName = value ? String(value) : ''
+      const sourceId = state.query.sourceId ?? state.table.sourceId
+      if (sourceId && state.query.dbName) await loadTables(sourceId, state.query.dbName)
+      return
+    }
 
     const dbName = value ? String(value) : ''
     state.table.dbName = dbName
@@ -282,26 +298,28 @@ export function useQueryExecution({
     }
   }
 
-  const executeQuery = async (tabId) => {
+  const executeQuery = async (tabId, { explain = false } = {}) => {
     const state = tabStates[tabId]
     if (!state) return
     const runId = Number(state.queryRunId || 0) + 1
     state.queryRunId = runId
     const selectedSql = String(state?.query?.selectionText || '')
-    const sqlToRun = selectedSql.trim() ? selectedSql : String(state?.query?.sql || '')
+    const sqlText = selectedSql.trim() ? selectedSql : String(state?.query?.sql || '')
+    const sqlToRun = explain ? buildExplainSql(sqlText) : sqlText
+    const executionDatabase = state.query.dbName ?? state.table?.dbName
     if (!sqlToRun.trim()) {
       state.queryResult.errorMessage = '请输入 SQL'
       state.queryResult.message = ''
       state.resultTab = INFO_TAB_NAME
       return
     }
-    if (!state.table?.dbName) {
+    if (!executionDatabase) {
       state.queryResult.errorMessage = '请先选择数据库'
       state.queryResult.message = ''
       state.resultTab = INFO_TAB_NAME
       return
     }
-    const sourceId = state.table?.sourceId || clusterId.value
+    const sourceId = state.query.sourceId ?? state.table?.sourceId ?? clusterId.value
     if (!sourceId) {
       state.queryResult.errorMessage = '请选择数据源'
       state.queryResult.message = ''
@@ -314,7 +332,7 @@ export function useQueryExecution({
       analyzeRes = await dataQueryApi.analyze({
         clientQueryId: String(tabId),
         clusterId: sourceId || undefined,
-        database: state.table.dbName || undefined,
+        database: executionDatabase || undefined,
         sql: sqlToRun
       })
     } catch (error) {
@@ -435,7 +453,7 @@ export function useQueryExecution({
       const res = await dataQueryApi.execute({
         clientQueryId: String(tabId),
         clusterId: sourceId || undefined,
-        database: state.table.dbName || undefined,
+        database: executionDatabase || undefined,
         sql: sqlToRun,
         limit: state.query.limit,
         confirmations
@@ -647,12 +665,22 @@ export function useQueryExecution({
     const state = tabStates[tabId]
     if (!state || !row) return
     state.query.sql = row.sqlText || ''
+    state.query.selectionText = ''
+    state.query.hasSelection = false
+    const tab = getTabItemById(tabId)
+    if (tab?.kind !== 'query') {
+      if (row.clusterId) {
+        state.query.sourceId = String(row.clusterId)
+        loadSchemas(row.clusterId)
+      }
+      if (row.databaseName) state.query.dbName = row.databaseName
+      return
+    }
     if (row.clusterId) {
       const sourceId = String(row.clusterId)
       clusterId.value = row.clusterId
       activeSource.value = sourceId
       loadSchemas(row.clusterId)
-      const tab = getTabItemById(tabId)
       if (tab?.kind === 'query') {
         tab.sourceId = sourceId
         state.table.sourceId = sourceId
@@ -663,6 +691,10 @@ export function useQueryExecution({
     }
     if (row.databaseName) {
       state.table.dbName = row.databaseName
+      tab.dbName = row.databaseName
+    }
+    if (String(activeTab.value) === String(tabId)) {
+      syncRouteWithTab(tab, tabId)
     }
   }
 

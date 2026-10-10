@@ -429,6 +429,16 @@ export function useCatalogTree({
     return !activatedSources[String(nodeData.sourceId)]
   }
 
+  const isCatalogNodeActive = (nodeData) => {
+    if (nodeData?.type === 'datasource') return !isDatasourceIconInactive(nodeData)
+    if (nodeData?.type !== 'schema') return false
+    const sourceId = String(nodeData.sourceId)
+    const source = getDatasourceById(sourceId)
+    if (source?.status && source.status !== 'active') return false
+    // 已连接且成功加载对象列表的 Schema 为激活态，空库同样有效。
+    return !!activatedSources[sourceId] && Array.isArray(tableStore[sourceId]?.[nodeData.schemaName])
+  }
+
   const getDatasourceIconUrl = (sourceType) => {
     const type = String(sourceType || '').toUpperCase()
     if (type === 'MYSQL') return '/datasource-icons/mysql.svg'
@@ -543,18 +553,6 @@ export function useCatalogTree({
     if (!node?.loaded) return
     tree.updateKeyChildren(key, buildTableChildren(sourceId, database, objectType))
     nextTick(() => tree.filter(searchKeyword.value))
-  }
-
-  const refreshLoadedSchemaNodesInTree = () => {
-    Object.keys(tableStore).forEach((sourceId) => {
-      const dbMap = tableStore[sourceId]
-      if (!dbMap || typeof dbMap !== 'object') return
-      Object.keys(dbMap).forEach((schemaName) => {
-        refreshSchemaChildrenInTree(sourceId, schemaName)
-        refreshObjectGroupChildrenInTree(sourceId, schemaName, 'table')
-        refreshObjectGroupChildrenInTree(sourceId, schemaName, 'view')
-      })
-    })
   }
 
   const reloadSchemaCountsForLoadedDatasources = async (keyword) => {
@@ -838,8 +836,15 @@ export function useCatalogTree({
     }, 300)
   })
 
-  watch([sortField, sortOrder], () => {
-    refreshLoadedSchemaNodesInTree()
+  watch([sortField, sortOrder], async () => {
+    Object.entries(tableStore).forEach(([sourceId, databases]) => {
+      Object.keys(databases || {}).forEach((schemaName) => {
+        refreshObjectGroupChildrenInTree(sourceId, schemaName, 'table')
+        refreshObjectGroupChildrenInTree(sourceId, schemaName, 'view')
+      })
+    })
+    await nextTick()
+    if (selectedTableKey.value) catalogTreeRef.value?.setCurrentKey(selectedTableKey.value, false)
   })
 
   watch(selectedTableKey, (value) => {
@@ -885,6 +890,7 @@ export function useCatalogTree({
     getTableKey,
     findCachedTableById,
     isDatasourceIconInactive,
+    isCatalogNodeActive,
     getDatasourceIconUrl,
     isViewTable,
     getTableRowCount,

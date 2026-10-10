@@ -1,5 +1,5 @@
 <template>
-  <div class="meta-section meta-section-fill" v-loading="state.accessLoading">
+  <div v-loading="state.accessLoading" class="meta-section meta-section-fill">
     <section class="section-block section-fill">
       <div class="section-header">
         <div class="access-title-row">
@@ -32,12 +32,13 @@
           />
 
           <div class="metrics-grid">
-            <div v-for="metric in accessMetrics" :key="metric.label" class="metric-card">
+            <div v-for="metric in accessMetrics.slice(0, 4)" :key="metric.label" class="metric-card">
               <div class="metric-label">{{ metric.label }}</div>
               <div class="metric-value">{{ metric.value }}</div>
             </div>
           </div>
 
+          <dl class="audit-properties"><div v-for="metric in accessMetrics.slice(4)" :key="metric.label"><dt>{{ metric.label }}</dt><dd>{{ metric.value }}</dd></div></dl>
           <div class="section-divider"></div>
 
           <div class="section-header small">
@@ -54,9 +55,9 @@
             <span>活跃用户 Top{{ (state.accessStats.topUsers || []).length }}</span>
           </div>
           <el-table :data="state.accessStats.topUsers || []" border size="small" class="access-table">
-            <el-table-column prop="userId" label="用户" min-width="140" show-overflow-tooltip />
-            <el-table-column prop="accessCount" label="访问次数" width="100" />
-            <el-table-column label="最近访问" min-width="160">
+            <el-table-column prop="userId" label="用户" min-width="80" show-overflow-tooltip />
+            <el-table-column prop="accessCount" label="次数" width="55" />
+            <el-table-column label="最近访问" min-width="145">
               <template #default="{ row }">
                 {{ formatDateTime(row.lastAccessTime) }}
               </template>
@@ -172,7 +173,7 @@ const refreshAccess = () => {
 
 .metrics-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -180,7 +181,6 @@ const refreshAccess = () => {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
-  padding: 8px 9px;
 }
 
 .metric-label {
@@ -190,8 +190,6 @@ const refreshAccess = () => {
 
 .metric-value {
   margin-top: 4px;
-  font-size: 14px;
-  font-weight: 700;
   color: var(--text);
   word-break: break-word;
 }
@@ -205,5 +203,31 @@ const refreshAccess = () => {
   .metrics-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.audit-properties {
+  margin: 16px 0 0;
+  font-size: 11px;
+}
+.audit-properties > div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 10px;
+  padding: 5px 0;
+}
+.audit-properties dt {
+  color: #8a96a5;
+}
+.audit-properties dd {
+  margin: 0;
+  color: #526174;
+  overflow-wrap: anywhere;
+}
+.metric-value {
+  font-size: 16px;
+  font-weight: 500;
+}
+.metric-card {
+  padding: 8px 0;
 }
 </style>

@@ -204,3 +204,14 @@ describe('useStudioTabs', () => {
     expect(tabStates.t.dataLoading || tabStates.t.dataLoaded).toBe(true)
   })
 })
+
+
+it('new queries inherit the execution target independently from the inspected object', async () => {
+  const { api, openTabs, activeTab, tabStates } = setup({ getSchemaOptions: () => ['reports'] })
+  pushTab(openTabs, tabStates, api, 'table1', 'table', { sourceId: '1', dbName: 'object_db' })
+  Object.assign(tabStates.table1.query, { sourceId: '2', dbName: 'reports' })
+  activeTab.value = 'table1'
+  await api.handleTabAdd()
+  expect(openTabs.value[1]).toMatchObject({ kind: 'query', sourceId: '2', dbName: 'reports' })
+  expect(openTabs.value[0]).toMatchObject({ kind: 'table', sourceId: '1', dbName: 'object_db' })
+})

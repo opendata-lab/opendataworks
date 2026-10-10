@@ -79,9 +79,9 @@ export function useSqlCompletion({
   const getSqlCompletionContext = (tabId) => {
     const state = tabStates[String(tabId || '')]
     if (!state) return null
-    const sourceId = String(state.table?.sourceId || '')
+    const sourceId = String(state.query?.sourceId ?? state.table?.sourceId ?? '')
     if (!sourceId) return null
-    const currentSchema = String(state.table?.dbName || '')
+    const currentSchema = String(state.query?.dbName ?? state.table?.dbName ?? '')
     return {
       sourceId,
       currentSchema,

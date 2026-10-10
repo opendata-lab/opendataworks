@@ -161,7 +161,7 @@ const menuItems = computed(() => {
     { index: '/lineage', label: '数据血缘', icon: Connection },
     { index: '/inspection', label: '数据质量', icon: Warning },
     { index: '/integration', label: '数据集成', icon: Link },
-    { index: '/intelligent-query', label: 'Agent问答', icon: ChatDotRound },
+    { index: '/intelligent-query', label: '智能问数', icon: ChatDotRound },
     { index: '/settings', label: '设置', icon: Setting }
   ]
   if (!isDemoMode) {
@@ -273,8 +273,8 @@ onBeforeUnmount(() => {
 
 .logo {
   height: var(--odw-nav-height);
-  min-width: 200px;
-  flex: 0 0 200px;
+  min-width: 244px;
+  flex: 0 0 244px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -295,6 +295,7 @@ onBeforeUnmount(() => {
 }
 
 .logo h2 {
+  white-space: nowrap;
   color: var(--odw-text-on-dark);
   font-size: 20px;
   font-weight: 600;
@@ -402,6 +403,7 @@ onBeforeUnmount(() => {
   }
 
   .logo h2 {
+  white-space: nowrap;
     font-size: 18px;
     letter-spacing: 0;
   }

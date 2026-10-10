@@ -18,7 +18,7 @@
     <!-- 上游数据流入 -->
     <div class="flow-section">
       <div class="flow-section-title">上游数据流入</div>
-      <div class="lineage-diagram" ref="upstreamDiagramRef">
+      <div ref="upstreamDiagramRef" class="lineage-diagram">
         <div class="diagram-column">
           <div class="column-header">
             <el-icon><Grid /></el-icon>
@@ -126,7 +126,7 @@
     <!-- 下游数据流出 -->
     <div class="flow-section">
       <div class="flow-section-title">下游数据流出</div>
-      <div class="lineage-diagram" ref="downstreamDiagramRef">
+      <div ref="downstreamDiagramRef" class="lineage-diagram">
         <div class="diagram-column diagram-current">
           <div class="column-header">
             <el-icon><Grid /></el-icon>
@@ -618,14 +618,12 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .lineage-panel {
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: none;
+  border-radius: 0;
   background: var(--panel);
-  padding: 10px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   height: 100%;
   min-height: 0;
   max-height: none;
@@ -652,8 +650,8 @@ onBeforeUnmount(() => {
 }
 
 .section-title {
-  font-size: 14px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text);
 }
 
@@ -669,18 +667,18 @@ onBeforeUnmount(() => {
 }
 
 .flow-section {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel-muted);
-  padding: 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
 .flow-section-title {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--text);
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line);
@@ -724,7 +722,7 @@ onBeforeUnmount(() => {
 
 .lineage-node {
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: 3px;
   background: #fff;
   padding: 8px;
   display: flex;
@@ -738,14 +736,14 @@ onBeforeUnmount(() => {
 .lineage-node:hover {
   border-color: var(--accent);
   background: var(--accent-soft);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(47, 106, 163, 0.15);
+  transform: none;
+  box-shadow: none;
 }
 
 .lineage-node.is-current {
   border-color: var(--accent);
   background: var(--accent-soft);
-  box-shadow: 0 2px 8px rgba(47, 106, 163, 0.15);
+  box-shadow: none;
   cursor: default;
 }
 
@@ -825,8 +823,8 @@ onBeforeUnmount(() => {
   color: var(--text-muted);
   text-align: center;
   padding: 16px 8px;
-  border: 1px dashed var(--line);
-  border-radius: 6px;
+  border: none;
+  border-radius: 3px;
   background: rgba(255, 255, 255, 0.5);
 }
 
@@ -862,5 +860,78 @@ onBeforeUnmount(() => {
 .connection-line:hover {
   opacity: 1;
   stroke-width: 3;
+}
+
+/* 窄侧栏只列关系分组，精确图连线仍在完整血缘画布查看。 */
+.lineage-panel {
+  container-type: inline-size;
+  padding: 14px;
+  gap: 20px;
+}
+@container (max-width: 600px) {
+  .lineage-diagram {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    min-height: 0;
+  }
+  .diagram-current,
+  .lineage-connections-svg {
+    display: none;
+  }
+  .flow-section {
+    gap: 12px;
+  }
+  .flow-section-title {
+    font-size: var(--studio-font-detail, 10px);
+    color: #526174;
+    font-weight: 500;
+    padding-bottom: 8px;
+  }
+  .column-header {
+    font-size: 10px;
+    color: #8a96a5;
+    font-weight: 400;
+    padding: 0;
+  }
+  .column-header .el-icon {
+    font-size: 11px;
+  }
+  .lineage-node {
+    padding: 8px;
+    border-color: #e2e8f0;
+  }
+  .node-icon {
+    color: #7b8fa8;
+    font-size: 13px;
+  }
+  .node-name {
+    font-size: 10px;
+    font-weight: 500;
+    line-height: 16px;
+  }
+  .node-desc {
+    font-size: 10px;
+    line-height: 16px;
+  }
+  .lineage-node :deep(.el-tag) {
+    font-size: 10px;
+    height: 16px;
+    padding: 0 4px;
+  }
+  .node-actions {
+    padding: 0;
+  }
+  .node-actions .el-button {
+    font-size: 10px;
+    padding: 0;
+    height: 20px;
+    border: 0;
+    background: transparent;
+  }
+  .empty-placeholder {
+    text-align: left;
+    padding: 4px 0;
+    font-size: 10px;
+  }
 }
 </style>

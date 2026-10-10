@@ -1,9 +1,9 @@
 <template>
-  <!-- 没有区块标题，也没有第二个区块，所以不套 section-block：
-       描述列表自带边框，直接挂在 tab 内容区上 -->
-  <div ref="basicRootRef" class="meta-section meta-section-fill">
+  <div ref="basicRootRef" class="meta-section meta-section-fill inspector-overview">
     <el-scrollbar class="meta-scroll">
-      <el-descriptions :column="descColumn" border size="small" class="meta-descriptions">
+      <section v-if="state.metaEditing" class="overview-section">
+        <h3>对象定义</h3>
+        <el-descriptions :column="1" size="small" class="meta-descriptions overview-descriptions">
         <el-descriptions-item label="表名">
           <el-input v-if="state.metaEditing" v-model="state.metaForm.tableName" size="small" class="meta-input" />
           <span v-else>{{ state.table.tableName || '-' }}</span>
@@ -20,6 +20,11 @@
           />
           <span v-else>{{ state.table.tableComment || '-' }}</span>
         </el-descriptions-item>
+        </el-descriptions>
+      </section>
+      <section class="overview-section">
+        <h3>归属信息</h3>
+        <el-descriptions :column="descColumn" size="small" class="meta-descriptions overview-descriptions">
         <el-descriptions-item label="分层">
           <el-select
             v-if="state.metaEditing"
@@ -72,6 +77,11 @@
           <el-input v-if="state.metaEditing" v-model="state.metaForm.owner" size="small" class="meta-input" />
           <span v-else>{{ state.table.owner || '-' }}</span>
         </el-descriptions-item>
+        </el-descriptions>
+      </section>
+      <section class="overview-section">
+        <h3>数据规模 <span>点击指标查看趋势</span></h3>
+        <el-descriptions :column="descColumn" size="small" class="meta-descriptions overview-descriptions scale-descriptions">
         <el-descriptions-item label="行数">
           <el-button
             link
@@ -94,19 +104,23 @@
             {{ formatStorageSizeDisplay(resolveTableStorageSize(state.table)) }}
           </el-button>
         </el-descriptions-item>
-        <el-descriptions-item label="Doris创建时间">
+        </el-descriptions>
+      </section>
+      <section class="overview-section">
+        <h3>更新时间</h3>
+        <el-descriptions :column="descColumn" size="small" class="meta-descriptions overview-descriptions time-descriptions">
+        <el-descriptions-item label="创建时间" :span="descColumn">
           <span>{{ formatDateTime(resolveTableDorisCreateTime(state.table)) }}</span>
         </el-descriptions-item>
-        <el-descriptions-item label="Doris更新时间">
+        <el-descriptions-item label="更新时间" :span="descColumn">
           <span>{{ formatDateTime(resolveTableDorisUpdateTime(state.table)) }}</span>
         </el-descriptions-item>
-      </el-descriptions>
+        </el-descriptions>
+      </section>
     </el-scrollbar>
   </div>
-
   <TableTrendDialog ref="trendDialogRef" :table="state?.table" />
 </template>
-
 <script setup>
 import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import TableTrendDialog from './TableTrendDialog.vue'
@@ -145,10 +159,8 @@ const state = computed(() => {
 const dataDomainOptions = computed(() => getMetaDataDomainOptions(activeTabId.value))
 const trendDialogRef = ref(null)
 
-// 表信息与「Doris信息」一样按两列排（原来是一列，Doris 配置块拆到独立 tab 后
-// 整块占满面板宽度，一列会浪费右侧一半横向空间）。右栏可拖到 400px 下限，
-// 两列时每个值列只剩 100px 出头，所以窄于阈值时退回一列。
-const TWO_COLUMN_MIN_WIDTH = 440
+// 根据面板实际宽度决定列数；无边框布局为短属性留出两列空间。
+const TWO_COLUMN_MIN_WIDTH = 360
 const basicRootRef = ref(null)
 const descColumn = ref(2)
 let resizeObserver = null
@@ -196,6 +208,53 @@ onBeforeUnmount(() => {
 
 .metric-link {
   padding: 0;
-  font-weight: 600;
+}
+
+.overview-section {
+  padding: 4px 0 0;
+  margin-bottom: 22px;
+}
+.overview-section h3 {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 0 0 12px;
+  font-size: var(--studio-font-ui);
+  font-weight: 500;
+  color: #56677b;
+}
+.overview-section h3 span {
+  font-size: 10px;
+  color: #98a3b2;
+  font-weight: 400;
+}
+.overview-descriptions :deep(.el-descriptions__body) {
+  background: transparent;
+}
+.overview-descriptions :deep(.el-descriptions__cell) {
+  padding-bottom: 11px;
+  line-height: 18px;
+  font-size: var(--studio-font-ui);
+}
+.overview-descriptions :deep(.el-descriptions__label) {
+  color: #8894a4;
+  font-size: 11px;
+  font-weight: 400;
+  margin-right: 12px;
+}
+.overview-descriptions :deep(.el-descriptions__content) {
+  color: #334155;
+  font-size: var(--studio-font-ui);
+  overflow-wrap: anywhere;
+}
+.metric-link {
+  font-size: 14px;
+  font-weight: 500;
+  color: #3f6fa7;
+  line-height: 24px;
+}
+.time-descriptions :deep(.el-descriptions__content) {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 </style>

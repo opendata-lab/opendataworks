@@ -87,3 +87,15 @@ describe('useTabPersistence', () => {
     expect(localStorage.getItem(KEY)).not.toBeNull()
   })
 })
+
+
+it('persists independent query target and explicitly empty schema without changing object identity', () => {
+  localStorage.clear()
+  const original = setup([{ id: 't1', kind: 'table', tableName: 'orders', dbName: 'db', sourceId: '1' }])
+  original.tabStates.t1 = { table: { id: 9, dbName: 'db', sourceId: '1' }, query: { sql: 'SELECT 1', sourceId: '2', dbName: '', limit: 200 } }
+  original.api.flushPersistTabs()
+  const restored = setup()
+  expect(restored.api.restoreTabsFromStorage()).toBe(true)
+  expect(restored.tabStates.t1.table).toMatchObject({ id: 9, dbName: 'db', sourceId: '1' })
+  expect(restored.tabStates.t1.query).toMatchObject({ sql: 'SELECT 1', sourceId: '2', dbName: '' })
+})

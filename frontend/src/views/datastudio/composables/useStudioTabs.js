@@ -407,16 +407,14 @@ export function useStudioTabs({
 
   const resolveQuerySourceId = () => {
     const current = openTabs.value.find((tab) => String(tab.id) === String(activeTab.value))
-    if (current?.sourceId) return String(current.sourceId)
-    return ''
+    return String(tabStates[current?.id]?.query?.sourceId ?? current?.sourceId ?? '')
   }
 
   const resolveQueryDatabase = (sourceId) => {
     const sid = String(sourceId || '')
     if (!sid) return ''
     const current = openTabs.value.find((tab) => String(tab.id) === String(activeTab.value))
-    if (current?.dbName) return String(current.dbName)
-    return ''
+    return String(tabStates[current?.id]?.query?.dbName ?? current?.dbName ?? '')
   }
 
   const getTabInsertIndex = () => {

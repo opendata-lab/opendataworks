@@ -2,7 +2,7 @@
   <div class="meta-section meta-section-fill">
     <section class="section-block section-fill">
       <div class="section-header">
-        <div class="section-title">字段定义</div>
+        <div class="section-title">字段定义 <span class="field-count">{{ fieldRows.length }} 个字段</span></div>
         <div class="section-actions">
           <el-tag
             v-if="state.fieldsEditing && isAggregateTable(state.table)"
@@ -24,8 +24,8 @@
       </div>
 
       <div v-if="fieldRows.length" class="meta-table">
-        <el-table :data="fieldRows" border size="small" height="100%" class="columns-table">
-          <el-table-column label="字段名" width="136" show-overflow-tooltip>
+        <el-table :data="fieldRows" border size="small" :height="state.fieldsEditing ? '100%' : undefined" class="columns-table">
+          <el-table-column label="字段名" width="134" fixed="left" show-overflow-tooltip>
             <template #default="{ row }">
               <el-input
                 v-if="state.fieldsEditing"
@@ -34,10 +34,10 @@
                 placeholder="字段名"
                 :disabled="isAggregateTable(state.table)"
               />
-              <span v-else>{{ row.fieldName }}</span>
+              <span v-else class="field-name"><el-icon v-if="row.isPrimary" class="field-key"><Key /></el-icon>{{ row.fieldName }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="类型" width="136">
+          <el-table-column label="类型" width="102" show-overflow-tooltip>
             <template #default="{ row }">
               <el-input
                 v-if="state.fieldsEditing"
@@ -47,6 +47,12 @@
                 :disabled="isAggregateTable(state.table)"
               />
               <span v-else>{{ row.fieldType }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="注释" min-width="110" show-overflow-tooltip>
+            <template #default="{ row }">
+              <el-input v-if="state.fieldsEditing" v-model="row.fieldComment" size="small" placeholder="字段注释" />
+              <span v-else>{{ row.fieldComment || '-' }}</span>
             </template>
           </el-table-column>
           <el-table-column label="可为空" width="84">
@@ -59,9 +65,7 @@
                 size="small"
                 :disabled="isAggregateTable(state.table)"
               />
-              <el-tag v-else :type="row.isNullable ? 'success' : 'danger'" size="small">
-                {{ row.isNullable ? '是' : '否' }}
-              </el-tag>
+              <span v-else>{{ row.isNullable ? '是' : '否' }}</span>
             </template>
           </el-table-column>
           <el-table-column label="主键" width="84">
@@ -81,9 +85,7 @@
                   :disabled="isAggregateTable(state.table)"
                 />
               </template>
-              <el-tag v-else :type="row.isPrimary ? 'success' : 'info'" size="small">
-                {{ row.isPrimary ? '是' : '否' }}
-              </el-tag>
+              <span v-else>{{ row.isPrimary ? '是' : '否' }}</span>
             </template>
           </el-table-column>
           <el-table-column label="默认值" width="120">
@@ -96,12 +98,6 @@
                 :disabled="isAggregateTable(state.table)"
               />
               <span v-else>{{ row.defaultValue || '-' }}</span>
-            </template>
-          </el-table-column>
-          <el-table-column label="注释" min-width="150" show-overflow-tooltip>
-            <template #default="{ row }">
-              <el-input v-if="state.fieldsEditing" v-model="row.fieldComment" size="small" placeholder="字段注释" />
-              <span v-else>{{ row.fieldComment || '-' }}</span>
             </template>
           </el-table-column>
           <el-table-column
@@ -183,7 +179,7 @@
 
 <script setup>
 import { computed, inject } from 'vue'
-import { InfoFilled } from '@element-plus/icons-vue'
+import { InfoFilled, Key } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 
 // P2-2 F17d：右侧面板「列信息」tab pane 从 DataStudioRightPanel.vue 抽出。
@@ -224,6 +220,7 @@ const isAdopted = (row) => {
 
 <style scoped>
 .meta-table {
+  overflow: auto;
   flex: 1;
   min-height: 0;
 }
@@ -244,5 +241,37 @@ const isAdopted = (row) => {
 }
 .col-adopted {
   color: #16a34a;
+}
+
+.field-count {
+  margin-left: 6px;
+  font-weight: 400;
+  font-size: 10px;
+  color: #94a3b8;
+}
+.field-name {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  font-family: Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0;
+}
+.field-key {
+  color: #ad8743;
+  font-size: 10px;
+}
+.columns-table :deep(.el-table__cell) {
+  height: 30px;
+  padding: 4px 0;
+}
+.columns-table :deep(.cell) {
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 20px;
+}
+.columns-table :deep(th.el-table__cell) {
+  background: #f6f8fa;
+  font-weight: 500;
 }
 </style>

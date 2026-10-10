@@ -2,7 +2,7 @@
 // DataStudioNew.smoke 把 RightPanel stub 掉了，所以这里单独挂载:
 // 用假 dataStudioCtx provide + shallowMount 真正执行 script setup / composables /
 // computed 与模板渲染。若 F17 抽取破坏了引用或响应式,挂载/渲染会抛错。
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { flushPromises, shallowMount } from '@vue/test-utils'
 import { nextTick, reactive, ref } from 'vue'
 
@@ -24,7 +24,7 @@ const { apiStub, listPartitionsMock } = vi.hoisted(() => {
 
 vi.mock('@/api/table', () => ({ tableApi: apiStub() }))
 vi.mock('@/utils/loadEcharts', () => ({ loadEcharts: vi.fn(() => Promise.resolve({})) }))
-vi.mock('@/demo/runtime', () => ({ isDemoMode: () => false, showDemoReadonlyMessage: vi.fn() }))
+vi.mock('@/demo/runtime', () => ({ isDemoMode: false, showDemoReadonlyMessage: vi.fn() }))
 
 import DataStudioRightPanel from '../components/DataStudioRightPanel.vue'
 import DataStudioRightPanelBasic from '../components/DataStudioRightPanelBasic.vue'
@@ -60,6 +60,7 @@ const buildCtx = () => {
   })
   const fn = () => vi.fn()
   return {
+    getSourceName: () => '测试连接',
     clusterId: ref('s1'),
     openTabs: ref([{ id: 't1', kind: 'table', tableName: 'demo_t' }]),
     activeTab,
@@ -101,6 +102,8 @@ const buildCtx = () => {
 }
 
 describe('DataStudioRightPanel mount smoke', () => {
+  beforeEach(() => vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} }))
+  afterEach(() => vi.unstubAllGlobals())
   it('mounts with a table tab and renders the panel shell', async () => {
     const wrapper = shallowMount(DataStudioRightPanel, {
       global: {
@@ -117,7 +120,8 @@ describe('DataStudioRightPanel mount smoke', () => {
     })
     expect(wrapper.exists()).toBe(true)
     expect(wrapper.find('.panel-shell').exists()).toBe(true)
-    expect(wrapper.find('.panel-resizer').exists()).toBe(true)
+    expect(wrapper.find('.inspector-tabs-shell').exists()).toBe(true)
+    expect(wrapper.find('.panel-resizer').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -143,7 +147,7 @@ describe('DataStudioRightPanel mount smoke', () => {
   })
 
   it('表信息默认两列，面板收窄后退回一列', async () => {
-    // 两列布局与「Doris信息」一致；右栏可拖到 400px 下限，窄面板下退回一列
+    // 归属信息按可用宽度选择列数；长时间项始终跨满当前行。
     const observers = []
     class MockResizeObserver {
       constructor(callback) {
@@ -178,14 +182,14 @@ describe('DataStudioRightPanel mount smoke', () => {
       },
     })
     const column = () => wrapper.find('.desc').attributes('data-column')
-    // 表注释是长文本，跨满整行
+    // 长时间项跨满整行
     const commentSpan = () =>
-      wrapper.findAll('.desc-item').find((n) => n.attributes('data-label') === '表注释').attributes('data-span')
+      wrapper.findAll('.desc-item').find((n) => n.attributes('data-label') === '创建时间').attributes('data-span')
 
     expect(column()).toBe('2')
     expect(commentSpan()).toBe('2')
 
-    observers[0].emit(360)
+    observers[0].emit(320)
     await nextTick()
     expect(column()).toBe('1')
     expect(commentSpan()).toBe('1')
@@ -299,6 +303,8 @@ describe('DataStudioRightPanel mount smoke', () => {
           stubs: {
             DataStudioRightPanelLineage: true,
             SmartMetadataDialog: true,
+            ElDropdown: { template: '<div><slot /><slot name="dropdown" /></div>' },
+            ElDropdownMenu: { template: '<div><slot /></div>' },
             ElScrollbar: { template: '<div><slot /></div>' },
           },
           config: { warnHandler: () => {} },
@@ -353,7 +359,9 @@ describe('DataStudioRightPanel mount smoke', () => {
         directives: { loading: {} },
       },
     })
-    expect(wrapper.find('.table-name').text()).toBe('db.demo_t')
+    expect(wrapper.find('.table-name').text()).toBe('demo_t')
+    expect(wrapper.find('.table-name').attributes('title')).toBe('db.demo_t')
+    expect(wrapper.find('.object-location').text()).toBe('测试连接 / db')
     wrapper.unmount()
   })
 

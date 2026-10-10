@@ -33,8 +33,8 @@ import {
   ensureResultGridRows
 } from './resultGridModel'
 
-const ROW_HEIGHT = 32
-const HEADER_HEIGHT = 36
+const ROW_HEIGHT = 28
+const HEADER_HEIGHT = 32
 
 const props = defineProps({
   columns: {
@@ -109,8 +109,13 @@ const resolveColumns = (availableWidth) => {
   }))
   // Respect manual sizing once the user has dragged a border; otherwise stretch
   // columns to fill the grid so a couple of short columns are not left narrow.
-  if (Object.keys(widthOverrides.value).length) return columns
-  return distributeColumnWidths(columns, availableWidth)
+  const indexColumn = {
+    key: '__odw_row_number__', title: '#', width: 36, minWidth: 36, maxWidth: 36, fixed: true,
+    headerCellRenderer: () => h('span', { class: 'result-grid__row-index' }, '#'),
+    cellRenderer: ({ rowIndex }) => h('span', { class: 'result-grid__row-index' }, rowIndex + 1)
+  }
+  const sizedColumns = Object.keys(widthOverrides.value).length ? columns : distributeColumnWidths(columns, Math.max(0, availableWidth - 36))
+  return [indexColumn, ...sizedColumns]
 }
 
 const safeWidth = (value) => Math.max(0, Math.floor(Number(value) || 0))
@@ -145,7 +150,6 @@ defineExpose({
 
 .result-grid :deep(.el-table-v2__header-cell) {
   padding: 0;
-  color: #1f2f3d;
 }
 
 .result-grid :deep(.result-grid__header) {
@@ -205,6 +209,27 @@ defineExpose({
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.result-grid :deep(.el-table-v2__header-cell) {
+  background: #f5f7fa;
+  border-right: 1px solid #e5e9ef;
+  color: #526174;
+  font-size: 11px;
+}
+.result-grid :deep(.el-table-v2__row-cell) {
+  border-right: 1px solid #eef1f5;
+  font-size: 11px;
+}
+.result-grid :deep(.el-table-v2__row) {
+  border-bottom: 1px solid #eef1f5;
+}
+.result-grid :deep(.result-grid__row-index) {
+  display: block;
+  width: 100%;
+  color: #94a3b8;
+  font-size: 10px;
+  text-align: center;
 }
 </style>
 

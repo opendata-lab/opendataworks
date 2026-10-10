@@ -1,5 +1,5 @@
 <template>
-  <div class="meta-section meta-section-fill" v-loading="loading">
+  <div v-loading="loading" class="meta-section meta-section-fill">
     <section class="section-block section-fill">
       <div class="section-header">
         <div class="section-title">数据新鲜度</div>
@@ -37,7 +37,7 @@
         </el-empty>
 
         <!-- 查看态：只读描述卡 -->
-        <el-descriptions v-else-if="!editing" :column="1" border size="small" class="fresh-view">
+        <el-descriptions v-else-if="!editing" :column="1" size="small" class="fresh-view">
           <el-descriptions-item>
             <template #label><span class="lbl">状态<Help :tip="TIP.status" /></span></template>
             <div class="fv-status">
@@ -141,7 +141,7 @@
 
     <!-- 历史：按钮点开，不常驻 -->
     <el-dialog v-model="historyVisible" title="新鲜度检查历史" width="640px" append-to-body>
-      <el-table :data="history" border size="small" max-height="420" v-loading="historyLoading">
+      <el-table v-loading="historyLoading" :data="history" border size="small" max-height="420">
         <el-table-column label="时间" min-width="160">
           <template #default="{ row }">{{ fmt(row.createdAt) }}</template>
         </el-table-column>
@@ -415,23 +415,41 @@ watch(tableId, () => {
 
 <style scoped>
 /* 术语标签 + 帮助图标 */
-.lbl { display: inline-flex; align-items: center; gap: 3px; }
+.lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
 .lbl-help {
   font-size: 13px;
   color: var(--el-text-color-placeholder);
   cursor: help;
 }
-.lbl-help:hover { color: var(--el-color-primary); }
+.lbl-help:hover {
+  color: var(--el-color-primary);
+}
 
 /* 查看态描述卡 */
 .fresh-view :deep(.el-descriptions__label) {
   width: 108px;
-  color: var(--el-text-color-regular);
 }
-.fv-status { display: flex; align-items: center; gap: 8px; }
-.fv-age { font-size: 12px; color: var(--el-text-color-secondary); }
-.fv-mode { font-weight: 600; }
-.fv-hint { margin-left: 8px; font-size: 12px; color: var(--el-text-color-secondary); }
+.fv-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fv-age {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+.fv-mode {
+  font-weight: 600;
+}
+.fv-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 .fv-code {
   margin-left: 8px;
   padding: 1px 6px;
@@ -441,23 +459,84 @@ watch(tableId, () => {
   font-size: 12px;
   color: var(--el-text-color-regular);
 }
-.dot { margin: 0 6px; color: var(--el-text-color-disabled); }
+.dot {
+  margin: 0 6px;
+  color: var(--el-text-color-disabled);
+}
 
 /* 编辑态表单 */
-.fresh-form { margin-bottom: 4px; }
-.fresh-form :deep(.el-form-item) { margin-bottom: 12px; }
-.fresh-form :deep(.el-form-item__label) { color: var(--el-text-color-regular); }
+.fresh-form {
+  margin-bottom: 4px;
+}
+.fresh-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+.fresh-form :deep(.el-form-item__label) {
+  color: var(--el-text-color-regular);
+}
 
-.opt-name { float: left; }
-.opt-type { float: right; color: var(--el-text-color-secondary); font-size: 12px; }
+.opt-name {
+  float: left;
+}
+.opt-type {
+  float: right;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
 
-.mode-hint { margin-top: 4px; font-size: 12px; line-height: 1.5; color: var(--el-text-color-secondary); }
+.mode-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--el-text-color-secondary);
+}
 
-.thresholds { display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.th-group { display: inline-flex; align-items: center; gap: 6px; }
-.th-lab { font-size: 12px; }
-.th-lab.warn { color: var(--el-color-warning); }
-.th-lab.err { color: var(--el-color-danger); }
-.th-count { width: 66px; }
-.th-period { width: 62px; }
+.thresholds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.th-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.th-lab {
+  font-size: 12px;
+}
+.th-lab.warn {
+  color: var(--el-color-warning);
+}
+.th-lab.err {
+  color: var(--el-color-danger);
+}
+.th-count {
+  width: 66px;
+}
+.th-period {
+  width: 62px;
+}
+
+.fresh-view :deep(.el-descriptions__cell) {
+  padding: 10px 0 12px;
+  line-height: 22px;
+}
+.fresh-view :deep(.el-descriptions__label) {
+  display: block;
+  font-size: 10px;
+  color: #8794a5;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+.fresh-view :deep(.el-descriptions__content) {
+  font-size: var(--studio-font-ui);
+  color: #41536a;
+}
+.fresh-view :deep(.el-descriptions__body) {
+  background: transparent;
+}
+.section-actions :deep(.el-button) {
+  padding: 4px 7px;
+  font-size: 11px;
+}
 </style>

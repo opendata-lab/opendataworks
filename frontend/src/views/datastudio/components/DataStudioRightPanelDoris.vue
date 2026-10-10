@@ -1,5 +1,5 @@
 <template>
-  <div class="meta-section meta-section-fill">
+  <div ref="engineRoot" class="meta-section meta-section-fill">
     <el-scrollbar class="meta-scroll">
       <section class="section-block">
         <div class="section-header">
@@ -7,7 +7,7 @@
           <el-tag size="small" type="warning" effect="plain">DORIS</el-tag>
         </div>
 
-        <el-descriptions :column="2" border size="small" class="meta-descriptions">
+        <el-descriptions :column="engineColumns" size="small" class="meta-descriptions">
           <el-descriptions-item label="表模型">
             <span>{{ state.table.tableModel || '-' }}</span>
           </el-descriptions-item>
@@ -68,33 +68,19 @@
 
         <template v-if="partitions.length">
           <el-table :data="pagedPartitions" border size="small">
-            <el-table-column prop="partitionName" label="分区名" min-width="150" show-overflow-tooltip />
-            <el-table-column label="范围" min-width="200" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.range || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="大小" width="100" align="right">
-              <template #default="{ row }">{{ row.dataSize || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="行数" width="110" align="right">
-              <template #default="{ row }">{{ formatRowCount(row.rowCount) }}</template>
-            </el-table-column>
-            <el-table-column label="分桶" width="70" align="right">
-              <template #default="{ row }">{{ row.buckets ?? '-' }}</template>
-            </el-table-column>
-            <el-table-column label="副本" width="70" align="right">
-              <template #default="{ row }">{{ row.replicationNum ?? '-' }}</template>
-            </el-table-column>
-            <el-table-column label="状态" width="90" show-overflow-tooltip>
-              <template #default="{ row }">{{ row.state || '-' }}</template>
-            </el-table-column>
+            <el-table-column type="expand" width="28"><template #default="{ row }"><dl class="partition-detail"><dt>范围</dt><dd>{{ row.range || '-' }}</dd><dt>分桶 / 副本</dt><dd>{{ row.buckets ?? '-' }} / {{ row.replicationNum ?? '-' }}</dd><dt>状态</dt><dd>{{ row.state || '-' }}</dd></dl></template></el-table-column>
+            <el-table-column prop="partitionName" label="分区" min-width="105" show-overflow-tooltip />
+            <el-table-column label="行数" width="70" align="right"><template #default="{ row }">{{ formatRowCount(row.rowCount) }}</template></el-table-column>
+            <el-table-column label="大小" width="78" align="right"><template #default="{ row }">{{ row.dataSize || '-' }}</template></el-table-column>
           </el-table>
           <el-pagination
+            v-if="partitions.length > pageSize"
             v-model:current-page="currentPage"
             v-model:page-size="pageSize"
             class="partition-pager"
             size="small"
             background
-            layout="total, sizes, prev, pager, next"
+            layout="prev, pager, next"
             :page-sizes="[5, 10, 15]"
             :total="partitions.length"
           />
@@ -106,7 +92,7 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, watch } from 'vue'
+import { computed, inject, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Warning } from '@element-plus/icons-vue'
 import { tableApi } from '@/api/table'
 import { paginate } from '../partitionInfo'
@@ -128,6 +114,12 @@ const state = computed(() => {
   return tabStates[id] || null
 })
 
+const engineRoot = ref(null)
+const engineWidth = ref(0)
+const engineColumns = computed(() => engineWidth.value >= 360 ? 2 : 1)
+let engineObserver
+onMounted(() => { engineObserver = new ResizeObserver(([entry]) => { engineWidth.value = entry.contentRect.width }); if (engineRoot.value) engineObserver.observe(engineRoot.value) })
+onBeforeUnmount(() => engineObserver?.disconnect())
 const partitionsLoading = ref(false)
 const partitionsError = ref('')
 const currentPage = ref(1)
@@ -221,5 +213,37 @@ watch(pageSize, () => {
 .partition-pager {
   margin-top: 10px;
   justify-content: flex-end;
+}
+
+.meta-descriptions :deep(.el-descriptions__cell) {
+  padding: 6px 0 10px;
+}
+.meta-descriptions :deep(.el-descriptions__label) {
+  display: block;
+  font-size: 10px;
+  color: #8a96a5;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+.meta-descriptions :deep(.el-descriptions__content) {
+  font-size: 11px;
+  color: #41536a;
+}
+.meta-descriptions :deep(.el-descriptions__body) {
+  background: transparent;
+}
+.partition-detail {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 6px;
+  margin: 10px;
+  font-size: 11px;
+}
+.partition-detail dt {
+  color: #8a96a5;
+}
+.partition-detail dd {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 </style>

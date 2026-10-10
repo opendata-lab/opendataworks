@@ -37,11 +37,12 @@ export function useTableActions({
       ElMessage.warning('请先输入 SQL')
       return
     }
-    const sourceId = state?.table?.sourceId || clusterId.value || ''
+    const sourceId = state.query.sourceId ?? state.table?.sourceId ?? clusterId.value ?? ''
+    const database = state.query.dbName ?? state.table?.dbName ?? ''
     taskDrawerRef.value?.open(null, {
       taskSql: state.query.sql,
       taskName: `新建查询任务_${Date.now()}`,
-      taskDesc: `From DataStudio\nCluster: ${sourceId}\nDatabase: ${state.table.dbName || ''}`
+      taskDesc: `From DataStudio\nCluster: ${sourceId}\nDatabase: ${database}`
     })
   }
 

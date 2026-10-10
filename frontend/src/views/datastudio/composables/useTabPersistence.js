@@ -29,6 +29,8 @@ export function useTabPersistence({
         sourceType: state?.table?.sourceType || '',
         tableId: state?.table?.id || null,
         sql: state?.query?.sql ?? '',
+        querySourceId: state?.query?.sourceId,
+        queryDatabase: state?.query?.dbName,
         limit: Number(state?.query?.limit ?? 200)
       }
     })
@@ -110,6 +112,12 @@ export function useTabPersistence({
         tabStates[id] = createTabState(tablePayload)
         if (typeof item?.sql === 'string') {
           tabStates[id].query.sql = item.sql
+        }
+        if (typeof item?.querySourceId === 'string') {
+          tabStates[id].query.sourceId = item.querySourceId
+        }
+        if (typeof item?.queryDatabase === 'string') {
+          tabStates[id].query.dbName = item.queryDatabase
         }
         if (Number.isFinite(Number(item?.limit))) {
           tabStates[id].query.limit = Number(item.limit)

@@ -1,82 +1,38 @@
 <template>
   <div :class="rootClass">
-    <div v-if="hasTableTab && state" ref="panelShellRef" class="panel-shell" :style="panelShellStyle">
+    <div v-if="hasTableTab && state" class="panel-shell">
 
       <section class="meta-panel">
         <header class="table-header">
-          <!-- 右侧面板较窄：表名单独一行占满，标签与描述并作一行，操作区再一行 -->
-          <div class="table-name" :title="fullTableName">{{ fullTableName }}</div>
-
-          <div class="table-meta-row">
-            <el-tag v-if="isDorisTable(state.table)" size="small" type="warning" effect="plain">DORIS</el-tag>
-            <el-tag v-if="state.table.layer" size="small" effect="plain">{{ state.table.layer }}</el-tag>
-            <el-tooltip content="表描述与字段描述的填写比例" placement="top">
-              <el-tag size="small" effect="plain" class="completeness-tag">完善度 {{ completeness }}%</el-tag>
-            </el-tooltip>
-            <span class="table-comment" :title="state.table.tableComment || ''">
-              {{ state.table.tableComment || '暂无表描述' }}
-            </span>
+          <div class="object-identity">
+            <el-icon class="object-icon"><Grid /></el-icon>
+            <div class="object-identity-text">
+              <div class="table-name" :title="fullTableName">{{ state.table.tableName }}</div>
+              <div class="object-location" :title="`${getSourceName(activeTabItem.sourceId)} / ${state.table.dbName}`">{{ getSourceName(activeTabItem.sourceId) }} / {{ state.table.dbName }}</div>
+            </div>
           </div>
-
-          <div class="table-actions">
-            <!-- 编辑态只留取消/保存，避免与生成、删除混在一起 -->
-            <template v-if="isEditing">
-              <el-button data-test="action-cancel" size="small" :disabled="isSaving" @click="cancelCurrentEdit">取消</el-button>
-              <el-button
-                data-test="action-save"
-                type="primary"
-                size="small"
-                :loading="isSaving"
-                :disabled="isDemoMode"
-                @click="saveCurrentEdit"
-              >
-                {{ state.metaTab === 'columns' ? '保存修改' : '保存' }}
-              </el-button>
-            </template>
-            <template v-else>
-              <el-button
-                data-test="action-generate"
-                size="small"
-                :loading="metadataGenerating"
-                :disabled="isDemoMode || isPlatformMetadataMissing(state.table)"
-                @click="generateMetadata(activeTabId)"
-              >
-                {{ metadataGenerating ? '元数据生成中' : '智能元数据' }}
-              </el-button>
-
-              <el-tooltip v-if="editDisabledReason" :content="editDisabledReason" placement="top">
-                <span>
-                  <el-button data-test="action-edit" type="primary" size="small" disabled>编辑</el-button>
-                </span>
-              </el-tooltip>
-              <el-button
-                v-else-if="canEditCurrentTab"
-                data-test="action-edit"
-                type="primary"
-                size="small"
-                :disabled="isDemoMode"
-                @click="startCurrentEdit"
-              >
-                编辑
-              </el-button>
-
-              <el-tooltip v-if="editDisabledReason" :content="editDisabledReason" placement="top">
-                <span>
-                  <el-button data-test="action-delete" type="danger" plain size="small" disabled>删除</el-button>
-                </span>
-              </el-tooltip>
-              <el-button
-                v-else
-                data-test="action-delete"
-                type="danger"
-                plain
-                size="small"
-                :disabled="isDemoMode"
-                @click="handleDeleteTable"
-              >
-                删除
-              </el-button>
-            </template>
+          <p class="table-comment" :title="state.table.tableComment || ''">{{ state.table.tableComment || '暂无表描述' }}</p>
+          <div class="object-footer">
+            <div class="table-meta-row">
+              <el-tag v-if="state.table.sourceType" size="small" effect="plain">{{ state.table.sourceType }}</el-tag>
+              <el-tag v-if="state.table.layer" size="small" effect="plain">{{ state.table.layer }}</el-tag>
+              <el-tooltip content="表描述与字段描述的填写比例" placement="top"><span class="completeness-tag">完善度 {{ completeness }}%</span></el-tooltip>
+            </div>
+            <div class="table-actions">
+              <template v-if="isEditing">
+                <el-button data-test="action-cancel" size="small" :disabled="isSaving" @click="cancelCurrentEdit">取消</el-button>
+                <el-button data-test="action-save" type="primary" size="small" :loading="isSaving" :disabled="isDemoMode" @click="saveCurrentEdit">{{ state.metaTab === 'columns' ? '保存修改' : '保存' }}</el-button>
+              </template>
+              <template v-else>
+                <el-button data-test="action-generate" size="small" :loading="metadataGenerating" :disabled="isDemoMode || isPlatformMetadataMissing(state.table)" @click="generateMetadata(activeTabId)"><svg v-if="!metadataGenerating" class="metadata-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m9 5 2.3 5.7L17 13l-5.7 2.3L9 21l-2.3-5.7L1 13l5.7-2.3L9 5Zm10-3 .9 2.1L22 5l-2.1.9L19 8l-.9-2.1L16 5l2.1-.9L19 2Z" /></svg>{{ metadataGenerating ? '生成中' : '智能元数据' }}</el-button>
+                <el-tooltip v-if="editDisabledReason" :content="editDisabledReason" placement="top"><span><el-button data-test="action-edit" type="primary" size="small" disabled><svg class="metadata-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5 4 4M4 20l4-1L20 7a2.83 2.83 0 0 0-4-4L4 15v5ZM12 20h8" /></svg>编辑</el-button></span></el-tooltip>
+                <el-button v-else-if="canEditCurrentTab" data-test="action-edit" type="primary" size="small" :disabled="isDemoMode" @click="startCurrentEdit"><svg class="metadata-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5 4 4M4 20l4-1L20 7a2.83 2.83 0 0 0-4-4L4 15v5ZM12 20h8" /></svg>编辑</el-button>
+                <el-dropdown trigger="click">
+                  <el-button size="small" text aria-label="更多对象操作" title="更多对象操作"><el-icon><MoreFilled /></el-icon></el-button>
+                  <template #dropdown><el-dropdown-menu><el-dropdown-item data-test="action-delete" :disabled="isDemoMode || !!editDisabledReason" @click="handleDeleteTable"><span class="delete-object-action">删除表</span></el-dropdown-item></el-dropdown-menu></template>
+                </el-dropdown>
+              </template>
+            </div>
           </div>
         </header>
 
@@ -104,16 +60,25 @@
           </template>
         </el-alert>
 
-        <el-tabs v-model="state.metaTab" class="meta-tabs detail-tabs">
-          <el-tab-pane name="basic" label="表信息">
+        <div class="inspector-tabs-shell">
+          <el-dropdown trigger="click" class="inspector-more" @command="state.metaTab = $event">
+            <el-button size="small" text :class="{ 'is-selected': moreMetaItems.some(item => item.value === state.metaTab) }" aria-label="更多对象信息">{{ moreMetaItems.find(item => item.value === state.metaTab)?.label || '更多' }}<el-icon><ArrowDown /></el-icon></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="item in moreMetaItems" :key="item.value" :command="item.value"><span class="inspector-menu-item"><el-icon><Check v-if="state.metaTab === item.value" /></el-icon>{{ item.label }}</span></el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-tabs v-model="state.metaTab" type="card" class="meta-tabs detail-tabs">
+          <el-tab-pane name="basic" label="概览">
             <DataStudioRightPanelBasic />
           </el-tab-pane>
 
-          <el-tab-pane v-if="isDorisTable(state.table)" name="doris" label="Doris信息" lazy>
+          <el-tab-pane v-if="isDorisTable(state.table)" name="doris" label="Doris" lazy>
             <DataStudioRightPanelDoris />
           </el-tab-pane>
 
-          <el-tab-pane name="columns" label="列信息">
+          <el-tab-pane name="columns" label="字段">
             <DataStudioRightPanelColumns />
           </el-tab-pane>
 
@@ -128,7 +93,7 @@
                 </div>
                 <div class="code-shell">
                   <el-scrollbar class="ddl-scroll">
-                    <pre v-if="state.ddl" class="ddl-content">{{ state.ddl }}</pre>
+                    <div v-if="state.ddl" class="ddl-content"><div v-for="(line, index) in state.ddl.split('\n')" :key="index" class="ddl-line"><span class="ddl-line-number" aria-hidden="true">{{ index + 1 }}</span><code>{{ line || ' ' }}</code></div></div>
                     <div v-else class="ddl-placeholder">加载中或暂无 DDL</div>
                   </el-scrollbar>
                 </div>
@@ -136,32 +101,7 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane name="access" label="访问情况">
-            <DataStudioRightPanelAccess />
-          </el-tab-pane>
-
-          <el-tab-pane name="freshness" label="数据新鲜度" lazy>
-            <DataStudioRightPanelFreshness />
-          </el-tab-pane>
-
-          <el-tab-pane name="versions" label="变更记录" lazy>
-            <div class="meta-section meta-section-fill">
-              <!-- 不再重复 tab 名「变更记录」作为区块标题 -->
-              <section class="section-block section-fill">
-                <el-scrollbar class="meta-scroll">
-                  <TableVersionHistoryPanel
-                    :table-id="state.table?.id"
-                    :active="state.metaTab === 'versions'"
-                  />
-                </el-scrollbar>
-              </section>
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </section>
-
-      <div class="panel-resizer" title="拖动调整高度" @mousedown="startPanelResize"></div>
-
+          <el-tab-pane name="lineage" label="血缘" lazy>
       <DataStudioRightPanelLineage
         class="lineage-pane"
         :current-table="state.table"
@@ -175,6 +115,35 @@
         @create-task="(type) => goCreateRelatedTask(activeTabId, type)"
         @go-lineage="goLineage(activeTabId)"
       />
+          </el-tab-pane>
+
+          <el-tab-pane name="access" label="访问">
+            <DataStudioRightPanelAccess />
+          </el-tab-pane>
+
+          <el-tab-pane name="freshness" label="数据新鲜度" lazy>
+            <DataStudioRightPanelFreshness />
+          </el-tab-pane>
+
+          <el-tab-pane name="versions" label="变更" lazy>
+            <div class="meta-section meta-section-fill">
+              <!-- 不再重复 tab 名「变更记录」作为区块标题 -->
+              <section class="section-block section-fill">
+                <el-scrollbar class="meta-scroll">
+                  <TableVersionHistoryPanel
+                    :table-id="state.table?.id"
+                    :active="state.metaTab === 'versions'"
+                  />
+                </el-scrollbar>
+              </section>
+            </div>
+          </el-tab-pane>
+        </el-tabs>
+        </div>
+      </section>
+
+
+
     </div>
 
     <div v-else class="right-empty">
@@ -187,6 +156,7 @@
 
 <script setup>
 import { computed, inject } from 'vue'
+import { Grid, MoreFilled, ArrowDown, Check } from '@element-plus/icons-vue'
 import DataStudioRightPanelLineage from './DataStudioRightPanelLineage.vue'
 import TableVersionHistoryPanel from './TableVersionHistoryPanel.vue'
 import DataStudioRightPanelBasic from './DataStudioRightPanelBasic.vue'
@@ -197,7 +167,6 @@ import DataStudioRightPanelFreshness from './DataStudioRightPanelFreshness.vue'
 import SmartMetadataDialog from './SmartMetadataDialog.vue'
 import { isDemoMode } from '@/demo/runtime'
 import { computeMetadataCompleteness } from '../metadataGeneration'
-import { usePanelVerticalResize } from '../composables/usePanelVerticalResize'
 
 const props = defineProps({
   visualVariant: {
@@ -213,6 +182,7 @@ if (!ctx) {
 }
 
 const {
+  getSourceName,
   clusterId,
   openTabs,
   activeTab,
@@ -246,8 +216,7 @@ const activeTabItem = computed(() => {
 
 const rootClass = computed(() => [
   'right-root',
-  `variant-${props.visualVariant}`,
-  { 'is-pane-resizing': isPanelResizing.value }
+  `variant-${props.visualVariant}`
 ])
 
 const emptyDescription = computed(() => {
@@ -264,6 +233,12 @@ const state = computed(() => {
   if (!id) return null
   return tabStates[id] || null
 })
+
+const moreMetaItems = computed(() => [
+  ...(isDorisTable(state.value?.table) ? [{ value: 'doris', label: '引擎配置' }] : []),
+  { value: 'access', label: '访问统计' },
+  { value: 'versions', label: '变更记录' }
+])
 
 const fullTableName = computed(() => {
   const table = state.value?.table
@@ -312,17 +287,6 @@ const saveCurrentEdit = () => {
   else saveMetaEdit(activeTabId.value)
 }
 
-// 右侧面板上下分栏（P2-2 F17b）：拖拽与按 tab 记忆高度
-const {
-  panelShellRef,
-  isPanelResizing,
-  panelShellStyle,
-  startPanelResize,
-} = usePanelVerticalResize({
-  activeTabId,
-  hasTableTab,
-})
-
 </script>
 
 <style scoped>
@@ -348,7 +312,7 @@ const {
   flex-direction: column;
   box-sizing: border-box;
   color: var(--text);
-  font-family: 'IBM Plex Sans', 'Avenir Next', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-family: inherit;
   overflow: hidden;
 }
 
@@ -505,14 +469,15 @@ const {
   --right-top: 340px;
   flex: 1;
   min-height: 0;
-  display: grid;
-  grid-template-rows: var(--right-top) 6px minmax(280px, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 0;
 }
 
 .meta-panel {
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  flex: 1;
+  border: none;
+  border-radius: 0;
   background: var(--panel);
   overflow: hidden;
   min-height: 0;
@@ -524,15 +489,11 @@ const {
 .table-header {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 9px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--panel);
 }
 
 .table-name {
-  font-size: 14px;
-  font-weight: 700;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -542,7 +503,6 @@ const {
 .table-meta-row {
   display: flex;
   align-items: center;
-  gap: 6px;
   min-width: 0;
 }
 
@@ -552,19 +512,14 @@ const {
 }
 
 .table-comment {
-  font-size: 12px;
-  color: var(--text-sub);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
 }
 
 .table-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
-  justify-content: flex-end;
 }
 
 /* 窄面板下按钮不换行，必要时内缩 */
@@ -583,36 +538,6 @@ const {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
-}
-
-.panel-resizer {
-  cursor: row-resize;
-  position: relative;
-  background: transparent;
-}
-
-.panel-resizer::after {
-  content: '⋯';
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  font-size: 14px;
-  line-height: 1;
-  color: var(--text-muted);
-  padding: 0 8px 2px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.12);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease, color 0.15s ease;
-}
-
-.panel-resizer:hover::after,
-.right-root.is-pane-resizing .panel-resizer::after {
-  opacity: 1;
-  color: var(--text-sub);
 }
 
 .lineage-pane {
@@ -642,9 +567,7 @@ const {
 }
 
 :deep(.detail-tabs > .el-tabs__header) {
-  flex: none;
   margin: 0;
-  padding: 0 10px;
   box-sizing: border-box;
 }
 
@@ -654,8 +577,8 @@ const {
    字号取 13px 与本面板的区块标题一致：el-tabs 默认 14px / 40px 行高在这个
    密集侧栏里偏大（面板内其余文字为 12-13px）。 */
 :deep(.detail-tabs .el-tabs__item) {
-  padding: 0 8px;
-  font-size: 13px;
+  padding: 0 7px;
+  font-size: 12px;
   height: 34px;
   line-height: 34px;
 }
@@ -663,7 +586,6 @@ const {
 :deep(.detail-tabs > .el-tabs__content) {
   flex: 1;
   min-height: 0;
-  padding: 10px;
   box-sizing: border-box;
 }
 
@@ -705,12 +627,6 @@ const {
   gap: 8px;
 }
 
-.meta-tabs :deep(.section-title) {
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text);
-}
-
 .meta-tabs :deep(.section-actions) {
   display: inline-flex;
   align-items: center;
@@ -734,8 +650,6 @@ const {
   flex: 1;
   min-height: 0;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fbfdff;
 }
 
 .ddl-scroll {
@@ -745,11 +659,8 @@ const {
 
 .ddl-content {
   margin: 0;
-  padding: 10px 12px;
-  font-size: 12px;
   line-height: 1.6;
   white-space: pre;
-  color: #1f3552;
 }
 
 .ddl-placeholder {
@@ -759,8 +670,8 @@ const {
 }
 
 .lineage-panel {
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: none;
+  border-radius: 0;
   background: var(--panel);
   padding: 10px;
   box-sizing: border-box;
@@ -781,8 +692,288 @@ const {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--line-strong);
-  border-radius: 10px;
+  border: none;
+  border-radius: 0;
   background: var(--panel);
+}
+.right-root {
+  font-size: var(--studio-font-ui);
+}
+.table-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.table-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.meta-tabs :deep(.el-descriptions__cell),
+.meta-tabs :deep(.el-table) {
+  font-size: var(--studio-font-ui);
+}
+.object-identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  min-width: 0;
+}
+.object-icon {
+  color: var(--accent);
+  font-size: 14px;
+  margin-top: 2px;
+  flex: none;
+}
+.object-identity-text {
+  min-width: 0;
+  flex: 1;
+}
+.table-name {
+  font-size: var(--studio-font-reading);
+  font-weight: 500;
+  line-height: 18px;
+}
+.object-location {
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.table-comment {
+  margin: 0;
+  font-size: var(--studio-font-ui);
+  line-height: 18px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.object-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.table-meta-row {
+  gap: 5px;
+}
+.table-meta-row :deep(.el-tag) {
+  font-size: 10px;
+  height: 18px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 3px;
+  background: #f1f5f9;
+  color: #526174;
+}
+.completeness-tag {
+  font-size: 10px;
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+.table-actions {
+  margin-left: auto;
+  gap: 4px;
+}
+.table-actions :deep(.el-button) {
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.table-actions :deep(.el-dropdown .el-button) {
+  padding: 4px;
+}
+.delete-object-action {
+  color: #dc2626;
+}
+
+.table-header {
+  padding: 12px 14px;
+  gap: 8px;
+}
+.object-location {
+  font-size: var(--studio-font-detail);
+  color: #8a96a6;
+  line-height: 16px;
+}
+.table-comment {
+  color: #627186;
+}
+.table-actions :deep(.el-button) {
+  height: 26px;
+}
+.table-actions :deep(.el-icon) {
+  margin-right: 3px;
+}
+.table-actions :deep(.el-dropdown .el-icon) {
+  margin-right: 0;
+}
+.inspector-tabs-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.inspector-more {
+  position: absolute;
+  right: 7px;
+  top: 4px;
+  z-index: 2;
+}
+.inspector-more :deep(.el-button) {
+  color: #718096;
+  height: 26px;
+  font-size: 11px;
+  padding: 4px 6px;
+}
+.inspector-more :deep(.el-icon) {
+  font-size: 9px;
+  margin-left: 4px;
+}
+.inspector-more :deep(.is-selected) {
+  color: #3f6fa7;
+  background: #edf3fb;
+}
+.inspector-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.inspector-menu-item .el-icon {
+  width: 12px;
+}
+:deep(.detail-tabs > .el-tabs__header) {
+  padding: 0 100px 0 0;
+  background: #f5f7fa;
+  border-bottom: 1px solid #dce2e9;
+}
+:deep(.detail-tabs > .el-tabs__header .el-tabs__nav) {
+  border: 0;
+  border-radius: 0;
+}
+:deep(.detail-tabs > .el-tabs__header .el-tabs__item) {
+  padding: 0 10px;
+  font-size: var(--studio-font-ui);
+  font-weight: 400;
+  height: 34px;
+  border-left: 0;
+  border-right: 1px solid #dce2e9;
+  border-top: 2px solid transparent;
+  border-bottom: 1px solid #dce2e9;
+}
+:deep(.detail-tabs > .el-tabs__header .el-tabs__item.is-active) {
+  font-weight: 500;
+  background: #fff;
+  color: #3f6fa7;
+  border-top-color: #517aa8;
+  border-bottom-color: #fff;
+}
+:deep(.detail-tabs #tab-doris),
+:deep(.detail-tabs #tab-access),
+:deep(.detail-tabs #tab-versions) {
+  display: none;
+}
+:deep(.detail-tabs > .el-tabs__content) {
+  padding: 14px;
+}
+.meta-tabs :deep(.section-title) {
+  font-size: var(--studio-font-ui);
+  font-weight: 500;
+  color: #56677b;
+}
+.meta-tabs :deep(.el-table th.el-table__cell) {
+  background: #f5f7fa;
+  color: #68778c;
+  font-size: 11px;
+}
+.meta-tabs :deep(.el-table td.el-table__cell) {
+  font-size: 11px;
+  padding: 5px 0;
+}
+.meta-tabs :deep(.el-descriptions__label.is-bordered-label) {
+  background: #f7f9fb;
+  color: #7a8798;
+  font-size: 11px;
+  font-weight: 400;
+}
+.meta-tabs :deep(.el-descriptions__content.is-bordered-content) {
+  font-size: 11px;
+}
+.meta-tabs :deep(.metric-card) {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 0;
+}
+.code-shell {
+  border-radius: 0;
+  background: #fafbfc;
+}
+.ddl-content {
+  font-size: 11px;
+  color: #526174;
+}
+.right-empty :deep(.el-empty__description p) {
+  font-size: 12px;
+  color: #8a96a6;
+}
+
+:deep(.detail-tabs) {
+  --el-tabs-header-height: 34px;
+}
+:deep(.detail-tabs > .el-tabs__header) {
+  height: 34px;
+  min-height: 34px;
+  flex: 0 0 34px;
+  align-items: flex-start;
+}
+:deep(.detail-tabs > .el-tabs__header .el-tabs__nav-wrap),
+:deep(.detail-tabs > .el-tabs__header .el-tabs__nav) {
+  height: 34px;
+  margin: 0;
+}
+:deep(.detail-tabs > .el-tabs__header .el-tabs__item) {
+  margin: 0;
+}
+:deep(.detail-tabs > .el-tabs__header .el-tabs__item.is-active) {
+  position: relative;
+  z-index: 1;
+}
+.ddl-content {
+  padding: 8px 0;
+  min-width: max-content;
+}
+.ddl-line {
+  display: flex;
+  line-height: 22px;
+}
+.ddl-line-number {
+  width: 30px;
+  flex: none;
+  text-align: right;
+  padding-right: 8px;
+  color: #a1adba;
+  user-select: none;
+  background: #fafbfc;
+  margin-right: 10px;
+}
+.ddl-line code {
+  font: inherit;
+  color: #41536a;
+  padding-right: 10px;
+}
+
+.metadata-action-icon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  margin-right: 4px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.table-actions :deep(.el-button > span) {
+  display: inline-flex;
+  align-items: center;
 }
 </style>
