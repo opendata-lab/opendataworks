@@ -2514,13 +2514,14 @@ export const demoAdapter = async (config) => {
     if (method === 'get' && pathname.endsWith('/partitions')) {
       return createResponse(config, table.partitionColumn ? [{ partitionName: 'p20260311', range: '[2026-03-11, 2026-03-12)', rowCount: table.rowCount, dataSize: `${(table.storageSize / 1024).toFixed(1)} KB`, buckets: table.bucketNum, replicationNum: table.replicaNum, state: 'NORMAL' }] : [])
     }
+    // 新鲜度为固定的定时检查样例：概览最新结果即历史第一条；配置与立即检查在演示环境只读，走下方统一拒绝。
     const latest = { status: 'pass', mode: 'metadata', reason: null, ageSeconds: 1800, maxLoadedAt: '2026-03-11T10:00:00', createdAt: '2026-03-11T10:30:00', triggerType: 'schedule' }
+    const earlier = { ...latest, ageSeconds: 900, maxLoadedAt: '2026-03-11T09:15:00', createdAt: '2026-03-11T09:30:00' }
     if (method === 'get' && pathname.endsWith('/freshness')) {
       const configValue = { mode: 'metadata', enabled: true, warnAfterCount: 1, warnAfterPeriod: 'day', errorAfterCount: 2, errorAfterPeriod: 'day' }
       return createResponse(config, { configured: true, config: configValue, effective: { mode: 'metadata', warnAfter: { count: 1, period: 'day' }, errorAfter: { count: 2, period: 'day' } }, latestResult: latest })
     }
-    if (method === 'get' && pathname.endsWith('/freshness/history')) return createResponse(config, [latest, { ...latest, createdAt: '2026-03-11T09:30:00', ageSeconds: 900 }])
-    if (method === 'post' && pathname.endsWith('/freshness/check')) return createResponse(config, { ...latest, triggerType: 'manual' })
+    if (method === 'get' && pathname.endsWith('/freshness/history')) return createResponse(config, [latest, earlier])
     if (method === 'get' && pathname.endsWith('/versions')) return createResponse(config, { records: versions, total: versions.length })
     if (method === 'get' && pathname.match(/\/versions\/\d+$/)) {
       const version = versions.find(v => v.id === Number(pathname.split('/').pop()))

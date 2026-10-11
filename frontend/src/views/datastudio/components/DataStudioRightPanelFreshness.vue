@@ -6,19 +6,19 @@
         <div class="section-actions">
           <!-- 查看态：操作集中在右上角 -->
           <template v-if="!editing">
-            <el-button size="small" :disabled="!tableId || checking" :loading="checking" @click="checkNow">
+            <el-button size="small" :disabled="!tableId || loading || loadError || busy || isDemoMode" :loading="checking" :title="demoTitle" @click="checkNow">
               立即检查
             </el-button>
             <el-button size="small" :disabled="!tableId" @click="openHistory">历史</el-button>
-            <el-button size="small" type="primary" :disabled="!tableId" @click="beginEdit">
+            <el-button size="small" type="primary" :disabled="!tableId || loading || loadError || busy || isDemoMode" :title="demoTitle" @click="beginEdit">
               {{ configured ? '编辑' : '配置' }}
             </el-button>
           </template>
           <!-- 编辑态：删除 / 取消 / 保存 -->
           <template v-else>
-            <el-button v-if="configured" size="small" text type="danger" @click="removeConfig">删除</el-button>
-            <el-button size="small" @click="cancelEdit">取消</el-button>
-            <el-button size="small" type="primary" :loading="saving" :disabled="!tableId" @click="save">保存</el-button>
+            <el-button v-if="configured" size="small" text type="danger" :loading="deleting" :disabled="saving" @click="removeConfig">删除</el-button>
+            <el-button size="small" :disabled="busy" @click="cancelEdit">取消</el-button>
+            <el-button size="small" type="primary" :loading="saving" :disabled="!tableId || deleting" @click="save">保存</el-button>
           </template>
         </div>
       </div>
@@ -27,17 +27,23 @@
         <!-- 未选择表 -->
         <el-empty v-if="!tableId" :image-size="60" description="未选择表" />
 
+        <!-- 当前表加载失败：不沿用上一张表的结果 -->
+        <el-empty v-else-if="loadError" :image-size="60" :description="loadError">
+          <el-button size="small" @click="loadFreshness">重试</el-button>
+        </el-empty>
+
         <!-- 未配置且非编辑：引导配置 -->
         <el-empty
-          v-else-if="!editing && !configured"
+          v-else-if="!editing && !configured && !loading"
           :image-size="70"
           description="尚未配置新鲜度"
         >
-          <el-button type="primary" size="small" @click="beginEdit">配置新鲜度</el-button>
+          <el-button type="primary" size="small" :disabled="busy || isDemoMode" :title="demoTitle" @click="beginEdit">配置新鲜度</el-button>
         </el-empty>
 
         <!-- 查看态：只读描述卡 -->
-        <el-descriptions v-else-if="!editing" :column="1" size="small" class="fresh-view">
+        <p v-if="isDemoMode && !editing && configured" class="demo-note">{{ DEMO_NOTE }}</p>
+        <el-descriptions v-if="tableId && !loadError && !editing && configured" :column="1" size="small" class="fresh-view">
           <el-descriptions-item>
             <template #label><span class="lbl">状态<Help :tip="TIP.status" /></span></template>
             <div class="fv-status">
@@ -74,7 +80,7 @@
         </el-descriptions>
 
         <!-- 编辑态：行内表单，不弹层 -->
-        <el-form v-else class="fresh-form" label-width="92px" label-position="left" size="small" @submit.prevent>
+        <el-form v-if="tableId && editing" class="fresh-form" label-width="92px" label-position="left" size="small" @submit.prevent>
           <el-form-item>
             <template #label><span class="lbl">时间来源<Help :tip="TIP.source" /></span></template>
             <el-select v-model="form.mode" style="width: 100%">
@@ -166,10 +172,11 @@
 </template>
 
 <script setup>
-import { computed, h, inject, reactive, ref, watch } from 'vue'
+import { computed, h, inject, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox, ElTooltip, ElIcon } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'
 import { tableApi } from '@/api/table'
+import { isDemoMode, showDemoReadonlyMessage } from '@/demo/runtime'
 
 // 术语后的帮助图标：悬浮展示字段解释。
 const Help = (props) =>
@@ -192,6 +199,10 @@ const TIP = {
   filter: '只统计满足条件的行，如 dt = current_date - 1',
 }
 
+// 演示环境与其他写操作一致：配置、保存、删除和立即检查都会写入真实检查记录，因此只读。
+const DEMO_NOTE = '演示样例：展示固定的检查结果与历史，配置与立即检查不可用'
+const demoTitle = isDemoMode ? '演示环境仅支持浏览，配置与检查不可用' : undefined
+
 const ctx = inject('dataStudioCtx', null)
 if (!ctx) {
   throw new Error('DataStudioRightPanelFreshness 需要 dataStudioCtx')
@@ -210,8 +221,11 @@ const tableId = computed(() => table.value?.id || null)
 const loading = ref(false)
 const checking = ref(false)
 const saving = ref(false)
+const deleting = ref(false)
+const busy = computed(() => checking.value || saving.value || deleting.value)
 const editing = ref(false)
 const resp = ref(null)
+const loadError = ref('')
 const fields = ref([])
 const fieldsLoading = ref(false)
 const history = ref([])
@@ -282,6 +296,13 @@ const humanizeAge = (seconds) => {
   return `${m} 分钟`
 }
 
+// 上下文序号在切表/切页签/卸载时失效，覆盖读取及写操作后的 UI 更新。
+let contextSeq = 0
+let loadSeq = 0
+let fieldsSeq = 0
+let historySeq = 0
+const isCurrent = (context) => context === contextSeq
+
 const resetFormDefaults = () => Object.assign(form, DEFAULTS)
 
 const applyConfigToForm = () => {
@@ -303,114 +324,171 @@ const applyConfigToForm = () => {
 
 // 列下拉：优先复用当前表已加载的字段，缺失时按需拉取。
 const ensureFields = async () => {
+  const seq = ++fieldsSeq
+  const context = contextSeq
   const cached = (tabStates[activeTabId.value] || {}).fields
   if (Array.isArray(cached) && cached.length) {
     fields.value = cached
+    fieldsLoading.value = false
     return
   }
-  if (!tableId.value) return
+  const targetId = tableId.value
+  if (!targetId) return
   fieldsLoading.value = true
   try {
-    const list = await tableApi.getFields(tableId.value)
-    fields.value = Array.isArray(list) ? list : []
-  } catch (e) {
-    fields.value = []
+    const list = await tableApi.getFields(targetId)
+    if (isCurrent(context) && seq === fieldsSeq) fields.value = Array.isArray(list) ? list : []
+  } catch {
+    if (isCurrent(context) && seq === fieldsSeq) fields.value = []
   } finally {
-    fieldsLoading.value = false
+    if (isCurrent(context) && seq === fieldsSeq) fieldsLoading.value = false
   }
 }
 
 const loadFreshness = async () => {
-  if (!tableId.value) {
-    resp.value = null
+  const seq = ++loadSeq
+  const context = contextSeq
+  const targetId = tableId.value
+  resp.value = null
+  loadError.value = ''
+  if (!targetId) {
+    loading.value = false
     return
   }
   loading.value = true
   try {
-    resp.value = await tableApi.getFreshness(tableId.value)
+    const result = await tableApi.getFreshness(targetId)
+    if (!isCurrent(context) || seq !== loadSeq) return
+    resp.value = result
     applyConfigToForm()
-  } catch (e) {
-    // 拦截器已提示错误
+  } catch {
+    if (isCurrent(context) && seq === loadSeq) loadError.value = '新鲜度加载失败'
   } finally {
-    loading.value = false
+    if (isCurrent(context) && seq === loadSeq) loading.value = false
   }
 }
 
 const beginEdit = () => {
-  if (!tableId.value) return
+  if (isDemoMode) {
+    showDemoReadonlyMessage('配置数据新鲜度')
+    return
+  }
+  if (!tableId.value || loading.value || loadError.value || busy.value) return
   applyConfigToForm()
   editing.value = true
   ensureFields()
 }
 
 const cancelEdit = () => {
+  if (busy.value) return
   editing.value = false
   applyConfigToForm()
 }
 
 const checkNow = async () => {
-  if (!tableId.value) return
+  if (isDemoMode) {
+    showDemoReadonlyMessage('立即检查')
+    return
+  }
+  const targetId = tableId.value
+  const context = contextSeq
+  if (!targetId || busy.value || loading.value || loadError.value) return
   checking.value = true
   try {
-    await tableApi.checkFreshness(tableId.value)
+    await tableApi.checkFreshness(targetId)
+    if (!isCurrent(context)) return
     ElMessage.success('检查完成')
     await loadFreshness()
-  } catch (e) {
+  } catch {
     // 拦截器已提示错误
   } finally {
-    checking.value = false
+    if (isCurrent(context)) checking.value = false
   }
 }
 
 const save = async () => {
-  if (!tableId.value) return
+  if (isDemoMode) {
+    showDemoReadonlyMessage('保存新鲜度配置')
+    return
+  }
+  const targetId = tableId.value
+  const context = contextSeq
+  if (!targetId || busy.value || !editing.value) return
   saving.value = true
   try {
-    await tableApi.saveFreshness(tableId.value, { ...form })
+    await tableApi.saveFreshness(targetId, { ...form })
+    if (!isCurrent(context)) return
     ElMessage.success('保存成功')
     editing.value = false
     await loadFreshness()
-  } catch (e) {
+  } catch {
     // 拦截器已提示错误
   } finally {
-    saving.value = false
+    if (isCurrent(context)) saving.value = false
   }
 }
 
 const removeConfig = async () => {
-  try {
-    await ElMessageBox.confirm('删除后该表将不再检查新鲜度。确认删除？', '提示', { type: 'warning' })
-  } catch {
+  if (isDemoMode) {
+    showDemoReadonlyMessage('删除新鲜度配置')
     return
   }
+  const targetId = tableId.value
+  const context = contextSeq
+  if (!targetId || busy.value) return
+  const targetName = [table.value?.dbName, table.value?.tableName].filter(Boolean).join('.') || `ID ${targetId}`
+  deleting.value = true
   try {
-    await tableApi.deleteFreshness(tableId.value)
+    await ElMessageBox.confirm(`删除 “${targetName}” 的配置后，该表将不再检查新鲜度。确认删除？`, '提示', { type: 'warning' })
+    // 确认框期间切换目标后，取消原操作，避免删除用户正在查看的另一张表。
+    if (!isCurrent(context)) return
+    await tableApi.deleteFreshness(targetId)
+    if (!isCurrent(context)) return
     ElMessage.success('已删除')
     editing.value = false
     await loadFreshness()
-  } catch (e) {
-    // 拦截器已提示错误
+  } catch {
+    // 用户取消或拦截器已提示错误
+  } finally {
+    if (isCurrent(context)) deleting.value = false
   }
 }
 
 const openHistory = async () => {
+  const seq = ++historySeq
+  const context = contextSeq
+  const targetId = tableId.value
+  history.value = []
+  if (!targetId) return
   historyVisible.value = true
-  if (!tableId.value) return
   historyLoading.value = true
   try {
-    history.value = (await tableApi.freshnessHistory(tableId.value, 50)) || []
-  } catch (e) {
-    history.value = []
+    const list = (await tableApi.freshnessHistory(targetId, 50)) || []
+    if (isCurrent(context) && seq === historySeq) history.value = list
+  } catch {
+    if (isCurrent(context) && seq === historySeq) history.value = []
   } finally {
-    historyLoading.value = false
+    if (isCurrent(context) && seq === historySeq) historyLoading.value = false
   }
 }
 
-watch(tableId, () => {
+watch([activeTabId, tableId], () => {
+  contextSeq++
   editing.value = false
+  checking.value = false
+  saving.value = false
+  deleting.value = false
   fields.value = []
+  fieldsLoading.value = false
+  history.value = []
+  historyVisible.value = false
+  historyLoading.value = false
+  resetFormDefaults()
   loadFreshness()
-}, { immediate: true })
+}, { immediate: true, flush: 'sync' })
+
+onBeforeUnmount(() => { contextSeq++ })
+
 </script>
 
 <style scoped>
@@ -432,6 +510,12 @@ watch(tableId, () => {
 /* 查看态描述卡 */
 .fresh-view :deep(.el-descriptions__label) {
   width: 108px;
+}
+.demo-note {
+  margin: 0 0 4px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--el-text-color-secondary);
 }
 .fv-status {
   display: flex;

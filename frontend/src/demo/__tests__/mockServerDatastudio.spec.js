@@ -16,7 +16,7 @@ describe('demoAdapter DataStudio endpoints', () => {
   it('covers DataStudio catalog and table detail endpoints without backend access', async () => {
     await expect(request('get', '/api/v1/doris-clusters/1')).resolves.toMatchObject({
       code: 200,
-      data: expect.objectContaining({ id: 1, clusterName: 'README 演示集群' })
+      data: expect.objectContaining({ id: 1, clusterName: '演示 Doris 连接' })
     })
     await expect(request('get', '/v1/tables')).resolves.toMatchObject({
       code: 200,
@@ -70,6 +70,25 @@ describe('demoAdapter DataStudio endpoints', () => {
         })
       ])
     })
+  })
+
+  it('keeps the freshness sample read-only and consistent with its history', async () => {
+    const { data: freshness } = await request('get', '/v1/tables/1234/freshness')
+    const { data: history } = await request('get', '/v1/tables/1234/freshness/history', { params: { limit: 50 } })
+    // 概览展示的最新结果就是历史第一条
+    expect(history[0]).toEqual(freshness.latestResult)
+    for (const row of history) {
+      const age = (new Date(row.createdAt) - new Date(row.maxLoadedAt)) / 1000
+      expect(age).toBe(row.ageSeconds)
+    }
+    // 演示环境不写入检查记录或配置
+    for (const [method, url] of [
+      ['post', '/v1/tables/1234/freshness/check'],
+      ['put', '/v1/tables/1234/freshness'],
+      ['delete', '/v1/tables/1234/freshness']
+    ]) {
+      await expect(request(method, url, { data: {} })).rejects.toMatchObject({ message: '演示环境仅支持浏览与查询' })
+    }
   })
 
   it('covers table designer endpoints used by the create drawer', async () => {

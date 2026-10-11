@@ -501,6 +501,7 @@ const {
   tableRefs,
   tableStore,
   getTableKey,
+  getTableSourceType,
   isDorisTable,
   isAggregateTable,
   warnPlatformMetadataMissing,
@@ -628,6 +629,7 @@ const {
   loadTabData,
   handleTabRemove,
   getTabItemById,
+  getSourceName,
 })
 
 // 智能元数据（复用智能问数任务链路）：生成字段/表描述建议，复核后采纳写回
@@ -730,6 +732,7 @@ watch(
   getMetaDataDomainOptions,
   handleMetaBusinessDomainChange,
   isDorisTable,
+  getTableSourceType,
   isPlatformMetadataMissing,
   isAggregateTable,
   isReplicaWarning,
@@ -828,14 +831,25 @@ const { flushPersistTabs, restoreTabsFromStorage } = useTabPersistence({
 
 onMounted(async () => {
   setupTableObserver()
-  const restored = restoreTabsFromStorage()
-  if (restored) {
-    hydrateRestoredTableTabs()
+  // 缓存激活项不得在异步连接加载期间覆盖传入的目标 URL。
+  suppressRouteSync.value = true
+  try {
+    const restored = restoreTabsFromStorage()
+    if (restored) {
+      hydrateRestoredTableTabs()
+    }
+    loadBusinessDomains()
+    await loadClusters()
+    fetchHistory()
+    await syncFromRoute()
+    await nextTick()
+  } finally {
+    suppressRouteSync.value = false
   }
-  loadBusinessDomains()
-  await loadClusters()
-  fetchHistory()
-  await syncFromRoute()
+  if (!route.query.tableId && !route.query.tableName) {
+    const tab = openTabs.value.find((item) => String(item.id) === String(activeTab.value))
+    syncRouteWithTab(tab, activeTab.value)
+  }
   await focusActiveTableInSidebar()
   await loadActiveQueryContext()
   if (route.query.create) {

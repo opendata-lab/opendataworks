@@ -2,25 +2,25 @@
   <div class="query-panel">
     <div class="query-topbar">
       <div class="query-topbar__actions">
-        <el-button type="primary" size="small" :loading="tabStates[tab.id].queryLoading" :disabled="tabStates[tab.id].queryLoading" @click="executeQuery(tab.id)">
+        <el-button type="primary" size="small" :loading="tabStates[tab.id].queryLoading" :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping" @click="executeQuery(tab.id)">
           <el-icon><CaretRight /></el-icon>{{ tabStates[tab.id].query.hasSelection ? '执行选中' : '执行' }}
         </el-button>
         <el-button size="small" text aria-label="停止查询" title="停止查询" :loading="tabStates[tab.id].queryStopping" :disabled="!tabStates[tab.id].queryCancelable || tabStates[tab.id].queryStopping" @click="stopQuery(tab.id)"><el-icon><VideoPause /></el-icon>停止</el-button>
-        <el-button size="small" text title="查看 SQL 执行计划" :disabled="tabStates[tab.id].queryLoading" @click="executeQuery(tab.id, { explain: true })"><el-icon><DataAnalysis /></el-icon>解释</el-button>
+        <el-button size="small" text title="查看 SQL 执行计划" :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping" @click="executeQuery(tab.id, { explain: true })"><el-icon><DataAnalysis /></el-icon>解释</el-button>
         <span class="query-divider"></span>
-        <el-button size="small" text :disabled="tabStates[tab.id].queryLoading || isDemoMode" @click="saveAsTask(tab.id)"><el-icon><FolderAdd /></el-icon>存为任务</el-button>
+        <el-button size="small" text :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping || isDemoMode" @click="saveAsTask(tab.id)"><el-icon><FolderAdd /></el-icon>存为任务</el-button>
         <el-dropdown trigger="click" @command="resetQuery(tab.id)">
           <el-button size="small" text aria-label="更多查询操作" title="更多查询操作"><el-icon><MoreFilled /></el-icon></el-button>
-          <template #dropdown><el-dropdown-menu><el-dropdown-item :disabled="tabStates[tab.id].queryLoading" command="reset">重置 SQL</el-dropdown-item></el-dropdown-menu></template>
+          <template #dropdown><el-dropdown-menu><el-dropdown-item :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping" command="reset">重置 SQL</el-dropdown-item></el-dropdown-menu></template>
         </el-dropdown>
       </div>
       <div class="query-topbar__context">
         <div class="query-context">
-          <el-select :model-value="tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId" size="small" filterable class="query-select query-select--source" placeholder="选择连接" aria-label="查询连接" :disabled="tabStates[tab.id].queryLoading" @change="value => handleQuerySourceSelect(tab.id, value)">
+          <el-select :model-value="tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId" size="small" filterable class="query-select query-select--source" placeholder="选择连接" aria-label="查询连接" :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping" @change="value => handleQuerySourceSelect(tab.id, value)">
             <template #prefix><el-icon><Link /></el-icon></template>
             <el-option v-for="source in dataSources" :key="String(source.id)" :label="source.clusterName || source.name || `DataSource ${source.id}`" :value="String(source.id)" />
           </el-select>
-          <el-select :model-value="tabStates[tab.id].query.dbName ?? tabStates[tab.id].table.dbName" size="small" filterable class="query-select query-select--db" placeholder="选择 Schema" aria-label="查询 Schema" :disabled="tabStates[tab.id].queryLoading || !(tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId)" @change="value => handleQueryDatabaseSelect(tab.id, value)">
+          <el-select :model-value="tabStates[tab.id].query.dbName ?? tabStates[tab.id].table.dbName" size="small" filterable class="query-select query-select--db" placeholder="选择 Schema" aria-label="查询 Schema" :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping || !(tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId)" @change="value => handleQueryDatabaseSelect(tab.id, value)">
             <template #prefix><el-icon><Coin /></el-icon></template>
             <el-option v-for="db in getSchemaOptions(tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId)" :key="db" :label="db" :value="db" />
           </el-select>

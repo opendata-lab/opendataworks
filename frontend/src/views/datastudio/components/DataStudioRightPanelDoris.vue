@@ -21,18 +21,22 @@
             <span>{{ state.table.distributionColumn || '-' }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="分桶数">
-            <el-input-number
-              v-if="state.metaEditing"
-              v-model="state.metaForm.bucketNum"
-              :min="1"
-              size="small"
-              controls-position="right"
-              class="meta-input"
-            />
+            <template v-if="state.metaEditing">
+              <el-input-number
+                v-if="bucketEditable"
+                v-model="state.metaForm.bucketNum"
+                :min="1"
+                size="small"
+                controls-position="right"
+                class="meta-input"
+              />
+              <span v-else>{{ state.table.bucketNum || '-' }}</span>
+              <div class="engine-edit-hint">{{ bucketEditHint }}</div>
+            </template>
             <span v-else>{{ state.table.bucketNum || '-' }}</span>
           </el-descriptions-item>
           <el-descriptions-item label="副本数">
-            <template v-if="state.metaEditing">
+            <template v-if="state.metaEditing && replicaEditable">
               <div class="replica-edit">
                 <el-input-number
                   v-model="state.metaForm.replicaNum"
@@ -51,8 +55,10 @@
               <el-icon v-if="isReplicaWarning(state.table.replicaNum)" class="warning-icon"><Warning /></el-icon>
               {{ state.table.replicaNum || '-' }}
             </span>
+            <div v-if="state.metaEditing && !replicaEditable" class="engine-edit-hint">未同步副本数，无法修改</div>
           </el-descriptions-item>
         </el-descriptions>
+        <p v-if="state.metaEditing" class="engine-edit-hint engine-edit-note">保存后直接在 Doris 执行 ALTER TABLE，与概览中的表信息一起提交。</p>
       </section>
 
       <section v-loading="partitionsLoading" class="section-block partition-block">
@@ -92,9 +98,10 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, inject, reactive, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { Warning } from '@element-plus/icons-vue'
 import { tableApi } from '@/api/table'
+import { getObjectSourceId } from '../objectSource'
 import { paginate } from '../partitionInfo'
 
 // 右侧面板「Doris信息」tab：Doris 配置 + 分区列表。
@@ -120,8 +127,21 @@ const engineColumns = computed(() => engineWidth.value >= 360 ? 2 : 1)
 let engineObserver
 onMounted(() => { engineObserver = new ResizeObserver(([entry]) => { engineWidth.value = entry.contentRect.width }); if (engineRoot.value) engineObserver.observe(engineRoot.value) })
 onBeforeUnmount(() => engineObserver?.disconnect())
-const partitionsLoading = ref(false)
-const partitionsError = ref('')
+// 加载中与错误按「tab + 表」记录：切表不被上一张表的请求挡住，迟到的结果也只落回发起它的表。
+const partitionKey = computed(() => `${activeTabId.value}:${state.value?.table?.id ?? ''}`)
+const partitionsLoadingKeys = reactive(new Set())
+const partitionErrors = reactive({})
+// 只有已知数值才给输入框：el-input-number 会把空值按 min 改成 1，保存时会被当成修改并对 Doris 执行 ALTER。
+const hasEngineNumber = (value) => value !== null && value !== undefined && value !== '' && Number.isFinite(Number(value))
+const bucketEditable = computed(() => Boolean(state.value?.table?.distributionColumn) && hasEngineNumber(state.value?.table?.bucketNum))
+const replicaEditable = computed(() => hasEngineNumber(state.value?.table?.replicaNum))
+const bucketEditHint = computed(() => {
+  if (!state.value?.table?.distributionColumn) return '未设置分桶字段，无法修改分桶数'
+  if (!bucketEditable.value) return '未同步分桶数，无法修改'
+  return '仅对之后新建的分区生效，存量分区不变'
+})
+const partitionsLoading = computed(() => partitionsLoadingKeys.has(partitionKey.value))
+const partitionsError = computed(() => partitionErrors[partitionKey.value] || '')
 const currentPage = ref(1)
 const pageSize = ref(5)
 
@@ -135,30 +155,29 @@ const loadPartitions = async ({ force = false } = {}) => {
   const target = state.value
   const tableId = target?.table?.id
   if (!tableId) return
-  if (!force && Array.isArray(target.partitionList)) return
-  if (partitionsLoading.value) return
+  if (!force && Array.isArray(target.partitionList) && !partitionErrors[partitionKey.value]) return
+  const key = partitionKey.value
+  if (partitionsLoadingKeys.has(key)) return
 
-  partitionsLoading.value = true
-  partitionsError.value = ''
+  partitionsLoadingKeys.add(key)
+  delete partitionErrors[key]
   try {
     // 分区查询依赖 Doris SHOW PARTITIONS；失败时就地提示，不弹全局错误
-    const list = await tableApi.listPartitions(tableId, clusterId?.value ?? null, { skipErrorMessage: true })
-    target.partitionList = Array.isArray(list) ? list : []
+    const list = await tableApi.listPartitions(tableId, getObjectSourceId(target.table, clusterId?.value), { skipErrorMessage: true })
+    if (target.table?.id === tableId) target.partitionList = Array.isArray(list) ? list : []
   } catch (error) {
-    target.partitionList = []
-    partitionsError.value = error?.message || '获取分区列表失败'
+    partitionErrors[key] = error?.message || '获取分区列表失败'
   } finally {
-    partitionsLoading.value = false
+    partitionsLoadingKeys.delete(key)
   }
 }
 
 const refreshPartitions = () => loadPartitions({ force: true })
 
 watch(
-  () => state.value?.table?.id,
+  partitionKey,
   () => {
     currentPage.value = 1
-    partitionsError.value = ''
     loadPartitions()
   },
   { immediate: true }
@@ -178,6 +197,15 @@ watch(pageSize, () => {
 }
 .meta-input {
   width: 130px;
+}
+.engine-edit-hint {
+  margin-top: 2px;
+  font-size: 10px;
+  line-height: 14px;
+  color: var(--text-muted);
+}
+.engine-edit-note {
+  margin: 4px 0 0;
 }
 .replica-edit {
   display: flex;

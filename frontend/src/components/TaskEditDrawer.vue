@@ -10,6 +10,7 @@
   >
     <el-form
       v-if="visible"
+      v-loading="drawerOpening"
       ref="formRef"
       :model="form"
       :rules="rules"
@@ -82,16 +83,23 @@
 
       <el-form-item label="执行状态" prop="task.dolphinFlag">
         <el-radio-group v-model="form.task.dolphinFlag">
-          <el-radio label="YES">正常执行</el-radio>
-          <el-radio label="NO">禁止执行</el-radio>
+          <el-radio value="YES">正常执行</el-radio>
+          <el-radio value="NO">禁止执行</el-radio>
         </el-radio-group>
       </el-form-item>
 
       <template v-if="form.task.dolphinNodeType === 'SQL'">
+        <el-form-item v-if="queryTarget" label="查询目标" data-test="query-target">
+          <div class="query-target">
+            <span class="query-target-value">{{ queryTargetLabel }}</span>
+            <span class="query-target-hint">门户连接与调度数据源暂无映射，请选择该目标对应的调度数据源；系统不会按名称自动匹配。</span>
+          </div>
+        </el-form-item>
         <el-form-item label="数据源" prop="task.datasourceName">
           <el-select
             v-model="form.task.datasourceName"
             placeholder="请选择数据源"
+            :loading="datasourceLoading"
             filterable
             style="width: 100%"
           >
@@ -105,6 +113,10 @@
               <span style="float: right; color: #8492a6; font-size: 13px; margin-left: 10px">{{ item.dbName }}</span>
             </el-option>
           </el-select>
+          <div v-if="!datasourceLoading && (datasourceError || !datasourceOptions.length)" class="query-target-hint" data-test="datasource-status">
+            {{ datasourceError || '暂无可用调度数据源，请检查调度连接配置' }}
+            <el-button link type="primary" size="small" @click="fetchDatasourceOptions">重试</el-button>
+          </div>
         </el-form-item>
 
         <el-form-item label="SQL 脚本" prop="task.taskSql" class="sql-editor-item">
@@ -330,7 +342,7 @@
     <template #footer>
       <div style="flex: auto">
         <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" @click="handleSave" :loading="loading">保存</el-button>
+        <el-button type="primary" @click="handleSave" :loading="loading" :disabled="drawerOpening">保存</el-button>
       </div>
     </template>
   </el-drawer>
@@ -340,6 +352,7 @@
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Loading, CircleClose, CircleCheck } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
 import { workflowApi } from '@/api/workflow'
 import { tableApi } from '@/api/table'
@@ -371,6 +384,8 @@ const route = useRoute()
 const router = useRouter()
 
 const visible = ref(false)
+const drawerOpening = ref(false)
+let drawerOpenSeq = 0
 const isEdit = ref(false)
 const loading = ref(false)
 const formRef = ref(null)
@@ -383,8 +398,19 @@ const workflowOptions = ref([])
 const isWriteTask = ref(false)
 const contextDolphinConfigId = ref(null)
 const openedFromRelatedTask = ref(false)
+// Data Studio「存为任务」带来的执行目标（门户连接 + Schema）；仅用于展示与必填约束，不推断调度数据源
+const queryTarget = ref(null)
+const queryTargetLabel = computed(() => {
+  const target = queryTarget.value
+  if (!target) return ''
+  const source = target.sourceName ? `${target.sourceName}（ID ${target.sourceId}）` : `连接 ID ${target.sourceId}`
+  return target.dbName ? `${source} / ${target.dbName}` : source
+})
 
 const datasourceOptions = ref([])
+const datasourceLoading = ref(false)
+const datasourceError = ref('')
+let datasourceSeq = 0
 const tableOptions = ref([])
 const tableLoading = ref(false)
 const tableOptionCache = reactive({})
@@ -423,14 +449,23 @@ const fetchWorkflowOptions = async () => {
 }
 
 const fetchDatasourceOptions = async () => {
+  const seq = ++datasourceSeq
+  const configId = effectiveDolphinConfigId.value
+  datasourceLoading.value = true
+  datasourceError.value = ''
+  datasourceOptions.value = []
   try {
-    const params = effectiveDolphinConfigId.value ? { dolphinConfigId: effectiveDolphinConfigId.value } : {}
+    const params = configId ? { dolphinConfigId: configId } : {}
     const res = await taskApi.fetchDatasources(params)
-    datasourceOptions.value = res || []
+    if (seq !== datasourceSeq || !visible.value) return
+    datasourceOptions.value = Array.isArray(res) ? res : []
     syncSqlDatasourceType()
   } catch (error) {
+    if (seq !== datasourceSeq || !visible.value) return
     console.error('获取数据源失败:', error)
-    ElMessage.warning('数据源目录加载失败，可继续编辑并保存')
+    datasourceError.value = '调度数据源加载失败，请检查连接配置后重试'
+  } finally {
+    if (seq === datasourceSeq) datasourceLoading.value = false
   }
 }
 
@@ -455,7 +490,10 @@ const rules = computed(() => {
   if (form.task.dolphinNodeType === 'SQL') {
     return {
       ...baseRules,
-      'task.taskSql': [{ required: true, message: 'SQL 脚本不能为空', trigger: 'blur' }]
+      'task.taskSql': [{ required: true, message: 'SQL 脚本不能为空', trigger: 'blur' }],
+      ...(queryTarget.value
+        ? { 'task.datasourceName': [{ required: true, message: '请选择查询目标对应的调度数据源', trigger: 'change' }] }
+        : {})
     }
   }
 
@@ -803,68 +841,87 @@ const effectiveDolphinConfigId = computed(() => (
 ))
 
 const open = async (id = null, initialData = {}) => {
-  visible.value = true
-  loading.value = false
-  isEdit.value = !!id
-  contextDolphinConfigId.value = initialData.dolphinConfigId || null
+  const seq = ++drawerOpenSeq
+  drawerOpening.value = true
+  try {
+    visible.value = true
+    loading.value = false
+    isEdit.value = !!id
+    contextDolphinConfigId.value = initialData.dolphinConfigId || null
 
-  resetForm()
-  openedFromRelatedTask.value = Boolean(initialData.relation && initialData.tableId)
-  lockedWorkflowId.value = null
-  if (initialData.workflowId) {
-    form.task.workflowId = initialData.workflowId
-    lockedWorkflowId.value = initialData.workflowId
-  }
-  await fetchWorkflowOptions()
-  await fetchDatasourceOptions()
-
-  if (id) {
-    try {
-      const taskData = (await taskApi.getById(id)) || {}
-      Object.assign(form.task, taskData)
-      form.task.dolphinFlag = normalizeDolphinFlag(taskData.dolphinFlag)
-      syncSqlDatasourceType()
-      originalTaskName.value = form.task.taskName
-
-      const lineage = await taskApi.getTaskLineage(id)
-      const inputIds = Array.isArray(lineage.inputTableIds) ? lineage.inputTableIds : []
-      const outputIds = Array.isArray(lineage.outputTableIds) ? lineage.outputTableIds : []
-      setTableSelections(inputIds, outputIds)
-
-      await ensureTableOptionsLoaded([...inputIds, ...outputIds])
-    } catch (error) {
-      console.error(error)
-      ElMessage.error('加载任务详情失败')
+    resetForm()
+    queryTarget.value = !id && initialData.queryTarget?.sourceId ? { ...initialData.queryTarget } : null
+    openedFromRelatedTask.value = Boolean(initialData.relation && initialData.tableId)
+    lockedWorkflowId.value = null
+    if (initialData.workflowId) {
+      form.task.workflowId = initialData.workflowId
+      lockedWorkflowId.value = initialData.workflowId
     }
-  } else {
-    if (initialData.taskSql) form.task.taskSql = initialData.taskSql
-    if (initialData.taskName) form.task.taskName = initialData.taskName
-    if (initialData.taskDesc) form.task.taskDesc = initialData.taskDesc
+    await fetchWorkflowOptions()
+    if (seq !== drawerOpenSeq || !visible.value) return
+    if (!id) await fetchDatasourceOptions()
+    if (seq !== drawerOpenSeq || !visible.value) return
 
-    if (initialData.relation && initialData.tableId) {
-      const tableId = Number(initialData.tableId)
-      if (Number.isFinite(tableId)) {
-        await ensureTableOptionsLoaded([tableId])
-        if (initialData.relation === 'write') {
-          setTableSelections([], [tableId])
-          isWriteTask.value = true
-          const tableInfo = tableOptionCache[tableId]
-          if (tableInfo?.tableName) {
-            form.task.taskName = tableInfo.tableName
+    if (id) {
+      try {
+        const taskData = (await taskApi.getById(id)) || {}
+        if (seq !== drawerOpenSeq || !visible.value) return
+        Object.assign(form.task, taskData)
+        form.task.dolphinFlag = normalizeDolphinFlag(taskData.dolphinFlag)
+        syncSqlDatasourceType()
+        originalTaskName.value = form.task.taskName
+        await fetchDatasourceOptions()
+        if (seq !== drawerOpenSeq || !visible.value) return
+
+        const lineage = await taskApi.getTaskLineage(id)
+        if (seq !== drawerOpenSeq || !visible.value) return
+        const inputIds = Array.isArray(lineage.inputTableIds) ? lineage.inputTableIds : []
+        const outputIds = Array.isArray(lineage.outputTableIds) ? lineage.outputTableIds : []
+        setTableSelections(inputIds, outputIds)
+
+        await ensureTableOptionsLoaded([...inputIds, ...outputIds])
+        if (seq !== drawerOpenSeq || !visible.value) return
+      } catch (error) {
+        console.error(error)
+        ElMessage.error('加载任务详情失败')
+      }
+    } else {
+      if (initialData.taskSql) form.task.taskSql = initialData.taskSql
+      if (initialData.taskName) form.task.taskName = initialData.taskName
+      if (initialData.taskDesc) form.task.taskDesc = initialData.taskDesc
+
+      if (initialData.relation && initialData.tableId) {
+        const tableId = Number(initialData.tableId)
+        if (Number.isFinite(tableId)) {
+          await ensureTableOptionsLoaded([tableId])
+          if (seq !== drawerOpenSeq || !visible.value) return
+          if (initialData.relation === 'write') {
+            setTableSelections([], [tableId])
+            isWriteTask.value = true
+            const tableInfo = tableOptionCache[tableId]
+            if (tableInfo?.tableName) {
+              form.task.taskName = tableInfo.tableName
+            }
+          } else if (initialData.relation === 'read') {
+            setTableSelections([tableId], [])
           }
-        } else if (initialData.relation === 'read') {
-          setTableSelections([tableId], [])
         }
       }
     }
-  }
 
-  inputSelectionTouched.value = false
-  outputSelectionTouched.value = false
-  scheduleSqlAnalyze()
+    inputSelectionTouched.value = false
+    outputSelectionTouched.value = false
+    scheduleSqlAnalyze()
+  } finally {
+    if (seq === drawerOpenSeq) drawerOpening.value = false
+  }
 }
 
 const safeResetOnClose = () => {
+  drawerOpenSeq++
+  drawerOpening.value = false
+  datasourceSeq++
+  datasourceLoading.value = false
   cancelPendingAnalyze()
   if (tableSearchTimer) {
     clearTimeout(tableSearchTimer)
@@ -978,7 +1035,7 @@ const promptWorkflowPublishAfterSave = async (workflowId, options = {}) => {
 }
 
 const handleSave = async () => {
-  if (!formRef.value) return
+  if (!formRef.value || drawerOpening.value || loading.value) return
 
   if (taskNameError.value) {
     ElMessage.error('请解决任务名称重复问题')
@@ -1031,6 +1088,7 @@ const resetForm = () => {
   originalTaskName.value = ''
   isWriteTask.value = false
   openedFromRelatedTask.value = false
+  queryTarget.value = null
   inputSelectionTouched.value = false
   outputSelectionTouched.value = false
   clearSqlAnalysis()
@@ -1102,10 +1160,18 @@ watch(effectiveDolphinConfigId, async (nextId, prevId) => {
   if (!visible.value || nextId === prevId) {
     return
   }
+  // 切换工作流所属调度实例后，原实例的数据源不能继续使用。
+  if (!drawerOpening.value) {
+    form.task.datasourceName = ''
+    form.task.datasourceType = null
+    form.task.targetDatasourceName = ''
+  }
   await fetchDatasourceOptions()
 })
 
 onBeforeUnmount(() => {
+  drawerOpenSeq++
+  datasourceSeq++
   cancelPendingAnalyze()
   if (tableSearchTimer) clearTimeout(tableSearchTimer)
   if (taskNameCheckTimer) clearTimeout(taskNameCheckTimer)
@@ -1117,6 +1183,18 @@ defineExpose({
 </script>
 
 <style scoped>
+.query-target {
+  display: flex;
+  flex-direction: column;
+  line-height: 20px;
+}
+.query-target-value {
+  color: var(--el-text-color-primary);
+}
+.query-target-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
 .sql-input :deep(.el-textarea__inner) {
   font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
   font-size: 13px;

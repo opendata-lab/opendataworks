@@ -13,7 +13,7 @@
             AGGREGATE 表仅支持修改注释
           </el-tag>
           <el-tag
-            v-if="state.fieldsEditing && isDorisTable(state.table)"
+            v-if="state.fieldsEditing && fieldRows.some(isPrimaryKeyLocked)"
             type="warning"
             size="small"
             effect="plain"
@@ -71,7 +71,8 @@
           <el-table-column label="主键" width="84">
             <template #default="{ row }">
               <template v-if="state.fieldsEditing">
-                <el-tooltip v-if="isDorisTable(state.table)" content="Doris 不支持在线修改主键列" placement="top">
+                <el-tooltip v-if="isPrimaryKeyLocked(row)"
+                  :content="isDorisTable(state.table) ? 'Doris 不支持在线修改主键列' : 'MySQL 暂不支持在线修改已有字段的主键'" placement="top">
                   <span>
                     <el-switch v-model="row.isPrimary" :active-value="1" :inactive-value="0" size="small" disabled />
                   </span>
@@ -181,6 +182,7 @@
 import { computed, inject } from 'vue'
 import { InfoFilled, Key } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
+import { isMysqlPrimaryKeyLocked } from '../fieldEdit'
 
 // P2-2 F17d：右侧面板「列信息」tab pane 从 DataStudioRightPanel.vue 抽出。
 // 编辑/智能元数据等操作已上移到面板头部，这里只负责字段表本身。
@@ -194,6 +196,7 @@ const {
   activeTab,
   tabStates,
   isDorisTable,
+  getTableSourceType,
   isAggregateTable,
   getFieldRows,
   addField,
@@ -207,6 +210,8 @@ const state = computed(() => {
   if (!id) return null
   return tabStates[id] || null
 })
+const isPrimaryKeyLocked = (row) => isDorisTable(state.value?.table) ||
+  isMysqlPrimaryKeyLocked(state.value?.table, row, getTableSourceType?.(state.value?.table))
 const fieldRows = computed(() => getFieldRows(activeTabId.value))
 
 const suggestFor = (fieldName) =>

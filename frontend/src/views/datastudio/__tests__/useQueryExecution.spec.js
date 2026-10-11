@@ -182,14 +182,38 @@ it('stops an in-flight execution through the existing cancellation API', async (
   }))
   const { api, tabStates, unmount } = setup()
   Object.assign(tabStates.t1.query, { sql: 'SELECT 1', selectionText: '' })
+  tabStates.t1.queryResult.durationMs = 55
+  tabStates.t1.queryResult.executedAt = 'old-execution'
   const execution = api.executeQuery('t1')
   await Promise.resolve()
   expect(tabStates.t1.queryCancelable).toBe(true)
+  expect(tabStates.t1.queryResult.executedAt).toBe('')
+  expect(tabStates.t1.queryResult.durationMs).toBe(0)
+  tabStates.t1.queryTiming.startedAt = Date.now() - 3200
   await api.stopQuery('t1')
   await execution
   expect(dataQueryApi.stop).toHaveBeenCalledWith({ clientQueryId: 't1' })
   expect(tabStates.t1.queryCancelable).toBe(false)
   expect(tabStates.t1.queryResult.cancelled).toBe(true)
+  expect(tabStates.t1.queryResult.durationMs).toBeGreaterThanOrEqual(3200)
+  expect(tabStates.t1.queryResult.executedAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
   expect(tabStates.t1.queryResult.message).toBe('查询已停止')
+  unmount()
+})
+
+
+it('迟到的停止响应不会覆盖下一次执行的状态', async () => {
+  let finishStop
+  dataQueryApi.stop.mockReturnValueOnce(new Promise(resolve => { finishStop = resolve }))
+  const { api, tabStates, unmount } = setup()
+  Object.assign(tabStates.t1, { queryCancelable: true, queryRunId: 1 })
+  const stop = api.stopQuery('t1')
+  tabStates.t1.queryRunId = 2
+  tabStates.t1.queryStopping = false
+  tabStates.t1.queryLoading = true
+  finishStop(true)
+  await stop
+  expect(tabStates.t1.queryResult.cancelled).not.toBe(true)
+  expect(tabStates.t1.queryLoading).toBe(true)
   unmount()
 })

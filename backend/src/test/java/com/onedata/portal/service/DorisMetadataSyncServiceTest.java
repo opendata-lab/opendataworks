@@ -1,5 +1,6 @@
 package com.onedata.portal.service;
 
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
@@ -78,6 +79,46 @@ class DorisMetadataSyncServiceTest {
                 .thenReturn(Collections.emptyMap());
         lenient().when(dorisConnectionService.getColumnsInTable(anyLong(), anyString(), anyString()))
                 .thenReturn(Collections.emptyList());
+    }
+
+    @Test
+    void syncDatabaseMarksNewMysqlTableAsPhysicalObject() {
+        DorisCluster cluster = new DorisCluster();
+        cluster.setId(1L);
+        cluster.setSourceType("MYSQL");
+        when(dorisClusterMapper.selectById(1L)).thenReturn(cluster);
+        when(dorisConnectionService.getTablesInDatabase(1L, "dw"))
+                .thenReturn(Collections.singletonList(dorisTable("fact_orders", "order facts")));
+        when(dataTableMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        service.syncDatabase(1L, "dw", null);
+
+        ArgumentCaptor<DataTable> captor = ArgumentCaptor.forClass(DataTable.class);
+        verify(dataTableMapper).insert(captor.capture());
+        assertEquals(1, captor.getValue().getIsSynced());
+        assertEquals(1L, captor.getValue().getClusterId());
+    }
+
+    @Test
+    void syncDatabaseRepairsMysqlPhysicalStateAndKeepsNextSyncUnchanged() {
+        DorisCluster cluster = new DorisCluster();
+        cluster.setId(1L);
+        cluster.setSourceType("MYSQL");
+        when(dorisClusterMapper.selectById(1L)).thenReturn(cluster);
+        DataTable existing = existingTable("dw", "fact_orders", "order facts");
+        existing.setIsSynced(0);
+        when(dorisConnectionService.getTablesInDatabase(1L, "dw"))
+                .thenReturn(Collections.singletonList(dorisTable("fact_orders", "order facts")));
+        when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(existing));
+        when(dataFieldMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        DorisMetadataSyncService.SyncResult repaired = service.syncDatabase(1L, "dw", null);
+        DorisMetadataSyncService.SyncResult repeated = service.syncDatabase(1L, "dw", null);
+
+        verify(dataTableMapper).updateById(any(DataTable.class));
+        assertEquals(1, existing.getIsSynced());
+        assertEquals(1, repaired.getUpdatedTables());
+        assertEquals(0, repeated.getUpdatedTables());
     }
 
     @Test
@@ -178,7 +219,7 @@ class DorisMetadataSyncServiceTest {
         DorisMetadataSyncService.SyncResult result = service.syncDatabase(1L, "dw", null);
 
         ArgumentCaptor<DataField> fieldCaptor = ArgumentCaptor.forClass(DataField.class);
-        verify(dataFieldMapper).updateById(fieldCaptor.capture());
+        verify(dataFieldMapper).update(fieldCaptor.capture(), any());
         assertEquals("DECIMAL(20,2)", fieldCaptor.getValue().getFieldType());
         assertEquals("order amount", fieldCaptor.getValue().getFieldComment());
         assertEquals(2, fieldCaptor.getValue().getFieldOrder());
@@ -189,6 +230,52 @@ class DorisMetadataSyncServiceTest {
         assertNotNull(tableCaptor.getValue().getSyncTime());
         assertEquals(0, result.getUpdatedTables());
         assertEquals(1, result.getUpdatedFields());
+    }
+
+    @Test
+    void removedDefaultIsExplicitlyClearedAndNextSyncHasNoFieldChanges() {
+        DataField field = localField(100L, 10L, "amount", "DECIMAL(10,2)", "amount", 1);
+        field.setDefaultValue("");
+        when(dorisConnectionService.getTablesInDatabase(1L, "dw"))
+                .thenReturn(Collections.singletonList(dorisTable("fact_orders", "order facts")));
+        when(dorisConnectionService.getColumnsInTable(1L, "dw", "fact_orders"))
+                .thenReturn(Collections.singletonList(dorisColumn("amount", "DECIMAL(10,2)", "amount", 1)));
+        when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(
+                existingTable("dw", "fact_orders", "order facts")));
+        when(dataFieldMapper.selectList(any())).thenReturn(Collections.singletonList(field));
+
+        DorisMetadataSyncService.SyncResult first = service.syncDatabase(1L, "dw", null);
+        DorisMetadataSyncService.SyncResult repeated = service.syncDatabase(1L, "dw", null);
+
+        ArgumentCaptor<UpdateWrapper> wrapper = ArgumentCaptor.forClass(UpdateWrapper.class);
+        verify(dataFieldMapper).update(any(DataField.class), wrapper.capture());
+        assertEquals("default_value=#{ew.paramNameValuePairs.MPGENVAL1}", wrapper.getValue().getSqlSet());
+        assertEquals(null, wrapper.getValue().getParamNameValuePairs().get("MPGENVAL1"));
+        assertEquals(null, field.getDefaultValue());
+        assertEquals(1, first.getUpdatedFields());
+        assertEquals(0, repeated.getUpdatedFields());
+    }
+
+    @Test
+    void sqlEmptyStringDefaultRemainsDifferentFromNoDefault() {
+        DataField field = localField(100L, 10L, "amount", "DECIMAL(10,2)", "amount", 1);
+        Map<String, Object> column = dorisColumn("amount", "DECIMAL(10,2)", "amount", 1);
+        column.put("defaultValue", "");
+        when(dorisConnectionService.getTablesInDatabase(1L, "dw"))
+                .thenReturn(Collections.singletonList(dorisTable("fact_orders", "order facts")));
+        when(dorisConnectionService.getColumnsInTable(1L, "dw", "fact_orders"))
+                .thenReturn(Collections.singletonList(column));
+        when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(
+                existingTable("dw", "fact_orders", "order facts")));
+        when(dataFieldMapper.selectList(any())).thenReturn(Collections.singletonList(field));
+
+        DorisMetadataSyncService.SyncResult first = service.syncDatabase(1L, "dw", null);
+        DorisMetadataSyncService.SyncResult repeated = service.syncDatabase(1L, "dw", null);
+
+        verify(dataFieldMapper).update(any(DataField.class), any());
+        assertEquals("", field.getDefaultValue());
+        assertEquals(1, first.getUpdatedFields());
+        assertEquals(0, repeated.getUpdatedFields());
     }
 
     @Test

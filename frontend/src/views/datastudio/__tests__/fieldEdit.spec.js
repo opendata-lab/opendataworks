@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildFieldPayload, isFieldChanged, isOnlyCommentChanged } from '../fieldEdit'
+import { buildFieldPayload, isFieldChanged, isOnlyCommentChanged, isMysqlPrimaryKeyLocked } from '../fieldEdit'
 
 describe('buildFieldPayload', () => {
   it('trims name/type and applies defaults', () => {
@@ -9,7 +9,7 @@ describe('buildFieldPayload', () => {
       fieldComment: '',
       isNullable: 1,
       isPrimary: 0,
-      defaultValue: '',
+      defaultValue: null,
       fieldOrder: 0,
     })
   })
@@ -47,4 +47,22 @@ describe('isOnlyCommentChanged', () => {
     expect(isOnlyCommentChanged({ ...base }, base)).toBe(false)
     expect(isOnlyCommentChanged({ ...base }, null)).toBe(false)
   })
+})
+
+describe('MySQL primary key editing', () => {
+  it('locks existing physical fields, but permits draft and new fields', () => {
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', isSynced: 1 }, { id: 1 })).toBe(true)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', isSynced: 0 }, { id: 1 })).toBe(false)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', isSynced: 1 }, { id: null })).toBe(false)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'DORIS', isSynced: 1 }, { id: 1 })).toBe(false)
+  })
+})
+
+it('preserves absent defaults on comment saves while detecting explicit clears', () => {
+  const original = { fieldName: 'a', fieldType: 'int', fieldComment: 'old', defaultValue: null }
+  expect(buildFieldPayload(original).defaultValue).toBeNull()
+  expect(isFieldChanged({ ...original }, original)).toBe(false)
+  expect(isOnlyCommentChanged({ ...original, fieldComment: 'new' }, original)).toBe(true)
+  expect(buildFieldPayload({ ...original, defaultValue: '' }).defaultValue).toBe('')
+  expect(isFieldChanged({ ...original, defaultValue: '' }, { ...original, defaultValue: '42' })).toBe(true)
 })

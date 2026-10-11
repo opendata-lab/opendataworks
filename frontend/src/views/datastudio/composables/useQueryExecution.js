@@ -1,5 +1,6 @@
 import { markRaw, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
+import dayjs from 'dayjs'
 import { dataQueryApi } from '@/api/query'
 import { buildCsvContent } from '../csvExport'
 import { buildResultGridRows } from '../components/resultGridModel'
@@ -300,7 +301,7 @@ export function useQueryExecution({
 
   const executeQuery = async (tabId, { explain = false } = {}) => {
     const state = tabStates[tabId]
-    if (!state) return
+    if (!state || state.queryStopping) return
     const runId = Number(state.queryRunId || 0) + 1
     state.queryRunId = runId
     const selectedSql = String(state?.query?.selectionText || '')
@@ -445,6 +446,8 @@ export function useQueryExecution({
     state.queryResult.errorMessage = ''
     state.queryResult.message = ''
     state.queryResult.cancelled = false
+    state.queryResult.durationMs = 0
+    state.queryResult.executedAt = ''
     state.queryResult.statementInfos = buildRunningStatementInfos(sqlToRun)
     state.resultTab = INFO_TAB_NAME
     startQueryTimer(tabId)
@@ -571,6 +574,8 @@ export function useQueryExecution({
   const stopQuery = async (tabId) => {
     const state = tabStates[tabId]
     if (!state?.queryCancelable || state.queryStopping) return
+    const runId = state.queryRunId
+    const startedAt = Number(state.queryTiming?.startedAt || 0)
     state.queryStopping = true
     try {
       state.queryAbortController?.abort()
@@ -580,6 +585,9 @@ export function useQueryExecution({
     state.queryAbortController = null
     try {
       await dataQueryApi.stop({ clientQueryId: String(tabId) })
+      if (state.queryRunId !== runId) return
+      state.queryResult.durationMs = startedAt > 0 ? Math.max(0, Date.now() - startedAt) : 0
+      state.queryResult.executedAt = dayjs().format('YYYY-MM-DD HH:mm:ss')
       state.queryCancelable = false
       state.queryLoading = false
       state.queryStopping = false
@@ -602,6 +610,7 @@ export function useQueryExecution({
       })
       state.resultTab = INFO_TAB_NAME
     } catch (error) {
+      if (state.queryRunId !== runId) return
       state.queryStopping = false
       const message = error?.response?.data?.message || error?.message || '停止失败'
       state.queryResult.errorMessage = message

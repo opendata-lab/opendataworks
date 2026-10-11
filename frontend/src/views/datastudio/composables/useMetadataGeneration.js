@@ -5,6 +5,7 @@ import { nl2sqlApi, nl2sqlErrorMessage } from '@/api/nl2sql'
 import { settingsApi } from '@/api/settings'
 import { businessDomainApi, dataDomainApi } from '@/api/domain'
 import { tableApi } from '@/api/table'
+import { getObjectSourceId } from '../objectSource'
 import { buildFieldPayload } from '../fieldEdit'
 import {
   buildMetadataPrompt,
@@ -141,7 +142,7 @@ export function useMetadataGeneration({
   // 只有实测取值分布里出现过的枚举值才允许写进描述：模型编造的取值在这里被丢掉
   const collectColumnValueProfiles = async (state) => {
     try {
-      const profiles = await tableApi.profileColumnValues(state.table.id, clusterId.value || null)
+      const profiles = await tableApi.profileColumnValues(state.table.id, getObjectSourceId(state.table, clusterId.value))
       return Array.isArray(profiles) ? profiles : []
     } catch (error) {
       console.warn('获取字段实测取值失败，本次不生成枚举', error)
@@ -336,11 +337,12 @@ export function useMetadataGeneration({
     const state = tabStates[tabId]
     if (!state?.table?.id) return
     const { table = null, attributes = [], freshness = null, fields = [] } = payload
+    const sourceId = getObjectSourceId(state.table, clusterId.value)
 
     metadataAdopting.value = true
     try {
       if (table && String(table.text || '').trim()) {
-        await tableApi.updateComment(state.table.id, table.text, clusterId.value || null)
+        await tableApi.updateComment(state.table.id, table.text, sourceId)
         state.table.tableComment = table.text
         if (state.metaForm) state.metaForm.tableComment = table.text
         if (state.metaOriginal) state.metaOriginal.tableComment = table.text
@@ -363,7 +365,7 @@ export function useMetadataGeneration({
         const updated = await tableApi.update(
           state.table.id,
           { layer: effectiveLayer, ...next },
-          clusterId.value || null
+          sourceId
         )
         state.table = { ...state.table, ...(updated || next), layer: effectiveLayer }
         if (state.metaForm) {
@@ -380,7 +382,7 @@ export function useMetadataGeneration({
           state.table.id,
           original.id,
           buildFieldPayload({ ...original, fieldComment: item.text }),
-          clusterId.value || null
+          sourceId
         )
       }
 

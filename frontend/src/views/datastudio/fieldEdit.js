@@ -8,7 +8,7 @@ export const buildFieldPayload = (row) => ({
   fieldComment: row.fieldComment || '',
   isNullable: row.isNullable ?? 1,
   isPrimary: row.isPrimary ?? 0,
-  defaultValue: row.defaultValue || '',
+  defaultValue: row.defaultValue ?? null,
   fieldOrder: row.fieldOrder || 0
 })
 
@@ -21,7 +21,7 @@ export const isFieldChanged = (next, original) => {
     payload.fieldComment !== (original.fieldComment || '') ||
     Number(payload.isNullable ?? 1) !== Number(original.isNullable ?? 1) ||
     Number(payload.isPrimary ?? 0) !== Number(original.isPrimary ?? 0) ||
-    payload.defaultValue !== (original.defaultValue || '') ||
+    (payload.defaultValue ?? '') !== (original.defaultValue || '') ||
     Number(payload.fieldOrder || 0) !== Number(original.fieldOrder || 0)
   )
 }
@@ -34,8 +34,13 @@ export const isOnlyCommentChanged = (next, original) => {
     payload.fieldType === (original.fieldType || '') &&
     Number(payload.isNullable ?? 1) === Number(original.isNullable ?? 1) &&
     Number(payload.isPrimary ?? 0) === Number(original.isPrimary ?? 0) &&
-    payload.defaultValue === (original.defaultValue || '') &&
+    (payload.defaultValue ?? '') === (original.defaultValue || '') &&
     Number(payload.fieldOrder || 0) === Number(original.fieldOrder || 0) &&
     payload.fieldComment !== (original.fieldComment || '')
   )
 }
+
+// MySQL 仅限制已有物理列；平台草稿和新增列继续使用既有能力。
+export const isMysqlPrimaryKeyLocked = (table, row, sourceType = table?.sourceType) =>
+  String(sourceType || '').toUpperCase() === 'MYSQL' &&
+  Number(table?.isSynced) === 1 && !!row?.id

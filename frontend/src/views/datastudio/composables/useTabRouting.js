@@ -94,9 +94,13 @@ export function useTabRouting({
       }
     }
     if (!target) return
+    const previousSuppression = suppressRouteSync.value
     suppressRouteSync.value = true
-    await openTableTab(target, database, routeClusterId)
-    suppressRouteSync.value = false
+    try {
+      await openTableTab(target, database, routeClusterId)
+    } finally {
+      suppressRouteSync.value = previousSuppression
+    }
   }
 
   return { syncRouteWithTab, clearRouteTabQuery, clearCreateQuery, syncFromRoute }

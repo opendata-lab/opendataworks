@@ -106,7 +106,7 @@ describe('useTableActions', () => {
     tabStates.x = { table: { id: 7, tableName: 'demo_t', dbName: 'db', sourceId: 's1' } }
     ElMessageBox.prompt.mockResolvedValue({ value: 'demo_t' })
     await api.handleDeleteTable()
-    expect(tableApi.softDelete).toHaveBeenCalledWith(7, 'c1', 'demo_t')
+    expect(tableApi.softDelete).toHaveBeenCalledWith(7, 's1', 'demo_t')
     expect(deps.loadTables).toHaveBeenCalledWith('s1', 'db', true)
     expect(deps.handleTabRemove).toHaveBeenCalledWith('x')
     expect(ElMessage.success).toHaveBeenCalled()
@@ -189,4 +189,29 @@ it('saving a query task uses execution connection/schema rather than the inspect
   expect(taskDrawerRef.value.open).toHaveBeenCalledWith(null, expect.objectContaining({
     taskSql: 'SELECT 1', taskDesc: 'From DataStudio\nCluster: query-source\nDatabase: query-db',
   }))
+})
+
+it('saving a query task passes the execution target for display without choosing a scheduler datasource', () => {
+  const { api, tabStates, taskDrawerRef } = setup({ getSourceName: (id) => (id === 'query-source' ? '生产 Doris' : '') })
+  tabStates.t1 = { table: { sourceId: 'object-source', dbName: 'object-db' }, query: { sql: 'SELECT 1', sourceId: 'query-source', dbName: 'query-db' } }
+  api.saveAsTask('t1')
+  const initialData = taskDrawerRef.value.open.mock.calls[0][1]
+  expect(initialData.queryTarget).toEqual({ sourceId: 'query-source', sourceName: '生产 Doris', dbName: 'query-db' })
+  expect(initialData.taskDesc).toBe('From DataStudio\nCluster: 生产 Doris (query-source)\nDatabase: query-db')
+  // 门户连接与调度数据源无映射，不得预填
+  expect(initialData).not.toHaveProperty('datasourceName')
+})
+
+
+it('删除对象在确认期间切换查询连接，仍使用对象的所属连接', async () => {
+  let confirm
+  ElMessageBox.prompt.mockReturnValueOnce(new Promise(resolve => { confirm = resolve }))
+  const { deps, api, activeTab, tabStates } = setup()
+  activeTab.value = 't1'
+  tabStates.t1 = { table: { id: 9, clusterId: 'object-source', tableName: 't' } }
+  const deleting = api.handleDeleteTable()
+  deps.clusterId.value = 'another-query-source'
+  confirm({ value: 't' })
+  await deleting
+  expect(tableApi.softDelete).toHaveBeenCalledWith(9, 'object-source', 't')
 })

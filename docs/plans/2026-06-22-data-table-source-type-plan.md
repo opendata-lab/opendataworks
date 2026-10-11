@@ -121,3 +121,20 @@
 
 - 回退本计划对应提交即可恢复旧启发式判定。
 - 文档、枚举、服务判定和测试均为单次收敛改动，不涉及 schema 和对外 REST 签名变更。
+
+## T9 — 2026-10-11 修复 MySQL 同步状态
+
+- 修正 `DorisMetadataSyncService` 新表导入和已有表同步的 `is_synced` 写入，使成功导入的 MySQL 表进入既有 MySQL handler。
+- 在 `DorisMetadataSyncServiceTest` 覆盖新 MySQL 表导入、历史 MySQL 未同步记录重新同步，以及再次同步不产生无意义更新。
+- 运行该同步服务、`DataTableServiceTest`、`MysqlTableEngineHandlerTest` 的定向测试，重新打包后端。
+- 使用本地 MySQL 8.0.43（127.0.0.1:3306）、正式前端、真实 HTTP/UI 验证临时表字段及注释更新，直接核对 information_schema，验证新增与删除字段及新鲜度持久化。
+- 验证记录见 `../reports/2026-10-11-datastudio-mysql-smoke.md`。回退代码可恢复原同步状态行为；本轮不批量迁移历史记录。
+
+## 2026-10-11 后续执行
+
+- 在字段同步更新中显式设置 default_value，补清空与重复同步回归。
+- 用专用 MySQL 表验证移除默认值持久化为 NULL、空字符串默认值仍保留、连续同步零变更。
+- 运行同步服务定向测试、后端打包；清理测试连接、表和关联记录。
+- 回退：撤销同步服务本轮局部改动，无 schema 迁移。
+
+上述 2026-10-11 后续任务已完成，定向测试、构建及真实 MySQL/UI 复验通过，临时资源清理完毕。证据见 [后续验证报告](../reports/2026-10-11-datastudio-mysql-followup.md)。

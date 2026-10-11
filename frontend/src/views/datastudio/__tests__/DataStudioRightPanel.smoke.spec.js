@@ -345,6 +345,104 @@ describe('DataStudioRightPanel mount smoke', () => {
     wrapper.unmount()
   })
 
+  it('引擎配置页直接进入元数据编辑，保存走同一链路', async () => {
+    const ctx = buildCtx()
+    ctx.tabStates.t1.metaTab = 'doris'
+    const ButtonStub = {
+      props: ['disabled', 'loading', 'type', 'size', 'text'],
+      emits: ['click'],
+      template: '<button :disabled="disabled" @click="$emit(\'click\')"><slot /></button>',
+    }
+    const mountPanel = () =>
+      shallowMount(DataStudioRightPanel, {
+        global: {
+          provide: { dataStudioCtx: ctx },
+          stubs: {
+            DataStudioRightPanelLineage: true,
+            SmartMetadataDialog: true,
+            ElButton: ButtonStub,
+            ElTooltip: { props: ['content'], template: '<div :data-tip="content"><slot /></div>' },
+            ElDropdown: { template: '<div><slot /><slot name="dropdown" /></div>' },
+            ElDropdownMenu: { template: '<div><slot /></div>' },
+            ElScrollbar: { template: '<div><slot /></div>' },
+          },
+          config: { warnHandler: () => {} },
+          directives: { loading: {} },
+        },
+      })
+
+    let wrapper = mountPanel()
+    const edit = wrapper.find('[data-test="action-edit"]')
+    expect(edit.exists()).toBe(true)
+    await edit.trigger('click')
+    expect(ctx.startMetaEdit).toHaveBeenCalledWith('t1')
+    expect(ctx.startFieldsEdit).not.toHaveBeenCalled()
+    wrapper.unmount()
+
+    ctx.tabStates.t1.metaEditing = true
+    wrapper = mountPanel()
+    await wrapper.find('[data-test="action-save"]').trigger('click')
+    expect(ctx.saveMetaEdit).toHaveBeenCalledWith('t1')
+    await wrapper.find('[data-test="action-cancel"]').trigger('click')
+    expect(ctx.cancelMetaEdit).toHaveBeenCalledWith('t1')
+    wrapper.unmount()
+
+    // 未选择集群时与概览一致给出禁用原因
+    ctx.tabStates.t1.metaEditing = false
+    ctx.clusterId.value = ''
+    ctx.tabStates.t1.table.sourceId = ''
+    wrapper = mountPanel()
+    expect(wrapper.find('[data-test="action-edit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-tip="请选择 Doris 集群后再操作"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('引擎配置编辑态：无分桶字段时分桶数不可改并说明原因', async () => {
+    const ctx = buildCtx()
+    Object.assign(ctx.tabStates.t1, { metaEditing: true, metaForm: { bucketNum: 8, replicaNum: 3 }, partitionList: [] })
+    const mountPane = () =>
+      shallowMount(DataStudioRightPanelDoris, {
+        global: {
+          provide: { dataStudioCtx: ctx },
+          stubs: {
+            ElScrollbar: { template: '<div><slot /></div>' },
+            ElDescriptions: { template: '<div><slot /></div>' },
+            ElDescriptionsItem: { props: ['label'], template: '<div :data-label="label"><slot /></div>' },
+            ElInputNumber: { props: ['disabled', 'modelValue'], template: '<input :disabled="disabled" />' },
+          },
+          config: { warnHandler: () => {} },
+          directives: { loading: {} },
+        },
+      })
+    const bucketInput = (w) => w.find('[data-label="分桶数"] input')
+
+    const replicaInput = (w) => w.find('[data-label="副本数"] input')
+
+    // 无分桶字段：不渲染输入框（el-input-number 会把空值按 min 改写成 1，保存时被当成 ALTER）
+    ctx.tabStates.t1.table = { ...ctx.tabStates.t1.table, bucketNum: 8, replicaNum: null }
+    let wrapper = mountPane()
+    expect(bucketInput(wrapper).exists()).toBe(false)
+    expect(wrapper.text()).toContain('未设置分桶字段，无法修改分桶数')
+    expect(replicaInput(wrapper).exists()).toBe(false)
+    expect(wrapper.text()).toContain('未同步副本数，无法修改')
+    expect(wrapper.text()).toContain('ALTER TABLE')
+    wrapper.unmount()
+
+    // 有分桶字段但分桶数未同步：同样只读
+    ctx.tabStates.t1.table = { ...ctx.tabStates.t1.table, distributionColumn: 'id', bucketNum: null, replicaNum: 3 }
+    wrapper = mountPane()
+    expect(bucketInput(wrapper).exists()).toBe(false)
+    expect(wrapper.text()).toContain('未同步分桶数，无法修改')
+    expect(replicaInput(wrapper).exists()).toBe(true)
+    wrapper.unmount()
+
+    ctx.tabStates.t1.table = { ...ctx.tabStates.t1.table, bucketNum: 8 }
+    wrapper = mountPane()
+    expect(bucketInput(wrapper).exists()).toBe(true)
+    expect(wrapper.text()).toContain('仅对之后新建的分区生效')
+    wrapper.unmount()
+  })
+
   it('头部展示库表名', () => {
     const ctx = buildCtx()
     const wrapper = shallowMount(DataStudioRightPanel, {
@@ -430,6 +528,54 @@ describe('DataStudioRightPanel mount smoke', () => {
     wrapper.unmount()
   })
 
+  it('A 表分区仍在加载时切到 B 表，B 照常加载且不被 A 的迟到结果或错误影响', async () => {
+    let rejectA
+    listPartitionsMock.mockReset()
+    listPartitionsMock.mockImplementation((tableId) =>
+      tableId === 1 && !rejectA
+        ? new Promise((_, reject) => { rejectA = reject })
+        : Promise.resolve([{ partitionName: 'p_b1' }, { partitionName: 'p_b2' }])
+    )
+    const ctx = buildCtx()
+    ctx.tabStates.t2 = {
+      ...ctx.tabStates.t1,
+      table: { id: 2, tableName: 'demo_b', dbName: 'db', sourceId: 's1', sourceType: 'DORIS' },
+    }
+    const wrapper = shallowMount(DataStudioRightPanelDoris, {
+      global: {
+        provide: { dataStudioCtx: ctx },
+        stubs: {
+          ElScrollbar: { template: '<div><slot /></div>' },
+          ElEmpty: { props: ['description'], template: '<div class="empty">{{ description }}</div>' },
+        },
+        config: { warnHandler: () => {} },
+        directives: { loading: {} },
+      },
+    })
+    await flushPromises()
+    expect(listPartitionsMock).toHaveBeenCalledWith(1, 's1', { skipErrorMessage: true })
+
+    ctx.activeTab.value = 't2'
+    await flushPromises()
+    expect(listPartitionsMock).toHaveBeenCalledWith(2, 's1', { skipErrorMessage: true })
+    expect(wrapper.text()).toContain('共 2 个分区')
+
+    rejectA(new Error('A 超时'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('共 2 个分区')
+    expect(wrapper.text()).not.toContain('A 超时')
+    expect(ctx.tabStates.t2.partitionList).toHaveLength(2)
+
+    // 回到 A：失败没有被缓存为空列表，自动重试
+    ctx.activeTab.value = 't1'
+    await flushPromises()
+    expect(wrapper.text()).toContain('共 2 个分区')
+    expect(listPartitionsMock.mock.calls.filter(([id]) => id === 1)).toHaveLength(2)
+    wrapper.unmount()
+    listPartitionsMock.mockReset()
+    listPartitionsMock.mockImplementation(() => Promise.resolve([]))
+  })
+
   it('renders the empty state for query tabs', () => {
     const ctx = buildCtx()
     ctx.openTabs.value = [{ id: 'q1', kind: 'query', tableName: '查询' }]
@@ -445,4 +591,28 @@ describe('DataStudioRightPanel mount smoke', () => {
     expect(wrapper.find('.right-empty').exists()).toBe(true)
     wrapper.unmount()
   })
+  it('分区查询跟随对象所属连接，失败后重新打开会重试', async () => {
+    listPartitionsMock.mockReset().mockRejectedValueOnce(new Error('network unavailable')).mockResolvedValue([{ partitionName: 'p1' }])
+    const ctx = buildCtx()
+    ctx.clusterId.value = 'query-source'
+    ctx.tabStates.t1.table.sourceId = 'object-source'
+    const mountPane = () => shallowMount(DataStudioRightPanelDoris, {
+      global: {
+        provide: { dataStudioCtx: ctx },
+        stubs: { ElScrollbar: { template: '<div><slot /></div>' } },
+        config: { warnHandler: () => {} }, directives: { loading: {} },
+      },
+    })
+    let wrapper = mountPane()
+    await flushPromises()
+    expect(listPartitionsMock).toHaveBeenCalledWith(1, 'object-source', { skipErrorMessage: true })
+    expect(ctx.tabStates.t1.partitionList).toBeUndefined()
+    wrapper.unmount()
+    wrapper = mountPane()
+    await flushPromises()
+    expect(listPartitionsMock).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('共 1 个分区')
+    wrapper.unmount()
+  })
+
 })

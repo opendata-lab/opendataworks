@@ -1,5 +1,6 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { tableApi } from '@/api/table'
+import { getObjectSourceId } from '../objectSource'
 import { isDemoMode, showDemoReadonlyMessage } from '@/demo/runtime'
 import { copyText } from '@/utils/clipboard'
 
@@ -26,6 +27,7 @@ export function useTableActions({
   loadTabData,
   handleTabRemove,
   getTabItemById,
+  getSourceName = () => '',
 }) {
   const saveAsTask = (tabId) => {
     if (isDemoMode) {
@@ -39,10 +41,13 @@ export function useTableActions({
     }
     const sourceId = state.query.sourceId ?? state.table?.sourceId ?? clusterId.value ?? ''
     const database = state.query.dbName ?? state.table?.dbName ?? ''
+    const sourceName = sourceId ? getSourceName(sourceId) : ''
+    // 门户连接与 Dolphin 调度数据源没有映射，只传执行目标供抽屉展示并要求手动选择，不预填数据源
     taskDrawerRef.value?.open(null, {
       taskSql: state.query.sql,
       taskName: `新建查询任务_${Date.now()}`,
-      taskDesc: `From DataStudio\nCluster: ${sourceId}\nDatabase: ${database}`
+      taskDesc: `From DataStudio\nCluster: ${sourceName ? `${sourceName} (${sourceId})` : sourceId}\nDatabase: ${database}`,
+      queryTarget: sourceId ? { sourceId: String(sourceId), sourceName, dbName: database } : null
     })
   }
 
@@ -69,8 +74,9 @@ export function useTableActions({
       ElMessage.warning('请先选择要删除的表')
       return
     }
+    const sourceId = getObjectSourceId(table, clusterId.value)
     const dorisTable = isDorisTable(table)
-    if (dorisTable && !clusterId.value) {
+    if (dorisTable && !sourceId) {
       ElMessage.warning('请选择 Doris 集群')
       return
     }
@@ -99,14 +105,13 @@ export function useTableActions({
       )
       const confirmTableName = String(value || '').trim()
       if (dorisTable) {
-        await tableApi.softDelete(table.id, clusterId.value || null, confirmTableName)
+        await tableApi.softDelete(table.id, sourceId, confirmTableName)
       } else {
         await tableApi.delete(table.id, confirmTableName)
       }
       ElMessage.success('删除表成功')
       const dbName = table.dbName || table.databaseName || table.database
       if (dbName) {
-        const sourceId = table.sourceId || clusterId.value
         if (sourceId) {
           await loadTables(sourceId, dbName, true)
         }
@@ -197,13 +202,9 @@ export function useTableActions({
     try {
       const table = await tableApi.getById(tableId)
       const dbName = table?.dbName || table?.databaseName || table?.database || ''
-      if (dbName) {
-        if (table?.sourceId || clusterId.value) {
-          const sourceId = table.sourceId || clusterId.value
-          await loadTables(sourceId, dbName, true)
-        }
-      }
-      await openTableTab(table, dbName, table?.sourceId || clusterId.value)
+      const sourceId = getObjectSourceId(table, clusterId.value)
+      if (dbName && sourceId) await loadTables(sourceId, dbName, true)
+      await openTableTab(table, dbName, sourceId)
     } catch (error) {
       console.error('加载新建表失败', error)
     }
@@ -212,7 +213,7 @@ export function useTableActions({
   const loadDdl = async (tabId) => {
     const state = tabStates[tabId]
     if (!state?.table) return
-    const sourceId = state.table.sourceId || clusterId.value
+    const sourceId = getObjectSourceId(state.table, clusterId.value)
     if (!sourceId) {
       ElMessage.warning('请选择数据源')
       return
@@ -241,7 +242,7 @@ export function useTableActions({
     if (!state?.table?.id) return
     if (state.accessLoading) return
     if (!force && state.accessStats) return
-    const sourceId = state.table.sourceId || clusterId.value || state.table.clusterId
+    const sourceId = getObjectSourceId(state.table, clusterId.value)
     if (!sourceId) {
       state.accessError = '缺少集群信息，无法获取访问统计'
       state.accessStats = null

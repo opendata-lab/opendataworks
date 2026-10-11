@@ -1,7 +1,7 @@
 package com.onedata.portal.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.onedata.portal.entity.DataLineage;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
@@ -1090,7 +1090,8 @@ public class DorisMetadataSyncService {
         newTable.setTableComment(tableComment != null ? tableComment : "");
 
         newTable.setStatus("active");
-        newTable.setIsSynced(isDoris ? 1 : 0);
+        // 导入成功表示已关联物理对象，不能用该标记判断数据源引擎。
+        newTable.setIsSynced(1);
         newTable.setSyncTime(LocalDateTime.now());
 
         if (isDoris && !viewType) {
@@ -1327,7 +1328,7 @@ public class DorisMetadataSyncService {
         }
 
         // 更新同步状态
-        Integer synced = isDoris ? 1 : 0;
+        Integer synced = 1;
         if (!Objects.equals(synced, localTable.getIsSynced())) {
             addChangedValue(tableChanges, "isSynced", localTable.getIsSynced(), synced);
             localTable.setIsSynced(synced);
@@ -1523,7 +1524,10 @@ public class DorisMetadataSyncService {
                 }
 
                 if (updated) {
-                    dataFieldMapper.updateById(localField);
+                    // 默认更新策略会忽略 null；物理列移除默认值时也必须清空平台值。
+                    dataFieldMapper.update(localField, new UpdateWrapper<DataField>()
+                            .eq("id", localField.getId())
+                            .set(defaultValue == null, "default_value", null));
                     changes.markUpdated();
                     result.addUpdatedField();
                     result.addUpdatedFieldDetail(database, tableName, fieldName, fieldChanges);

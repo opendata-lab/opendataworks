@@ -41,7 +41,7 @@ import { useMetadataGeneration } from '../composables/useMetadataGeneration'
 const buildDeps = () => {
   const tabStates = reactive({
     t1: {
-      table: { id: 1, tableName: 'orders', dbName: 'ods' },
+      table: { id: 1, tableName: 'orders', dbName: 'ods', sourceId: 'object-source' },
       fields: [{ id: 11, fieldName: 'status', fieldType: 'INT', fieldComment: '' }],
       lineage: { upstreamTables: [], downstreamTables: [] },
       tasks: { writeTasks: [], readTasks: [] },
@@ -154,7 +154,7 @@ describe('useMetadataGeneration agent 解析', () => {
 
     await generateMetadata('t1')
 
-    expect(tableApiMock.profileColumnValues).toHaveBeenCalledWith(1, 'c1')
+    expect(tableApiMock.profileColumnValues).toHaveBeenCalledWith(1, 'object-source')
     expect(metadataResult.value.fields[0].suggestedComment).toBe('订单状态。枚举：0=待支付；1=已支付')
     // prompt 里带上实测取值，模型才有据可依
     expect(nl2sqlApiMock.deliverMessage.mock.calls[0][0].content).toContain('- status: 0(12)、1(8)')
@@ -227,7 +227,7 @@ describe('useMetadataGeneration agent 解析', () => {
     expect(tableApiMock.update).toHaveBeenCalledWith(
       1,
       { layer: 'DWD', businessDomain: 'TRADE' },
-      'c1'
+      'object-source'
     )
     expect(deps.tabStates.t1.table.layer).toBe('DWD')
   })
@@ -251,7 +251,7 @@ describe('useMetadataGeneration agent 解析', () => {
 
     await adoptMetadata('t1', { attributes: [{ key: 'businessDomain', value: 'TRADE' }] })
 
-    expect(tableApiMock.update).toHaveBeenCalledWith(1, { layer: 'ODS', businessDomain: 'TRADE' }, 'c1')
+    expect(tableApiMock.update).toHaveBeenCalledWith(1, { layer: 'ODS', businessDomain: 'TRADE' }, 'object-source')
   })
 
   it('新鲜度建议命中真实字段时进入结果并可采纳', async () => {
@@ -323,4 +323,19 @@ describe('useMetadataGeneration agent 解析', () => {
 
     expect(tableApiMock.saveFreshness).toHaveBeenCalledWith(1, contract)
   })
+})
+
+
+it('采纳表与字段描述使用对象连接，查询连接切换不会改变写回目标', async () => {
+  tableApiMock.getFields.mockResolvedValue([])
+  const deps = buildDeps()
+  let finishComment
+  tableApiMock.updateComment.mockReturnValueOnce(new Promise(resolve => { finishComment = resolve }))
+  const { adoptMetadata } = useMetadataGeneration(deps)
+  const adopting = adoptMetadata('t1', { table: { text: '订单表' }, fields: [{ fieldName: 'status', text: '状态' }] })
+  deps.clusterId.value = 'other-query-source'
+  finishComment()
+  await adopting
+  expect(tableApiMock.updateComment).toHaveBeenLastCalledWith(1, '订单表', 'object-source')
+  expect(tableApiMock.updateField).toHaveBeenLastCalledWith(1, 11, expect.anything(), 'object-source')
 })

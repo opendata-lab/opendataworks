@@ -161,3 +161,13 @@ AND datasource.source_type = DORIS
   - Doris 表设计器拒绝 MySQL 数据源。
 - 运行 PR #376 既有目标测试。
 - 如本地 MySQL/Redis 可用，重复表生命周期 HTTP smoke，确认不再需要手工清空 `replica_num`。
+
+## 9. 2026-10-11 MySQL 真实验证补充
+
+DataStudio 真实 MySQL 验证发现：`DorisMetadataSyncService` 在导入与更新 MySQL 表时仍写入 `is_synced=0`，与本文“元数据同步导入表示已关联物理对象”的语义冲突。字段保存虽然返回成功，却只更新平台记录，没有进入已实现的 MySQL handler。
+
+修正同步成功后的导入和更新分支，统一写入 `is_synced=1`；Doris 专属属性仍按数据源类型处理。历史 MySQL 表在下一次针对该表同步时修复状态，不批量修改现有记录或运行数据库迁移。普通元数据草稿仍为 0，账号不可见对象仍为 inactive/0。REST 签名、数据结构、前端布局、DataAgent 和部署不变。修复后已同步 MySQL 对象的显式字段/注释修改会执行真实 MySQL DDL；以专用临时表验证并清理。
+
+## 2026-10-11 真实验证后续：默认值同步
+
+字段增量同步显式写入默认值，允许物理数据库移除默认值后将平台值清为 SQL NULL。范围仅限同步服务，不修改实体的全局更新策略。保留 NULL 与 SQL 空字符串默认值的区别；一次修正后重复同步应为零字段变更。通过实际 MySQL 复验清空、空字符串和非空默认值。

@@ -155,6 +155,7 @@
 </template>
 
 <script setup>
+import { getObjectSourceId } from '../objectSource'
 import { computed, inject } from 'vue'
 import { Grid, MoreFilled, ArrowDown, Check } from '@element-plus/icons-vue'
 import DataStudioRightPanelLineage from './DataStudioRightPanelLineage.vue'
@@ -253,8 +254,12 @@ const completeness = computed(() =>
   })
 )
 
-// 头部操作区随 tab 联动：只有「表信息」与「列信息」有可编辑内容
-const canEditCurrentTab = computed(() => ['basic', 'columns'].includes(String(state.value?.metaTab || '')))
+// 头部操作区随 tab 联动：概览、字段与引擎配置（分桶/副本，与概览共用同一元数据编辑链路）可编辑
+const canEditCurrentTab = computed(() => {
+  const tab = String(state.value?.metaTab || '')
+  if (tab === 'doris') return isDorisTable(state.value?.table)
+  return ['basic', 'columns'].includes(tab)
+})
 
 const isEditing = computed(() =>
   state.value?.metaTab === 'columns' ? !!state.value?.fieldsEditing : !!state.value?.metaEditing
@@ -268,7 +273,7 @@ const isSaving = computed(() =>
 const editDisabledReason = computed(() => {
   if (!canEditCurrentTab.value) return ''
   if (isPlatformMetadataMissing(state.value?.table)) return '请先同步到平台元数据后再操作'
-  if (isDorisTable(state.value?.table) && !clusterId.value) return '请选择 Doris 集群后再操作'
+  if (isDorisTable(state.value?.table) && !getObjectSourceId(state.value?.table, clusterId.value)) return '请选择 Doris 集群后再操作'
   return ''
 })
 

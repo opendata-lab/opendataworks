@@ -2,8 +2,9 @@ import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { businessDomainApi, dataDomainApi } from '@/api/domain'
 import { tableApi } from '@/api/table'
+import { getObjectSourceId } from '../objectSource'
 import { isDemoMode, showDemoReadonlyMessage } from '@/demo/runtime'
-import { buildFieldPayload, isFieldChanged, isOnlyCommentChanged } from '../fieldEdit'
+import { buildFieldPayload, isFieldChanged, isOnlyCommentChanged, isMysqlPrimaryKeyLocked } from '../fieldEdit'
 
 export function useTableMetaEditing({
   clusterId,
@@ -15,6 +16,7 @@ export function useTableMetaEditing({
   tableStore,
   getTableKey,
   isDorisTable,
+  getTableSourceType,
   isAggregateTable,
   warnPlatformMetadataMissing,
 }) {
@@ -60,7 +62,7 @@ export function useTableMetaEditing({
   }
 
   const ensureClusterSelected = (table) => {
-    if (isDorisTable(table) && !clusterId.value) {
+    if (isDorisTable(table) && !getObjectSourceId(table, clusterId.value)) {
       ElMessage.warning('请选择 Doris 集群')
       return false
     }
@@ -75,7 +77,7 @@ export function useTableMetaEditing({
 
   const updateTableCache = (updated) => {
     if (!updated?.dbName) return
-    const sourceId = updated.sourceId || clusterId.value
+    const sourceId = getObjectSourceId(updated, clusterId.value)
     if (!sourceId) return
     const sourceKey = String(sourceId)
     const list = tableStore[sourceKey]?.[updated.dbName] || []
@@ -98,7 +100,7 @@ export function useTableMetaEditing({
   }
 
   const syncTabKey = (oldKey, updatedTable) => {
-    const newKey = getTableKey(updatedTable, updatedTable?.dbName || '', updatedTable?.sourceId || clusterId.value)
+    const newKey = getTableKey(updatedTable, updatedTable?.dbName || '', getObjectSourceId(updatedTable, clusterId.value))
     if (!newKey || newKey === oldKey) return oldKey
     const oldIndex = openTabs.value.findIndex((tab) => String(tab.id) === String(oldKey))
     const existingIndex = openTabs.value.findIndex((tab) => String(tab.id) === String(newKey))
@@ -161,11 +163,14 @@ export function useTableMetaEditing({
     if (!state?.table?.id) return
     if (!ensureClusterSelected(state.table)) return
     if (!state.metaForm.layer) {
-      ElMessage.warning('请选择数据分层')
+      // 引擎配置页没有分层字段，提示去概览补齐，避免看不到的必填项卡住保存
+      ElMessage.warning(state.metaTab === 'doris' ? '请先在概览中选择数据分层' : '请选择数据分层')
       return
     }
+    const sourceId = getObjectSourceId(state.table, clusterId.value)
+    const tableId = state.table.id
     try {
-      await ElMessageBox.confirm('确认保存表信息与 Doris 配置的修改吗？', '提示', {
+      await ElMessageBox.confirm('确认保存对象信息的修改吗？', '提示', {
         type: 'warning',
         confirmButtonText: '确认',
         cancelButtonText: '取消'
@@ -173,6 +178,7 @@ export function useTableMetaEditing({
     } catch (error) {
       return
     }
+    if (state.table.id !== tableId) return
     state.metaSaving = true
     try {
       const payload = {
@@ -185,7 +191,8 @@ export function useTableMetaEditing({
         bucketNum: state.metaForm.bucketNum,
         replicaNum: state.metaForm.replicaNum
       }
-      const updated = await tableApi.update(state.table.id, payload, clusterId.value || null)
+      await tableApi.update(tableId, payload, sourceId)
+      const updated = await tableApi.getById(tableId)
       state.table = { ...state.table, ...updated }
       state.metaForm = {
         tableName: state.table.tableName || '',
@@ -323,10 +330,20 @@ export function useTableMetaEditing({
         return
       }
     }
+    const mysqlPrimaryChanged = updateList.some((row) =>
+      isMysqlPrimaryKeyLocked(state.table, row, getTableSourceType?.(state.table)) &&
+      Number(row.isPrimary ?? 0) !== Number(originalMap.get(row.id)?.isPrimary ?? 0)
+    )
+    if (mysqlPrimaryChanged) {
+      ElMessage.warning('MySQL 暂不支持在线修改已有字段的主键')
+      return
+    }
     if (!createList.length && !updateList.length && !removedIds.length) {
       ElMessage.info('暂无字段变更')
       return
     }
+    const sourceId = getObjectSourceId(state.table, clusterId.value)
+    const tableId = state.table.id
     try {
       await ElMessageBox.confirm(
         `确认保存字段变更（新增 ${createList.length}、修改 ${updateList.length}、删除 ${removedIds.length}）吗？`,
@@ -340,16 +357,17 @@ export function useTableMetaEditing({
     } catch (error) {
       return
     }
+    if (state.table.id !== tableId) return
     state.fieldSubmitting = true
     try {
       for (const row of createList) {
-        await tableApi.createField(state.table.id, buildFieldPayload(row), clusterId.value || null)
+        await tableApi.createField(tableId, buildFieldPayload(row), sourceId)
       }
       for (const row of updateList) {
-        await tableApi.updateField(state.table.id, row.id, buildFieldPayload(row), clusterId.value || null)
+        await tableApi.updateField(tableId, row.id, buildFieldPayload(row), sourceId)
       }
       for (const id of removedIds) {
-        await tableApi.deleteField(state.table.id, id, clusterId.value || null)
+        await tableApi.deleteField(tableId, id, sourceId)
       }
       await refreshFields(tabId)
       state.fieldsEditing = false
