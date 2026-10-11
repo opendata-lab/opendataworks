@@ -1,0 +1,462 @@
+{
+  "browser": "153.0.8010.12",
+  "node": "v20.19.0",
+  "platform": "darwin/arm64",
+  "viewport": {
+    "width": 1100,
+    "height": 900
+  },
+  "cpuThrottling": 1,
+  "warmup": 1,
+  "measuredRuns": 5,
+  "bundleSha256": "4aec0060ecafb79cb276401de2f42af42bd4edcd47d1ccc2a041432a78480abb",
+  "bundleBytes": 403684,
+  "method": "Cold SDK navigation + same-origin fake BFF via createHttpTransport. First appearance: message DOM committed then two rAFs; observe until appearance +5s. Long Task API full durations from mount through observation end. Click to next rAF and following paint opportunity. Benchmark-only Vue beforeMount/beforeUpdate counters. No profiler for timing results.",
+  "results": [
+    {
+      "fixture": "ontofoundry-long-conversation.json",
+      "snapshotBytes": 236563,
+      "snapshotSha256": "e369560b93027683486560c5bc1ff09c62531bfbd6295b5e98c6af0ba1bdd4c1",
+      "metrics": {
+        "firstAppearanceMs": 115.30000001192093,
+        "mountToAppearanceMs": 94.59999996423721,
+        "longTaskTotalMs": 0,
+        "longestTaskMs": 0,
+        "thinkingOpenMs": 2.800000011920929,
+        "thinkingPaintMs": 15.5
+      },
+      "samples": [
+        {
+          "firstAppearanceMs": 115.30000001192093,
+          "mountToAppearanceMs": 94.20000004768372,
+          "snapshotLoadedMs": 37.19999998807907,
+          "observationMs": 5096.100000023842,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 10,
+            "ThinkingBlock": 42,
+            "ToolOutput": 38,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 10,
+          "thinking": 42,
+          "tools": 38,
+          "nodes": 2449,
+          "thinkingOpenMs": 2.700000047683716,
+          "thinkingPaintMs": 16.30000001192093,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 118.19999998807907,
+          "mountToAppearanceMs": 98.39999997615814,
+          "snapshotLoadedMs": 37.19999998807907,
+          "observationMs": 5100.100000023842,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 10,
+            "ThinkingBlock": 42,
+            "ToolOutput": 38,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 10,
+          "thinking": 42,
+          "tools": 38,
+          "nodes": 2449,
+          "thinkingOpenMs": 2.799999952316284,
+          "thinkingPaintMs": 15.5,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 115.89999997615814,
+          "mountToAppearanceMs": 96.10000002384186,
+          "snapshotLoadedMs": 36.59999996423721,
+          "observationMs": 5097.600000023842,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 10,
+            "ThinkingBlock": 42,
+            "ToolOutput": 38,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 10,
+          "thinking": 42,
+          "tools": 38,
+          "nodes": 2449,
+          "thinkingOpenMs": 3,
+          "thinkingPaintMs": 15.600000023841858,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 113.79999995231628,
+          "mountToAppearanceMs": 94.59999996423721,
+          "snapshotLoadedMs": 35.19999998807907,
+          "observationMs": 5095.699999988079,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 10,
+            "ThinkingBlock": 42,
+            "ToolOutput": 38,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 10,
+          "thinking": 42,
+          "tools": 38,
+          "nodes": 2449,
+          "thinkingOpenMs": 2.800000011920929,
+          "thinkingPaintMs": 15.400000035762787,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 113,
+          "mountToAppearanceMs": 94,
+          "snapshotLoadedMs": 35.19999998807907,
+          "observationMs": 5095.399999976158,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 10,
+            "ThinkingBlock": 42,
+            "ToolOutput": 38,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 10,
+          "thinking": 42,
+          "tools": 38,
+          "nodes": 2449,
+          "thinkingOpenMs": 2.899999976158142,
+          "thinkingPaintMs": 14.599999964237213,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        }
+      ]
+    },
+    {
+      "fixture": "ontofoundry-modeling-run.json",
+      "snapshotBytes": 132330,
+      "snapshotSha256": "e9e272ec4507affb249644818b34e91aabfc1af49e7c250a9396b4d5fb3e8826",
+      "metrics": {
+        "firstAppearanceMs": 84.80000001192093,
+        "mountToAppearanceMs": 66.40000003576279,
+        "longTaskTotalMs": 0,
+        "longestTaskMs": 0,
+        "thinkingOpenMs": 1.399999976158142,
+        "thinkingPaintMs": 15.5
+      },
+      "samples": [
+        {
+          "firstAppearanceMs": 83.60000002384186,
+          "mountToAppearanceMs": 65.70000004768372,
+          "snapshotLoadedMs": 33.19999998807907,
+          "observationMs": 5066.900000035763,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 2,
+            "ThinkingBlock": 39,
+            "ToolOutput": 41,
+            "MessageAttachments": 1,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 2,
+          "thinking": 39,
+          "tools": 41,
+          "nodes": 746,
+          "thinkingOpenMs": 1.5,
+          "thinkingPaintMs": 15.200000047683716,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 85.89999997615814,
+          "mountToAppearanceMs": 68.30000001192093,
+          "snapshotLoadedMs": 34.30000001192093,
+          "observationMs": 5069.800000011921,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 2,
+            "ThinkingBlock": 39,
+            "ToolOutput": 41,
+            "MessageAttachments": 1,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 2,
+          "thinking": 39,
+          "tools": 41,
+          "nodes": 746,
+          "thinkingOpenMs": 2.099999964237213,
+          "thinkingPaintMs": 15.599999964237213,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 84.80000001192093,
+          "mountToAppearanceMs": 66.59999996423721,
+          "snapshotLoadedMs": 33.700000047683716,
+          "observationMs": 5067.699999988079,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 2,
+            "ThinkingBlock": 39,
+            "ToolOutput": 41,
+            "MessageAttachments": 1,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 2,
+          "thinking": 39,
+          "tools": 41,
+          "nodes": 746,
+          "thinkingOpenMs": 1.399999976158142,
+          "thinkingPaintMs": 15.399999976158142,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 84.90000003576279,
+          "mountToAppearanceMs": 66.40000003576279,
+          "snapshotLoadedMs": 34.200000047683716,
+          "observationMs": 5068.300000011921,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 2,
+            "ThinkingBlock": 39,
+            "ToolOutput": 41,
+            "MessageAttachments": 1,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 2,
+          "thinking": 39,
+          "tools": 41,
+          "nodes": 746,
+          "thinkingOpenMs": 1.399999976158142,
+          "thinkingPaintMs": 15.5,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        },
+        {
+          "firstAppearanceMs": 83.80000001192093,
+          "mountToAppearanceMs": 65.90000003576279,
+          "snapshotLoadedMs": 33.39999997615814,
+          "observationMs": 5067.900000035763,
+          "longTaskTotalMs": 0,
+          "longestTaskMs": 0,
+          "longTasks": [],
+          "mounts": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1,
+            "MessageActions": 2,
+            "ThinkingBlock": 39,
+            "ToolOutput": 41,
+            "MessageAttachments": 1,
+            "LimitedText": 3
+          },
+          "loadUpdates": {
+            "ConversationRoot": 1,
+            "MessageList": 1,
+            "Composer": 1
+          },
+          "postAppearanceUpdates": {},
+          "settledUpdates": [],
+          "loads": 1,
+          "messages": 2,
+          "thinking": 39,
+          "tools": 41,
+          "nodes": 746,
+          "thinkingOpenMs": 1.399999976158142,
+          "thinkingPaintMs": 16.19999998807907,
+          "thinkingUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingExpandable": true,
+          "thinkingSettledUpdates": {
+            "ThinkingBlock": 1
+          },
+          "thinkingClosed": true,
+          "toolExpandable": true
+        }
+      ]
+    }
+  ]
+}

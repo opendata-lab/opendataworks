@@ -1,147 +1,37 @@
 <template>
-  <div class="dac-messages" part="messages" ref="scrollRef" @scroll="handleScroll">
+  <div class="dac-messages" part="messages" ref="scrollRef" @scroll.passive="handleScroll">
     <div class="dac-messages-inner" part="messages-inner">
     <div v-if="!messages.length" class="dac-empty" part="empty">
       <slot name="empty">暂无消息</slot>
     </div>
 
-    <article
+    <MessageItem
       v-for="message in messages"
       :key="message.id"
-      class="dac-message"
-      :class="`dac-message-${message.role}`"
-      :part="`message message-${message.role}`"
-      :data-message-id="message.id"
-    >
-      <!-- A user turn is plain text. Rendering it as markdown would let a
-           pasted snippet change how the page looks. -->
-      <div v-if="message.role === 'user'" class="dac-user" part="user-turn">
-        <div class="dac-bubble" part="bubble user-bubble">{{ message.content }}</div>
-        <MessageAttachments
-          v-if="showAttachments && message.attachments?.length"
-          :attachments="message.attachments"
-          :file-url="fileUrl"
-          :can-preview-files="canPreviewFiles"
-          @preview="(file) => $emit('preview', file)"
-        />
-        <MessageActions
-          :message="message"
-          :can-rate="false"
-        />
-      </div>
-
-      <div v-else class="dac-assistant" part="assistant-turn">
-        <!-- Blocks are the live shape: a streaming turn has them before it has
-             any content, and interaction requests only ever exist here. A
-             renderer that reads `content` alone shows an empty conversation
-             until the run ends, and never shows a permission prompt at all. -->
-        <template v-if="blocksOf(message).length">
-          <template v-for="(block, index) in blocksOf(message)" :key="`${message.id}-${index}`">
-            <div
-              v-if="block.type === 'text'"
-              class="dac-bubble"
-              part="bubble assistant-bubble"
-            >
-              <!-- An answer can carry a chart inline. Rendering the block as
-                   one markdown string leaks the spec JSON into the prose. -->
-              <template v-for="(segment, part) in segmentsOf(block.content || '')" :key="part">
-                <div v-if="segment.type === 'text'" v-html="markdown(segment.value)" />
-                <ChartSpecView v-else :spec="segment.spec" />
-              </template>
-              <span v-if="block.status === 'streaming'" class="dac-cursor" part="cursor" aria-hidden="true" />
-            </div>
-            <ThinkingBlock
-              v-else-if="block.type === 'thinking'"
-              :block="block"
-            />
-            <ToolOutput
-              v-else-if="block.type === 'tool_use' && !isAskUserQuestionBlock(block)"
-              :tool="blockToToolProp(block)"
-              :file-url-resolver="fileUrl"
-            />
-            <PermissionCard
-              v-else-if="block.type === 'permission_request'"
-              :block="block"
-              :disabled="disabled || message._v2state?.status !== 'streaming'"
-              @decide="(payload) => $emit('decide', { ...payload, taskId: message.taskId })"
-            />
-            <QuestionCard
-              v-else-if="block.type === 'question_request'"
-              :block="block"
-              :disabled="disabled || message._v2state?.status !== 'streaming'"
-              @answer="(payload) => $emit('answer', { ...payload, taskId: message.taskId })"
-            />
-          </template>
-
-          <!-- Trailing activity cue: keeps a loading indicator visible
-               when the active run has already rendered content but its tail
-               block is not actively streaming (between turns / tool calls).
-               Suppressed when waiting for user permission or question input. -->
-          <p v-if="showTrailingActivity(message)" class="dac-activity" part="activity">
-            <span class="dac-activity-dot" aria-hidden="true" />{{ activityLabel }}
-          </p>
-        </template>
-
-        <!-- An open turn that has not produced anything yet. Without this the
-             conversation shows an empty bubble for however long the agent
-             spends before its first token, which reads as a stall. -->
-        <p v-else-if="isStreaming(message)" class="dac-activity" part="activity">
-          <span class="dac-activity-dot" aria-hidden="true" />{{ activityLabel }}
-        </p>
-
-        <div v-else class="dac-bubble" part="bubble assistant-bubble">
-          <template v-for="(segment, part) in segmentsOf(message.content || '')" :key="part">
-            <div v-if="segment.type === 'text'" v-html="markdown(segment.value)" />
-            <ChartSpecView v-else :spec="segment.spec" />
-          </template>
-        </div>
-
-        <MessageAttachments
-          v-if="showAttachments && message.attachments?.length"
-          :attachments="message.attachments"
-          :file-url="fileUrl"
-          :can-preview-files="canPreviewFiles"
-          @preview="(file) => $emit('preview', file)"
-        />
-
-        <!-- A failed turn keeps whatever it managed to produce; the card is
-             appended rather than replacing it, so a run that died mid-answer
-             still shows the half it finished. -->
-        <div v-if="errorOf(message)" class="dac-error" part="error" role="alert">
-          <span class="dac-error-text">{{ errorOf(message) }}</span>
-          <button
-            v-if="!disabled"
-            type="button"
-            class="dac-retry"
-            part="retry-button"
-            @click="$emit('retry', message)"
-          >重试</button>
-        </div>
-
-        <MessageActions
-          v-if="!isStreaming(message)"
-          :message="message"
-          :can-rate="canRate"
-          @feedback="(payload) => $emit('feedback', payload)"
-        />
-      </div>
-    </article>
+      :message="message"
+      :render-version="message.renderVersion || 0"
+      :presentation="presentationFor(message)"
+      :file-url="fileUrl"
+      :disabled="disabled"
+      :can-rate="canRate"
+      :can-preview-files="canPreviewFiles"
+      :show-attachments="showAttachments"
+      :activity-label="activityLabel"
+      @rendered="scrollToBottom()"
+      @preview="(file) => $emit('preview', file)"
+      @decide="(payload) => $emit('decide', payload)"
+      @answer="(payload) => $emit('answer', payload)"
+      @retry="(message) => $emit('retry', message)"
+      @feedback="(payload) => $emit('feedback', payload)"
+    />
     </div>
   </div>
 </template>
 
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { extractErrorText, renderMarkdown } from '../core/message.js'
-import { blockToToolProp } from '../core/streamParser.js'
-import ToolOutput from './ToolOutput.vue'
-import ThinkingBlock from './ThinkingBlock.vue'
-import PermissionCard from './PermissionCard.vue'
-import QuestionCard from './QuestionCard.vue'
-import MessageActions from './MessageActions.vue'
-import MessageAttachments from './MessageAttachments.vue'
-import { splitChartSpecText } from '../core/chartSpec.js'
-import ChartSpecView from './ChartSpecView.vue'
+import { blocksOf, createBlockPresentation } from '../core/blockPresentation.js'
+import MessageItem from './MessageItem.vue'
 
 const props = defineProps({
   messages: { type: Array, default: () => [] },
@@ -155,60 +45,29 @@ const props = defineProps({
   activityLabel: { type: String, default: '正在处理…' },
 })
 
-/**
- * Split answer text into prose and the charts embedded in it.
- *
- * An agent writes a chart as a `chart_spec` object inside its answer; rendering
- * the whole block as one markdown string puts the raw JSON on screen.
- */
-const segmentsOf = (text) => splitChartSpecText(text)
-
 defineEmits(['decide', 'answer', 'retry', 'feedback', 'preview'])
-
-// Copy and rating are offered once a turn has settled. Mid-stream they would
-// act on half an answer.
-const isStreaming = (message) => message?._v2state?.status === 'streaming'
-
 const scrollRef = ref(null)
 
-/**
- * The failure text for a turn, from whichever of the two shapes carries it.
- *
- * A live run writes it into `_v2state` as the stream dies; a run that failed
- * before the page was opened arrives as `status` + `error` on the message. Both
- * have to render, or reloading a failed conversation shows an empty turn.
- */
-const errorOf = (message) => {
-  if (message?.role !== 'assistant') return ''
-  const state = message?._v2state
-  if (state?.status === 'error') return state.errorText || '会话执行失败'
-  if (['error', 'failed'].includes(String(message?.status || ''))) {
-    return extractErrorText(message?.error) || '会话执行失败'
-  }
-  return ''
+// Stable across refreshMessages replacing message objects. Never pass freshly
+// allocated state/callback props to historical items on each list render.
+const presentations = new Map()
+// New sends start with a local message ID, then receive a persisted ID. The
+// same assistant task carries the expansion state across that one transition.
+const taskPresentations = new Map()
+const presentationFor = (message) => {
+  const taskId = message.role === 'assistant' ? message.taskId : null
+  let presentation = presentations.get(message.id) || (taskId && taskPresentations.get(taskId))
+  if (!presentation) presentation = createBlockPresentation()
+  presentations.set(message.id, presentation)
+  if (taskId) taskPresentations.set(taskId, presentation)
+  return presentation
 }
-
-/**
- * A live turn carries `_v2state` from the stream parser; a turn loaded from
- * history carries `blocks` the backend already projected. Both render the same
- * way, which is what keeps a reloaded page from looking different to one that
- * watched the run happen.
- */
-const blocksOf = (message) => {
-  const live = message?._v2state?.blocks
-  if (Array.isArray(live) && live.length) return live
-  return Array.isArray(message?.blocks) ? message.blocks : []
-}
-
-/**
- * Render answer text, turning workspace-relative links into download URLs.
- *
- * The agent writes deliverables as ordinary markdown links (`[报告](output/x.xlsx)`).
- * Without the resolver those render as relative hrefs against the host page and
- * 404 — the rewriting existed in `renderMarkdown` but no caller ever passed the
- * resolver, so every generated file link in a conversation was broken.
- */
-const markdown = (text) => renderMarkdown(text, { resolveFileHref: props.fileUrl })
+watch(() => props.messages.map(message => [message.id, message.role === 'assistant' ? message.taskId : null]), (keys) => {
+  const ids = new Set(keys.map(([id]) => id))
+  const tasks = new Set(keys.map(([, taskId]) => taskId).filter(Boolean))
+  for (const id of presentations.keys()) if (!ids.has(id)) presentations.delete(id)
+  for (const taskId of taskPresentations.keys()) if (!tasks.has(taskId)) taskPresentations.delete(taskId)
+})
 
 let highlightTimer = null
 
@@ -234,52 +93,49 @@ const focusMessage = async (messageId) => {
   return true
 }
 
-const isAskUserQuestionBlock = (block) => String(block?.name || '') === 'AskUserQuestion'
-
-const isBlockActivelyProgressing = (block) => {
-  if (!block) return false
-  if (block.type === 'text' || block.type === 'thinking') return block.status === 'streaming'
-  if (block.type === 'tool_use') return block.output == null
-  return false
-}
-
-const showTrailingActivity = (message) => {
-  if (!isStreaming(message)) return false
-  const state = message?._v2state
-  if (!state || state.status === 'done' || state.status === 'error') return false
-  const blocks = blocksOf(message)
-  if (!blocks.length) return false
-  const lastBlock = blocks[blocks.length - 1]
-  if (lastBlock?.type === 'permission_request' && (lastBlock.decision === 'pending' || !lastBlock.decision)) return false
-  if (lastBlock?.type === 'question_request' && !lastBlock.answered) return false
-  return !isBlockActivelyProgressing(lastBlock)
-}
-
-const autoScroll = ref(true)
-
-const handleScroll = (event) => {
-  const el = event?.target || scrollRef.value
-  if (!el) return
-  const scrollTop = event?.scrollTop ?? el.scrollTop ?? 0
-  const scrollHeight = event?.scrollHeight ?? el.scrollHeight ?? 0
-  const clientHeight = event?.clientHeight ?? el.clientHeight ?? 0
-  autoScroll.value = scrollHeight - scrollTop - clientHeight < 60
-}
-
+// Scroll state does not affect the template. Events only queue a read;
+// reading layout in the event itself forces layout after every DOM patch.
+let autoScroll = true
 let scrollFrame = null
+let measureScroll = false
+let followScroll = false
 let forceScroll = false
-const scrollToBottom = (force = false) => {
-  if (!force && !autoScroll.value) return
-  forceScroll ||= force
+let programmaticTop = null
+let measuredBottom = null
+
+const scheduleScroll = () => {
   if (scrollFrame !== null) return
   scrollFrame = requestAnimationFrame(() => {
     scrollFrame = null
     const el = scrollRef.value
-    if (el && (forceScroll || autoScroll.value)) {
-      el.scrollTop = el.scrollHeight
+    if (el) {
+      // All reads precede the optional write, once per frame.
+      const height = el.scrollHeight
+      const top = el.scrollTop
+      const viewport = el.clientHeight
+      const bottom = Math.max(0, height - viewport)
+      // Content may grow between a user's scroll event and this frame.
+      // Compare against the previous geometry when a follow was also queued.
+      const userBottom = followScroll && measuredBottom !== null ? Math.min(bottom, measuredBottom) : bottom
+      if (measureScroll && top !== programmaticTop) autoScroll = userBottom - top < 60
+      measuredBottom = bottom
+      if (followScroll && (forceScroll || autoScroll) && top !== bottom) {
+        el.scrollTop = bottom
+        programmaticTop = bottom
+      } else if (measureScroll) programmaticTop = null
     }
-    forceScroll = false
+    measureScroll = followScroll = forceScroll = false
   })
+}
+const handleScroll = () => {
+  measureScroll = true
+  scheduleScroll()
+}
+const scrollToBottom = (force = false) => {
+  if (!force && !autoScroll) return
+  followScroll = true
+  forceScroll ||= force
+  scheduleScroll()
 }
 
 defineExpose({ focusMessage, scrollToBottom })

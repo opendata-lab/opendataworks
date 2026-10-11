@@ -247,12 +247,16 @@ const prettyPrint = (value) => {
   }
 }
 
-const outputPayload = computed(() => normalizeOutput(props.tool?.output) || {})
+// Scalar/identity dependencies keep unrelated tool prop changes from
+// invalidating expensive input/output derivation. Inputs are replaced by the reducer.
+const toolInput = computed(() => props.tool?.input)
+const toolOutput = computed(() => props.tool?.output)
+const outputPayload = computed(() => normalizeOutput(toolOutput.value) || {})
 const kind = computed(() => String(outputPayload.value.kind || 'raw'))
 const toolName = computed(() => String(props.tool?.name || '').trim())
 const toolAction = computed(() => describeToolAction({
   name: toolName.value,
-  input: props.tool?.input
+  input: toolInput.value
 }))
 const toolNameLower = computed(() => toolAction.value.name.toLowerCase())
 const bootstrapSkillName = computed(() => String(props.tool?._skillBootstrapName || '').trim())

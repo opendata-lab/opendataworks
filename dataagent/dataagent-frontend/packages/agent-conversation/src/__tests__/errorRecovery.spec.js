@@ -6,7 +6,10 @@ beforeAll(() => {
   defineAgentConversation()
 })
 
+// Streamed events render once per frame, so settling waits a frame too.
 const settle = async (ticks = 12) => {
+  for (let i = 0; i < ticks; i += 1) await Promise.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 20))
   for (let i = 0; i < ticks; i += 1) await Promise.resolve()
   await nextTick()
 }

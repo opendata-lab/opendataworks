@@ -208,6 +208,28 @@ describe('render work is bounded', () => {
     expect(isReactive(live.blocks[0])).toBe(true)
   })
 
+  it('applies a burst of streamed events in one render, not one per event', async () => {
+    const deltas = Array.from({ length: 500 }, (_, i) => ({
+      type: 'event', seqId: i + 3,
+      event: { record_type: 'stream', data: { type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking: 'x' } } },
+    }))
+    const conversation = useConversation({ generation: ref(0), emit: vi.fn(), transport: shallowRef({
+      loadConversation: async () => ({ messages: [{ id: 'a', role: 'assistant', taskId: 't', status: 'running', content: '' }], run: { taskId: 't', status: 'running' } }),
+      streamEvents: async function* () {
+        yield { type: 'event', seqId: 1, event: { record_type: 'stream', data: { type: 'message_start' } } }
+        yield { type: 'event', seqId: 2, event: { record_type: 'stream', data: { type: 'content_block_start', index: 0, content_block: { type: 'thinking' } } } }
+        yield* deltas
+        await new Promise(() => {})
+      },
+    }) })
+    await conversation.load()
+    await new Promise(resolve => setTimeout(resolve, 40))
+    const assistant = conversation.messages.value[0]
+    expect(assistant._v2state.blocks[0].content).toHaveLength(500)
+    expect(assistant.renderVersion).toBeLessThanOrEqual(3)
+    conversation.stopStream()
+  })
+
   it('promotes a stale finished snapshot when the run resumes and bumps the render version', async () => {
     let release
     const conversation = useConversation({ generation: ref(0), emit: vi.fn(), transport: shallowRef({
@@ -220,7 +242,8 @@ describe('render work is bounded', () => {
     await conversation.load()
     expect(isReactive(conversation.messages.value[0]._v2state)).toBe(true)
     release()
-    for (let i = 0; i < 8; i++) await Promise.resolve()
+    // Events are applied once per frame.
+    await new Promise(resolve => setTimeout(resolve, 20))
     expect(conversation.messages.value[0].renderVersion).toBe(1)
     conversation.stopStream()
   })

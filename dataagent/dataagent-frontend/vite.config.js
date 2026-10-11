@@ -1,3 +1,4 @@
+import { configDefaults } from 'vitest/config'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
@@ -106,7 +107,9 @@ export default defineConfig(() => {
     test: {
       environment: 'jsdom',
       globals: true,
-      css: true
+      css: true,
+      // The SDK benchmark copies sources into bench/.scratch; never test those copies.
+      exclude: [...configDefaults.exclude, '**/bench/.scratch/**']
     },
     server: {
       port: 3001,
