@@ -5,6 +5,7 @@
 import { markRaw, reactive, shallowReactive } from 'vue'
 import { marked } from 'marked'
 import { createChatState, processV2Record } from './streamParser.js'
+import { SYNTHETIC_BLOCK_POSITION } from './blockPresentation.js'
 import { stripChartSpecsFromText } from './chartSpec.js'
 
 marked.setOptions({ breaks: true, gfm: true })
@@ -27,7 +28,8 @@ const isWorkspaceFileHref = (href) => Boolean(href)
   && !href.startsWith('#')
 
 // Cache only parsed HTML, never resolved file URLs (which belong to a topic).
-// Bound both entries and characters; large explicit expansions are not retained.
+// Bound shared entries and characters. Components retain their current parsed
+// HTML independently, including text too large for this shared cache.
 const markdownCache = new Map()
 const CACHE_ENTRIES = 128
 const CACHE_CHARACTERS = 512_000
@@ -38,7 +40,7 @@ export function clearMarkdownCache() {
   cachedCharacters = 0
 }
 
-export function renderMarkdown(text, options = {}) {
+export function parseMarkdown(text) {
   let html
   if (!text) return ''
   try {
@@ -63,6 +65,10 @@ export function renderMarkdown(text, options = {}) {
   } catch {
     return escapeHtml(text)
   }
+  return html
+}
+
+export function resolveMarkdownLinks(html, options = {}) {
   const resolveFileHref = typeof options.resolveFileHref === 'function' ? options.resolveFileHref : null
   if (!resolveFileHref) return html
   // Rewrite workspace-relative file links the agent emits (e.g.
@@ -75,6 +81,10 @@ export function renderMarkdown(text, options = {}) {
     const resolved = resolveFileHref(relPath)
     return resolved ? `${open}${resolved}${close}` : match
   })
+}
+
+export function renderMarkdown(text, options = {}) {
+  return resolveMarkdownLinks(parseMarkdown(text), options)
 }
 
 // Human-readable text from a persisted task/message error object
@@ -148,10 +158,16 @@ export function buildV2StateFromStoredBlocks(item) {
   v2state.status = 'done'
   const storedBlocks = Array.isArray(item?.blocks) ? item.blocks : []
   const turn = { turnIndex: 0, blocks: [], status: 'done' }
-  v2state.turns.push(turn)
   let blockIdx = 0
   const base = { turnIndex: 0, content: '', status: 'done', id: null, name: null, inputJson: '', input: null, output: null, is_error: false }
-  const push = (block) => {
+  const push = (block, source) => {
+    if (source?.blockIndex != null) {
+      block.turnIndex = source.turnIndex ?? 0
+      block.blockIndex = source.blockIndex
+    } else {
+      Object.defineProperty(block, SYNTHETIC_BLOCK_POSITION, { value: true })
+    }
+    if (source?.id != null) block.id = source.id
     turn.blocks.push(block)
     v2state.blocks.push(block)
   }
@@ -164,10 +180,10 @@ export function buildV2StateFromStoredBlocks(item) {
     const text = String(b?.text ?? '')
     switch (String(b?.type || '')) {
       case 'thinking':
-        if (text) push({ ...b, ...base, blockIndex: blockIdx++, type: 'thinking', content: text })
+        if (text) push({ ...b, ...base, blockIndex: blockIdx++, type: 'thinking', content: text }, b)
         break
       case 'main_text':
-        if (text) push({ ...b, ...base, blockIndex: blockIdx++, type: 'text', content: text })
+        if (text) push({ ...b, ...base, blockIndex: blockIdx++, type: 'text', content: text }, b)
         break
       case 'tool_use':
         push({
@@ -177,7 +193,7 @@ export function buildV2StateFromStoredBlocks(item) {
           input: b.input ?? null,
           output: b.output ?? null,
           is_error: Boolean(b.is_error),
-        })
+        }, b)
         break
       case 'permission_request':
         push({
@@ -191,7 +207,7 @@ export function buildV2StateFromStoredBlocks(item) {
           decision: b.decision || 'pending',
           note: b.note || '',
           decided_at: b.decided_at || '',
-        })
+        }, b)
         break
       case 'question_request':
         push({
@@ -201,7 +217,7 @@ export function buildV2StateFromStoredBlocks(item) {
           answers: Array.isArray(b.answers) ? b.answers : [],
           answered: Boolean(b.answered),
           answered_at: b.answered_at || '',
-        })
+        }, b)
         break
       default:
         break
@@ -213,6 +229,9 @@ export function buildV2StateFromStoredBlocks(item) {
     turn.blocks.push(block)
     v2state.blocks.push(block)
   }
+  // Do not invent an empty turn before the first streamed message_start:
+  // that would offset every live coordinate from its eventual record replay.
+  if (turn.blocks.length) v2state.turns.push(turn)
   // A failed run persists status === 'error' (+ error). Surface it through
   // _v2state so the error card renders on reload, not just during live streaming.
   if (['error', 'failed'].includes(String(item?.status || ''))) {

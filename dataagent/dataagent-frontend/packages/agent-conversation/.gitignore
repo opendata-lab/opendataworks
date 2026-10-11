@@ -1,4 +1,5 @@
 dist/
+bench/.scratch/
 node_modules/
 *.tgz
 examples/react/dist/

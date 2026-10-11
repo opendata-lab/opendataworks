@@ -54,6 +54,43 @@ export function useConversation({ transport, generation, emit, settings }) {
   let abort = null
   let pollTimer = null
 
+  // Streamed events are applied once per frame, not once per event. A run
+  // emits hundreds of token deltas a second (and replays all of them when a
+  // running conversation is reopened); applying each in its own tick made Vue
+  // re-render the whole list per token and froze the page for seconds.
+  let pending = []
+  let frame = null
+  // A timer rather than requestAnimationFrame: it behaves the same in every
+  // host, and a hidden tab still catches up instead of buffering a whole run.
+  const nextFrame = (callback) => setTimeout(callback, 16)
+  const cancelFrame = clearTimeout
+
+  function flushEvents() {
+    if (frame !== null) {
+      cancelFrame(frame)
+      frame = null
+    }
+    if (!pending.length) return
+    const batch = pending
+    pending = []
+    const touched = new Set()
+    for (const { taskId, event } of batch) {
+      const assistant = assistantFor(taskId)
+      if (!assistant) continue
+      processV2Record(assistant._v2state, event)
+      touched.add(assistant)
+    }
+    for (const assistant of touched) {
+      assistant.renderVersion = (assistant.renderVersion || 0) + 1
+    }
+    if (touched.size) triggerRef(messages)
+  }
+
+  function queueEvent(taskId, event) {
+    pending.push({ taskId, event })
+    if (frame === null) frame = nextFrame(() => { frame = null; flushEvents() })
+  }
+
   const isActive = computed(() => Boolean(run.value && ACTIVE_RUN_STATUSES.has(run.value.status)))
   const canSend = computed(() => Boolean(transport.value) && !isActive.value)
 
@@ -139,6 +176,11 @@ export function useConversation({ transport, generation, emit, settings }) {
   const stopStream = () => {
     abort?.abort()
     abort = null
+    pending = []
+    if (frame !== null) {
+      cancelFrame(frame)
+      frame = null
+    }
     if (pollTimer) {
       clearTimeout(pollTimer)
       pollTimer = null
@@ -220,15 +262,11 @@ export function useConversation({ transport, generation, emit, settings }) {
           // text appear as they stream. Emitting the raw event and nothing
           // else is what left the element showing an empty conversation until
           // the run ended.
-          const assistant = assistantFor(taskId)
-          if (assistant) {
-            processV2Record(assistant._v2state, item.event)
-            assistant.renderVersion = (assistant.renderVersion || 0) + 1
-            triggerRef(messages)
-          }
+          queueEvent(taskId, item.event)
           emit({ name: 'agent-event', detail: item.event })
           continue
         }
+        flushEvents()
         closeTurn(taskId, item.run.status, item.run.detail)
         setRun({ ...item.run, metadata: item.run.metadata || runMetadata.get(item.run.taskId) })
         await refreshMessages(at)
@@ -236,6 +274,7 @@ export function useConversation({ transport, generation, emit, settings }) {
       }
     } catch (error) {
       if (stale(at)) return
+      flushEvents()
       if (!(error instanceof StreamInterrupted)) {
         closeTurn(taskId, 'failed', error?.message)
         // The run has to end with the stream. Leaving it on its last active

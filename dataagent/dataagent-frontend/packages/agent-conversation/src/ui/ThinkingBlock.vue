@@ -5,7 +5,7 @@
       class="dac-thinking-summary"
       part="thinking-toggle"
       :aria-expanded="expanded"
-      @click="expanded = !expanded"
+      @click="toggle"
     >
       <span class="dac-thinking-label">
         <span v-if="isStreaming" class="dac-thinking-dot" aria-hidden="true" />
@@ -25,7 +25,7 @@
     </button>
 
     <div v-if="expanded" class="dac-thinking-content" part="thinking-content">
-      <LimitedText :text="content" markdown />
+      <LimitedText :text="content" markdown :streaming="isStreaming" @rendered="$emit('rendered')" />
       <span v-if="isStreaming" class="dac-thinking-cursor" aria-hidden="true">|</span>
     </div>
   </section>
@@ -37,11 +37,33 @@ import LimitedText from './LimitedText.vue'
 
 const props = defineProps({
   block: { type: Object, required: true },
+  renderVersion: { type: Number, default: 0 },
+  expanded: { type: Boolean, default: undefined },
+  presentation: { type: Object, default: null },
+  blockKey: { type: String, default: '' },
 })
 
-const expanded = ref(false)
-const content = computed(() => String(props.block?.content || props.block?.text || ''))
-const isStreaming = computed(() => props.block?.status === 'streaming')
+const emit = defineEmits(['update:expanded', 'rendered'])
+const localExpanded = ref(false)
+// Subscribe to this key here, never in the message/list render effect.
+const expanded = computed(() => props.expanded ?? (props.presentation
+  ? props.presentation.expanded.has(props.blockKey) : localExpanded.value))
+const toggle = () => {
+  const value = !expanded.value
+  if (props.presentation) {
+    if (value) props.presentation.expanded.add(props.blockKey)
+    else props.presentation.expanded.delete(props.blockKey)
+  } else localExpanded.value = value
+  emit('update:expanded', value)
+}
+const content = computed(() => {
+  props.renderVersion
+  return String(props.block?.content || props.block?.text || '')
+})
+const isStreaming = computed(() => {
+  props.renderVersion
+  return props.block?.status === 'streaming'
+})
 const preview = computed(() => content.value.slice(0, 320).replace(/\s+/g, ' ').trim().slice(0, 80))
 </script>
 

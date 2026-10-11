@@ -10,13 +10,16 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { renderMarkdown } from '../core/message.js'
+import { useStreamingText } from '../core/useStreamingText.js'
+import { parseMarkdown } from '../core/message.js'
 
 const props = defineProps({
   text: { type: String, default: '' },
   markdown: { type: Boolean, default: false },
+  streaming: { type: Boolean, default: false },
   previewLines: { type: Number, default: 0 },
 })
+const emit = defineEmits(['rendered'])
 const expanded = ref(false)
 // Slice before line splitting or parsing: a single very long line is bounded too.
 const preview = computed(() => {
@@ -25,7 +28,13 @@ const preview = computed(() => {
 })
 const truncated = computed(() => preview.value.length < props.text.length)
 const displayed = computed(() => expanded.value ? props.text : preview.value)
-const html = computed(() => renderMarkdown(displayed.value))
+const sampled = useStreamingText(
+  () => displayed.value,
+  () => props.markdown && props.streaming,
+  () => expanded.value,
+)
+watch(sampled, () => emit('rendered'), { flush: 'post' })
+const html = computed(() => props.markdown ? parseMarkdown(sampled.value) : '')
 watch(() => props.markdown, () => { expanded.value = false })
 </script>
 
