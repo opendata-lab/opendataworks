@@ -875,12 +875,12 @@ onBeforeUnmount(() => {
   --studio-text: #334155;
   --studio-muted: #64748b;
   --studio-accent: var(--odw-primary, #2c5282);
-  --studio-font-detail: 10px;
-  --studio-font-ui: 11px;
-  --studio-font-reading: 12px;
+  --studio-font-detail: 12px;
+  --studio-font-ui: 13px;
+  --studio-font-reading: 13px;
   --el-font-size-base: var(--studio-font-ui);
   --el-font-size-small: var(--studio-font-ui);
-  height: calc(100vh - 68px);
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -957,7 +957,7 @@ onBeforeUnmount(() => {
 }
 .sidebar-controls :deep(.el-input__wrapper),
 .sidebar-controls :deep(.el-select__wrapper) {
-  font-size: 10px;
+  font-size: var(--studio-font-ui);
   border-radius: 3px;
 }
 .db-tree {
@@ -972,19 +972,19 @@ onBeforeUnmount(() => {
 .catalog-tree {
   width: 100%;
   background: transparent;
-  --el-tree-node-content-height: 24px;
+  --el-tree-node-content-height: 28px;
   --el-tree-text-color: var(--catalog-text);
 }
 :deep(.catalog-tree .el-tree-node__content) {
   height: auto;
-  min-height: 24px;
+  min-height: 28px;
   padding-right: 8px;
-  font-size: 10px;
+  font-size: var(--studio-font-ui);
   border-left: 2px solid transparent;
 }
 :deep(.catalog-tree .el-tree-node__expand-icon) {
   padding: 4px;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
 }
 :deep(.catalog-tree .el-tree-node__children) {
   margin-left: 4px;
@@ -1238,14 +1238,14 @@ onBeforeUnmount(() => {
   margin: 0 0 4px;
 }
 .empty-workspace-hint {
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   color: var(--studio-muted);
   margin-top: 12px;
 }
 @media (max-width: 900px) {
   .data-studio {
     height: auto;
-    min-height: calc(100vh - 68px);
+    min-height: 100%;
     overflow: visible;
   }
   .studio-layout {
@@ -1294,7 +1294,7 @@ onBeforeUnmount(() => {
 }
 .catalog-view-option small {
   display: block;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   line-height: 18px;
   color: #64748b;
 }
@@ -1309,7 +1309,7 @@ onBeforeUnmount(() => {
   margin-top: 0;
 }
 .catalog-menu-caption {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #64748b;
   letter-spacing: 0.3px;
 }

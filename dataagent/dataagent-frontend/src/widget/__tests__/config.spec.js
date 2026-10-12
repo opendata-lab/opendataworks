@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseWidgetConfig } from '../config'
+import { parseWidgetConfig, resolveFullscreenUrl } from '../config'
 
 describe('parseWidgetConfig', () => {
   it('reads dataset attributes from the embedding script', () => {
@@ -23,6 +23,7 @@ describe('parseWidgetConfig', () => {
     expect(config.apiBaseUrl).toBe('https://odw.example.com')
     expect(config.displayMode).toBe('floating')
     expect(config.containerId).toBe('')
+    expect(config.fullscreenUrl).toBe('')
     expect(config.headers).toMatchObject({
       'X-ODW-Client': 'widget',
       'X-ODW-Website-Id': 'demo',
@@ -77,5 +78,17 @@ describe('parseWidgetConfig', () => {
 
     expect(config.displayMode).toBe('inline')
     expect(config.containerId).toBe('odw-intelligent-query')
+  })
+
+  it('resolves fullscreen routes against the host page, rather than the bundle origin', () => {
+    const script = document.createElement('script')
+    script.src = 'https://widget.example.com/widget/opendataworks-widget.bundle.js'
+    script.dataset.fullscreenUrl = '/#/chat?topicId=one'
+    expect(parseWidgetConfig(script).fullscreenUrl).toBe(new URL('/#/chat?topicId=one', window.location.href).href)
+    expect(resolveFullscreenUrl('https://app.example.com/chat')).toBe('https://app.example.com/chat')
+  })
+
+  it.each(['javascript:alert(1)', 'data:text/html,test', 'file:///tmp/page.html', 'http://[', ''])('rejects invalid fullscreen target %s', (value) => {
+    expect(resolveFullscreenUrl(value)).toBe('')
   })
 })

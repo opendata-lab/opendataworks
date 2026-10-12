@@ -1,9 +1,5 @@
 <template>
   <div class="data-integration">
-    <div class="page-header">
-      <h2>数据集成</h2>
-    </div>
-
     <el-tabs v-model="activeTab" class="integration-tabs">
       <el-tab-pane label="同步任务" name="sync">
         <el-card shadow="always" :body-style="{ padding: '20px' }">
@@ -31,20 +27,6 @@ const activeTab = ref('sync')
   height: 100%;
   display: flex;
   flex-direction: column;
-}
-
-.page-header {
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: #1a1a1a;
 }
 
 .integration-tabs {

@@ -26,11 +26,11 @@ export const clampPosition = (left, top, width, height, vw, vh) => {
 
 /** Clamp a width/height to [min, viewport - margin]. */
 export const clampSize = (width, height, vw, vh) => {
-  const maxWidth = Math.max(MIN_WIDTH, vw - VIEWPORT_MARGIN)
-  const maxHeight = Math.max(MIN_HEIGHT, vh - VIEWPORT_MARGIN)
+  const maxWidth = Math.max(1, vw - VIEWPORT_MARGIN)
+  const maxHeight = Math.max(1, vh - VIEWPORT_MARGIN)
   return {
-    width: Math.min(Math.max(MIN_WIDTH, width), maxWidth),
-    height: Math.min(Math.max(MIN_HEIGHT, height), maxHeight)
+    width: Math.min(Math.max(Math.min(MIN_WIDTH, maxWidth), width), maxWidth),
+    height: Math.min(Math.max(Math.min(MIN_HEIGHT, maxHeight), height), maxHeight)
   }
 }
 
@@ -78,7 +78,8 @@ export const clearGeometry = (websiteId) => {
  * No-ops in inline mode. Consumed only by OpenDataWorksWidget.vue.
  */
 export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
-  const isFloating = () => config.displayMode !== 'inline'
+  const isFloatingInstance = () => config.displayMode !== 'inline'
+  const isFloating = () => isFloatingInstance() && (!state.isOpen || !state.panelMode || state.panelMode === 'floating')
   const geom = reactive({ left: null, top: null, width: null, height: null, dragged: false, interacting: false })
   const launcherGeom = reactive({ left: null, top: null, dragged: false, interacting: false })
 
@@ -261,7 +262,7 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
 
   // ── Restore / lifecycle ─────────────────────────────────────────────────────
   const restoreLauncherGeometry = () => {
-    if (!isFloating()) return
+    if (!isFloatingInstance()) return
     try {
       const raw = window.localStorage.getItem(launcherStorageKey(config.websiteId))
       if (!raw) return
@@ -278,7 +279,7 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
   }
 
   const restoreGeometry = () => {
-    if (!isFloating()) return
+    if (!isFloatingInstance()) return
     restoreLauncherGeometry()
     const saved = loadGeometry(config.websiteId)
     if (!saved) return
@@ -303,7 +304,7 @@ export function useWidgetGeometry({ rootEl, panelEl, config, state }) {
   }
 
   const onViewportResize = () => {
-    if (!isFloating()) return
+    if (!isFloatingInstance()) return
     const { vw, vh } = viewport()
     if (geom.width != null && geom.height != null) {
       const size = clampSize(geom.width, geom.height, vw, vh)

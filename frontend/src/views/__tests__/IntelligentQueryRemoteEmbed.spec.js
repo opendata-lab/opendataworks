@@ -1,7 +1,11 @@
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
+import { reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import IntelligentQueryRemoteEmbed from '../IntelligentQueryRemoteEmbed.vue'
+
+const routeState = reactive({ query: {} })
+vi.mock('vue-router', () => ({ useRoute: () => routeState }))
 
 describe('IntelligentQueryRemoteEmbed', () => {
   beforeEach(() => {
@@ -9,6 +13,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
     document.body.innerHTML = ''
     delete window.OpenDataWorksWidget
     delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
+    routeState.query = {}
   })
 
   it('loads the remote DataAgent widget script and installs inline mode into the page container', async () => {
@@ -36,5 +41,35 @@ describe('IntelligentQueryRemoteEmbed', () => {
 
     wrapper.unmount()
     expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('opens the transferred topic and follows changes to the menu route', async () => {
+    routeState.query = { topicId: 'topic-current' }
+    const selectConversation = vi.fn(), newConversation = vi.fn(), destroy = vi.fn()
+    window.OpenDataWorksWidget = { installWidget: vi.fn(() => ({ selectConversation, newConversation, destroy })) }
+    const wrapper = mount(IntelligentQueryRemoteEmbed)
+    await flushPromises()
+    expect(selectConversation).toHaveBeenLastCalledWith('topic-current')
+    routeState.query = { topicId: 'topic-other' }
+    await flushPromises()
+    expect(selectConversation).toHaveBeenLastCalledWith('topic-other')
+    routeState.query = {}
+    await flushPromises()
+    expect(newConversation).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses the latest route if it changes while the remote bundle is loading', async () => {
+    routeState.query = { topicId: 'topic-old' }
+    const selectConversation = vi.fn(), destroy = vi.fn()
+    const wrapper = mount(IntelligentQueryRemoteEmbed)
+    routeState.query = { topicId: 'topic-latest' }
+    window.OpenDataWorksWidget = { installWidget: vi.fn(() => ({ selectConversation, destroy })) }
+    document.querySelector('script[data-odw-dataagent-widget-script]').dispatchEvent(new Event('load'))
+    await flushPromises()
+    expect(selectConversation).toHaveBeenCalledTimes(1)
+    expect(selectConversation).toHaveBeenCalledWith('topic-latest')
+    wrapper.unmount()
   })
 })

@@ -2132,17 +2132,21 @@ watch(
 }
 
 .header {
+  flex-wrap: wrap;
+  gap: 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
 .title {
+  min-width: 0;
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 18px;
-  font-weight: bold;
+  font-size: 16px;
+  font-weight: 600;
 }
 
 .name {

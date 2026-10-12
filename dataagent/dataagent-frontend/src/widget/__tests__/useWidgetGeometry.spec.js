@@ -39,6 +39,10 @@ describe('clampSize', () => {
   it('passes through a valid size', () => {
     expect(clampSize(600, 700, 1920, 1080)).toEqual({ width: 600, height: 700 })
   })
+
+  it('fits restored floating sizes inside a viewport smaller than the usual minimum', () => {
+    expect(clampSize(500, 600, 320, 400)).toEqual({ width: 296, height: 376 })
+  })
 })
 
 describe('geometryStorageKey', () => {
@@ -127,6 +131,27 @@ describe('useWidgetGeometry drag activation', () => {
   const fire = (type, clientX = 0, clientY = 0) => {
     window.dispatchEvent(new MouseEvent(type, { clientX, clientY }))
   }
+
+  it('suppresses floating geometry and gestures while docked, then restores it', () => {
+    saveGeometry('site_drag', { left: 20, top: 30, width: 500, height: 600 })
+    const { api, state } = setup({ isOpen: true })
+    api.bind()
+    const initialStyle = { ...api.panelStyle.value }
+    const initialRoot = { ...api.rootStyle.value }
+    state.panelMode = 'docked-left'
+    expect(api.panelStyle.value).toEqual({})
+    expect(api.rootStyle.value).toEqual({})
+    expect(api.isDragged.value).toBe(false)
+    api.startDrag(pointerDown(100, 50))
+    api.startResize(pointerDown(540, 650))
+    fire('pointermove', 900, 900)
+    expect(api.isInteracting.value).toBe(false)
+    state.panelMode = 'floating'
+    expect(api.panelStyle.value).toEqual(initialStyle)
+    expect(api.rootStyle.value).toEqual(initialRoot)
+    api.unbind()
+    window.localStorage.clear()
+  })
 
   afterEach(() => {
     window.localStorage.clear()

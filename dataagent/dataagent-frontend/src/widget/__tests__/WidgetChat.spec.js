@@ -241,8 +241,9 @@ describe('WidgetChat history conversations', () => {
   })
 
   it('filters, switches, and creates conversations through the portal-style history UI', async () => {
-    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    const { wrapper, state } = mountChat({ config: { displayMode: 'inline' } })
     await flushPromises()
+    expect(state.topicId).toBeNull()
 
     await wrapper.get('.query-search-input').setValue('smoke')
     expect(wrapper.findAll('.query-session-title').map((item) => item.text())).toEqual(['smoke-ok 测试'])
@@ -251,11 +252,13 @@ describe('WidgetChat history conversations', () => {
     await flushPromises()
     expect(apiMocks.topicApi.getTopicMessages).toHaveBeenLastCalledWith('topic-2', { page: 1, page_size: 500, order: 'asc' })
     expect(wrapper.text()).toContain('topic-2 历史回复')
+    expect(state.topicId).toBe('topic-2')
 
     await wrapper.get('[data-testid="new-conversation"]').trigger('click')
     await flushPromises()
     expect(apiMocks.topicApi.createTopic).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('您可以问我以下问题')
+    expect(state.topicId).toBeNull()
     expect(apiMocks.topicApi.deleteTopic).not.toHaveBeenCalled()
   })
 
@@ -497,7 +500,7 @@ describe('WidgetChat history conversations', () => {
       updated_at: '2026-04-30T09:00:00'
     }))
 
-    const { wrapper } = mountChat({ config: { displayMode: 'inline' } })
+    const { wrapper, state } = mountChat({ config: { displayMode: 'inline' } })
     await flushPromises()
 
     await wrapper.get('[data-testid="new-conversation"]').trigger('click')
@@ -516,6 +519,7 @@ describe('WidgetChat history conversations', () => {
       'smoke-ok 测试'
     ])
     expect(wrapper.get('[data-testid="history-topic-topic-new"]').classes()).toContain('active')
+    expect(state.topicId).toBe('topic-new')
     expect(apiMocks.taskApi.deliverMessage).toHaveBeenCalledWith(expect.objectContaining({
       topic_id: 'topic-new',
       content: '首次输入创建会话',

@@ -1,6 +1,5 @@
 <template>
   <div class="domain-management" v-loading="loading">
-    <el-page-header content="数据建模" class="page-header" />
     <el-alert
       v-if="isDemoMode"
       :title="demoReadonlyMessage"

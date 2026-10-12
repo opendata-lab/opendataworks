@@ -445,7 +445,7 @@ const {
 }
 
 .config-title {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   font-weight: 600;
   color: #1f2f3d;
 }
@@ -455,7 +455,7 @@ const {
 }
 
 .hint {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: #94a3b8;
 }
 
@@ -496,7 +496,7 @@ const {
   border-bottom: 1px solid #e2e8f0;
 }
 .meta-info {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   color: #64748b;
   gap: 12px;
 }
@@ -530,7 +530,7 @@ const {
   height: 24px;
   padding: 3px 6px;
   margin-left: 0;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   color: #64748b;
 }
 .result-view-switch {
@@ -555,7 +555,7 @@ const {
   background: #e2e8f0;
 }
 .result-tabs :deep(.el-tabs__item) {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   font-weight: 400;
 }
 .result-tabs :deep(.el-tabs__item.is-active) {

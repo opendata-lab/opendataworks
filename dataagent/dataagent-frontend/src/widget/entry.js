@@ -1,8 +1,9 @@
-import { createApp, reactive } from 'vue'
+import { createApp, reactive, watch } from 'vue'
 import OpenDataWorksWidget from './OpenDataWorksWidget.vue'
-import { isWidgetLoginRequired, parseBooleanFlag, parseWidgetConfig, resolveCurrentScript, resolveVisitorId } from './config'
+import { isWidgetLoginRequired, parseBooleanFlag, parseWidgetConfig, resolveCurrentScript, resolveFullscreenUrl, resolveVisitorId } from './config'
 import { WIDGET_STYLES } from './styles'
 import { createWidgetTracker } from './tracking'
+import { getPanelLayout, normalizePanelMode, PANEL_MODES } from './panelLayout'
 
 const GLOBAL_NAME = 'OpenDataWorksWidget'
 const MIN_INLINE_PARENT_HEIGHT = 320
@@ -582,6 +583,7 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
     config.projectColor = config.projectColor || '#4A90A4'
     config.allowAnonymous = parseBooleanFlag(config.allowAnonymous)
     config.loginUrl = String(config.loginUrl || '').trim()
+    config.fullscreenUrl = resolveFullscreenUrl(config.fullscreenUrl)
     if (!config.headers) {
       const websiteId = String(config.websiteId || '').trim()
       if (websiteId) {
@@ -628,11 +630,16 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
 
   const initialLoginRequired = isWidgetLoginRequired(config)
   const state = reactive({
+    instanceId,
+    topicId: null,
+    panelMode: normalizePanelMode(config.panelMode),
     isOpen: config.displayMode === 'inline',
     historyOpen: config.displayMode === 'inline' && parentWidth >= 600 && !initialLoginRequired,
     loginRequired: initialLoginRequired,
     isBusy: false,
     outboundMessage: '',
+    requestedDraft: '',
+    draftSignal: 0,
     cancelSignal: 0,
     newConversationSignal: 0,
     selectConversationSignal: 0,
@@ -657,9 +664,18 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
   const app = createApp(OpenDataWorksWidget, { config, state, emit })
   app.mount(mountPoint)
 
+  const readPanelLayout = () => getPanelLayout(config, state, window.innerWidth)
+  const emitPanelLayout = () => emit('panel-layout', readPanelLayout())
+  const stopLayoutWatch = watch(() => [state.isOpen, state.panelMode], emitPanelLayout, { flush: 'sync' })
+  window.addEventListener('resize', emitPanelLayout)
+
   const controller = {
     instanceId,
-    open() {
+    open(options = {}) {
+      if (typeof options?.draft === 'string') {
+        state.requestedDraft = options.draft
+        state.draftSignal += 1
+      }
       state.isOpen = true
       emit('open')
     },
@@ -673,6 +689,13 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
     isOpen() {
       return Boolean(state.isOpen)
     },
+    setPanelMode(mode) {
+      if (config.displayMode === 'inline' || !PANEL_MODES.includes(mode)) return false
+      state.panelMode = mode
+      return true
+    },
+    getPanelMode() { return readPanelLayout().mode },
+    getPanelLayout() { return readPanelLayout() },
     sendMessage(text) {
       const message = String(text || '').trim()
       if (!message) return
@@ -746,6 +769,9 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
       }
     },
     destroy() {
+      state.isOpen = false
+      stopLayoutWatch()
+      window.removeEventListener('resize', emitPanelLayout)
       tracker.destroy()
       disposeHostSizing()
       app.unmount()
@@ -777,10 +803,13 @@ export function installWidget(scriptOrConfig = resolveCurrentScript()) {
       getInstances() { return [..._instances.values()] },
       _lastController: controller,
       // Proxy convenience methods to the last-installed controller
-      open() { this._lastController?.open() },
+      open(options) { this._lastController?.open(options) },
       close() { this._lastController?.close() },
       toggle() { this._lastController?.toggle() },
       isOpen() { return this._lastController?.isOpen() ?? false },
+      setPanelMode(mode) { return this._lastController?.setPanelMode(mode) ?? false },
+      getPanelMode() { return this._lastController?.getPanelMode() ?? 'floating' },
+      getPanelLayout() { return this._lastController?.getPanelLayout() ?? null },
       sendMessage(text) { this._lastController?.sendMessage(text) },
       ask(text) { this._lastController?.ask(text) ?? openAskModal(text) },
       openAskModal(text) { this._lastController?.openAskModal(text) ?? openAskModal(text) },
@@ -826,10 +855,13 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
       getInstance(id) { return _instances.get(id) || null },
       getInstances() { return [..._instances.values()] },
       _lastController: null,
-      open() { this._lastController?.open() },
+      open(options) { this._lastController?.open(options) },
       close() { this._lastController?.close() },
       toggle() { this._lastController?.toggle() },
       isOpen() { return this._lastController?.isOpen() ?? false },
+      setPanelMode(mode) { return this._lastController?.setPanelMode(mode) ?? false },
+      getPanelMode() { return this._lastController?.getPanelMode() ?? 'floating' },
+      getPanelLayout() { return this._lastController?.getPanelLayout() ?? null },
       sendMessage(text) { this._lastController?.sendMessage(text) },
       ask(text) { this._lastController?.ask(text) ?? openAskModal(text) },
       openAskModal(text) { this._lastController?.openAskModal(text) ?? openAskModal(text) },

@@ -513,7 +513,7 @@ onBeforeUnmount(() => { contextSeq++ })
 }
 .demo-note {
   margin: 0 0 4px;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   line-height: 16px;
   color: var(--el-text-color-secondary);
 }
@@ -523,7 +523,7 @@ onBeforeUnmount(() => { contextSeq++ })
   gap: 8px;
 }
 .fv-age {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: var(--el-text-color-secondary);
 }
 .fv-mode {
@@ -531,7 +531,7 @@ onBeforeUnmount(() => { contextSeq++ })
 }
 .fv-hint {
   margin-left: 8px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: var(--el-text-color-secondary);
 }
 .fv-code {
@@ -540,7 +540,7 @@ onBeforeUnmount(() => { contextSeq++ })
   border-radius: 4px;
   background: var(--el-fill-color-light);
   font-family: var(--el-font-family-mono, monospace);
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: var(--el-text-color-regular);
 }
 .dot {
@@ -565,12 +565,12 @@ onBeforeUnmount(() => { contextSeq++ })
 .opt-type {
   float: right;
   color: var(--el-text-color-secondary);
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
 }
 
 .mode-hint {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   line-height: 1.5;
   color: var(--el-text-color-secondary);
 }
@@ -586,7 +586,7 @@ onBeforeUnmount(() => { contextSeq++ })
   gap: 6px;
 }
 .th-lab {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
 }
 .th-lab.warn {
   color: var(--el-color-warning);
@@ -607,7 +607,7 @@ onBeforeUnmount(() => { contextSeq++ })
 }
 .fresh-view :deep(.el-descriptions__label) {
   display: block;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #8794a5;
   font-weight: 400;
   margin-bottom: 4px;
@@ -621,6 +621,6 @@ onBeforeUnmount(() => { contextSeq++ })
 }
 .section-actions :deep(.el-button) {
   padding: 4px 7px;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
 }
 </style>

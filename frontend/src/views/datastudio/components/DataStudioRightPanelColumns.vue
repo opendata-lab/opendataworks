@@ -251,7 +251,7 @@ const isAdopted = (row) => {
 .field-count {
   margin-left: 6px;
   font-weight: 400;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #94a3b8;
 }
 .field-name {
@@ -259,12 +259,12 @@ const isAdopted = (row) => {
   gap: 4px;
   align-items: center;
   font-family: Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   letter-spacing: 0;
 }
 .field-key {
   color: #ad8743;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
 }
 .columns-table :deep(.el-table__cell) {
   height: 30px;
@@ -272,7 +272,7 @@ const isAdopted = (row) => {
 }
 .columns-table :deep(.cell) {
   padding: 0 7px;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   line-height: 20px;
 }
 .columns-table :deep(th.el-table__cell) {

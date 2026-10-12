@@ -33,6 +33,10 @@ export function loadDataAgentWidgetScript() {
       script.async = true
       document.head.appendChild(script)
     }
+  }).catch((error) => {
+    document.querySelector(`script[${SCRIPT_ATTR}]`)?.remove()
+    delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
+    throw error
   })
 
   return window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__

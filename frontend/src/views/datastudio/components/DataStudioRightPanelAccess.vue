@@ -141,7 +141,7 @@ const refreshAccess = () => {
 
 <style scoped>
 .section-header.small {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: var(--text-sub);
 }
 
@@ -184,7 +184,7 @@ const refreshAccess = () => {
 }
 
 .metric-label {
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   color: var(--text-sub);
 }
 
@@ -207,7 +207,7 @@ const refreshAccess = () => {
 
 .audit-properties {
   margin: 16px 0 0;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
 }
 .audit-properties > div {
   display: grid;

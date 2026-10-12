@@ -650,7 +650,7 @@ onBeforeUnmount(() => {
 }
 
 .section-title {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   font-weight: 600;
   color: var(--text);
 }
@@ -677,7 +677,7 @@ onBeforeUnmount(() => {
 }
 
 .flow-section-title {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   font-weight: 600;
   color: var(--text);
   padding-bottom: 4px;
@@ -706,7 +706,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   font-weight: 700;
   color: var(--text-sub);
   padding-bottom: 6px;
@@ -763,7 +763,7 @@ onBeforeUnmount(() => {
 }
 
 .node-name {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -774,7 +774,7 @@ onBeforeUnmount(() => {
 
 .node-desc {
   margin-top: 2px;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -819,7 +819,7 @@ onBeforeUnmount(() => {
 }
 
 .empty-placeholder {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: var(--text-muted);
   text-align: center;
   padding: 16px 8px;
@@ -888,13 +888,13 @@ onBeforeUnmount(() => {
     padding-bottom: 8px;
   }
   .column-header {
-    font-size: 10px;
+    font-size: var(--studio-font-detail);
     color: #8a96a5;
     font-weight: 400;
     padding: 0;
   }
   .column-header .el-icon {
-    font-size: 11px;
+    font-size: var(--studio-font-detail);
   }
   .lineage-node {
     padding: 8px;
@@ -905,16 +905,16 @@ onBeforeUnmount(() => {
     font-size: 13px;
   }
   .node-name {
-    font-size: 10px;
+    font-size: var(--studio-font-detail);
     font-weight: 500;
     line-height: 16px;
   }
   .node-desc {
-    font-size: 10px;
+    font-size: var(--studio-font-detail);
     line-height: 16px;
   }
   .lineage-node :deep(.el-tag) {
-    font-size: 10px;
+    font-size: var(--studio-font-detail);
     height: 16px;
     padding: 0 4px;
   }
@@ -922,7 +922,7 @@ onBeforeUnmount(() => {
     padding: 0;
   }
   .node-actions .el-button {
-    font-size: 10px;
+    font-size: var(--studio-font-detail);
     padding: 0;
     height: 20px;
     border: 0;
@@ -931,7 +931,7 @@ onBeforeUnmount(() => {
   .empty-placeholder {
     text-align: left;
     padding: 4px 0;
-    font-size: 10px;
+    font-size: var(--studio-font-detail);
   }
 }
 </style>

@@ -1,9 +1,5 @@
 <template>
   <div class="settings-page">
-    <header class="settings-header">
-      <h2 class="settings-title">配置管理</h2>
-    </header>
-
     <div class="settings-body">
       <nav class="settings-nav" aria-label="配置分组">
         <button
@@ -98,20 +94,6 @@ watch(activeTab, (tab) => {
   min-width: 0;
   box-sizing: border-box;
   overflow-x: hidden;
-}
-
-.settings-header {
-  padding-bottom: 16px;
-  margin-bottom: 20px;
-  border-bottom: 1px solid var(--odw-border);
-}
-
-.settings-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--odw-text-primary);
 }
 
 .settings-body {
@@ -213,8 +195,5 @@ watch(activeTab, (tab) => {
     padding: 12px;
   }
 
-  .settings-header {
-    margin-bottom: 14px;
-  }
 }
 </style>

@@ -135,7 +135,7 @@ defineExpose({
 }
 
 .result-grid__table {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
 }
 
 .result-grid__empty {
@@ -215,11 +215,11 @@ defineExpose({
   background: #f5f7fa;
   border-right: 1px solid #e5e9ef;
   color: #526174;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
 }
 .result-grid :deep(.el-table-v2__row-cell) {
   border-right: 1px solid #eef1f5;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
 }
 .result-grid :deep(.el-table-v2__row) {
   border-bottom: 1px solid #eef1f5;
@@ -228,7 +228,7 @@ defineExpose({
   display: block;
   width: 100%;
   color: #94a3b8;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   text-align: center;
 }
 </style>

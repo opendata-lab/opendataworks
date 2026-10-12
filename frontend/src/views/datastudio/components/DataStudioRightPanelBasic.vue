@@ -224,7 +224,7 @@ onBeforeUnmount(() => {
   color: #56677b;
 }
 .overview-section h3 span {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #98a3b2;
   font-weight: 400;
 }
@@ -238,7 +238,7 @@ onBeforeUnmount(() => {
 }
 .overview-descriptions :deep(.el-descriptions__label) {
   color: #8894a4;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   font-weight: 400;
   margin-right: 12px;
 }
@@ -254,7 +254,7 @@ onBeforeUnmount(() => {
   line-height: 24px;
 }
 .time-descriptions :deep(.el-descriptions__content) {
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   font-variant-numeric: tabular-nums;
 }
 </style>

@@ -1,6 +1,6 @@
 <template>
-  <el-container class="layout-container">
-    <el-header height="60px">
+  <el-container class="layout-container" :style="widgetLayoutStyle">
+    <el-header height="var(--odw-nav-height)">
       <div class="header-wrapper">
         <div class="logo">
           <picture class="logo-icon">
@@ -46,7 +46,11 @@
     </el-header>
 
     <el-main>
-      <router-view />
+      <header class="portal-page-header">
+        <h1>{{ pageTitle }}</h1>
+        <AiAssistantTrigger :prompts="assistantPrompts" />
+      </header>
+      <div class="portal-page-content"><router-view /></div>
     </el-main>
 
     <el-dialog v-model="passwordDialogVisible" title="修改密码" width="420px">
@@ -76,15 +80,24 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onBeforeUnmount, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, onBeforeUnmount, provide, readonly, reactive, ref } from 'vue'
+import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound, User, ArrowDown } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
 import { loadDataAgentWidgetScript } from '@/utils/dataagentWidgetLoader'
+import AiAssistantTrigger from '@/components/AiAssistantTrigger.vue'
+import { FLOATING_WIDGET_KEY } from '@/utils/floatingWidget'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+
+const workflowPrompts = {
+  workflows: ['帮我查看工作流发布趋势', '帮我分析工作流调度依赖', '帮我解释工作流发布流程'],
+  tasks: ['帮我查询任务执行情况', '帮我分析任务之间的依赖', '帮我检查任务 SQL'],
+  monitor: ['帮我分析工作流执行失败原因', '帮我查看工作流运行趋势', '帮我分析运行耗时较长的工作流']
+}
+const dataStudioPrompts = ['帮我编写数据查询 SQL', '帮我分析数据表结构', '帮我设计数仓分层模型']
 
 const route = useRoute()
 const router = useRouter()
@@ -155,8 +168,8 @@ const submitChangePassword = async () => {
 const menuItems = computed(() => {
   const items = [
     { index: '/dashboard', label: '控制台', icon: DataBoard },
-    { index: '/datastudio', label: 'Data Studio', icon: DataLine },
-    { index: '/workflows', label: '任务调度', icon: Share },
+    { index: '/datastudio', label: '数据开发', icon: DataLine },
+    { index: '/workflows', label: '工作流', icon: Share },
     { index: '/domains', label: '数据建模', icon: Collection },
     { index: '/lineage', label: '数据血缘', icon: Connection },
     { index: '/inspection', label: '数据质量', icon: Warning },
@@ -201,6 +214,26 @@ const activeMenu = computed(() => {
   return path
 })
 
+const pageTitle = computed(() => route.meta?.title || menuItems.value.find(item => item.index === activeMenu.value)?.label || '数据门户')
+const pagePrompts = {
+  '/dashboard': ['帮我汇总平台数据资产概况', '帮我查看工作流运行趋势', '帮我梳理数据质量问题'],
+  '/domains': ['帮我设计业务域和数据域划分', '帮我解释数仓分层的设计方法', '帮我梳理数据建模流程'],
+  '/lineage': ['帮我分析表的上下游依赖', '帮我评估表结构变更的影响范围', '帮我解释数据血缘关系'],
+  '/inspection': ['帮我分析数据质量问题', '帮我设计数据巡检规则', '帮我排查数据异常的原因'],
+  '/integration': ['帮我梳理数据同步任务配置', '帮我排查数据同步失败原因', '帮我检查数据源连接配置'],
+  '/settings': ['帮我了解平台配置项', '帮我检查调度环境配置', '帮我配置智能助手'],
+  '/intelligent-query': ['帮我推荐数据分析方法', '帮我整理一个数据分析问题', '帮我解释查询结果']
+}
+const assistantPrompts = computed(() => {
+  if (route.path.startsWith('/datastudio')) return dataStudioPrompts
+  if (route.path === '/workflows') return workflowPrompts[route.query?.tab] || workflowPrompts.workflows
+  if (route.path.startsWith('/workflows/')) {
+    const name = route.params?.id ? `工作流 #${route.params.id}` : '当前工作流'
+    return [`帮我分析${name}的调度依赖`, `帮我排查${name}的执行失败原因`, `帮我梳理${name}的发布流程`]
+  }
+  return pagePrompts[activeMenu.value] || [`帮我了解${pageTitle.value}的使用方法`, '帮我分析当前的数据问题']
+})
+
 const preloadMenuRoute = (path) => {
   if (!path || path === activeMenu.value) {
     return
@@ -210,11 +243,19 @@ const preloadMenuRoute = (path) => {
 
 let _widgetCtrl = null
 let _layoutUnmounted = false
+let _widgetInstallPromise = null
+const floatingWidgetOpen = ref(false)
+const widgetPanelLayout = ref({ side: null, reservedWidth: 0 })
+const widgetLayoutStyle = computed(() => {
+  const { side, reservedWidth: width } = widgetPanelLayout.value
+  return width ? { width: `calc(100% - ${width}px)`, marginLeft: side === 'left' ? `${width}px` : '0', marginRight: side === 'right' ? `${width}px` : '0' } : {}
+})
 
-const installFloatingWidget = async () => {
-  try {
+const installFloatingWidget = () => {
+  if (_widgetInstallPromise) return _widgetInstallPromise
+  _widgetInstallPromise = (async () => {
     const widget = await loadDataAgentWidgetScript()
-    if (_layoutUnmounted) return
+    if (_layoutUnmounted) throw new Error('页面已关闭')
     _widgetCtrl = widget.installWidget({
       displayMode: 'floating',
       position: 'bottom-right',
@@ -222,11 +263,35 @@ const installFloatingWidget = async () => {
       projectColor: '#3B82F6',
       agentId: 'agent_opendataworks',
       apiBaseUrl: '',
+      onFullscreen: async ({ topicId }) => {
+        const failure = await router.push({
+          path: '/intelligent-query',
+          query: topicId ? { topicId } : {}
+        })
+        if (!failure || isNavigationFailure(failure, NavigationFailureType.duplicated)) _widgetCtrl?.close()
+      },
     })
-  } catch (error) {
-    console.warn('[OpenDataWorks] failed to install DataAgent widget:', error)
-  }
+    _widgetCtrl.on('open', () => { floatingWidgetOpen.value = true })
+    _widgetCtrl.on('close', () => { floatingWidgetOpen.value = false })
+    _widgetCtrl.on('panel-layout', (layout) => { widgetPanelLayout.value = layout })
+    widgetPanelLayout.value = _widgetCtrl.getPanelLayout()
+    return _widgetCtrl
+  })().catch((error) => {
+    _widgetInstallPromise = null
+    throw error
+  })
+  return _widgetInstallPromise
 }
+
+provide(FLOATING_WIDGET_KEY, {
+  isOpen: readonly(floatingWidgetOpen),
+  open: async (draft) => {
+    const controller = await installFloatingWidget()
+    if (_layoutUnmounted) throw new Error('页面已关闭')
+    controller.open({ draft })
+    return controller
+  }
+})
 
 onMounted(() => {
   scheduleRouteWarmup(
@@ -235,7 +300,9 @@ onMounted(() => {
       .map((item) => item.index)
       .filter((path) => path !== activeMenu.value)
   )
-  void installFloatingWidget()
+  void installFloatingWidget().catch((error) => {
+    console.warn('[OpenDataWorks] failed to install DataAgent widget:', error)
+  })
 })
 onBeforeUnmount(() => {
   _layoutUnmounted = true
@@ -273,8 +340,8 @@ onBeforeUnmount(() => {
 
 .logo {
   height: var(--odw-nav-height);
-  min-width: 244px;
-  flex: 0 0 244px;
+  min-width: 200px;
+  flex: 0 0 200px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -283,9 +350,9 @@ onBeforeUnmount(() => {
 }
 
 .logo-icon {
-  width: 44px;
-  height: 44px;
-  margin-right: 12px;
+  width: 32px;
+  height: 32px;
+  margin-right: 8px;
   display: inline-flex;
 }
 
@@ -297,10 +364,10 @@ onBeforeUnmount(() => {
 .logo h2 {
   white-space: nowrap;
   color: var(--odw-text-on-dark);
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   margin: 0;
-  letter-spacing: 1px;
+  letter-spacing: 0;
 }
 
 .demo-tag {
@@ -311,6 +378,7 @@ onBeforeUnmount(() => {
 }
 
 .menu {
+  --el-menu-horizontal-height: var(--odw-nav-height);
   flex: 1 1 auto;
   min-width: 0;
   border: none;
@@ -380,32 +448,54 @@ onBeforeUnmount(() => {
 
 .el-main {
   background-color: var(--odw-bg-page);
-  padding: 4px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
   flex: 1;
-  overflow-y: auto;
+  overflow: hidden;
   overflow-x: hidden;
   min-height: 0;
   min-width: 0;
 }
 
+.portal-page-header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-height: 44px;
+  padding: 6px 16px;
+  box-sizing: border-box;
+  flex: none;
+  background: var(--odw-bg-card);
+  border-bottom: 1px solid var(--odw-border);
+}
+.portal-page-header h1 { margin: 0; font: inherit; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--odw-text-primary); }
+.portal-page-content { flex: 1; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; padding: 4px; }
+
+@media (max-width: 520px) {
+  .portal-page-header :deep(.ai-assistant-prompt-window) { display: none; }
+}
+
 @media (max-width: 768px) {
   .logo {
-    min-width: 164px;
-    flex-basis: 164px;
+    min-width: 148px;
+    flex-basis: 148px;
     justify-content: flex-start;
-    padding-left: 12px;
+    padding-left: 8px;
   }
 
   .logo-icon {
-    width: 38px;
-    height: 38px;
-    margin-right: 8px;
+    width: 24px;
+    height: 24px;
+    margin-right: 4px;
   }
 
   .logo h2 {
-  white-space: nowrap;
-    font-size: 18px;
+    white-space: nowrap;
+    font-size: 14px;
     letter-spacing: 0;
   }
+  .demo-tag { margin-left: 6px; padding: 0 4px; height: 18px; font-size: 10px; }
 }
 </style>

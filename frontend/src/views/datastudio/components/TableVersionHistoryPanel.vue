@@ -214,7 +214,7 @@ watch(
 }
 
 .version-hint {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: #909399;
 }
 
@@ -224,7 +224,7 @@ watch(
 
 .snapshot-json {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   line-height: 1.6;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   white-space: pre-wrap;
@@ -255,7 +255,7 @@ watch(
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
 }
 .version-entry strong {
   font-size: var(--studio-font-ui);
@@ -263,7 +263,7 @@ watch(
   color: #41536a;
 }
 .version-entry time {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #94a3b8;
 }
 .version-entry p {
@@ -278,11 +278,11 @@ watch(
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #94a3b8;
 }
 .version-entry-footer :deep(.el-button) {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   padding: 0;
   margin-left: 7px;
 }

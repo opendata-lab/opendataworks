@@ -583,7 +583,7 @@ const saveCurrentEdit = () => {
    密集侧栏里偏大（面板内其余文字为 12-13px）。 */
 :deep(.detail-tabs .el-tabs__item) {
   padding: 0 7px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   height: 34px;
   line-height: 34px;
 }
@@ -670,7 +670,7 @@ const saveCurrentEdit = () => {
 
 .ddl-placeholder {
   padding: 10px 12px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: var(--text-muted);
 }
 
@@ -760,7 +760,7 @@ const saveCurrentEdit = () => {
   gap: 5px;
 }
 .table-meta-row :deep(.el-tag) {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   height: 18px;
   padding: 0 4px;
   border: none;
@@ -769,7 +769,7 @@ const saveCurrentEdit = () => {
   color: #526174;
 }
 .completeness-tag {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: var(--text-sub);
   white-space: nowrap;
 }
@@ -778,7 +778,7 @@ const saveCurrentEdit = () => {
   gap: 4px;
 }
 .table-actions :deep(.el-button) {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   padding: 4px 6px;
 }
 .table-actions :deep(.el-dropdown .el-button) {
@@ -825,11 +825,11 @@ const saveCurrentEdit = () => {
 .inspector-more :deep(.el-button) {
   color: #718096;
   height: 26px;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   padding: 4px 6px;
 }
 .inspector-more :deep(.el-icon) {
-  font-size: 9px;
+  font-size: var(--studio-font-detail);
   margin-left: 4px;
 }
 .inspector-more :deep(.is-selected) {
@@ -840,7 +840,7 @@ const saveCurrentEdit = () => {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
 }
 .inspector-menu-item .el-icon {
   width: 12px;
@@ -887,20 +887,20 @@ const saveCurrentEdit = () => {
 .meta-tabs :deep(.el-table th.el-table__cell) {
   background: #f5f7fa;
   color: #68778c;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
 }
 .meta-tabs :deep(.el-table td.el-table__cell) {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   padding: 5px 0;
 }
 .meta-tabs :deep(.el-descriptions__label.is-bordered-label) {
   background: #f7f9fb;
   color: #7a8798;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   font-weight: 400;
 }
 .meta-tabs :deep(.el-descriptions__content.is-bordered-content) {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
 }
 .meta-tabs :deep(.metric-card) {
   border: 0;
@@ -913,11 +913,11 @@ const saveCurrentEdit = () => {
   background: #fafbfc;
 }
 .ddl-content {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   color: #526174;
 }
 .right-empty :deep(.el-empty__description p) {
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: #8a96a6;
 }
 
