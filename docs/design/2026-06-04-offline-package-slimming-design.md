@@ -24,13 +24,15 @@
 1. **镜像合并去重**：所有镜像一次性 `docker save`（Podman 用 `--multi-image-archive`）保存到单个 `deploy/docker-images/all-images.tar`，共享 base 层只存一份。
 2. **xz 压缩**：整包用 `xz -T0`（多线程）替代 gzip，压缩级别可经 `OPENDATAWORKS_XZ_LEVEL` 覆盖（默认 6），输出名改为 `*.tar.xz`。目标机用 `tar -xJf` 解压（`xz`/`xz-utils` 为常见预装组件）。
 3. **runner 去 `docker.io`**：改为从官方 `docker:27-cli` 镜像 `COPY` 静态 docker 客户端二进制，去掉守护进程依赖。
-4. **evals 拆为独立附加包**：主包不再包含两个评测镜像；新增 `scripts/create-evals-offline-package.sh` 生成 `opendataworks-evals-offline-<tag>.tar.xz` 附加包，内含两个评测镜像（合并去重 + xz）与 `scripts/load-evals-images.sh` 加载器。需要在线评测的部署单独下载并加载该附加包。
+4. **evals 拆为独立附加包**：主包不再包含两个评测镜像；新增 `scripts/create-evals-offline-package.sh` 生成 `opendataworks-evals-offline-<tag>.tar.xz` 附加包，内含两个评测镜像（合并去重 + xz）、`tools/dataagent-evals/`、评测运行脚本与 `scripts/load-evals-images.sh` 加载器。需要在线评测的部署单独下载并加载该附加包。
+
+2026-10-12 补充：主包也不再复制 `tools/dataagent-evals/`，并移除仅为该目录创建的空 `tools/`。评测源码保留在仓库与独立附加包；主包的 `scripts/` 复制规则保持现状。影响限于 Bash 打包脚本、归档内容和运维说明，不涉及前端、Java 后端或 DataAgent 运行时。
 
 ## 接口与兼容
 
 - `scripts/load-images.sh`：优先加载 `all-images.tar`，找不到时回退逐镜像 `*.tar`（兼容旧包）。不再把评测镜像列为必需。
 - `scripts/load-package-and-start.sh`：接受 `.tar.xz`（`tar -xJf`），保留 `.tar.gz` 兼容。
-- 评测运行脚本 `scripts/run-dataagent-evals.sh` / `run-dataagent-deepeval-evals.sh` 不变：仍按镜像 env 变量执行；只是镜像改由评测附加包提供。
+- 评测运行脚本 `scripts/run-dataagent-evals.sh` / `run-dataagent-deepeval-evals.sh` 不变：仍按镜像 env 变量执行；镜像与工具源码改由评测附加包提供，本地 Python 执行应在附加包或源码仓库目录中运行。
 - CI 发布同时产出主包 `opendataworks-deployment-<tag>.tar.xz` 与评测附加包 `opendataworks-evals-offline-<tag>.tar.xz`。
 - 独立 `opendataagent` 离线包使用各自脚本，保持 `.tar.gz`，本设计不涉及。
 

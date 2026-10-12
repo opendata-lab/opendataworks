@@ -135,3 +135,5 @@ def test_generated_offline_archive_contains_template_but_not_runtime_env(
 
     assert any(path.name == ".env.example" and path.parent.name == "deploy" for path in package_paths)
     assert not any(path.name == ".env" for path in package_paths)
+    if script_path == REPO_ROOT / "scripts" / "create-offline-package.sh":
+        assert not any(path.parts[1:2] == ("tools",) for path in package_paths)

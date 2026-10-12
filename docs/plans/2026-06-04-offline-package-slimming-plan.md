@@ -32,6 +32,13 @@
 8. 文档
    - `deploy/README.md` 第 3 节、`docs/handbook/operations-guide.md`、`docs/handbook/release-process.md`：说明评测镜像改由附加包提供
 
+### 2026-10-12 补充（主包剔除评测源码）
+
+9. `scripts/create-offline-package.sh`：删除 `tools/dataagent-evals/` 复制块及 `PACKAGED_TOOLS_DIR` 的定义和目录创建；独立附加包的内容保持现状。
+10. `deploy/README.md`：明确主包不含评测源码，评测加载及本地 Python 执行使用独立附加包目录。
+11. `tests/test_offline_package_env_policy.py`：扩展现有归档验证，检查主包没有 `tools/`，同时继续验证环境模板和运行配置排除；`tests/test_deepeval_packaging_hooks.py`：将评测工具目录断言调整为独立附加包包含、主包不包含。
+12. 执行 `bash -n scripts/create-offline-package.sh` 与现有离线包测试；测试使用容器 CLI fixture，验证真实打包脚本生成的归档内容，不拉取生产镜像。新规则在下次生成主包时生效，已有归档需重新打包。
+
 ## 验证
 
 - `bash -n` 校验所有改动脚本
@@ -42,3 +49,4 @@
 
 - 各项改动彼此独立，按 commit 粒度可单独 revert
 - 评测拆分回滚：恢复 `create-offline-package.sh` 中两个 evals 镜像条目、删除附加包脚本与 CI 步骤即可
+- 评测源码排除回滚：恢复主包的 `tools/dataagent-evals/` 复制块和目录创建，同步恢复部署说明与归档断言。

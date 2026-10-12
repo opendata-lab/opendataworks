@@ -116,13 +116,11 @@ mkdir -p "$PACKAGE_ROOT"
 # 定义包内目录结构
 PACKAGED_DEPLOY_DIR="$PACKAGE_ROOT/deploy"
 PACKAGED_SCRIPTS_DIR="$PACKAGE_ROOT/scripts"
-PACKAGED_TOOLS_DIR="$PACKAGE_ROOT/tools"
 PACKAGED_DATAAGENT_RUNTIME_DIR="$PACKAGED_DEPLOY_DIR/dataagent-runtime"
 DEPLOY_IMAGE_DIR="$PACKAGED_DEPLOY_DIR/docker-images"
 
 mkdir -p "$PACKAGED_DEPLOY_DIR"
 mkdir -p "$PACKAGED_SCRIPTS_DIR"
-mkdir -p "$PACKAGED_TOOLS_DIR"
 mkdir -p "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills"
 mkdir -p "$DEPLOY_IMAGE_DIR"
 
@@ -138,12 +136,7 @@ tar -C "$REPO_ROOT/deploy" \
 log "Copying scripts/ content to package scripts/"
 tar -C "$REPO_ROOT/scripts" --exclude='build' -cf - . | tar -C "$PACKAGED_SCRIPTS_DIR" -xf -
 
-# 2.1 复制通用评测工具。私有评测集不随离线包内置，运行时通过 --dataset 指定。
-if [[ -d "$REPO_ROOT/tools/dataagent-evals" ]]; then
-    log "Copying DataAgent eval tools"
-    mkdir -p "$PACKAGED_TOOLS_DIR/dataagent-evals"
-    tar -C "$REPO_ROOT/tools/dataagent-evals" -cf - . | tar -C "$PACKAGED_TOOLS_DIR/dataagent-evals" -xf -
-fi
+# 评测工具源码由 scripts/create-evals-offline-package.sh 打入独立附加包。
 
 # 3. 复制 DataAgent 运行时配置（不打包整个 dataagent 源码目录）
 if [[ -f "$REPO_ROOT/dataagent/.claude/settings.json" ]]; then

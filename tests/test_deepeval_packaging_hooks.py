@@ -13,14 +13,17 @@ OLD_SANDBOX_IMAGE_ASSIGNMENT = "DATAAGENT_" "SANDBOX_IMAGE="
 OLD_SANDBOX_HOST_SKILLS_DIR = "DATAAGENT_" "SANDBOX_HOST_SKILLS_DIR"
 
 
-def test_offline_package_scripts_reference_deepeval_image_and_tools_dir():
+def test_offline_package_scripts_keep_eval_tools_in_separate_package():
     create_package = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
+    create_evals_package = (REPO_ROOT / "scripts" / "create-evals-offline-package.sh").read_text(encoding="utf-8")
     load_images = (REPO_ROOT / "scripts" / "load-images.sh").read_text(encoding="utf-8")
     build_images = (REPO_ROOT / "scripts" / "build" / "build-images.sh").read_text(encoding="utf-8")
     build_multiarch = (REPO_ROOT / "scripts" / "build" / "build-multiarch.sh").read_text(encoding="utf-8")
 
     assert IMAGE_NAME in create_package
-    assert "tools/dataagent-evals" in create_package
+    assert "tools/dataagent-evals" not in create_package
+    assert "tools/dataagent-evals" in create_evals_package
+    assert IMAGE_NAME in create_evals_package
     assert "REPO_ROOT/evals" not in create_package
     assert "dataagent/evals" not in create_package
     assert "dataagent-runtime/evals" not in create_package
