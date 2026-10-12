@@ -489,6 +489,7 @@ const {
   send: sendReal, cancel,
   selectTopic: selectTopicEngine, newConversation: newConversationEngine, deleteConversation,
 } = chat
+watch(topicId, (value) => { props.state.topicId = value || null }, { immediate: true, flush: 'sync' })
 // Same reason as the portal: the SQL panel's only route to the network is this
 // injection, and until the widget moves onto the SDK element (T11-C) the shell
 // has to provide it.
@@ -953,6 +954,22 @@ const scrollMessagesToBottom = () => {
 watch(messages, () => {
   if (autoScroll.value) scrollMessagesToBottom()
 }, { deep: true, flush: 'post' })
+
+watch(
+  () => props.state.draftSignal,
+  (value) => {
+    if (!value || loginRequired.value) return
+    inputText.value = props.state.requestedDraft || ''
+    props.state.requestedDraft = ''
+    props.state.draftSignal = 0
+    inputSource.value = 'outbound'
+    nextTick(() => {
+      resizeTextarea()
+      textareaRef.value?.focus()
+    })
+  },
+  { immediate: true }
+)
 
 watch(
   () => props.state.outboundMessage,

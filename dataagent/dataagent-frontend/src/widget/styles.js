@@ -40,6 +40,13 @@ export const WIDGET_STYLES = `
 }
 
 .odw-widget {
+  --odw-assistant-paper: #ffffff;
+  --odw-assistant-border: #e6e9ef;
+  --odw-assistant-ink: #172033;
+  --odw-assistant-accent: #6f49d3;
+  --odw-assistant-hover: #f4f2fa;
+  --odw-assistant-check: #526cff;
+  --odw-assistant-shadow: rgba(15, 23, 42, .14);
   position: fixed;
   z-index: 2147483000;
   font-family: Inter, "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
@@ -72,10 +79,9 @@ export const WIDGET_STYLES = `
   width: 56px;
   height: 56px;
   padding: 0;
-  border: none;
+  border: 1px solid var(--odw-assistant-border);
   border-radius: 50%;
-  background: var(--odw-widget-color);
-  color: #fff;
+  background: var(--odw-assistant-paper);
   box-shadow:
     0 2px 8px rgba(0, 0, 0, 0.14),
     0 8px 28px rgba(0, 0, 0, 0.12);
@@ -98,8 +104,8 @@ export const WIDGET_STYLES = `
 }
 
 .odw-launcher__icon {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   flex-shrink: 0;
 }
 
@@ -119,6 +125,56 @@ export const WIDGET_STYLES = `
   animation: odw-panel-entrance 0.24s cubic-bezier(0.22, 1, 0.36, 1) both;
   transition: width 0.3s cubic-bezier(0.2, 0, 0, 1);
 }
+
+/* Fixed panels retain the same chat tree; the host reserves space via panel-layout. */
+.odw-widget.is-docked-left { inset: 0 auto 0 0; }
+.odw-widget.is-docked-right { inset: 0 0 0 auto; }
+.odw-widget.is-docked-left .odw-panel,
+.odw-widget.is-docked-right .odw-panel {
+  width: min(440px, 100vw);
+  height: 100vh;
+  height: 100dvh;
+  border-radius: 0;
+  animation: none;
+}
+.odw-widget.is-docked-left .odw-panel__header,
+.odw-widget.is-docked-right .odw-panel__header { border-radius: 0; cursor: default; }
+.odw-layout-control { position: relative; }
+.odw-layout-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: 208px;
+  padding: 6px;
+  border: 1px solid var(--odw-assistant-border);
+  border-radius: 10px;
+  background: var(--odw-assistant-paper);
+  color: var(--odw-assistant-ink);
+  box-shadow: 0 8px 24px var(--odw-assistant-shadow);
+}
+.odw-layout-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.odw-layout-menu button:active { background: var(--odw-assistant-hover); }
+.odw-layout-menu button:disabled { opacity: .55; cursor: not-allowed; }
+.odw-layout-menu button:hover { background: var(--odw-assistant-hover); }
+.odw-layout-menu button:focus-visible { outline: 2px solid var(--odw-assistant-accent); outline-offset: -2px; }
+.odw-layout-menu svg { width: 20px; height: 20px; flex: none; }
+.odw-layout-check { margin-left: auto; color: var(--odw-assistant-check); }
 
 .odw-widget.is-dragged {
   right: auto;
@@ -244,6 +300,9 @@ export const WIDGET_STYLES = `
   background: rgba(255, 255, 255, 0.16);
   color: #ffffff;
 }
+
+.odw-icon-button:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.odw-icon-button:active:not(:disabled) { transform: translateY(1px); }
 
 .odw-icon-button:disabled {
   opacity: 0.38;
@@ -1435,9 +1494,14 @@ export const WIDGET_STYLES = `
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .odw-launcher, .odw-panel { animation: none; transition: none; }
+  .odw-launcher:hover, .odw-launcher:active, .odw-icon-button:active:not(:disabled) { transform: none; }
+}
+
 @media (max-width: 520px) {
-  .odw-widget.is-bottom-right,
-  .odw-widget.is-bottom-left {
+  .odw-widget.is-bottom-right:not(.is-docked-left):not(.is-docked-right),
+  .odw-widget.is-bottom-left:not(.is-docked-left):not(.is-docked-right) {
     right: 12px;
     bottom: 12px;
     left: 12px;

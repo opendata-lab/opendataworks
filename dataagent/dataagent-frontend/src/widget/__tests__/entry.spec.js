@@ -47,11 +47,89 @@ describe('installWidget', () => {
   })
 
   afterEach(() => {
-    window.OpenDataWorksWidget?.destroy?.()
+    window.OpenDataWorksWidget?.destroyAll?.()
     delete window.OpenDataWorksWidget
     document.querySelectorAll('[data-odw-widget-root]').forEach((node) => node.remove())
     document.body.innerHTML = ''
     vi.restoreAllMocks()
+  })
+
+  it('prefills a closed panel without sending and consumes each draft once', async () => {
+    const ctrl = installWidget({ websiteId: 'draft', allowAnonymous: true, agentId: 'demo' })
+    const root = document.querySelector('[data-odw-widget-root]').shadowRoot
+    const sent = vi.fn()
+    ctrl.on('message:sent', sent)
+    ctrl.open({ draft: '帮我分析数据表结构' })
+    await flushPromises()
+    await nextTick()
+    const input = root.querySelector('textarea')
+    expect(input.value).toBe('帮我分析数据表结构')
+    expect(root.activeElement).toBe(input)
+    expect(root.querySelector('.query-user-message-shell')).toBeNull()
+    expect(sent).not.toHaveBeenCalled()
+    ctrl.open({ draft: '新提示' })
+    await nextTick()
+    expect(input.value).toBe('新提示')
+    ctrl.open({ draft: '' })
+    await nextTick()
+    expect(input.value).toBe('')
+    ctrl.close()
+    await nextTick()
+    ctrl.open()
+    await flushPromises()
+    expect(root.querySelector('textarea').value).toBe('')
+    window.OpenDataWorksWidget.open({ draft: '全局预填' })
+    await nextTick()
+    expect(root.querySelector('textarea').value).toBe('全局预填')
+    expect(sent).not.toHaveBeenCalled()
+  })
+
+  it('switches fixed panels without remounting the composer and releases host space', async () => {
+    window.innerWidth = 1440
+    const ctrl = installWidget({ agentId: 'demo', panelMode: 'docked-right' })
+    const layout = vi.fn()
+    ctrl.on('panel-layout', layout)
+    ctrl.open({ draft: '保留输入' })
+    await flushPromises()
+    const root = document.querySelector('[data-odw-widget-root]').shadowRoot
+    const input = root.querySelector('textarea')
+    expect(ctrl.getPanelLayout()).toMatchObject({ mode: 'docked-right', width: 440, reservedWidth: 440, side: 'right' })
+    expect(root.querySelector('.odw-resize-handle')).toBeNull()
+    root.querySelector('[aria-label="面板布局"]').click()
+    await nextTick()
+    const items = root.querySelectorAll('[role="menuitemradio"]')
+    expect(items[2].getAttribute('aria-checked')).toBe('true')
+    expect(root.activeElement).toBe(items[2])
+    items[1].click()
+    await nextTick()
+    expect(ctrl.getPanelMode()).toBe('docked-left')
+    expect(root.querySelector('textarea')).toBe(input)
+    expect(input.value).toBe('保留输入')
+    expect(root.querySelector('.is-docked-left')).toBeTruthy()
+    expect(layout).toHaveBeenLastCalledWith(expect.objectContaining({ side: 'left', reservedWidth: 440 }))
+    ctrl.setPanelMode('floating')
+    await nextTick()
+    expect(root.querySelector('textarea')).toBe(input)
+    expect(root.querySelector('.odw-resize-handle')).toBeTruthy()
+    expect(ctrl.setPanelMode('invalid')).toBe(false)
+    ctrl.setPanelMode('docked-right')
+    window.innerWidth = 375
+    window.dispatchEvent(new Event('resize'))
+    expect(ctrl.getPanelLayout()).toMatchObject({ width: 375, reservedWidth: 0 })
+    ctrl.close()
+    expect(layout).toHaveBeenLastCalledWith(expect.objectContaining({ width: 0, reservedWidth: 0, isOpen: false }))
+    expect(ctrl.getPanelMode()).toBe('docked-right')
+    ctrl.open()
+    ctrl.destroy()
+    expect(layout).toHaveBeenLastCalledWith(expect.objectContaining({ width: 0, isOpen: false }))
+    window.innerWidth = 1024
+  })
+
+  it('keeps inline layout under host control', () => {
+    const ctrl = installWidget({ displayMode: 'inline', panelMode: 'docked-left', agentId: 'demo' })
+    expect(ctrl.setPanelMode('docked-right')).toBe(false)
+    expect(ctrl.getPanelLayout()).toMatchObject({ mode: 'floating', width: 0, reservedWidth: 0 })
+    expect(document.querySelector('[data-odw-widget-root]').shadowRoot.querySelector('[aria-label="面板布局"]')).toBeNull()
   })
 
   it('mounts a shadow-root widget and exposes the public controller', () => {
@@ -320,5 +398,96 @@ describe('installWidget', () => {
 
     expect(stylesheet).toBeTruthy()
     expect(stylesheet.href).toBe('https://odw.example.com/widget/style.css')
+  })
+
+  it('keeps the fullscreen action hidden when the host has not configured it', async () => {
+    const controller = installWidget({ websiteId: 'demo' })
+    controller.open()
+    await nextTick()
+    expect(document.querySelector('[data-odw-widget-root]').shadowRoot.querySelector('.odw-fullscreen-button')).toBeNull()
+    controller.destroy()
+  })
+
+  it('shows a native route link from script configuration without starting a header drag', async () => {
+    const script = document.createElement('script')
+    script.dataset.websiteId = 'demo'
+    script.dataset.fullscreenUrl = '/full-chat'
+    const controller = installWidget(script)
+    controller.open()
+    await nextTick()
+    const shadow = document.querySelector('[data-odw-widget-root]').shadowRoot
+    const button = shadow.querySelector('.odw-fullscreen-button')
+    expect(button.tagName).toBe('A')
+    expect(button.href).toBe(new URL('/full-chat', window.location.href).href)
+    button.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    expect(shadow.querySelector('.odw-widget').classList.contains('is-interacting')).toBe(false)
+    controller.destroy()
+  })
+
+  it('uses the host callback before a URL and emits the instance context', async () => {
+    const onFullscreen = vi.fn()
+    const controller = installWidget({ websiteId: 'demo', agentId: 'agent-widget', fullscreenUrl: '/unused', onFullscreen })
+    controller.open()
+    const event = vi.fn()
+    controller.on('fullscreen', event)
+    await nextTick()
+    const shadow = document.querySelector('[data-odw-widget-root]').shadowRoot
+    const button = shadow.querySelector('.odw-fullscreen-button')
+    expect(button.tagName).toBe('BUTTON')
+    expect(button.hasAttribute('href')).toBe(false)
+    expect(shadow.querySelector('.odw-panel__header')).toBeTruthy()
+    expect(shadow.querySelector('.odw-close-button')).toBeTruthy()
+    button.click()
+    await flushPromises()
+    const context = { instanceId: controller.instanceId, websiteId: 'demo', agentId: 'agent-widget', topicId: null, displayMode: 'floating' }
+    expect(onFullscreen).toHaveBeenCalledTimes(1)
+    expect(onFullscreen).toHaveBeenCalledWith(context)
+    expect(event).toHaveBeenCalledTimes(1)
+    expect(event).toHaveBeenCalledWith(context)
+    controller.destroy()
+  })
+
+  it.each([
+    ['throws', () => { throw new Error('host failed') }],
+    ['rejects', () => Promise.reject(new Error('host failed'))]
+  ])('reports a host callback that %s through the error event', async (_, onFullscreen) => {
+    const controller = installWidget({ onFullscreen })
+    controller.open()
+    const failed = vi.fn()
+    controller.on('error', failed)
+    await nextTick()
+    document.querySelector('[data-odw-widget-root]').shadowRoot.querySelector('.odw-fullscreen-button').click()
+    await flushPromises()
+    expect(failed).toHaveBeenCalledWith({ code: 'FULLSCREEN_ACTION_FAILED', message: 'host failed' })
+    expect(controller.isOpen()).toBe(true)
+    controller.destroy()
+  })
+
+  it('keeps fullscreen callbacks scoped to their widget instance', async () => {
+    const first = vi.fn(), second = vi.fn()
+    const a = installWidget({ onFullscreen: first })
+    const b = installWidget({ onFullscreen: second })
+    a.open()
+    b.open()
+    await nextTick()
+    const roots = document.querySelectorAll('[data-odw-widget-root]')
+    roots[0].shadowRoot.querySelector('.odw-fullscreen-button').click()
+    await flushPromises()
+    expect(first).toHaveBeenCalledWith(expect.objectContaining({ instanceId: a.instanceId }))
+    expect(second).not.toHaveBeenCalled()
+    roots[1].shadowRoot.querySelector('.odw-fullscreen-button').click()
+    await flushPromises()
+    expect(second).toHaveBeenCalledWith(expect.objectContaining({ instanceId: b.instanceId }))
+    a.destroy()
+    b.destroy()
+  })
+
+  it('keeps inline mode without a fullscreen entry even when configured', async () => {
+    const controller = installWidget({ displayMode: 'inline', fullscreenUrl: '/full-chat', onFullscreen: vi.fn() })
+    await nextTick()
+    const shadow = document.querySelector('[data-odw-widget-root]').shadowRoot
+    expect(shadow.querySelector('.odw-panel__header')).toBeNull()
+    expect(shadow.querySelector('.odw-fullscreen-button')).toBeNull()
+    controller.destroy()
   })
 })

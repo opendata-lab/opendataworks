@@ -200,7 +200,7 @@ watch(pageSize, () => {
 }
 .engine-edit-hint {
   margin-top: 2px;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   line-height: 14px;
   color: var(--text-muted);
 }
@@ -216,7 +216,7 @@ watch(pageSize, () => {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
   color: #e6a23c;
 }
 .replica-value {
@@ -236,7 +236,7 @@ watch(pageSize, () => {
 }
 .partition-count {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
 }
 .partition-pager {
   margin-top: 10px;
@@ -248,13 +248,13 @@ watch(pageSize, () => {
 }
 .meta-descriptions :deep(.el-descriptions__label) {
   display: block;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   color: #8a96a5;
   font-weight: 400;
   margin-bottom: 4px;
 }
 .meta-descriptions :deep(.el-descriptions__content) {
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
   color: #41536a;
 }
 .meta-descriptions :deep(.el-descriptions__body) {
@@ -265,7 +265,7 @@ watch(pageSize, () => {
   grid-template-columns: 64px 1fr;
   gap: 6px;
   margin: 10px;
-  font-size: 11px;
+  font-size: var(--studio-font-detail);
 }
 .partition-detail dt {
   color: #8a96a5;

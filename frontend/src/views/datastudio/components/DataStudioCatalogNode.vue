@@ -154,7 +154,7 @@ const getNodeTitle = (data) => {
 .catalog-node {
   flex: 1;
   min-width: 0;
-  font-size: 10px;
+  font-size: var(--studio-font-ui);
   color: var(--catalog-text);
   position: relative;
 }
@@ -163,12 +163,12 @@ const getNodeTitle = (data) => {
   align-items: center;
   gap: 5px;
   width: 100%;
-  height: 24px;
+  height: 28px;
   position: relative;
 }
 .node-icon {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--studio-font-ui);
   color: var(--catalog-muted);
 }
 .datasource-logo {
@@ -189,7 +189,7 @@ const getNodeTitle = (data) => {
   color: var(--catalog-icon);
 }
 .node-name {
-  font-size: 10px;
+  font-size: var(--studio-font-ui);
   font-weight: 500;
   min-width: 0;
   overflow: hidden;
@@ -204,7 +204,7 @@ const getNodeTitle = (data) => {
   flex-shrink: 0;
 }
 .source-type {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   height: 16px;
   padding: 0 3px;
   border: 0;
@@ -214,14 +214,14 @@ const getNodeTitle = (data) => {
 }
 .db-count {
   color: var(--catalog-muted);
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   font-variant-numeric: tabular-nums;
 }
 .refresh-icon {
   cursor: pointer;
   color: var(--catalog-muted);
   opacity: 1;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
 }
 .catalog-node:hover .refresh-icon,
 .catalog-node:focus-within .refresh-icon {
@@ -235,7 +235,7 @@ const getNodeTitle = (data) => {
   color: #cbd5e1;
 }
 .loading-icon {
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
 }
 .table-main {
   flex: 1;
@@ -252,7 +252,7 @@ const getNodeTitle = (data) => {
   flex: 1;
 }
 .table-name {
-  font-size: 10px;
+  font-size: var(--studio-font-ui);
   font-weight: 400;
   white-space: nowrap;
   overflow: hidden;
@@ -262,7 +262,7 @@ const getNodeTitle = (data) => {
 .metadata-warning-icon {
   color: #dc2626;
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
 }
 .catalog-node--datasource .node-name {
   font-weight: 600;
@@ -278,12 +278,12 @@ const getNodeTitle = (data) => {
   color: var(--catalog-faint);
 }
 .catalog-node--table .catalog-node-row {
-  height: 24px;
+  height: 28px;
   align-items: center;
 }
 
 .table-title {
-  line-height: 14px;
+  line-height: 18px;
 }
 .table-meta-tags {
   display: flex;
@@ -291,7 +291,7 @@ const getNodeTitle = (data) => {
   align-items: center;
   gap: 5px;
   white-space: nowrap;
-  font-size: 10px;
+  font-size: var(--studio-font-detail);
   font-variant-numeric: tabular-nums;
 }
 .row-count,
@@ -316,7 +316,7 @@ const getNodeTitle = (data) => {
   pointer-events: none;
 }
 .catalog-node--table.is-detailed .catalog-node-row {
-  height: 36px;
+  height: 44px;
   align-items: flex-start;
   padding: 3px 0;
   box-sizing: border-box;
@@ -338,13 +338,13 @@ const getNodeTitle = (data) => {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  height: 14px;
+  height: 18px;
 }
 .table-comment {
   flex: 1;
   min-width: 0;
-  font-size: 10px;
-  line-height: 14px;
+  font-size: var(--studio-font-detail);
+  line-height: 18px;
   color: var(--catalog-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -352,7 +352,7 @@ const getNodeTitle = (data) => {
 }
 .is-detailed .table-meta-tags {
   margin-left: auto;
-  line-height: 14px;
+  line-height: 18px;
   gap: 5px;
 }
 </style>

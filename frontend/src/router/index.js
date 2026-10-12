@@ -28,7 +28,7 @@ const routes = [
         path: '/datastudio',
         name: 'DataStudio',
         component: lazyView(() => import('@/views/datastudio/DataStudioNew.vue')),
-        meta: { title: 'Data Studio' }
+        meta: { title: '数据开发' }
       },
       {
         path: '/datastudio-new',
@@ -44,7 +44,7 @@ const routes = [
         path: '/workflows',
         name: 'Workflows',
         component: lazyView(() => import('@/views/workflows/WorkflowManagement.vue')),
-        meta: { title: '任务调度' }
+        meta: { title: '工作流' }
       },
       {
         path: '/workflows/:id(\\d+)',

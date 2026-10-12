@@ -1,3 +1,5 @@
+import { normalizePanelMode } from './panelLayout'
+
 const DEFAULT_PROJECT_NAME = '智能问数'
 const DEFAULT_PROJECT_COLOR = '#4A90A4'
 const DEFAULT_POSITION = 'bottom-right'
@@ -15,6 +17,17 @@ const randomId = () => {
 const visitorStorageKey = (websiteId) => `odw_widget_visitor_id_${websiteId || 'default'}`
 
 export const parseBooleanFlag = (value) => value === true || String(value || '').trim().toLowerCase() === 'true'
+
+export function resolveFullscreenUrl(value) {
+  const url = String(value || '').trim()
+  if (!url) return ''
+  try {
+    const resolved = new URL(url, window.location.href)
+    return ['http:', 'https:'].includes(resolved.protocol) ? resolved.href : ''
+  } catch {
+    return ''
+  }
+}
 
 export function resolveCurrentScript() {
   if (typeof document === 'undefined') return null
@@ -71,7 +84,9 @@ export function parseWidgetConfig(script = resolveCurrentScript()) {
     apiBaseUrl,
     position,
     displayMode,
+    panelMode: normalizePanelMode(dataset.panelMode),
     containerId,
+    fullscreenUrl: resolveFullscreenUrl(dataset.fullscreenUrl),
     headers
   }
 }

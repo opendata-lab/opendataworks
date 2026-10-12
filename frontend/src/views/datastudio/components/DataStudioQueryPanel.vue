@@ -107,7 +107,7 @@ const {
 }
 .query-topbar__actions :deep(.el-button) {
   margin-left: 0;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   padding: 4px 7px;
   height: 26px;
 }
@@ -126,7 +126,7 @@ const {
   gap: 5px;
   align-items: center;
   min-width: 0;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   color: #64748b;
 }
 .context-name {
@@ -140,7 +140,7 @@ const {
   flex-shrink: 0;
 }
 .context-separator {
-  font-size: 9px;
+  font-size: var(--studio-font-detail);
   color: #a0aec0;
   flex-shrink: 0;
 }
@@ -153,18 +153,18 @@ const {
   min-width: 100px;
 }
 .query-select :deep(.el-select__wrapper) {
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   min-height: 26px;
 }
 .query-limit {
   color: #64748b;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   padding: 4px 6px;
   height: 24px;
   flex-shrink: 0;
 }
 .query-limit .el-icon {
-  font-size: 9px;
+  font-size: var(--studio-font-detail);
   margin-left: 4px;
 }
 .limit-settings {
@@ -172,14 +172,14 @@ const {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--studio-font-reading);
 }
 .limit-input {
   width: 100px;
 }
 .limit-hint {
   margin: 10px 0 0;
-  font-size: 11px;
+  font-size: var(--studio-font-ui);
   color: #94a3b8;
 }
 .sql-editor {

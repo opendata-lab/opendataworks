@@ -35,7 +35,6 @@ const resolveTab = () => {
   return TAB_WORKFLOWS
 }
 const activeTab = ref(resolveTab())
-
 const syncRouteQuery = (targetTab) => {
   const normalized =
     targetTab === TAB_TASKS ? TAB_TASKS : targetTab === TAB_MONITOR ? TAB_MONITOR : TAB_WORKFLOWS
@@ -78,11 +77,9 @@ onMounted(() => {
   padding: 6px;
 }
 
-.workflow-tabs {
-  margin-top: 12px;
-}
+.workflow-tabs :deep(.el-tabs__header) { margin-bottom: 8px; }
 
 .workflow-tabs :deep(.el-tab-pane) {
-  padding-top: 8px;
+  padding-top: 0;
 }
 </style>

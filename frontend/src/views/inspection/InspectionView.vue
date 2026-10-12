@@ -3,8 +3,7 @@
     <el-card class="header-card">
       <template #header>
         <div class="card-header">
-          <span>数据质量</span>
-          <div class="header-actions">
+          <div class="header-actions" style="margin-left: auto">
             <el-button type="primary" :icon="VideoPlay" @click="handleRunInspection" :loading="runningInspection">
               执行巡检
             </el-button>
