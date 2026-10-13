@@ -143,6 +143,16 @@
 用户自建智能体的能力恢复不依赖上述默认值：两个 Skill 成为独立可选项后，
 在 Agent 配置页可以单独勾选，无需再连带启用 `opendataworks-platform-tools`。
 
+### 4.1 存量内置智能体补迁移（2026-10-12）
+
+默认 payload 只在智能体不存在时写入。已部署数据库的默认助手和平台助手不会因 payload 更新自动获得两个新 Skill；本地数据库确认两者仍分别为零个和三个 Skill。
+
+新增一次性 Alembic 数据迁移 `20261012_000027`，仅对 `agent_default`、`agent_opendataworks` 且 `is_builtin=1` 的记录追加缺少的 `chart-visualization`、`report-generation`，保留已有 Skill 顺序和其它配置。不在启动或读取时重复修正；迁移后管理员仍可自行调整启用列表。
+
+已有 `da_agent_draft` 时，在同一事务中先锁定草稿，再锁定发布 profile（与发布接口顺序一致）。对草稿和发布快照分别追加缺少的技能，保留未发布编辑。草稿变化时增加 revision 并清除 preview_task_id、preview_revision、preview_token，旧调试不再作为当前配置的验证结果；发布快照变化时增加 published_version。干净草稿升级后仍为干净状态。没有草稿时只更新 profile，首次打开工作台按现有机制建立快照。历史话题及任务快照不回写。
+
+内置身份限制删除，不限制管理员编辑、调试、发布。正常编辑允许保存后直接确认发布，调试作为可选步骤，见[工作台最新约定](2026-10-05-agent-editor-draft-publish-design.md)。本次迁移是随应用升级恢复内置展示能力，不发布管理员的其它草稿修改。迁移降级保留技能绑定，避免误删管理员自行启用的技能；需要撤销时通过工作台编辑、保存、确认发布。
+
 ## Interfaces
 
 ### 环境变量

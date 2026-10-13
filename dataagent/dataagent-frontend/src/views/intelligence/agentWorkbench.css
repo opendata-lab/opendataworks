@@ -134,9 +134,7 @@ h3 {
   border: 0;
 }
 .workspace-main {
-  padding: 0 24px;
-  max-width: 2100px;
-  margin: auto;
+  padding: 0 16px;
 }
 .workspace-head {
   padding: 22px 0 19px;
@@ -920,10 +918,15 @@ details[open] > summary .detail-value .icon {
   background: var(--amber-soft);
 }
 dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 28px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
   width: 490px;
   color: var(--ink);
   background: var(--surface);
@@ -1024,9 +1027,6 @@ dialog h2 {
   }
 }
 @media (max-width: 1388px) {
-  .workspace-main {
-    padding: 0 16px;
-  }
   .workbench {
     gap: 12px;
   }

@@ -56,9 +56,14 @@ describe('demoAdapter intelligent query admin endpoints', () => {
     expect(published.some(agent => agent.agent_id === created.agent_id)).toBe(false)
     const saved = (await request('put', `/api/v1/dataagent/agents/${created.agent_id}`, { data: { expected_revision: 1, name: '更新后的草稿' } })).data
     expect(saved.revision).toBe(2)
-    expect(saved.can_publish).toBe(false)
+    expect(saved.can_publish).toBe(true)
     expect((await request('get', '/api/v1/dataagent/agents/workbench')).data).toContainEqual(expect.objectContaining({ agent_id: created.agent_id, name: '更新后的草稿' }))
     expect((await request('get', '/api/v1/dataagent/agents/builtin-prompt')).data.content).toContain('DataAgent')
+    await expect(request('post', `/api/v1/dataagent/agents/${created.agent_id}/publish`, { data: { expected_revision: 1 } })).rejects.toMatchObject({ response: { status: 409 } })
+    const released = (await request('post', `/api/v1/dataagent/agents/${created.agent_id}/publish`, { data: { expected_revision: 2 } })).data
+    expect(released).toMatchObject({ published_version: 1, can_publish: false, has_changes: false })
+    expect((await request('get', '/api/v1/dataagent/agents')).data).toContainEqual(expect.objectContaining({ agent_id: created.agent_id, name: '更新后的草稿' }))
+    await expect(request('post', `/api/v1/dataagent/agents/${created.agent_id}/publish`, { data: { expected_revision: 2 } })).rejects.toMatchObject({ response: { status: 409 } })
   })
 
   it('returns complete Skill document detail data for the detail editor', async () => {

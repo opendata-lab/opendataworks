@@ -2627,7 +2627,8 @@ export const demoAdapter = async (config) => {
   if (method === 'post' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+\/publish$/)) {
     const draft = demoDraftFor(decodeURIComponent(pathname.split('/')[4]))
     if (!draft) return createRejectedResponse(config, '智能体不存在', 404)
-    if (body.expected_revision !== draft.revision || !draft.can_publish) return createRejectedResponse(config, '请先完成当前草稿的调试', 409)
+    if (body.expected_revision !== draft.revision) return createRejectedResponse(config, '草稿已更新，请刷新后重试', 409)
+    if (!draft.has_changes) return createRejectedResponse(config, '当前草稿已发布，没有新的修改', 409)
     draft.published_version++; draft.has_changes = false; draft.can_publish = false
     const index = demoAgents.findIndex(agent => agent.agent_id === draft.agent_id)
     if (index < 0) demoAgents.push(clone(draft))
@@ -2647,7 +2648,7 @@ export const demoAdapter = async (config) => {
     const topic = findDemoTopic(body.topic_id)
     if (!draft || !topic?.is_agent_preview || topic.agent_id !== draft.agent_id) return createRejectedResponse(config, '预览话题不存在', 404)
     if (body.expected_revision !== draft.revision) return createRejectedResponse(config, '草稿已更新', 409)
-    // Demo data cannot validate a real runtime, so it never grants publish approval.
+    // Preview remains unavailable; publishing saved changes does not require a run.
     return createRejectedResponse(config, '演示环境不执行真实调试，请在本地或部署环境中调试', 400)
   }
 
@@ -2695,7 +2696,7 @@ export const demoAdapter = async (config) => {
   }
 
   if (method === 'post' && pathname === '/v1/dataagent/agents') {
-    const next = { ...clone(demoAgents[0]), ...body, agent_id: `agent_demo_draft_${demoAgentDrafts.size + 1}`, is_default: false, is_builtin: false, revision: 1, published_version: 0, has_changes: true, can_publish: false }
+    const next = { ...clone(demoAgents[0]), ...body, agent_id: `agent_demo_draft_${demoAgentDrafts.size + 1}`, is_default: false, is_builtin: false, revision: 1, published_version: 0, has_changes: true, can_publish: true }
     demoAgentDrafts.set(next.agent_id, next)
     return createResponse(config, clone(next))
   }
@@ -2704,7 +2705,7 @@ export const demoAdapter = async (config) => {
     if (!draft) return createRejectedResponse(config, '智能体不存在', 404)
     if (body.expected_revision !== draft.revision) return createRejectedResponse(config, '草稿已更新', 409)
     const { expected_revision, ...payload } = body
-    Object.assign(draft, payload, { revision: draft.revision + 1, has_changes: true, can_publish: false, preview_status: null })
+    Object.assign(draft, payload, { revision: draft.revision + 1, has_changes: true, can_publish: true, preview_status: null })
     return createResponse(config, clone(draft))
   }
   if (method === 'delete' && pathname.match(/^\/v1\/dataagent\/agents\/[^/]+$/)) {

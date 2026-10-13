@@ -35,16 +35,7 @@ def check_revision(row: dict, revision: int) -> None:
 
 
 def publishable(row: dict) -> bool:
-    return bool(
-        row.get("preview_task_id")
-        and row.get("preview_revision") == row.get("revision")
-        and row.get("preview_status") == "finished"
-        and row.get("latest_task_id") == row.get("preview_task_id")
-        and row.get("is_agent_preview")
-        and build_agent_snapshot(json.loads(row["draft_json"]))
-        == build_agent_snapshot(json.loads(row.get("preview_snapshot") or "{}"))
-        and row.get("published_json") != row["draft_json"]
-    )
+    return row.get("published_json") != row["draft_json"]
 
 
 class AgentDraftStore:
@@ -160,7 +151,7 @@ class AgentDraftStore:
         return self.get(agent_id)
 
     def reserve_preview(self, agent_id: str, revision: int, topic: dict) -> str:
-        """Invalidate prior approval before dispatch, serialized with publish."""
+        """Reserve the latest preview for this revision, serialized with publish."""
         token = uuid.uuid4().hex
         conn = self._connect()
         try:
@@ -187,7 +178,7 @@ class AgentDraftStore:
                                WHERE agent_id = %s AND revision = %s AND preview_token = %s""",
                             (task_id, revision, agent_id, revision, token))
                 if not cur.rowcount:
-                    raise DraftConflict("草稿已更新，本次调试不能用于发布")
+                    raise DraftConflict("草稿已更新，本次调试不再关联当前草稿")
             conn.commit()
         finally:
             conn.close()
@@ -199,7 +190,7 @@ class AgentDraftStore:
                 row = self._read(cur, agent_id, lock=True)
                 check_revision(row, revision)
                 if not publishable(row):
-                    raise DraftConflict("请先完成当前草稿的调试，再确认发布")
+                    raise DraftConflict("当前草稿已发布，没有新的修改")
                 get_agent_profile_store().write_profile(cur, json.loads(row["draft_json"]))
                 cur.execute("""UPDATE da_agent_draft SET published_json = draft_json,
                                published_version = published_version + 1 WHERE agent_id = %s""", (agent_id,))

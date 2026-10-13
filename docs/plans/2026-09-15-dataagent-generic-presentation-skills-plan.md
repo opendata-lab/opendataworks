@@ -139,3 +139,13 @@
 T8 的「增」→ T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8 的「改」→ 验证。
 
 先补 `generate_report.py` / `format_answer.py` 的基线测试再迁移，否则这两个脚本的迁移等价性无从验证。
+
+## 存量绑定修复计划（2026-10-12）
+
+对应设计 §4.1，修正上文“存量由 T6 自动覆盖”的假设：现有 seed 仅创建缺失智能体，需数据迁移。
+
+1. 新增 `alembic/versions/20261012_000027_builtin_presentation_skills.py`，追加两个内置智能体的缺失展示技能，原子同步发布 profile 与草稿/发布快照，维护 revision、published_version 并撤销旧预览批准。
+2. 新增迁移回归测试，覆盖干净与脏草稿、已有技能、幂等性、无草稿、非内置和自定义智能体隔离、历史快照不变；复用草稿发布测试确认内置智能体可发布。
+3. 使用 `.venv-py313` 跑迁移、profile 和草稿相关 pytest；在本地 MySQL 实际执行 `alembic upgrade head`，通过真实 HTTP 验证工作台和发布 profile 一致、新话题快照带两个技能。
+4. 验证仅调整 DataAgent 数据绑定，无 Vue/Java/Pi/部署拓扑修改；记录实际 MySQL/Redis/Python 环境，模型执行和 UI 渲染未跑时明确注明。
+5. 上线先执行 Alembic 再提供服务；降级迁移不删除技能绑定。需要撤回技能时在工作台走编辑、保存、确认发布，不能自动删除可能由管理员主动启用的绑定。

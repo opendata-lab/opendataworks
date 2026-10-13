@@ -535,14 +535,12 @@
         </div>
         <div>
           <dt>调试状态</dt>
-          <dd class="success-text">
-            <Icon name="check" class="small" />调试完成
-          </dd>
+          <dd :class="{ 'success-text': runLabel === '调试完成' }">{{ runLabel }}</dd>
         </div>
       </dl>
       <label class="confirm-checkbox"
         ><input v-model="publishAck" type="checkbox" /><span
-          >已检查配置与调试结果</span
+          >已检查配置，确认发布</span
         ></label
       >
       <p class="publish-warning">
@@ -708,8 +706,10 @@ const canPublish = computed(
     canManage.value &&
     !dirty.value &&
     draft.can_publish &&
-    !previewError.value &&
-    !loading.value,
+    !loading.value &&
+    !busy.value &&
+    !running.value &&
+    !sending.value,
 );
 const runLabel = computed(() =>
   dirty.value ||
@@ -967,7 +967,7 @@ const optionsFor = (kind) =>
     ? capabilities.skills.map((s) => ({
         id: s.folder,
         name: s.folder,
-        description: s.enabled ? "已启用" : "未启用",
+        description: "",
       }))
     : capabilities.mcp_servers.map((s) => ({
         id: s.id,
@@ -1085,7 +1085,6 @@ async function beforePreviewSend({ attachments = [] } = {}) {
     }
     if (previewTopicId.value && previewRevision.value !== draft.revision) detachPreview(false);
     records.value = [];
-    draft.can_publish = false;
     return true;
   } finally {
     sending.value = false;
@@ -1099,7 +1098,6 @@ function onRunChange(event) {
   runStatus.value = event.detail?.status || "";
   activeTaskId.value = event.detail?.taskId || activeTaskId.value;
   if (running.value) {
-    draft.can_publish = false;
     draft.preview_status = "running";
   }
 }
@@ -1113,7 +1111,6 @@ async function onComplete() {
 }
 function onConversationError(event) {
   previewError.value = event.detail?.message || "调试失败";
-  draft.can_publish = false;
 }
 async function resetPreview() {
   if (running.value || !previewTopicId.value) return;

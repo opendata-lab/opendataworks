@@ -107,7 +107,7 @@ beforeEach(() => {
   dataagentApi.updateAgent.mockResolvedValue({
     ...profile,
     revision: 4,
-    can_publish: false,
+    can_publish: true,
     preview_status: null,
   })
   runtimeApi.getConfig.mockResolvedValue({
@@ -118,6 +118,14 @@ beforeEach(() => {
 })
 
 describe('agent draft workbench', () => {
+  it('does not label an agent-selected skill as disabled by global fallback settings', async () => {
+    dataagentApi.getAgentCapabilities.mockResolvedValue({ tools: ['Read'], skills: [{ folder: profile.skill_folders[0], enabled: false }], mcp_servers: [] })
+    const wrapper = mount()
+    await flushPromises()
+    expect(wrapper.vm.selectedResources('skills')[0].description).toBe('')
+    expect(wrapper.text()).not.toContain('未启用')
+    wrapper.unmount()
+  })
   it('loads the actual builtin prompt and restores saved draft configuration', async () => {
     const wrapper = mount()
     await flushPromises()
@@ -161,6 +169,7 @@ describe('agent draft workbench', () => {
     )
     expect(dataagentApi.publishAgent).not.toHaveBeenCalled()
     expect(wrapper.vm.draft.revision).toBe(4)
+    expect(wrapper.vm.canPublish).toBe(true)
     wrapper.unmount()
   })
   it('saves before shared-composer send and rotates an outdated preview without remounting', async () => {
@@ -197,7 +206,8 @@ describe('agent draft workbench', () => {
     expect(dataagentApi.updateAgent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('requires explicit acknowledgement before publishing the tested revision', async () => {
+  it('requires explicit acknowledgement before publishing the saved revision without a preview', async () => {
+    dataagentApi.getAgentDraft.mockResolvedValue({ ...profile, is_builtin: true, preview_task_id: null, preview_status: null })
     const wrapper = mount()
     await flushPromises()
     await wrapper.vm.handlePublish()
@@ -250,11 +260,11 @@ describe('agent draft workbench', () => {
     expect(dataagentApi.publishAgent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('keeps publication disabled after a stream error', async () => {
+  it('allows publishing saved changes after a stream error', async () => {
     const wrapper = mount()
     await flushPromises()
     wrapper.vm.onConversationError({ detail: { message: 'SSE 中断' } })
-    expect(wrapper.vm.canPublish).toBe(false)
+    expect(wrapper.vm.canPublish).toBe(true)
     expect(wrapper.vm.verdict).toBe('SSE 中断')
     wrapper.unmount()
   })

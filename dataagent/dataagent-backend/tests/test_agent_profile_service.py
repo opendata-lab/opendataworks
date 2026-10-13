@@ -131,6 +131,21 @@ def test_default_agent_payload_is_general_builtin_agent():
     assert payload["is_builtin"] is True
 
 
+def test_redeployment_seed_preserves_edited_builtin_profiles(monkeypatch):
+    store = _RecordingProfileStore()
+    default = store.profiles[agent_profile_service.DEFAULT_AGENT_ID]
+    platform = store.profiles[agent_profile_service.OPENDATAWORKS_AGENT_ID]
+    default.update(name="用户命名", skill_folders=["custom-skill"], system_prompt="用户提示词")
+    platform.update(skill_folders=[], system_prompt="平台自定义提示词")
+    monkeypatch.setattr(agent_profile_service, "get_agent_profile_store", lambda: store)
+    agent_profile_service.reset_builtin_agent_seed()
+    agent_profile_service.ensure_builtin_agent_profiles()
+    assert "save_profile" not in store.calls
+    assert store.profiles[agent_profile_service.DEFAULT_AGENT_ID] == default
+    assert default["name"] == "用户命名" and default["skill_folders"] == ["custom-skill"]
+    assert platform["skill_folders"] == [] and platform["system_prompt"] == "平台自定义提示词"
+
+
 def test_opendataworks_agent_payload_is_builtin_with_platform_capabilities():
     payload = agent_profile_service.opendataworks_agent_payload()
 

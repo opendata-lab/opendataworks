@@ -1,4 +1,4 @@
-"""Publication must be backed by a successful run of the current draft."""
+"""Saved changes may publish without a preview; revision checks still apply."""
 import json
 import pytest
 from fastapi.testclient import TestClient
@@ -25,8 +25,8 @@ def test_successful_current_preview_is_publishable():
     {'preview_revision': 2}, {'latest_task_id': 'task_new_failed'}, {'is_agent_preview': 0},
     {'preview_snapshot': '{}'}, {'preview_task_id': None},
 ])
-def test_old_failed_cancelled_or_nonpreview_runs_cannot_publish(updates):
-    assert not publishable({**ready_row(), **updates})
+def test_preview_status_does_not_block_publishing_saved_changes(updates):
+    assert publishable({**ready_row(), **updates})
 
 
 def test_same_config_cannot_publish_twice():
@@ -34,10 +34,16 @@ def test_same_config_cannot_publish_twice():
     assert not publishable(row)
 
 
-def test_runtime_snapshot_must_match_including_env_and_scope():
+def test_configuration_changes_can_publish_without_a_matching_preview():
     row = ready_row(); config = json.loads(row['draft_json']); config['env_vars'] = {'SAFE_FLAG': 'new'}
     row['draft_json'] = encode(config)
-    assert not publishable(row)
+    assert publishable(row)
+
+
+def test_new_builtin_or_custom_draft_can_publish_without_a_preview():
+    for builtin in (True, False):
+        config = configuration({**default_agent_payload(), "is_builtin": builtin})
+        assert publishable({"draft_json": encode(config), "published_json": None})
 
 
 def test_concurrent_revision_rejected():
