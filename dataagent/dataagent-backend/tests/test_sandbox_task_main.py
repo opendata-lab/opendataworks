@@ -3,8 +3,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
@@ -79,6 +83,62 @@ def test_serve_loop_exits_on_idle_timeout(monkeypatch, tmp_path: Path):
     assert exit_code == 0
 
 
+@pytest.mark.parametrize(
+    ("configured_limit", "question_size"),
+    [(1024, 256 * 1024), (12 * 1024 * 1024, 11 * 1024 * 1024)],
+)
+def test_serve_loop_reads_large_payload_and_followup_through_real_stdin(
+    configured_limit, question_size,
+):
+    # Exercise the production reader and result protocol over an OS pipe. Only
+    # model execution is stubbed; no provider or database is needed for framing.
+    script = """
+import asyncio
+import sandbox_task_main
+from core.task_executor import TaskExecutionResult
+
+async def execute(params, **kwargs):
+    await kwargs['emit']({'event_type': 'message_start'})
+    return TaskExecutionResult(
+        task_status='finished',
+        content=f'{params.task_id}:{len(params.question)}',
+        provider_id=params.provider_id,
+        model=params.model,
+    )
+
+sandbox_task_main._execute_task_stream_local = execute
+raise SystemExit(asyncio.run(sandbox_task_main._serve_loop()))
+"""
+    first = {**_payload(), "question": "x" * question_size}
+    second = {**_payload(), "task_id": "task-2"}
+    wire = "".join(json.dumps(payload) + "\n" for payload in (first, second))
+    env = {
+        **os.environ,
+        "DATAAGENT_SANDBOX_CHILD_IDLE_TIMEOUT": "10",
+        "AGENT_MAX_BUFFER_SIZE_BYTES": str(configured_limit),
+    }
+    process = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=BACKEND_ROOT,
+        env=env,
+        input=wire,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert process.returncode == 0, process.stderr
+    messages = [json.loads(line) for line in process.stdout.splitlines()]
+    assert [message["type"] for message in messages] == [
+        "record", "result", "record", "result",
+    ]
+    results = [message["result"] for message in messages if message["type"] == "result"]
+    assert [result["task_status"] for result in results] == ["finished", "finished"]
+    assert [result["content"] for result in results] == [
+        f"task-1:{question_size}", "task-2:5",
+    ]
+
+
 def test_sandbox_task_main_uses_process_cwd_as_prepared_workspace(monkeypatch, tmp_path: Path, capsys, caplog):
     captured: dict[str, object] = {}
 
@@ -112,3 +172,24 @@ def test_sandbox_task_main_uses_process_cwd_as_prepared_workspace(monkeypatch, t
     assert "sandbox.task.result task_id=task-1" in caplog.text
     assert "task_status=finished" in caplog.text
     assert "content_len=15" in caplog.text
+
+
+def test_serve_loop_returns_clear_error_for_input_exceeding_configured_limit():
+    process = subprocess.run(
+        [sys.executable, "-c", "import asyncio, sandbox_task_main; raise SystemExit(asyncio.run(sandbox_task_main._serve_loop()))"],
+        cwd=BACKEND_ROOT,
+        env={**os.environ, "DATAAGENT_SANDBOX_CHILD_IDLE_TIMEOUT": "10",
+             "AGENT_MAX_BUFFER_SIZE_BYTES": str(1024 * 1024)},
+        input=json.dumps({**_payload(), "question": "x" * (2 * 1024 * 1024)}) + "\n",
+        capture_output=True, text=True, timeout=30,
+    )
+    assert process.returncode == 1
+    messages = [json.loads(line) for line in process.stdout.splitlines()]
+    assert len(messages) == 1
+    assert messages[0]["type"] == "result"
+    result = messages[0]["result"]
+    assert result["task_status"] == "error"
+    assert result["error"]["code"] == "sandbox_input_too_large"
+    assert result["error"]["limit_bytes"] == 1024 * 1024
+    assert "超过沙箱输入上限" in result["content"]
+    assert "AGENT_MAX_BUFFER_SIZE_BYTES" in result["content"]

@@ -945,11 +945,27 @@ async def _run_on_warm_child(
             await emitted
 
     result: TaskExecutionResult | None = None
+    payload = json.dumps(asdict(params), ensure_ascii=False).encode("utf-8")
+    frame_limit = max(1024 * 1024, int(get_settings().agent_max_buffer_size_bytes))
+    if len(payload) > frame_limit:
+        message = (
+            f"任务输入（问题、历史记录及智能体配置）为 {len(payload)} 字节，"
+            f"超过沙箱输入上限 {frame_limit} 字节。"
+            "请缩短输入，或调整 AGENT_MAX_BUFFER_SIZE_BYTES。"
+        )
+        _append_task_log(log_path, f"result task_status=error code=sandbox_input_too_large size_bytes={len(payload)} limit_bytes={frame_limit}")
+        child.current_log_path = None
+        return TaskExecutionResult(
+            task_status="error", content=message,
+            error={"code": "sandbox_input_too_large", "message": message,
+                   "size_bytes": len(payload), "limit_bytes": frame_limit},
+            provider_id=params.provider_id, model=params.model,
+        )
     cancel_task = asyncio.create_task(
         _watch_cancel_warm(child, params.task_id, is_cancel_requested)
     )
     try:
-        process.stdin.write((json.dumps(asdict(params), ensure_ascii=False) + "\n").encode("utf-8"))
+        process.stdin.write(payload + b"\n")
         await process.stdin.drain()
         async for raw in process.stdout:
             text = raw.decode("utf-8", errors="replace").strip()
@@ -971,6 +987,8 @@ async def _run_on_warm_child(
                 result_payload = message.get("result") or {}
                 if isinstance(result_payload, dict):
                     result = _result_from_payload(result_payload, params)
+                    if (result.error or {}).get("code") == "sandbox_input_too_large":
+                        child.healthy = False
                     _append_task_log(
                         log_path,
                         (
@@ -1005,12 +1023,24 @@ async def _run_on_warm_child(
             provider_id=params.provider_id,
             model=params.model,
         )
-    error_message = "warm sandbox container exited without a result"
+    # stdout EOF can arrive just before asyncio observes the process exit.
+    # Bound this diagnostic wait so an exit code never delays a failed task indefinitely.
+    try:
+        returncode = await asyncio.wait_for(process.wait(), timeout=1)
+    except asyncio.TimeoutError:
+        returncode = process.returncode
+    exit_label = str(returncode) if returncode is not None else "未知（输出流已关闭）"
+    error_message = (
+        f"沙箱进程在返回任务结果前异常结束（退出码：{exit_label}）。"
+        f"请查看沙箱任务日志，任务 ID：{params.task_id}。"
+    )
     _append_task_log(log_path, f"result task_status=error error={error_message}")
     return TaskExecutionResult(
         task_status="error",
         content=error_message,
-        error={"code": "sandbox_container_no_result", "message": error_message},
+        error={"code": "sandbox_container_no_result", "message": error_message,
+               "exit_code": returncode, "container_name": child.container_name,
+               "task_id": params.task_id},
         provider_id=params.provider_id,
         model=params.model,
     )

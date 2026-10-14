@@ -10,6 +10,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from config import get_settings
 from core.task_control import CancelReason
 from core.task_executor import TaskExecutionInput, TaskExecutionResult, _execute_task_stream_local
 from core.topic_task_store import get_topic_task_store
@@ -98,9 +99,15 @@ async def _main() -> int:
     return 0 if result.task_status != "error" else 1
 
 
+def _stdin_frame_limit() -> int:
+    return max(1024 * 1024, int(get_settings().agent_max_buffer_size_bytes))
+
+
 async def _stdin_reader() -> asyncio.StreamReader:
     loop = asyncio.get_event_loop()
-    reader = asyncio.StreamReader()
+    # Each warm task arrives as one JSON line, including history and the agent
+    # snapshot. Match the runner's frame limit instead of asyncio's 64 KiB default.
+    reader = asyncio.StreamReader(limit=_stdin_frame_limit())
     protocol = asyncio.StreamReaderProtocol(reader)
     await loop.connect_read_pipe(lambda: protocol, sys.stdin)
     return reader
@@ -129,6 +136,21 @@ async def _serve_loop() -> int:
         except asyncio.TimeoutError:
             logger.info("sandbox child idle timeout reached; exiting serve loop")
             return 0
+        except ValueError:
+            limit = _stdin_frame_limit()
+            message = (
+                f"任务输入超过沙箱输入上限（{limit} 字节）。"
+                "请缩短问题、历史记录或智能体配置，或调整 AGENT_MAX_BUFFER_SIZE_BYTES。"
+            )
+            logger.exception("sandbox child input frame exceeded limit_bytes=%s", limit)
+            result = TaskExecutionResult(
+                task_status="error", content=message,
+                error={"code": "sandbox_input_too_large", "message": message, "limit_bytes": limit},
+            )
+            print(json.dumps({"type": "result", "result": asdict(result)}, ensure_ascii=False), flush=True)
+            # readline may have discarded only part of the oversized JSON line.
+            # Exit rather than trying to reuse an untrustworthy input stream.
+            return 1
         if not line:
             return 0
         text = line.decode("utf-8", errors="replace").strip()

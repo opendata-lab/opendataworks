@@ -90,6 +90,43 @@ strictly within one conversation's isolation boundary.
 
 Single-shot mode (no idle-timeout env) is unchanged for backward compatibility.
 
+The child stdin reader uses `max(1 MiB, AGENT_MAX_BUFFER_SIZE_BYTES)` for each
+payload line, matching the runner's stdout/stderr frame limit (the configured
+default is 10 MiB). History and agent snapshots can make a task larger than
+asyncio's 64 KiB default; leaving that default in place crashes the serve loop
+before it emits a result, which the runner reports as
+`warm sandbox container exited without a result`. The limit remains bounded;
+payloads larger than the configured frame budget are still outside this contract.
+The fix must be included in the runner image used as `DATAAGENT_SANDBOX_IMAGE`
+for child containers; existing warm children must be recreated to load it.
+
+### Input-limit and child-exit diagnostics (2026-10-14)
+
+Keep the existing NDJSON result envelope and task statuses. Before sending a
+warm task, the runner measures its UTF-8 JSON line against the same configured
+frame budget. An oversized task returns `sandbox_input_too_large`, with a Chinese
+message containing the actual bytes, permitted bytes, and advice to shorten the
+question/history/configuration or adjust `AGENT_MAX_BUFFER_SIZE_BYTES`. It never
+sends that oversized line to the child. This is a bounded input guard, not an
+automatic retry or a change to model-run timeouts.
+
+The child also catches stdin line-limit failures and emits a structured
+`sandbox_input_too_large` result before exiting, so a stale runner or differing
+configuration cannot turn that known failure into a generic missing-result
+message. A child returning this framing error is removed from the warm pool.
+
+For warm children that exit without a result, retain the existing
+`sandbox_container_no_result` code but display a Chinese explanation with the
+observed exit code and task ID, pointing to the sandbox task log. Record the
+container name and exit code in the error details. Wait at most one second for
+the process exit code after stdout closes; show it as unknown if the process
+has not exited. This diagnostic wait does not alter the model-run or SQL timeouts.
+Do not infer OOM or other
+causes from an exit code alone, and do not copy raw stderr or task contents into
+the user-visible message. Stderr remains in runner and per-task logs. Existing
+user cancellation and runner-stop results remain suspended with their current
+codes and messages.
+
 ### Runner warm pool
 
 The runner maintains an in-process pool of warm children keyed by container

@@ -120,6 +120,24 @@ File: `tests/test_topic_workspace.py`, `tests/test_topic_files.py`
 
 ## Verification
 
+### Input-limit and child-exit diagnostics follow-up (2026-10-14)
+
+- In `sandbox_task_main.py`, align stdin with the configured frame limit and
+  emit a structured error for a line that still exceeds that limit.
+- In `sandbox_runner_main.py`, reject oversized warm-task JSON before sending,
+  retain the child on this preflight rejection, and discard a child that returns
+  an input-framing error. Add the observed exit code, task ID, and log guidance
+  to warm missing-result errors without exposing raw stderr.
+- Extend the two sandbox test modules with real-pipe large-input/follow-up,
+  bounded oversized-input errors, warm child crash diagnostics, and cancellation
+  assertions. Run those modules plus `test_pi_runtime_frame_limit.py`.
+- Run a local HTTP-to-child container smoke when a usable runtime and runner
+  image are available. Report model/database/task-persistence coverage separately
+  from transport tests.
+- Rollout requires the runner image to include the updated Python sources and
+  existing warm children to be recreated. Backout uses the previous image; reuse
+  can also be disabled through the existing setting.
+
 - `pytest` for the two touched test modules in `dataagent/dataagent-backend`.
 - Local end-to-end container smoke is environment-dependent (requires a Docker
   daemon and the runner image). If it cannot be run in this environment, report

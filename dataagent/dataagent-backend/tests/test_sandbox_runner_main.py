@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 import pytest
@@ -556,6 +557,7 @@ def _warm_settings(tmp_path: Path) -> dict:
         # finally-block restore leaks the override into every later test and the
         # suite silently becomes order-dependent.
         "dataagent_runtime_kind",
+        "agent_max_buffer_size_bytes",
     ]
     originals = {key: getattr(settings, key) for key in keys}
     update_settings(
@@ -862,7 +864,8 @@ def test_warm_pool_waits_at_cap_until_busy_child_releases(monkeypatch, tmp_path:
         update_settings(originals)
 
 
-def test_warm_pool_cancel_kills_child_and_returns_suspended(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize("reason", ["user_cancel", "runner_stop"])
+def test_warm_pool_cancel_kills_child_and_returns_suspended(monkeypatch, tmp_path: Path, reason):
     sandbox_runner_main.WARM_POOL.clear()
     sandbox_runner_main.CANCELLED_TASK_IDS.clear()
     originals = _warm_settings(tmp_path)
@@ -883,7 +886,7 @@ def test_warm_pool_cancel_kills_child_and_returns_suspended(monkeypatch, tmp_pat
 
     async def scenario():
         params = TaskExecutionInput(**_payload(agent_snapshot=_agent_snapshot([])))
-        sandbox_runner_main.CANCELLED_TASK_IDS.add(params.task_id)
+        sandbox_runner_main.CANCELLED_TASK_IDS[params.task_id] = reason
         result = await sandbox_runner_main._execute_task_stream_warm(
             params, emit=emit, is_cancel_requested=lambda: False
         )
@@ -899,8 +902,103 @@ def test_warm_pool_cancel_kills_child_and_returns_suspended(monkeypatch, tmp_pat
         update_settings(originals)
 
     assert result.task_status == "suspended"
+    expected_code = "task_cancelled" if reason == "user_cancel" else "runner_stopped"
+    assert result.error["code"] == expected_code
     # A killed warm child is dropped from the pool on release.
     assert pool_size == 0
+
+
+def test_warm_pool_rejects_oversized_utf8_input_and_preserves_followup(monkeypatch, tmp_path):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.CANCELLED_TASK_IDS.clear()
+    originals = _warm_settings(tmp_path)
+    update_settings({"agent_max_buffer_size_bytes": 1024 * 1024})
+    build_calls = []
+
+    def fake_build(params, **kwargs):
+        build_calls.append(params.task_id)
+        return ("docker", "warm-input-limit", [sys.executable, "-c", _WARM_LOOP_CHILD])
+
+    monkeypatch.setattr(sandbox_runner_main, "_build_container_command", fake_build)
+
+    async def scenario():
+        params = TaskExecutionInput(**{**_payload(_agent_snapshot([])), "question": "问" * 400000})
+        async def emit(record):
+            pass
+        result = await sandbox_runner_main._execute_task_stream_warm(params, emit=emit)
+        assert len(sandbox_runner_main.WARM_POOL) == 1
+        followup = await sandbox_runner_main._execute_task_stream_warm(
+            TaskExecutionInput(**{**_payload(_agent_snapshot([])), "task_id": "task-2"}), emit=emit,
+        )
+        await sandbox_runner_main._shutdown_warm_pool()
+        return params, result, followup
+
+    try:
+        params, result, followup = asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        update_settings(originals)
+
+    assert result.task_status == "error"
+    assert result.error["code"] == "sandbox_input_too_large"
+    assert result.error["size_bytes"] == len(json.dumps(asdict(params), ensure_ascii=False).encode("utf-8"))
+    assert result.error["limit_bytes"] == 1024 * 1024
+    assert "超过沙箱输入上限" in result.content
+    assert "AGENT_MAX_BUFFER_SIZE_BYTES" in result.content
+    assert "问" * 100 not in result.content
+    assert followup.content == "warm-ok-task-2"
+    assert build_calls == ["task-1"]
+
+
+@pytest.mark.parametrize("child_reports_limit", [False, True])
+def test_warm_pool_reports_crash_or_child_input_limit_and_discards_child(
+    monkeypatch, tmp_path, child_reports_limit,
+):
+    sandbox_runner_main.WARM_POOL.clear()
+    sandbox_runner_main.CANCELLED_TASK_IDS.clear()
+    originals = _warm_settings(tmp_path)
+    child_code = "import sys; sys.stdin.readline(); "
+    if child_reports_limit:
+        child_code += (
+            "import json; print(json.dumps({'type': 'result', 'result': {'task_status': 'error', "
+            "'content': '任务输入超过沙箱输入上限', 'error': {'code': 'sandbox_input_too_large', "
+            "'message': '任务输入超过沙箱输入上限'}}}), flush=True); sys.exit(1)"
+        )
+    else:
+        child_code += "print('ValueError: child startup failed', file=sys.stderr, flush=True); sys.exit(7)"
+    monkeypatch.setattr(
+        sandbox_runner_main, "_build_container_command",
+        lambda params, **kwargs: ("docker", "warm-crash", [sys.executable, "-c", child_code]),
+    )
+
+    async def scenario():
+        async def emit(record):
+            raise AssertionError(record)
+        result = await sandbox_runner_main._execute_task_stream_warm(
+            TaskExecutionInput(**_payload(_agent_snapshot([]))), emit=emit,
+        )
+        assert not sandbox_runner_main.WARM_POOL
+        return result
+
+    try:
+        result = asyncio.run(scenario())
+    finally:
+        sandbox_runner_main.WARM_POOL.clear()
+        update_settings(originals)
+
+    assert result.task_status == "error"
+    if child_reports_limit:
+        assert result.error["code"] == "sandbox_input_too_large"
+        assert result.content == "任务输入超过沙箱输入上限"
+    else:
+        assert result.error["code"] == "sandbox_container_no_result"
+        assert result.error["exit_code"] == 7
+        assert result.error["container_name"] == "warm-crash"
+        assert result.error["task_id"] == "task-1"
+        assert "退出码：7" in result.content
+        assert "任务 ID：task-1" in result.content
+        assert "沙箱任务日志" in result.content
+        assert "ValueError" not in result.content
 
 
 def test_warm_pool_evicts_idle_lru_over_cap(monkeypatch, tmp_path: Path):
@@ -1199,4 +1297,3 @@ def test_build_container_command_auto_mounts_platform_tools_and_sets_env(tmp_pat
     assert not any("DATAAGENT_PLATFORM_SKILL_ROOT" in str(item) for item in command)
     # 跨技能引用的通用锚点，与平台技能是否启用无关
     assert "SKILLS_ROOT_DIR=/mnt/workspace/.claude/skills" in command
-
