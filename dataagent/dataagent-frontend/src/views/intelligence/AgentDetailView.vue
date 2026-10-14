@@ -364,12 +364,14 @@
               </div>
               <button
                 v-if="canManage"
-                class="icon-button"
+                class="icon-button preview-reset"
                 :disabled="running || sending || clearing || !previewTopicId"
                 aria-label="清空调试对话"
+                title="清空当前调试对话（预览对话不进入正式历史）"
                 @click="resetPreview"
               >
-                <Icon name="refresh" />
+                <Icon name="debug" />
+                <span>{{ clearing ? "清空中…" : "清空调试" }}</span>
               </button>
             </header>
             <div class="preview-tabs" role="tablist">
@@ -1258,6 +1260,15 @@ onBeforeUnmount(() => { loadGeneration++; window.removeEventListener("beforeunlo
   align-items: center;
   justify-content: center;
   color: var(--secondary);
+}
+.preview-reset {
+  display: inline-flex;
+  gap: 5px;
+  width: auto;
+  padding: 0 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .preview-conversation {
   display: block;
