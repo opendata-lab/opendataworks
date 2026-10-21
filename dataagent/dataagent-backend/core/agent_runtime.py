@@ -797,15 +797,6 @@ def _result_subtype_to_reason(subtype: str, detail: str) -> str:
     return "模型会话未正常结束"
 
 
-def _resolve_max_turns(cfg, execution_mode: str | None, agent_max_turns: int | None = None) -> int:
-    if int(agent_max_turns or 0) > 0:
-        return max(1, int(agent_max_turns or 0))
-    mode = str(execution_mode or "").strip().lower()
-    if mode in {"background", "auto"}:
-        return max(1, int(getattr(cfg, "agent_background_max_turns", 0) or getattr(cfg, "agent_max_turns", 0) or 40))
-    return max(1, int(getattr(cfg, "agent_interactive_max_turns", 0) or getattr(cfg, "agent_max_turns", 0) or 24))
-
-
 def _has_visible_value(value: Any) -> bool:
     if value is None:
         return False

@@ -28,6 +28,7 @@ test("Skill tool is registered when skills are enabled", async () => {
     });
 
     const tools = createTools({
+      toolTimeoutMs: 30_000,
       boundary,
       workspaceRoot: tmpDir,
       runtimeEnv: {},

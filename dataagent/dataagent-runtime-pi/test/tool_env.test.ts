@@ -152,6 +152,38 @@ test("a shell command exceeding its timeout is killed", async () => {
   assert.equal(result.timedOut, true);
 });
 
+for (const mode of ["timeout", "cancel"] as const) {
+  test(`${mode} stops background descendants and closes their output pipes`, async (t) => {
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "odw-shell-group-"));
+    t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+    const controller = new AbortController();
+    const timer = mode === "cancel" ? setTimeout(() => controller.abort(), 50) : undefined;
+    t.after(() => clearTimeout(timer));
+    const started = performance.now();
+    const result = await runShell("(sleep 0.4; echo survived > child-survived) & wait", {
+      cwd, env: buildShellEnv(SECRET_ENV, {}),
+      timeoutMs: mode === "timeout" ? 50 : 3000,
+      signal: controller.signal,
+    });
+    assert.ok(performance.now() - started < 2000, "must not wait out the full command budget");
+    assert.equal(result.timedOut, mode === "timeout");
+    // Returning early alone is insufficient: no descendant may write later.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    assert.equal(fs.existsSync(path.join(cwd, "child-survived")), false);
+  });
+}
+
+test("an already cancelled command is never spawned", async (t) => {
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "odw-shell-cancelled-"));
+  t.after(() => fs.rmSync(cwd, { recursive: true, force: true }));
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(runShell("echo ran > should-not-exist", {
+    cwd, env: buildShellEnv(SECRET_ENV, {}), timeoutMs: 3000, signal: controller.signal,
+  }), /aborted before start/);
+  assert.equal(fs.existsSync(path.join(cwd, "should-not-exist")), false);
+});
+
 test("tools refuse a path outside the workspace before touching the filesystem", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "odw-tools-"));
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), "odw-outside-"));
@@ -171,6 +203,7 @@ test("tools refuse a path outside the workspace before touching the filesystem",
   };
 
   const tools = createTools({
+    toolTimeoutMs: 30_000,
     boundary: new WorkspaceBoundaryEnforcer(policy),
     workspaceRoot: root,
     runtimeEnv: {},
@@ -208,6 +241,7 @@ test("a failing shell command throws so the model and the UI both see an error",
     readonly_commands: [],
   };
   const tools = createTools({
+    toolTimeoutMs: 30_000,
     boundary: new WorkspaceBoundaryEnforcer(policy),
     workspaceRoot: root,
     runtimeEnv: {},
@@ -239,6 +273,7 @@ test("a failed command inside a pipeline is not masked by a successful final sta
     readonly_commands: [],
   };
   const tools = createTools({
+    toolTimeoutMs: 30_000,
     boundary: new WorkspaceBoundaryEnforcer(policy),
     workspaceRoot: root,
     runtimeEnv: {},

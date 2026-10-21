@@ -47,6 +47,7 @@ function initPayload(root: string, overrides: Partial<CellInitPayload> = {}): Ce
       idle_timeout_seconds: 10,
       max_turns: 30,
       max_tool_calls: 50,
+      bash_timeout_seconds: 30,
     },
     ...overrides,
   };
@@ -648,3 +649,60 @@ test("folding keeps the tool's own details alongside the fold provenance", async
   // The transcript still holds the whole payload, not the digest.
   assert.match(JSON.stringify(completed.payload.output), /x{2000}/);
 });
+
+/** Drive real tools with a deterministic model, then finish on the next turn. */
+function bashBatchFactory(commands: string[]) {
+  let turn = 0;
+  return () => ({
+    model: { api: "faux", provider: "faux", id: "faux-1" } as never,
+    streamFn: (() => {
+      const stream = createAssistantMessageEventStream();
+      const wantsTool = turn++ === 0;
+      queueMicrotask(() => {
+        const message = {
+          role: "assistant" as const,
+          content: wantsTool
+            ? commands.map((command, index) => ({
+                type: "toolCall", id: `budget-${index}`, name: "Bash", arguments: { command },
+              }))
+            : [{ type: "text", text: "done" }],
+          api: "faux", provider: "faux", model: "faux-1",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          stopReason: wantsTool ? "toolUse" : "stop", timestamp: Date.now(),
+        };
+        stream.push({ type: "start", partial: message as never });
+        stream.push({ type: "done", reason: wantsTool ? "toolUse" : "stop", message: message as never });
+        stream.end();
+      });
+      return stream;
+    }) as never,
+  });
+}
+
+for (const timeout of [0.05, 2]) {
+  test(`cell.init Bash timeout ${timeout}s reaches the real command`, async (t) => {
+    const root = workspace();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const init = initPayload(root);
+    init.limits.bash_timeout_seconds = timeout;
+    const { events } = await runCell(init, bashBatchFactory(["sleep 0.3 & wait"]) as never);
+    const completed = events.find((event) => event.type === "tool.completed");
+    assert.ok(completed);
+    assert.equal(completed.payload.is_error, timeout < 0.3);
+    if (timeout < 0.3) assert.match(JSON.stringify(completed.payload.output), /was killed/);
+  });
+}
+
+for (const count of [2, 3]) {
+  test(`tool budget 2 permits exactly 2 calls, requested ${count}`, async (t) => {
+    const root = workspace();
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const init = initPayload(root);
+    init.limits.max_tool_calls = 2;
+    const { result, events } = await runCell(init, bashBatchFactory(Array(count).fill("echo ok")) as never);
+    const successes = events.filter((event) => event.type === "tool.completed" && !event.payload.is_error);
+    assert.equal(successes.length, 2);
+    assert.equal(result.terminal_status, count === 2 ? "success" : "failed");
+    if (count > 2) assert.equal(events.at(-1)?.payload.error_code, "PI_LIMIT_EXCEEDED");
+  });
+}

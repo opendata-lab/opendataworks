@@ -21,7 +21,6 @@ import { createFetchToolResultTool, createSearchToolResultTool } from "./fetch-t
 
 const MAX_OUTPUT_CHARS = 100 * 1024;
 const MAX_READ_BYTES = 64 * 1024;
-const DEFAULT_TOOL_TIMEOUT_MS = 120_000;
 
 /**
  * Environment variables a skill script legitimately needs. Everything else in
@@ -70,7 +69,7 @@ export interface ToolRegistryOptions {
   boundary: WorkspaceBoundaryEnforcer;
   workspaceRoot: string;
   runtimeEnv: Record<string, string>;
-  toolTimeoutMs?: number;
+  toolTimeoutMs: number;
   skills?: SkillEntry[];
   extraTools?: unknown[];
 }
@@ -117,6 +116,9 @@ export async function runShell(
   command: string,
   options: { cwd: string; env: Record<string, string>; timeoutMs: number; signal?: AbortSignal }
 ): Promise<ShellResult> {
+  if (options.signal?.aborted) {
+    throw new Error("Bash command aborted before start");
+  }
   return new Promise<ShellResult>((resolve, reject) => {
     // A pipeline must fail when any stage fails. Without pipefail, commands such
     // as `python missing.py | head` inherit head's zero exit code and are
@@ -124,6 +126,9 @@ export async function runShell(
     const child = spawn("bash", ["-o", "pipefail", "-c", command], {
       cwd: options.cwd,
       env: options.env,
+      // Linux containers and local macOS use a POSIX process group. Killing
+      // only bash leaves pipeline/background children running with open pipes.
+      detached: true,
     });
 
     const stdoutChunks: Buffer[] = [];
@@ -152,12 +157,20 @@ export async function runShell(
       droppedBytes += Math.max(0, chunk.length - remaining);
     });
 
+    const terminate = () => {
+      if (child.pid === undefined) return;
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "ESRCH") reject(err);
+      }
+    };
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill("SIGKILL");
+      terminate();
     }, options.timeoutMs);
 
-    const onAbort = () => child.kill("SIGTERM");
+    const onAbort = terminate;
     options.signal?.addEventListener("abort", onAbort, { once: true });
 
     child.on("close", (code) => {
@@ -176,6 +189,8 @@ export async function runShell(
       options.signal?.removeEventListener("abort", onAbort);
       reject(err);
     });
+    // Cover cancellation between the initial check and listener registration.
+    if (options.signal?.aborted) onAbort();
   });
 }
 
@@ -214,7 +229,10 @@ const BASH_SCHEMA = Type.Object({
 
 export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
   const { boundary, workspaceRoot, runtimeEnv } = options;
-  const timeoutMs = options.toolTimeoutMs ?? DEFAULT_TOOL_TIMEOUT_MS;
+  const timeoutMs = options.toolTimeoutMs;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("Bash timeout must be a positive number of milliseconds");
+  }
 
   const readTool: AgentTool<typeof READ_SCHEMA> = {
     name: "Read",

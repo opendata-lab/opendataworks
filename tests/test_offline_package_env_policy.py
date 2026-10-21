@@ -132,6 +132,30 @@ def test_generated_offline_archive_contains_template_but_not_runtime_env(
 
     with tarfile.open(output_path, mode="r:*") as archive:
         package_paths = [Path(name) for name in archive.getnames()]
+        if script_path == REPO_ROOT / "scripts" / "create-offline-package.sh":
+            template_name = next(name for name in archive.getnames() if name.endswith("/deploy/.env.example"))
+            template = archive.extractfile(template_name).read().decode("utf-8")
+            assert "DATAAGENT_LLM_JSON_FILE" not in template
+            assert "DATAAGENT_SANDBOX_MODE=container" in template
+            assert "DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills" in template
+            assert "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:env-policy-test" in template
+            assert not any(str(path).endswith("/dataagent-runtime/settings.json") for path in package_paths)
+            # Validate the rewritten artifact, not just the source template. No
+            # daemon or service startup is needed for Compose interpolation.
+            compose = shutil.which("docker-compose")
+            if compose:
+                config_dir = tmp_path / "packaged-compose"
+                config_dir.mkdir()
+                (config_dir / ".env").write_text(template, encoding="utf-8")
+                for mode in ("dev", "prod"):
+                    file_name = f"docker-compose.{mode}.yml"
+                    member = next(name for name in archive.getnames() if name.endswith(f"/deploy/{file_name}"))
+                    (config_dir / file_name).write_bytes(archive.extractfile(member).read())
+                    subprocess.run(
+                        [compose, "--env-file", str(config_dir / ".env"), "-f", str(config_dir / file_name),
+                         "config", "--quiet"],
+                        cwd=config_dir, capture_output=True, text=True, check=True,
+                    )
 
     assert any(path.name == ".env.example" and path.parent.name == "deploy" for path in package_paths)
     assert not any(path.name == ".env" for path in package_paths)

@@ -114,6 +114,7 @@ export interface CellInitPayload {
     idle_timeout_seconds: number;
     max_turns: number;
     max_tool_calls: number;
+    bash_timeout_seconds: number;
   };
   governance_settings?: GovernanceSettings;
 }

@@ -122,7 +122,7 @@ if [[ "$AUTO_COPY_ENV" = true ]]; then
     if [[ ! -f "$ASSETS_DIR/.env" && -f "$ASSETS_DIR/.env.example" ]]; then
         log "No deploy/.env detected, copying from deploy/.env.example"
         cp "$ASSETS_DIR/.env.example" "$ASSETS_DIR/.env"
-        log "Review $ASSETS_DIR/.env and adjust DolphinScheduler settings if needed"
+        log "Review $ASSETS_DIR/.env and review database credentials, JWT secret and service tokens"
     fi
 fi
 

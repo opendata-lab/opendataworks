@@ -129,6 +129,7 @@ export class Cell {
       const tools = createTools({
         boundary,
         workspaceRoot: init.workspace.project_cwd,
+        toolTimeoutMs: init.limits.bash_timeout_seconds * 1000,
         runtimeEnv: init.runtime_env ?? {},
         skills: init.skills,
         extraTools: mcpBridge.tools,
@@ -320,7 +321,7 @@ export class Cell {
         beforeToolCall: async (context) => {
           toolCalls += 1;
           if (init.limits.max_tool_calls > 0 && toolCalls > init.limits.max_tool_calls) {
-            limitDenial = `已达到单轮工具调用上限 ${init.limits.max_tool_calls}`;
+            limitDenial = `已达到本次任务工具调用上限 ${init.limits.max_tool_calls}`;
             return { block: true, reason: limitDenial, terminate: true };
           }
           // Second line of defence. The tools enforce the boundary themselves,

@@ -51,6 +51,9 @@ def _context(tmp_path: Path, **overrides: Any) -> PiRunContext:
         boundary_policy={"policy_version": 1, "allowed_roots": [str(tmp_path)]},
         total_timeout_seconds=10,
         idle_timeout_seconds=5,
+        max_turns=24,
+        max_tool_calls=100,
+        bash_timeout_seconds=3,
     )
     defaults.update(overrides)
     return PiRunContext(**defaults)
@@ -102,6 +105,8 @@ async def test_happy_path_streams_events_and_reports_success(tmp_path: Path):
         assert init["payload"]["model"]["api_format"] == "/v1/messages"
         assert init["payload"]["system_prompt"] == "sys"
         assert init["payload"]["limits"]["total_timeout_seconds"] == 10
+        assert init["payload"]["limits"]["max_tool_calls"] == 100
+        assert init["payload"]["limits"]["bash_timeout_seconds"] == 3
         send("cell.ready", {"manifest": {"runtime_kind": "pi_agent_core"}})
         event(1, "run.started")
         event(2, "turn.started", {"turn_id": "turn-1"})

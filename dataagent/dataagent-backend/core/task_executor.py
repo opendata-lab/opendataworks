@@ -13,7 +13,7 @@ from typing import Any, Awaitable, Callable
 
 import httpx
 
-from config import get_settings, resolve_runtime_kind, resolve_workspace_scratch_dirs
+from config import get_settings, resolve_run_limits, resolve_runtime_kind, resolve_workspace_scratch_dirs
 from core.agent_profile_service import DEFAULT_AGENT_ID, normalize_agent_snapshot, normalize_permission_mode
 from core.context_governance import build_governance_settings
 from core.task_status import from_engine_outcome as task_status_from_engine_outcome
@@ -47,7 +47,6 @@ from core.agent_runtime import (
     _format_exception_reason,
     _is_recoverable_timeout_reason,
     _recover_partial_content,
-    _resolve_max_turns,
     _resolve_sdk_permission_mode,
     _result_subtype_to_reason,
     _safe_base_url,
@@ -94,6 +93,8 @@ class TaskExecutionInput:
         execution_mode: ``interactive`` or ``background``/``auto`` timeout tier.
         agent_snapshot: frozen agent profile (skills, data scope, max_turns, ...).
         permission_mode: write/high-risk confirmation policy for this run.
+        runtime_limits: effective control-plane budgets carried through the
+            internal sandbox protocol; public requests cannot set this field.
     """
 
     task_id: str
@@ -111,6 +112,8 @@ class TaskExecutionInput:
     execution_mode: str = "background"
     agent_snapshot: dict[str, Any] | None = None
     permission_mode: str | None = None
+    # Internal control-plane -> child contract, not a public request override.
+    runtime_limits: dict[str, int] | None = None
 
 
 @dataclass
@@ -755,6 +758,11 @@ async def execute_task_stream(
     """
     cfg = get_settings()
     if _should_use_sandbox_runner(cfg):
+        params.runtime_limits = resolve_run_limits(
+            cfg, params.execution_mode,
+            agent_max_turns=int((params.agent_snapshot or {}).get("max_turns") or 0),
+            total_timeout_seconds=params.timeout_seconds,
+        )
         return await _execute_task_stream_via_runner(
             params,
             emit=emit,
@@ -959,6 +967,12 @@ async def _execute_task_stream_via_pi_runtime(
             session_id="",
         )
 
+    limits = params.runtime_limits or resolve_run_limits(
+        cfg, params.execution_mode,
+        agent_max_turns=int((agent_snapshot or {}).get("max_turns") or 0),
+        total_timeout_seconds=params.timeout_seconds,
+    )
+    logger.info("task.pi.limits task_id=%s execution_mode=%s limits=%s", params.task_id, params.execution_mode, limits)
     ctx = PiRunContext(
         task_id=params.task_id,
         topic_id=params.topic_id,
@@ -984,10 +998,8 @@ async def _execute_task_stream_via_pi_runtime(
             for name, root in dict((skill_runtime or {}).get("enabled_roots") or {}).items()
         ],
         mcp_servers=mcp_servers_list,
-        total_timeout_seconds=int(params.timeout_seconds or 0) or int(getattr(cfg, "dataagent_run_total_timeout_seconds", 600)),
-        idle_timeout_seconds=int(getattr(cfg, "dataagent_run_idle_timeout_seconds", 300)),
+        **limits,
         governance_settings=build_governance_settings(cfg, provider_env),
-        max_turns=_resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0)),
         max_output_tokens=max_output_tokens,
     )
 
@@ -1147,7 +1159,9 @@ async def _execute_task_stream_local(
     # logical_permission_mode is the session choice (plan/default/acceptEdits/
     # bypassPermissions); the SDK permission_mode is decided after tool mounting.
     logical_permission_mode = normalize_permission_mode(requested_permission_mode)
-    max_turns = _resolve_max_turns(cfg, params.execution_mode, int((agent_snapshot or {}).get("max_turns") or 0))
+    max_turns = (params.runtime_limits or resolve_run_limits(
+        cfg, params.execution_mode, agent_max_turns=int((agent_snapshot or {}).get("max_turns") or 0),
+    ))["max_turns"]
     setting_sources = ["project"]
     mcp_servers = _build_portal_mcp_servers(
         cfg,

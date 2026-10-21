@@ -138,15 +138,7 @@ tar -C "$REPO_ROOT/scripts" --exclude='build' -cf - . | tar -C "$PACKAGED_SCRIPT
 
 # 评测工具源码由 scripts/create-evals-offline-package.sh 打入独立附加包。
 
-# 3. 复制 DataAgent 运行时配置（不打包整个 dataagent 源码目录）
-if [[ -f "$REPO_ROOT/dataagent/.claude/settings.json" ]]; then
-    log "Copying DataAgent runtime settings"
-    cp "$REPO_ROOT/dataagent/.claude/settings.json" "$PACKAGED_DATAAGENT_RUNTIME_DIR/settings.json"
-else
-    log "No DataAgent settings.json found, creating empty runtime settings"
-    printf '{\n}\n' > "$PACKAGED_DATAAGENT_RUNTIME_DIR/settings.json"
-fi
-
+# 3. 复制 bundled Skills；供应商/模型配置由目标环境 registry 管理。
 if [[ -d "$REPO_ROOT/dataagent/.claude/skills" ]]; then
     log "Copying DataAgent editable skills"
     tar -C "$REPO_ROOT/dataagent/.claude/skills" --exclude='*-assistant' -cf - . | tar -C "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills" -xf -
@@ -214,7 +206,6 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
-        -e "s|^DATAAGENT_LLM_JSON_FILE=.*|DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json|" \
         -e "s|^DATAAGENT_SKILLS_DIR=.*|DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills|" \
         -e "s|^# *DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
         -e "s|^DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
@@ -236,8 +227,6 @@ rewrite_offline_env_file() {
         echo "OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_PORTAL_MCP_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}" >> "$env_file"
-    grep -q '^DATAAGENT_LLM_JSON_FILE=' "$env_file" 2>/dev/null || \
-        echo "DATAAGENT_LLM_JSON_FILE=./dataagent-runtime/settings.json" >> "$env_file"
     grep -q '^DATAAGENT_SKILLS_DIR=' "$env_file" 2>/dev/null || \
         echo "DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills" >> "$env_file"
     # 离线包默认开启 sandbox 容器模式（每个 task 由 sandbox runner 启动独立 child 容器执行），

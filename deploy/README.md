@@ -2,6 +2,92 @@
 
 This guide covers both Online (source code) and Offline (deployment package) deployment methods.
 
+## 部署输入：默认优先
+
+`deploy/.env.example` 只展开 12 个常规安装项。首次安装复制为 `.env`，设置数据库
+凭据、JWT 密钥、共享服务令牌及宿主目录即可。密码须与实际 MySQL 用户一致；
+复用已有数据卷时，修改 `.env` 不会重建用户或改写库内密码。
+
+| 配置位置 | 内容 |
+| --- | --- |
+| `.env` | 凭据、宿主路径、镜像和必要部署选择 |
+| Compose | 固定服务接线、共享令牌映射；DataAgent 通过一个 YAML anchor 共用 |
+| 代码默认 | 任务租约/心跳、调度扫描、缓存/池、超时等策略 |
+| `docker/dataagent/dataagent_config_docker.py` | backend 的 `DATAAGENT_SETTINGS` 运行策略覆盖及登录认证 |
+| 管理页面 | 供应商/模型、助手、已导入的 MCP 配置 |
+
+通常不用添加高级配置。确有需要时，`.env` 支持代码原生字段的大写形式：例如
+`TASK_MAX_CONCURRENCY=12`、`SCHEDULE_SCAN_INTERVAL_SECONDS=20`，不再附加
+`DATAAGENT_` 别名前缀。backend 策略优先使用已有 `DATAAGENT_SETTINGS`，不要在
+两处同时覆盖同一字段；runner 的池/隔离策略可用原生
+`DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS` 等环境项。应用服务的 `env_file` 保留，
+静态前端不再接收全量部署变量。
+
+可选部署项在 `.env.example` 保持注释：UID/GID 默认 `1000:1000`，runner 默认
+`0:0`；容器 socket 默认 `/var/run/docker.sock`；Pi 的 Node 和编译产物路径使用
+镜像内的 ENV；源码默认直接执行，离线包自动填 `DATAAGENT_SANDBOX_MODE=container`。
+标准 runner 镜像只带 Docker CLI。Podman 宿主通过 `DATAAGENT_DOCKER_SOCKET`
+挂载其 Docker 兼容 API socket，保持 `DATAAGENT_SANDBOX_BACKEND=docker` 默认值；
+设置为 `podman` 需要自行构建包含 Podman CLI 的 runner 镜像。
+生产网络默认 `10.71.0.0/24`、网关 `10.71.0.1`，遇到 VPN/宿主网段冲突再修改；
+dev 使用 Compose 默认网络。时间戳、重启和健康检查策略仍保留原部署行为。
+
+升级已有 `.env` 时不自动覆盖。需要人工迁移的旧项：
+
+| 旧项 | 处理 |
+| --- | --- |
+| `DATAAGENT_TASK_*` | 改用 `TASK_*` 或 `DATAAGENT_SETTINGS` 的小写字段 |
+| `DATAAGENT_SCHEDULE_*` | 改用 `SCHEDULE_*` 或 `DATAAGENT_SETTINGS` 的小写字段 |
+| `DATAAGENT_REDIS_DB` / `DATAAGENT_REDIS_PASSWORD` | 需要覆盖时使用 `REDIS_DB` / `REDIS_PASSWORD`；连接认证应与实际 Redis 服务一致 |
+| `DATAAGENT_MYSQL_DATABASE` | 业务库统一使用 `MYSQL_DATABASE`；会话库仍可用 `DATAAGENT_SESSION_MYSQL_DATABASE` |
+| `DATAAGENT_TASK_PERMISSION_WAIT_SECONDS` | 删除，审批/提问已持久化挂起，不使用等待超时 |
+| `DATAAGENT_LLM_JSON_FILE` | 删除，模型配置在 registry，不再打包来源不明的 settings.json |
+| `OPENDATAWORKS_DEV_SUBNET/GATEWAY` | 删除，dev Compose 未使用这些字段 |
+
+内部 API 地址由服务拓扑决定；Portal MCP 的地址/令牌环境值仅用于首次 registry
+bootstrap，后续在管理页面维护。`PORTAL_MCP_TOKEN_HEADER_NAME` 默认
+`X-Portal-MCP-Token`，确需修改时一处设置会同步给 client/frontdoor。
+Portal MCP keep-alive 默认 600 秒（镜像入口维护），不要在 Compose 重复写默认。
+版本升级使用 `compose pull` 后重建对应服务；keep-alive 不是 MCP 重启/OOM 的恢复机制。
+
+## DataAgent 运行配置归属
+
+默认配置即可运行，只覆盖确有差异的字段；完整说明见
+[运行预算设计](../docs/design/2026-10-15-dataagent-runtime-budgets-design.md)。
+
+- 助手负责能力与权限，以及可选的 `max_turns`：0 继承全局，正数覆盖每次任务
+  的模型轮数（不是整段聊天的消息数量）。内置助手保持继承，不批量改写已有助手。
+- 模型负责 provider/model 和 `max_output_tokens`；Pi 未配置输出上限时使用 8192。
+- 全局负责轮数默认、工具次数、超时、并发、上下文与沙箱。按需在已有
+  `DATAAGENT_SETTINGS`（`docker/dataagent/dataagent_config_docker.py.example`）
+  中覆盖，或使用字段名大写的环境变量。外置配置覆盖环境变量；不要重复配置同一项。
+
+| 全局默认 | 交互 | auto / 后台 |
+| --- | ---: | ---: |
+| `agent_*_max_turns` | 24 | 40 |
+| `agent_*_max_tool_calls`（Pi） | 100 | 200 |
+| `agent_*_timeout_seconds` | 360 | 1800 |
+| `agent_*_bash_timeout_seconds`（Pi） | 300 | 900 |
+| `agent_*_sql_read_timeout_seconds` | 300 | 900 |
+
+`*` 为 `interactive` 或 `background`；页面发送 `auto`，走后台档。
+此预算表按默认 Pi 引擎的执行路径解释；Claude SDK 本次仅共用轮数继承，
+其原有执行/等待机制保持现状。
+SQL 写入默认 60 秒；Pi 无活动超时 `dataagent_run_idle_timeout_seconds` 为 300 秒，
+它统计运行时事件（包括工具心跳），不等价于业务进展。SQL 超时必须不大于 Bash
+超时，Bash 必须小于总超时。实际预算由控制面传进子容器，日志 `task.pi.limits`
+可核对。工具次数/Bash 限制仅接入 Pi，不作用于显式选择的 Claude SDK。
+
+升级时移除旧 `agent_timeout_seconds`、`agent_max_turns`，分别迁移到两个模式字段。
+移除未生效的 `agent_interactive_idle_timeout_seconds`、
+`agent_background_idle_timeout_seconds`，统一使用 `dataagent_run_idle_timeout_seconds`；
+移除重复的 `dataagent_run_total_timeout_seconds`，使用模式总超时。
+外置配置中的旧字段会被拒绝；环境中的旧字段不再生效。
+新部署引擎统一默认 `pi_agent_core`；已有 `.env` 显式设置 `claude_code` 的部署
+继续使用 Claude，升级时按实际引擎意图调整。预算变更需重启后端；协议更新需同时
+更新 backend 与 runner 镜像、重启沙箱 runner 清理旧暖容器；已失败任务需重新提交。
+Nginx 两个模板默认 1860 秒，覆盖后台总预算；自定义更长总预算时一并审查代理设置。
+
 ## Deployment Topology
 
 当前仓库维持两条并行智能体产品线：
@@ -50,7 +136,7 @@ Use this method if you have internet access and are deploying directly from the 
    # Edit .env for database credentials; DolphinScheduler config is set in System Settings after startup
    vim .env
    ```
-   后端主库连接通过 `.env` 中的 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD` 注入。默认值指向本 compose 内的 `mysql:3306/opendataworks`，如连接外部 MySQL，请同步调整这三个变量。
+   后端主库连接由 Compose 从 `.env` 的 `MYSQL_DATABASE`、`MYSQL_USER`、`MYSQL_PASSWORD` 推导，默认连接 `mysql:3306`。外部 MySQL 仍可显式填写 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD`，三项优先于推导值。
 
 3. **Start Services**:
    ```bash
@@ -135,7 +221,7 @@ Use this method for isolated environments without internet access. You will use 
    # Edit .env and configure settings
    vim deploy/.env
    ```
-   后端主库连接通过 `deploy/.env` 中的 `SPRING_DATASOURCE_URL`、`SPRING_DATASOURCE_USERNAME`、`SPRING_DATASOURCE_PASSWORD` 注入。默认值指向包内 compose 的 `mysql:3306/opendataworks`，如连接外部 MySQL，请同步调整这三个变量。
+   后端主库连接由 Compose 从 `deploy/.env` 的 `MYSQL_*` 推导。仅当使用外部 MySQL 时，显式填写优先级更高的三项 `SPRING_DATASOURCE_*` 覆盖。
 
 4. **Start Services**:
    ```bash

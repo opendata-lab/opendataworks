@@ -1,3 +1,17 @@
+# 只保留跨服务接线；任务、调度、缓存等默认值由应用代码维护。
+x-dataagent-environment: &dataagent-environment
+  MYSQL_HOST: mysql
+  MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
+  MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
+  MYSQL_DATABASE: ${MYSQL_DATABASE:-opendataworks}
+  SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
+  ODW_BACKEND_BASE_URL: http://backend:8080/api/v1/ai
+  ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+  DATAAGENT_PORTAL_MCP_BASE_URL: http://portal-mcp:8801${PORTAL_MCP_MOUNT_PATH:-/mcp}/
+  DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
+  DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+  SKILLS_ROOT_DIR: /app/.claude/skills
+
 # 统一容器日志驱动：json-file + 轮转。
 # 所有服务日志稳定落在宿主机 docker 数据目录、容器重启不丢，单服务最多保留 20m*5=100MB，
 # 避免默认无轮转把磁盘撑爆。导出成宿主机包目录文件见 scripts/dump-logs.sh。
@@ -30,7 +44,7 @@ services:
     networks:
       - opendataworks-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot123"]
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h localhost -uroot"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -64,8 +78,10 @@ services:
     env_file:
       - ./.env
     environment:
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-opendataworks}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${MYSQL_USER:-opendataworks}}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${MYSQL_PASSWORD:-opendataworks123}}
       AGENT_API_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      AGENT_API_REQUIRE_PRIVATE_NETWORK: ${AGENT_API_REQUIRE_PRIVATE_NETWORK:-true}
     # DolphinScheduler 不包含在本 Compose 中，配置请在系统管理界面进行
     ports:
       - "8080:8080"
@@ -89,8 +105,6 @@ services:
     container_name: opendataworks-frontend
     logging: *default-logging
     restart: always
-    env_file:
-      - ./.env
     ports:
       - "8081:80"
     depends_on:
@@ -162,54 +176,9 @@ services:
     env_file:
       - ./.env
     environment:
-      PYTHONUNBUFFERED: "1"
-      HOME: /dataagent_runtime
-      HOST: 0.0.0.0
-      PORT: 8900
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
-      MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
-      MYSQL_DATABASE: ${DATAAGENT_MYSQL_DATABASE:-opendataworks}
-      SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
+      <<: *dataagent-environment
       REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${DATAAGENT_REDIS_PASSWORD:-}
-      REDIS_DB: ${DATAAGENT_REDIS_DB:-0}
-      TASK_MAX_CONCURRENCY: ${DATAAGENT_TASK_MAX_CONCURRENCY:-8}
-      TASK_LEASE_TTL_SECONDS: ${DATAAGENT_TASK_LEASE_TTL_SECONDS:-30}
-      TASK_HEARTBEAT_SECONDS: ${DATAAGENT_TASK_HEARTBEAT_SECONDS:-5}
-      TASK_RECOVERY_SCAN_INTERVAL_SECONDS: ${DATAAGENT_TASK_RECOVERY_SCAN_INTERVAL_SECONDS:-2}
-      TASK_RECOVERY_BATCH_SIZE: ${DATAAGENT_TASK_RECOVERY_BATCH_SIZE:-20}
-      TASK_PERMISSION_WAIT_SECONDS: ${DATAAGENT_TASK_PERMISSION_WAIT_SECONDS:-600}
-      SCHEDULE_SCAN_INTERVAL_SECONDS: ${DATAAGENT_SCHEDULE_SCAN_INTERVAL_SECONDS:-10}
-      SCHEDULE_SCAN_BATCH_SIZE: ${DATAAGENT_SCHEDULE_SCAN_BATCH_SIZE:-10}
-      SCHEDULE_LOCK_TTL_SECONDS: ${DATAAGENT_SCHEDULE_LOCK_TTL_SECONDS:-60}
-      ODW_BACKEND_BASE_URL: ${ODW_BACKEND_BASE_URL:-http://backend:8080/api/v1/ai}
-      ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
-      DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
-      DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
-      DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
-      DATAAGENT_PORTAL_MCP_TOOL_TIMEOUT_SECONDS: ${DATAAGENT_PORTAL_MCP_TOOL_TIMEOUT_SECONDS:-180}
-      SKILLS_ROOT_DIR: /app/.claude/skills
-      DATAAGENT_RUNTIME_KIND: ${DATAAGENT_RUNTIME_KIND:-claude_code}
-      DATAAGENT_NODE_BIN: ${DATAAGENT_NODE_BIN:-/usr/local/bin/node}
-      DATAAGENT_RUNTIME_PI_DIR: ${DATAAGENT_RUNTIME_PI_DIR:-/opt/dataagent-runtime-pi}
-      DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
       DATAAGENT_SANDBOX_RUNNER_URL: http://dataagent-sandbox-runner:8910
-      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.5.0}
-      DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
-      DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
-      # 工作区之外仍允许 agent 读写的目录白名单（逗号分隔绝对路径）。
-      # 默认 /tmp，对应沙箱子容器的可写 tmpfs；置空则只允许会话工作区和 Skill 根目录。
-      DATAAGENT_WORKSPACE_SCRATCH_DIRS: ${DATAAGENT_WORKSPACE_SCRATCH_DIRS:-/tmp}
-      # DataAgent 外置配置（认证 + 运行时覆盖，fail-closed，Superset docker/pythonpath_dev 同款模式）：
-      # ./docker/dataagent 目录整体挂载进容器，仓库自带的基础配置默认 AUTH_ENABLED=False
-      # （行为与无认证版本一致）。启用/覆盖配置 = 拷贝该目录下的 *_docker.py.example 为
-      # dataagent_config_docker.py 并按注释填写，重启即生效，无需改 compose。
-      # 彻底回滚 = 注释掉下面这行 env；env 已设置但配置非法 = 启动失败，不会静默裸奔。
       DATAAGENT_CONFIG: /app/docker/dataagent/dataagent_config.py
     ports:
       - "8900:8900"
@@ -246,36 +215,13 @@ services:
     env_file:
       - ./.env
     environment:
-      PYTHONUNBUFFERED: "1"
-      HOME: /dataagent_runtime
+      <<: *dataagent-environment
       DATAAGENT_HOST_ROOT: ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}
-      DATAAGENT_RUNTIME_KIND: ${DATAAGENT_RUNTIME_KIND:-claude_code}
-      DATAAGENT_NODE_BIN: ${DATAAGENT_NODE_BIN:-/usr/local/bin/node}
-      DATAAGENT_RUNTIME_PI_DIR: ${DATAAGENT_RUNTIME_PI_DIR:-/opt/dataagent-runtime-pi}
+      DATAAGENT_RUNTIME_UID: ${DATAAGENT_RUNTIME_UID:-1000}
+      DATAAGENT_RUNTIME_GID: ${DATAAGENT_RUNTIME_GID:-1000}
       DATAAGENT_SANDBOX_MODE: ""
       DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.5.0}
-      DATAAGENT_SANDBOX_BACKEND: ${DATAAGENT_SANDBOX_BACKEND:-docker}
       DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
-      DATAAGENT_SANDBOX_REUSE_ENABLED: ${DATAAGENT_SANDBOX_REUSE_ENABLED:-true}
-      DATAAGENT_SANDBOX_IDLE_TTL_SECONDS: ${DATAAGENT_SANDBOX_IDLE_TTL_SECONDS:-600}
-      DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS: ${DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS:-32}
-      DATAAGENT_SANDBOX_REAPER_INTERVAL_SECONDS: ${DATAAGENT_SANDBOX_REAPER_INTERVAL_SECONDS:-30}
-      DATAAGENT_WORKSPACE_SCRATCH_DIRS: ${DATAAGENT_WORKSPACE_SCRATCH_DIRS:-/tmp}
-      MYSQL_HOST: mysql
-      MYSQL_PORT: 3306
-      MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
-      MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
-      MYSQL_DATABASE: ${DATAAGENT_MYSQL_DATABASE:-opendataworks}
-      SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
-      ODW_BACKEND_BASE_URL: ${ODW_BACKEND_BASE_URL:-http://backend:8080/api/v1/ai}
-      ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      ODW_BACKEND_TIMEOUT_SECONDS: ${ODW_BACKEND_TIMEOUT_SECONDS:-30}
-      DATAAGENT_PORTAL_MCP_ENABLED: ${DATAAGENT_PORTAL_MCP_ENABLED:-true}
-      DATAAGENT_PORTAL_MCP_BASE_URL: ${DATAAGENT_PORTAL_MCP_BASE_URL:-http://portal-mcp:8801/mcp/}
-      DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
-      DATAAGENT_PORTAL_MCP_TOOL_TIMEOUT_SECONDS: ${DATAAGENT_PORTAL_MCP_TOOL_TIMEOUT_SECONDS:-180}
-      SKILLS_ROOT_DIR: /app/.claude/skills
     depends_on:
       dataagent-home-init:
         condition: service_completed_successfully
@@ -302,13 +248,7 @@ services:
     env_file:
       - ./.env
     environment:
-      PORTAL_MCP_HOST: 0.0.0.0
-      PORTAL_MCP_PORT: 8801
-      PORTAL_MCP_MOUNT_PATH: ${PORTAL_MCP_MOUNT_PATH:-/mcp}
-      PORTAL_MCP_KEEPALIVE_TIMEOUT_SECONDS: ${PORTAL_MCP_KEEPALIVE_TIMEOUT_SECONDS:-600}
-      PORTAL_MCP_BACKEND_BASE_URL: ${PORTAL_MCP_BACKEND_BASE_URL:-http://backend:8080/api}
       PORTAL_MCP_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      PORTAL_MCP_BACKEND_TIMEOUT_SECONDS: ${PORTAL_MCP_BACKEND_TIMEOUT_SECONDS:-30}
       PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
       PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
     ports:

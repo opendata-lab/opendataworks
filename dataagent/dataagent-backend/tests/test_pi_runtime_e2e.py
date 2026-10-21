@@ -57,6 +57,9 @@ def _context(tmp_path: Path, provider_id: str, model_id: str) -> PiRunContext:
         runtime_env={"DATAAGENT_PYTHON_BIN": sys.executable},
         total_timeout_seconds=60,
         idle_timeout_seconds=30,
+        max_turns=24,
+        max_tool_calls=100,
+        bash_timeout_seconds=30,
     )
 
 

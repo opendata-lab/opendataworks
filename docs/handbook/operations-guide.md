@@ -27,7 +27,7 @@ bash scripts/start.sh
 - **数据库自动初始化**：MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建数据库和用户。`opendataworks` 用户供后端使用，`dataagent` 用户默认供 DataAgent 使用。无需手动创建数据库。表结构由后端服务的 Flyway 自动创建。
 - 环境变量重点：
   - `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE=opendataworks`, `MYSQL_USER=opendataworks`
-  - `SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/opendataworks`
+  - Spring 连接由 MYSQL_* 自动推导；连接外部库时才填三项 SPRING_DATASOURCE_* 覆盖
   - `DATAAGENT_MYSQL_USER=dataagent`, `DATAAGENT_SESSION_MYSQL_DATABASE=dataagent`
   - `DATAAGENT_RUNTIME_UID/GID` 控制 DataAgent 容器的运行身份，默认 `1000:1000`
   - DolphinScheduler 配置请在系统管理界面进行

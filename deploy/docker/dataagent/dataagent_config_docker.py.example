@@ -94,6 +94,17 @@ ADMIN_USERS = [
 # 字段名，启动时统一应用；含未知字段会启动失败（fail-closed）。
 # ---------------------------------------------------------------------------
 DATAAGENT_SETTINGS = {
-    # "agent_interactive_timeout_seconds": 420,
-    # "task_max_concurrency": 8,
+    # 默认优先：只填写需要偏离默认的值。助手 max_turns=0 继承以下模式默认。
+    # 交互 / auto 与后台：轮数 24/40，工具次数 100/200，总秒数 360/1800，
+    # Bash 秒数 300/900；SQL 读取秒数 300/900、写入 60，Pi 无活动秒数 300。
+    # "agent_interactive_max_turns": 24,
+    # "agent_background_max_turns": 40,
+    # "agent_interactive_max_tool_calls": 100,  # Pi
+    # "agent_background_max_tool_calls": 200,  # Pi
+    # "agent_interactive_timeout_seconds": 360,
+    # "agent_background_timeout_seconds": 1800,
+    # "agent_interactive_bash_timeout_seconds": 300,  # Pi
+    # "agent_background_bash_timeout_seconds": 900,  # Pi
+    # "dataagent_run_idle_timeout_seconds": 300,  # Pi
+    # SQL 超时 <= Bash 超时 < 总超时；增加总超时须同时审查 Nginx 模板。
 }

@@ -26,6 +26,7 @@ function toolsFor(root: string) {
     readonly_commands: [],
   };
   return createTools({
+    toolTimeoutMs: 30_000,
     boundary: new WorkspaceBoundaryEnforcer(policy),
     workspaceRoot: root,
     runtimeEnv: {},

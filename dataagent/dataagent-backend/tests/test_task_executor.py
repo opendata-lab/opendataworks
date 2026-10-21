@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -67,10 +68,15 @@ def _pin_sdk_engine():
     failure the default change was made to prevent.
     """
     original = get_settings().dataagent_runtime_kind
+    original_env = dict(os.environ)
     update_settings({"dataagent_runtime_kind": "claude_code"})
     try:
         yield
     finally:
+        # The executor installs subprocess env in os.environ. In particular a
+        # test's synthetic PATH must not leak into later Compose/package tests.
+        os.environ.clear()
+        os.environ.update(original_env)
         update_settings({"dataagent_runtime_kind": original})
 
 

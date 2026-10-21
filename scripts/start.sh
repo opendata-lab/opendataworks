@@ -30,38 +30,6 @@ read_env_value() {
     printf '%s' "${line#*=}"
 }
 
-set_env_value() {
-    local key="$1"
-    local value="$2"
-    local env_file="$3"
-    local tmp_file="${env_file}.tmp.$$"
-
-    if grep -q -E "^${key}=" "$env_file" 2>/dev/null; then
-        awk -v target_key="$key" -v target_value="$value" '
-            BEGIN { written = 0 }
-            $0 ~ "^" target_key "=" {
-                print target_key "=" target_value
-                written = 1
-                next
-            }
-            { print }
-            END {
-                if (!written) {
-                    print target_key "=" target_value
-                }
-            }
-        ' "$env_file" > "$tmp_file"
-    else
-        cp "$env_file" "$tmp_file"
-        {
-            echo ""
-            echo "${key}=${value}"
-        } >> "$tmp_file"
-    fi
-
-    mv "$tmp_file" "$env_file"
-}
-
 normalize_path() {
     local path="$1"
     local is_absolute=false
@@ -217,7 +185,7 @@ if [ ! -f "$ENV_FILE" ]; then
     echo "✅ 已创建 $ENV_FILE"
     echo ""
     echo "⚠️  请编辑 $ENV_FILE，确认关键配置："
-    echo "   - SPRING_DATASOURCE_URL / USERNAME / PASSWORD 指向 mysql 服务"
+    echo "   - MYSQL_* 数据库凭据及 AUTH_JWT_SECRET / 服务令牌；Spring 连接会自动推导"
     echo "   - 启动后在系统管理界面配置 DolphinScheduler 连接"
     echo ""
     read -p "是否继续启动？(y/n) " -n 1 -r

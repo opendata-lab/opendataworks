@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 from croniter import croniter
 
-from config import get_settings, is_background_execution_mode, resolve_sql_read_timeout_seconds
+from config import get_settings, resolve_run_limits, resolve_sql_read_timeout_seconds
 from core.skill_admin_service import resolve_runtime_provider_selection
 from core.topic_task_store import TopicTaskStore, get_topic_task_store
 
@@ -21,12 +21,8 @@ def current_utc_naive() -> datetime:
 
 def resolve_task_timeouts(execution_mode: str | None) -> dict[str, int]:
     cfg = get_settings()
-    if is_background_execution_mode(execution_mode):
-        timeout_seconds = int(cfg.agent_background_timeout_seconds or 1800)
-    else:
-        timeout_seconds = int(cfg.agent_interactive_timeout_seconds or cfg.agent_timeout_seconds or 360)
     return {
-        "timeout_seconds": timeout_seconds,
+        "timeout_seconds": resolve_run_limits(cfg, execution_mode)["total_timeout_seconds"],
         "sql_read_timeout_seconds": resolve_sql_read_timeout_seconds(cfg, execution_mode),
         "sql_write_timeout_seconds": int(cfg.agent_sql_write_timeout_seconds or 60),
     }

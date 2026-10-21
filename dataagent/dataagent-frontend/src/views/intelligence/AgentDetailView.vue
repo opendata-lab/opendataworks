@@ -335,7 +335,7 @@
                   <Icon name="chevron" class="small" />
                 </summary>
                 <label class="field-label" for="max-turns"
-                  >会话轮次上限（0 为跟随默认）</label
+                  >每次任务最大模型轮数（0 继承全局默认）</label
                 ><input
                   id="max-turns"
                   v-model.number="form.max_turns"

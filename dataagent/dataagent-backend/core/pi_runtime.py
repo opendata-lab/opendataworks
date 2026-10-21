@@ -66,16 +66,18 @@ class PiRunContext:
     messages: list[dict[str, str]]
     project_cwd: Path
     boundary_policy: dict[str, Any]
+    # Effective budgets are required; config.py owns defaults and inheritance.
+    total_timeout_seconds: int
+    idle_timeout_seconds: int
+    max_turns: int
+    max_tool_calls: int
+    bash_timeout_seconds: int
     history: list[dict[str, str]] = field(default_factory=list)
     prompt: str = ""
     runtime_env: dict[str, str] = field(default_factory=dict)
     provider_env: dict[str, str] = field(default_factory=dict)
     skills: list[dict[str, str]] = field(default_factory=list)
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
-    total_timeout_seconds: int = 600
-    idle_timeout_seconds: int = 300
-    max_turns: int = 30
-    max_tool_calls: int = 50
     # The model's configured output ceiling per reply; None lets the Cell use its default.
     max_output_tokens: int | None = None
     # Context governance, assembled by core.context_governance so the wire
@@ -122,6 +124,7 @@ class PiRunContext:
                 "idle_timeout_seconds": self.idle_timeout_seconds,
                 "max_turns": self.max_turns,
                 "max_tool_calls": self.max_tool_calls,
+                "bash_timeout_seconds": self.bash_timeout_seconds,
             },
             "governance_settings": dict(self.governance_settings),
         }

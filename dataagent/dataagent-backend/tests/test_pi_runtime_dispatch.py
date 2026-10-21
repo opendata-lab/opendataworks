@@ -10,7 +10,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import Settings, get_settings, resolve_runtime_kind, update_settings  # noqa: E402
+from config import Settings, get_settings, resolve_run_limits, resolve_runtime_kind, update_settings  # noqa: E402
 from core import task_executor  # noqa: E402
 from core.pi_runtime import PiRunOutcome  # noqa: E402
 from core.task_executor import TaskExecutionInput  # noqa: E402
@@ -78,7 +78,9 @@ async def _run_adapter(
     provider_id: str = "anthropic",
     api_format: str = "/v1/messages",
     provider_env: dict[str, str] | None = None,
+    params: TaskExecutionInput | None = None,
 ):
+    params = params or _params()
     store = _FakeStore()
     monkeypatch.setattr(task_executor, "get_topic_task_store", lambda: store)
     monkeypatch.setattr("core.pi_runtime.resolve_cell_command", lambda cfg=None: ["/bin/true"])
@@ -93,7 +95,7 @@ async def _run_adapter(
         return None
 
     return await task_executor._execute_task_stream_via_pi_runtime(
-        _params(),
+        params,
         provider_id=provider_id,
         api_format=api_format,
         model="test-model",
@@ -102,7 +104,7 @@ async def _run_adapter(
         project_cwd=tmp_path,
         runtime_env={"DATAAGENT_PYTHON_BIN": sys.executable},
         provider_env=provider_env or {"ANTHROPIC_API_KEY": "sk-x"},
-        agent_snapshot=None,
+        agent_snapshot=params.agent_snapshot,
         cancel_reason=_no_cancel,
     )
 
@@ -120,6 +122,29 @@ async def test_success_outcome_becomes_finished_result(monkeypatch, tmp_path: Pa
     assert result.provider_id == "anthropic"
     assert captured["ctx"].api_format == "/v1/messages"
     assert captured["ctx"].to_init_payload()["model"]["api_format"] == "/v1/messages"
+
+
+@pytest.mark.asyncio
+async def test_pi_uses_frozen_sandbox_limits_instead_of_child_defaults(monkeypatch, tmp_path):
+    captured = {}
+    limits = dict(total_timeout_seconds=1200, idle_timeout_seconds=210,
+                  max_turns=17, max_tool_calls=260, bash_timeout_seconds=600)
+    await _run_adapter(monkeypatch, tmp_path, PiRunOutcome(terminal_status="success"), captured,
+                       params=_params(runtime_limits=limits))
+    assert captured["ctx"].to_init_payload()["limits"] == limits
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode,calls,bash", [("interactive", 100, 300), ("auto", 200, 900)])
+async def test_pi_resolves_global_budgets_and_agent_turn_override(monkeypatch, tmp_path, mode, calls, bash):
+    monkeypatch.setattr(task_executor, "get_settings", lambda: Settings(_env_file=None))
+    captured = {}
+    await _run_adapter(monkeypatch, tmp_path, PiRunOutcome(terminal_status="success"), captured,
+                       params=_params(execution_mode=mode, agent_snapshot={"max_turns": 9}))
+    limits = captured["ctx"].to_init_payload()["limits"]
+    assert limits["max_turns"] == 9
+    assert limits["max_tool_calls"] == calls
+    assert limits["bash_timeout_seconds"] == bash
 
 
 @pytest.mark.asyncio
@@ -400,7 +425,8 @@ def test_init_payload_carries_the_output_ceiling_only_when_configured(tmp_path: 
         return PiRunContext(
             task_id="t", topic_id="tp", provider_id="deepseek", api_format="/v1/messages",
             model="deepseek-v4-pro", system_prompt="sys", messages=[{"role": "user", "content": "hi"}],
-            project_cwd=tmp_path, boundary_policy={}, **extra,
+            project_cwd=tmp_path, boundary_policy={},
+            **resolve_run_limits(get_settings(), "auto"), **extra,
         ).to_init_payload()["model"]
 
     assert ctx(max_output_tokens=32000)["max_output_tokens"] == 32000

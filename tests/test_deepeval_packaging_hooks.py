@@ -158,7 +158,8 @@ def test_deploy_env_exposes_only_consolidated_dataagent_runtime_knobs():
 
     assert "DATAAGENT_HOST_ROOT=/dataagent_runtime" in env_example
     assert "PORTAL_MCP_TOKEN=odw-portal-mcp-token" in env_example
-    assert "PORTAL_MCP_TOKEN_HEADER_NAME=X-Portal-MCP-Token" in env_example
+    # Header name is an optional shared override, not a required default assignment.
+    assert "PORTAL_MCP_TOKEN_HEADER_NAME=" not in env_example
     for removed in (
         OLD_HOME_HOST_DIR,
         "DATAAGENT_" "SANDBOX_ROOT",
