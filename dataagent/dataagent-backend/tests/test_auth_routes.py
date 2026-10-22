@@ -775,6 +775,7 @@ def test_login_with_overlong_password_returns_401(monkeypatch, tmp_path):
     ('POST', '/api/v1/dataagent/agents/a/publish', {'expected_revision': 1}),
     ('POST', '/api/v1/dataagent/agents/a/preview-topics', {'expected_revision': 1}),
     ('POST', '/api/v1/dataagent/agents/a/preview-tasks', {'expected_revision': 1, 'topic_id': 't', 'message_content': 'hello'}),
+    ('GET', '/api/v1/dataagent/tasks/t/system-prompt', None),
 ])
 def test_agent_workbench_requires_admin(monkeypatch, tmp_path, method, path, body):
     enable_auth(monkeypatch, tmp_path)

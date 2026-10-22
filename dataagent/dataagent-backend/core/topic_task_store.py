@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -359,13 +360,28 @@ def _extract_skill_launch_name(content: Any) -> str | None:
     return str(match.group(1) or "").strip()
 
 
+# MEDIUMTEXT holds 2^24 - 1 bytes.
+SYSTEM_PROMPT_MAX_BYTES = 16 * 1024 * 1024 - 1
+# The write sits on the run's critical path; a stalled database must not hold it.
+SYSTEM_PROMPT_IO_TIMEOUT_SECONDS = 5
+
+
 class TopicTaskStore:
     def __init__(self):
         self._ready = False
         self._ready_lock = threading.Lock()
 
-    def _connect(self, database: str | None):
+    def _connect(self, database: str | None, *, io_timeout_seconds: int | None = None):
         cfg = get_settings()
+        timeouts = (
+            {
+                "connect_timeout": io_timeout_seconds,
+                "read_timeout": io_timeout_seconds,
+                "write_timeout": io_timeout_seconds,
+            }
+            if io_timeout_seconds
+            else {}
+        )
         return pymysql.connect(
             host=cfg.mysql_host,
             port=cfg.mysql_port,
@@ -375,6 +391,7 @@ class TopicTaskStore:
             charset="utf8mb4",
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=False,
+            **timeouts,
         )
 
     def _schema_name(self) -> str:
@@ -1592,6 +1609,75 @@ class TopicTaskStore:
         finally:
             conn.close()
         return bool(row)
+
+    def record_task_system_prompt(self, task_id: str, content: str) -> str | None:
+        """Store the effective system prompt once per content and point the task at it.
+
+        Returns the content hash, or ``None`` when the task row does not exist; in
+        that case nothing is written, so no orphan prompt is left behind.
+        """
+        self._ensure_ready()
+        encoded = str(content or "").encode("utf-8")
+        if len(encoded) > SYSTEM_PROMPT_MAX_BYTES:
+            # INSERT IGNORE would truncate silently and leave a hash that no longer
+            # matches the stored text.
+            raise ValueError(f"system prompt is {len(encoded)} bytes, above the {SYSTEM_PROMPT_MAX_BYTES} limit")
+        prompt_sha256 = hashlib.sha256(encoded).hexdigest()
+        conn = self._connect(database=self._schema_name(), io_timeout_seconds=SYSTEM_PROMPT_IO_TIMEOUT_SECONDS)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1 FROM da_agent_task WHERE task_id = %s FOR UPDATE", (task_id,))
+                if not cur.fetchone():
+                    conn.rollback()
+                    logger.warning("task.system_prompt.task_missing task_id=%s", task_id)
+                    return None
+                cur.execute(
+                    """
+                    INSERT IGNORE INTO da_system_prompt (prompt_sha256, content, byte_length)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (prompt_sha256, str(content or ""), len(encoded)),
+                )
+                cur.execute(
+                    """
+                    UPDATE da_agent_task
+                    SET system_prompt_sha256 = %s
+                    WHERE task_id = %s
+                    """,
+                    (prompt_sha256, task_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+        return prompt_sha256
+
+    def get_task_system_prompt(self, task_id: str) -> dict[str, Any] | None:
+        self._ensure_ready()
+        conn = self._connect(database=self._schema_name())
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT t.task_id, p.prompt_sha256, p.byte_length, p.created_at, p.content
+                    FROM da_agent_task t
+                    JOIN da_system_prompt p ON p.prompt_sha256 = t.system_prompt_sha256
+                    WHERE t.task_id = %s
+                    """,
+                    (task_id,),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        if not row:
+            return None
+        created_at = row.get("created_at")
+        return {
+            "task_id": str(row.get("task_id") or ""),
+            "prompt_sha256": str(row.get("prompt_sha256") or ""),
+            "byte_length": int(row.get("byte_length") or 0),
+            "created_at": created_at.isoformat() if hasattr(created_at, "isoformat") else created_at,
+            "content": str(row.get("content") or ""),
+        }
 
     def mark_task_running(self, task_id: str) -> dict[str, Any] | None:
         self._ensure_ready()

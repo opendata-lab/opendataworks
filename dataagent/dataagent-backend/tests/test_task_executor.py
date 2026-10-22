@@ -53,9 +53,14 @@ class _RecordingStore:
 class _SdkRecordStore:
     def __init__(self):
         self.records = []
+        self.system_prompts = []
 
     def append_sdk_record(self, **kwargs):
         self.records.append(kwargs)
+
+    def record_task_system_prompt(self, task_id, content):
+        self.system_prompts.append((task_id, content))
+        return "sha"
 
 
 @pytest.fixture(autouse=True)
@@ -492,6 +497,9 @@ def _patch_skill_runtime(monkeypatch, tmp_path: Path) -> dict[str, list[str]]:
         return tmp_path
 
     monkeypatch.setattr(task_executor, "prepare_topic_workspace", fake_prepare_topic_workspace)
+    store = _SdkRecordStore()
+    monkeypatch.setattr(task_executor, "get_topic_task_store", lambda: store)
+    captured["system_prompts"] = store.system_prompts
     return captured
 
 
@@ -570,7 +578,38 @@ def test_execute_task_stream_persists_sdk_records_without_magic_records(monkeypa
     assert runtime["folders"] == ["opendataworks-business-knowledge", "marketing-insights"]
     assert ClaudeAgentOptions.last_kwargs["env"]["DISABLE_PROMPT_CACHING"] == ""
 
+    # The exact prompt handed to the engine is what gets persisted for replay.
+    assert len(runtime["system_prompts"]) == 1
+    persisted_task_id, persisted_prompt = runtime["system_prompts"][0]
+    assert persisted_task_id == _build_input().task_id
+    assert persisted_prompt == ClaudeAgentOptions.last_kwargs["system_prompt"]
+
     assert emitted == []
+
+
+def test_execute_task_stream_survives_system_prompt_persist_failure(monkeypatch, tmp_path: Path):
+    _install_fake_sdk(
+        monkeypatch,
+        [
+            StreamEvent({"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+            StreamEvent({"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "ok"}}),
+            StreamEvent({"type": "content_block_stop", "index": 0}),
+            ResultMessage("success", session_id="sdk-session-2"),
+        ],
+    )
+    _patch_default_provider(monkeypatch)
+    _patch_skill_runtime(monkeypatch, tmp_path)
+
+    class _BrokenStore(_SdkRecordStore):
+        def record_task_system_prompt(self, task_id, content):
+            raise RuntimeError("mysql down")
+
+    store = _BrokenStore()
+    monkeypatch.setattr(task_executor, "get_topic_task_store", lambda: store)
+
+    result = asyncio.run(task_executor.execute_task_stream(_build_input(), emit=lambda record: None))
+
+    assert result.task_status == "finished"
 
 
 def test_execute_task_stream_logs_sdk_iterator_progress(monkeypatch, tmp_path: Path, caplog):

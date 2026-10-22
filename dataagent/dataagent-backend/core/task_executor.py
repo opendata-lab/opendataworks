@@ -1075,6 +1075,12 @@ async def _execute_task_stream_local(
         skill_runtime.get("enabled_roots"),
     )
     system_prompt = _build_system_prompt(params.database_hint, skill_runtime, agent_snapshot)
+    # Audit/replay data only: a failed write must not fail the run itself, and
+    # the blocking DB call stays off the event loop that drives heartbeat/cancel.
+    try:
+        await asyncio.to_thread(get_topic_task_store().record_task_system_prompt, params.task_id, system_prompt)
+    except Exception:
+        logger.warning("task.system_prompt.persist_failed task_id=%s", params.task_id, exc_info=True)
 
     env_payload = _build_provider_env(
         api_format,

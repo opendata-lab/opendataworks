@@ -595,3 +595,123 @@ def test_admin_list_auth_users_groups_by_stable_id_and_forwards_keyword(monkeypa
     assert params == ["%ali%", "%ali%", 50]
     # 管理侧查询不得复用按用户隔离谓词。
     assert "COALESCE(t.source" not in sql
+
+
+# ---------------------------------------------------------------------------
+# system prompt persistence
+# ---------------------------------------------------------------------------
+
+def _make_store_with_sql_log(executed, fetched=None):
+    """``fetched`` is the row (or list of rows, consumed in order) fetchone returns."""
+    pending = list(fetched) if isinstance(fetched, list) else [fetched]
+
+    class FakeCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params):
+            executed.append((" ".join(sql.split()), tuple(params)))
+
+        def fetchone(self):
+            return pending.pop(0) if pending else None
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            executed.append(("COMMIT", ()))
+
+        def rollback(self):
+            executed.append(("ROLLBACK", ()))
+
+        def close(self):
+            pass
+
+    store = TopicTaskStore()
+    store._ready = True
+    store._connect = lambda database=None, **kwargs: FakeConn()
+    store._schema_name = lambda: "dataagent"
+    return store
+
+
+def test_record_task_system_prompt_dedupes_by_content_hash_and_links_task():
+    import hashlib
+
+    executed = []
+    store = _make_store_with_sql_log(executed, fetched={"1": 1})
+    prompt = "系统提示 v1"
+
+    digest = store.record_task_system_prompt("task_1", prompt)
+
+    expected = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    assert digest == expected
+    lock_sql, lock_params = executed[0]
+    assert lock_sql == "SELECT 1 FROM da_agent_task WHERE task_id = %s FOR UPDATE"
+    assert lock_params == ("task_1",)
+    insert_sql, insert_params = executed[1]
+    assert insert_sql.startswith("INSERT IGNORE INTO da_system_prompt")
+    assert insert_params == (expected, prompt, len(prompt.encode("utf-8")))
+    update_sql, update_params = executed[2]
+    assert "UPDATE da_agent_task SET system_prompt_sha256 = %s WHERE task_id = %s" in update_sql
+    assert update_params == (expected, "task_1")
+    assert executed[3] == ("COMMIT", ())
+
+
+def test_record_task_system_prompt_writes_nothing_for_missing_task():
+    executed = []
+    store = _make_store_with_sql_log(executed, fetched=None)
+
+    assert store.record_task_system_prompt("task_missing", "系统提示") is None
+    assert [sql for sql, _ in executed] == [
+        "SELECT 1 FROM da_agent_task WHERE task_id = %s FOR UPDATE",
+        "ROLLBACK",
+    ]
+
+
+def test_record_task_system_prompt_rejects_oversized_content(monkeypatch):
+    import core.topic_task_store as topic_task_store
+
+    executed = []
+    store = _make_store_with_sql_log(executed, fetched={"1": 1})
+    monkeypatch.setattr(topic_task_store, "SYSTEM_PROMPT_MAX_BYTES", 8)
+
+    try:
+        store.record_task_system_prompt("task_1", "超过八个字节")
+    except ValueError as exc:
+        assert "limit" in str(exc)
+    else:
+        raise AssertionError("oversized prompt must be rejected before any write")
+    assert executed == []
+
+
+def test_get_task_system_prompt_returns_none_when_not_recorded():
+    store = _make_store_with_sql_log([], fetched=None)
+
+    assert store.get_task_system_prompt("task_missing") is None
+
+
+def test_get_task_system_prompt_serializes_record():
+    from datetime import datetime
+
+    row = {
+        "task_id": "task_1",
+        "prompt_sha256": "a" * 64,
+        "byte_length": 12,
+        "created_at": datetime(2026, 10, 22, 12, 0, 0),
+        "content": "系统提示",
+    }
+    store = _make_store_with_sql_log([], fetched=row)
+
+    record = store.get_task_system_prompt("task_1")
+
+    assert record == {
+        "task_id": "task_1",
+        "prompt_sha256": "a" * 64,
+        "byte_length": 12,
+        "created_at": "2026-10-22T12:00:00",
+        "content": "系统提示",
+    }

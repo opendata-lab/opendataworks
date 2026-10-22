@@ -590,6 +590,16 @@ def get_agent_configuration(agent_id: str):
     return AgentProfile.model_validate(profile)
 
 
+@skills_router.get("/tasks/{task_id}/system-prompt")
+def get_task_system_prompt(task_id: str):
+    # Admin only: the prompt carries internal instructions and the agent's
+    # authorized data scope, which session APIs never expose.
+    record = get_topic_task_store().get_task_system_prompt(task_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="system prompt not recorded for task")
+    return record
+
+
 @agents_public_router.get("/agents/{agent_id}/slash-commands", response_model=AgentSlashCommandsResponse)
 def get_agent_slash_commands_endpoint(agent_id: str, request: Request):
     # Visibility must be enforced before consulting the slash-command cache,

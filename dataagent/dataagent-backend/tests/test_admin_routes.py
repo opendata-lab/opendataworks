@@ -878,3 +878,27 @@ def test_admin_auth_users_route_contract(monkeypatch, tmp_path):
         assert calls == [{"keyword": "ali", "limit": 20}]
     finally:
         auth.reset_auth_for_tests()
+
+
+def test_task_system_prompt_route_contract(monkeypatch):
+    record = {
+        "task_id": "task_1",
+        "prompt_sha256": "a" * 64,
+        "byte_length": 12,
+        "created_at": "2026-10-22T12:00:00",
+        "content": "系统提示",
+    }
+
+    class _Store:
+        def get_task_system_prompt(self, task_id):
+            return record if task_id == "task_1" else None
+
+    monkeypatch.setattr(admin_routes, "get_topic_task_store", lambda: _Store())
+    client = TestClient(app)
+
+    found = client.get("/api/v1/dataagent/tasks/task_1/system-prompt")
+    assert found.status_code == 200
+    assert found.json() == record
+
+    missing = client.get("/api/v1/dataagent/tasks/task_missing/system-prompt")
+    assert missing.status_code == 404
