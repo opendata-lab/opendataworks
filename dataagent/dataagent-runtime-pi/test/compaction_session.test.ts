@@ -104,3 +104,25 @@ test("a protected tail larger than the target does not cause per-turn recompacti
   }
   assert.equal(s.generations, 1, "small appends must not each trigger a compaction");
 });
+
+test("the leading system message survives compaction unchanged", () => {
+  // pi 1.x puts the system prompt at index 0 of the transformed context; a
+  // compaction that dropped or rewrote it would silently strip the agent's
+  // instructions and invalidate the cached prefix.
+  const s = new CompactionSession({ maxContextTokens: 900, protectTailCount: 2, targetRatio: 0.5 });
+  // Shaped like what pi 1.x actually sends: the prompt plus the tool set.
+  const system = {
+    role: "system",
+    content: "系统提示".repeat(20),
+    toolsAdded: [{ name: "Bash", description: "run a shell command", parameters: { type: "object" } }],
+  };
+  const msgs = [system, ...convo(12)];
+  const out = s.transform(msgs);
+  assert.equal(s.generations, 1, "the fixture must actually compact");
+  assert.deepEqual(out[0], system);
+  // The first user message stays the task anchor right after the system prompt.
+  assert.deepEqual(out[1], msgs[1]);
+  const next = s.transform([...msgs, { role: "user", content: "追问" }]);
+  // Appending must reuse the committed prefix byte for byte, not recompact it.
+  assert.deepEqual(next.slice(0, out.length), out);
+});

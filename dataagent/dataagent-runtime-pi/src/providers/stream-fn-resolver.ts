@@ -12,6 +12,7 @@
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import type { Api, Context, Model, ProviderStreams, SimpleStreamOptions } from "@earendil-works/pi-ai";
+import { normalizeContext } from "@earendil-works/pi-ai/utils/transcript";
 import type { StreamFn } from "@earendil-works/pi-agent-core";
 
 export interface ResolvedRuntimeModel {
@@ -127,7 +128,9 @@ export function resolveStreamFn(
   // setting the Pi runtime never read.
   const retention = toPiCacheRetention(cacheRetention);
   return ((model: Model<Api>, context: Context, options?: SimpleStreamOptions) =>
-    streams.streamSimple(model, context, {
+    // ProviderStreams take the normalized transcript; the public stream entry
+    // points do this conversion themselves, this direct call has to do it here.
+    streams.streamSimple(model, normalizeContext(context), {
       ...(options ?? {}),
       apiKey,
       ...(retention ? { cacheRetention: retention } : {}),

@@ -344,11 +344,16 @@ export class Cell {
           }
           return undefined;
         },
-        shouldStopAfterTurn: () => {
-          if (init.limits.max_turns <= 0) {
-            return false;
+        // Error and aborted responses are hard exits already; only a normal
+        // response may end the run early at the turn ceiling.
+        finishTurn: async (turn) => {
+          if (turn.message.stopReason === "error" || turn.message.stopReason === "aborted") {
+            return undefined;
           }
-          return sm.lastSequence > 0 && turnCount >= init.limits.max_turns;
+          if (init.limits.max_turns <= 0) {
+            return undefined;
+          }
+          return sm.lastSequence > 0 && turnCount >= init.limits.max_turns ? { action: "end" } : undefined;
         },
       });
 

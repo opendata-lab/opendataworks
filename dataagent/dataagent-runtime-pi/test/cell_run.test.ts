@@ -414,7 +414,83 @@ test("the transcript handed to the agent keeps assistant turns as assistant", as
     factory as never
   );
 
-  assert.deepEqual(seenRoles, ["user", "assistant", "user"]);
+  // pi 1.x hands the system prompt over as a leading system message; the turn
+  // structure under test is everything after it.
+  assert.deepEqual(seenRoles, ["system", "user", "assistant", "user"]);
+});
+
+/**
+ * A model that keeps asking for a cheap tool call for `toolTurns` turns, then
+ * answers. `calls.count` is the number of provider requests the loop made.
+ */
+function toolLoopFactory(toolTurns: number, calls: { count: number }) {
+  return () => ({
+    model: { api: "faux", provider: "faux", id: "faux-1" } as never,
+    streamFn: (() => {
+      const stream = createAssistantMessageEventStream();
+      const index = calls.count++;
+      const wantsTool = index < toolTurns;
+      const content = wantsTool
+        ? [{ type: "toolCall" as const, id: `loop-${index}`, name: "Bash", arguments: { command: "true" } }]
+        : [{ type: "text" as const, text: "done" }];
+      queueMicrotask(() => {
+        const message = {
+          role: "assistant" as const,
+          content,
+          api: "faux" as const,
+          provider: "faux",
+          model: "faux-1",
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          stopReason: wantsTool ? ("toolUse" as const) : ("stop" as const),
+          timestamp: Date.now(),
+        };
+        stream.push({ type: "start", partial: message as never });
+        stream.push({ type: "done", reason: wantsTool ? "toolUse" : "stop", message: message as never });
+        stream.end();
+      });
+      return stream;
+    }) as never,
+  });
+}
+
+function limitsWith(maxTurns: number): CellInitPayload["limits"] {
+  return {
+    total_timeout_seconds: 30,
+    idle_timeout_seconds: 10,
+    max_turns: maxTurns,
+    max_tool_calls: 50,
+    bash_timeout_seconds: 30,
+  };
+}
+
+test("the turn ceiling ends the run after exactly max_turns provider requests", async () => {
+  // pi 1.x replaced shouldStopAfterTurn with finishTurn; a model that never
+  // stops asking for tools must still be cut off at the configured ceiling.
+  for (const maxTurns of [1, 2]) {
+    const calls = { count: 0 };
+    const { events } = await runCell(
+      initPayload(workspace(), { limits: limitsWith(maxTurns) }),
+      toolLoopFactory(10, calls) as never
+    );
+    assert.equal(calls.count, maxTurns, `max_turns=${maxTurns}`);
+    const terminals = events.filter((e) =>
+      ["run.completed", "run.failed", "run.cancelled", "run.suspended"].includes(e.type)
+    );
+    assert.equal(terminals.length, 1);
+  }
+});
+
+test("a non-positive turn ceiling leaves the loop unbounded", async () => {
+  for (const maxTurns of [0, -1]) {
+    const calls = { count: 0 };
+    const { result } = await runCell(
+      initPayload(workspace(), { limits: limitsWith(maxTurns) }),
+      toolLoopFactory(3, calls) as never
+    );
+    // Three tool turns and the final answer: the model ended the run itself.
+    assert.equal(calls.count, 4, `max_turns=${maxTurns}`);
+    assert.equal(result.terminal_status, "success");
+  }
 });
 
 test("a failing tool call surfaces as is_error in the event stream", async () => {
