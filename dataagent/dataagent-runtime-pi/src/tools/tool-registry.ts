@@ -112,6 +112,26 @@ export function buildShellEnv(
   return env;
 }
 
+/** stat, or an error saying what is wrong with the path, relative as the model wrote it. */
+async function statOrExplain(resolved: string, shown: string) {
+  try {
+    return await fs.stat(resolved);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") {
+      const parent = path.dirname(shown) || ".";
+      throw new Error(
+        `错误 [FILE_NOT_FOUND]：${shown} 不存在（相对路径以工作区根目录为准）。未读取任何内容。` +
+          `下一步：LS(${JSON.stringify({ path: parent })}) 查看现有文件`
+      );
+    }
+    if (code === "EACCES") {
+      throw new Error(`错误 [READ_DENIED]：没有权限读取 ${shown}。未读取任何内容；同参重试无效。`);
+    }
+    throw new Error(`错误 [READ_FAILED]：读取 ${shown} 失败（${code ?? "未知原因"}）。未读取任何内容。`);
+  }
+}
+
 export async function runShell(
   command: string,
   options: { cwd: string; env: Record<string, string>; timeoutMs: number; signal?: AbortSignal }
@@ -203,7 +223,9 @@ export async function runShell(
 // Schemas are named so each tool can be typed as AgentTool<typeof schema>,
 // which makes `params` concrete inside execute instead of unknown.
 const READ_SCHEMA = Type.Object({
-  file_path: Type.String({ description: "Absolute or workspace-relative file path." }),
+  file_path: Type.String({
+    description: "Absolute path, or a path relative to the workspace root (never to an earlier cd).",
+  }),
   offset: Type.Optional(
     Type.Integer({
       description: "Byte offset to start reading from. Defaults to 0.",
@@ -221,7 +243,9 @@ const READ_SCHEMA = Type.Object({
   ),
 });
 const LS_SCHEMA = Type.Object({
-  path: Type.String({ description: "Absolute or workspace-relative directory path." }),
+  path: Type.String({
+    description: "Absolute path, or a path relative to the workspace root (never to an earlier cd).",
+  }),
 });
 const BASH_SCHEMA = Type.Object({
   command: Type.String({ description: "The bash command line to execute." }),
@@ -245,9 +269,12 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
         throw new ToolDeniedError(reason);
       }
       const resolved = path.resolve(workspaceRoot, params.file_path);
-      const stat = await fs.stat(resolved);
+      const stat = await statOrExplain(resolved, params.file_path);
       if (stat.isDirectory()) {
-        throw new Error(`Cannot read '${params.file_path}': it is a directory`);
+        throw new Error(
+          `错误 [IS_DIRECTORY]：${params.file_path} 是目录，不能用 Read 读取。未读取任何内容。` +
+            `下一步：LS(${JSON.stringify({ path: params.file_path })})`
+        );
       }
       const offset = params.offset ?? 0;
       const limit = Math.min(params.limit ?? MAX_READ_BYTES, MAX_READ_BYTES);
@@ -290,6 +317,13 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
         throw new ToolDeniedError(reason);
       }
       const resolved = path.resolve(workspaceRoot, params.path);
+      const stat = await statOrExplain(resolved, params.path);
+      if (!stat.isDirectory()) {
+        throw new Error(
+          `错误 [NOT_A_DIRECTORY]：${params.path} 是文件，不是目录。未列出任何内容。` +
+            `下一步：Read(${JSON.stringify({ file_path: params.path })})`
+        );
+      }
       const entries = await fs.readdir(resolved, { withFileTypes: true });
       const text = entries
         .map((entry) => `${entry.isDirectory() ? "[DIR] " : "[FILE]"} ${entry.name}`)
@@ -304,7 +338,9 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
   const bashTool: AgentTool<typeof BASH_SCHEMA> = {
     name: "Bash",
     label: "Bash",
-    description: "Run a bash command inside the agent workspace.",
+    description:
+      "Run a bash command inside the agent workspace. Every call starts in the workspace root: " +
+      "a cd lasts only within that one command, so write paths relative to the workspace root.",
     parameters: BASH_SCHEMA,
     execute: async (_toolCallId, params, signal) => {
       const reason = boundary.validate("Bash", params);
@@ -318,14 +354,22 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
         signal,
       });
       if (result.timedOut) {
-        throw new Error(`Bash command exceeded ${Math.round(timeoutMs / 1000)}s and was killed`);
+        // Whatever the command printed before it was killed is often the only
+        // clue to why it hung; keep it rather than throwing it away.
+        const partial = (result.stdout + (result.stderr ? `\n${result.stderr}` : "")).trim();
+        throw new Error(
+          `错误 [TOOL_TIMEOUT]：命令运行超过 ${timeoutMs} 毫秒，整个进程组已终止。` +
+            "命令可能只完成了一部分，有副作用的命令不要直接重跑；只读命令可缩小范围后再执行。" +
+            (partial ? `\n终止前的输出：\n${partial}` : "\n终止前没有输出。")
+        );
       }
       const output = (result.stdout + (result.stderr ? `\n${result.stderr}` : "")).trim();
       const truncationNotice =
         result.droppedBytes > 0
-          ? `\n\n[Output truncated: ${result.droppedBytes} bytes were discarded after the capture limit and cannot be recovered. ` +
-            `Narrow the command output with filters, head, or tail, or redirect it to a file and then use Read. ` +
-            `Do not treat the output above as complete.]`
+          ? `\n\n提示 [OUTPUT_TRUNCATED]：标准输出与标准错误各最多保留 ${MAX_OUTPUT_CHARS} 字节，` +
+            `另有 ${result.droppedBytes} 字节已丢弃、未保存、无法取回，上面的输出不完整。` +
+            "下一步：只读命令可把输出写到文件再分段读，例如 `<原命令> > command-output.log 2>&1`，" +
+            "然后 Read 该文件；有副作用的命令不要为取输出而重跑。"
           : "";
       const visibleOutput = `${output || "(no output)"}${truncationNotice}`;
       if (result.exitCode !== 0) {
@@ -333,7 +377,10 @@ export function createTools(options: ToolRegistryOptions): AgentTool<any>[] {
         // error text, so returning it normally would lose the very output the
         // model needs in order to understand the failure.
         throw new Error(
-          `Bash command exited with code ${String(result.exitCode)}\n${visibleOutput}`
+          (result.exitCode === null
+            ? "错误 [TOOL_KILLED]：命令被信号终止，未正常结束。"
+            : `错误 [EXIT_${String(result.exitCode)}]：命令以退出码 ${String(result.exitCode)} 结束，下面是它的输出。`) +
+            `\n${visibleOutput}`
         );
       }
       return {

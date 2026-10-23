@@ -5,6 +5,10 @@ import { StdioClientTransport, getDefaultEnvironment } from "@modelcontextprotoc
 import { Type } from "@earendil-works/pi-ai";
 import { logDiagnostic } from "../protocol/channel.js";
 import type { McpServerConfig } from "../protocol/frames.js";
+import { redactString } from "../observability/redaction.js";
+
+/** An error the MCP server itself returned, already worded for the model. */
+class McpToolError extends Error {}
 
 export interface McpBridgeResult {
   tools: unknown[];
@@ -318,7 +322,10 @@ export async function connectMcpServers(
                   .map((item) => (item.type === "text" ? item.text : ""))
                   .filter(Boolean)
                   .join("\n");
-                throw new Error(text || `MCP tool '${toolName}' call failed`);
+                // The server answered with an error: its own text is the diagnosis.
+                throw new McpToolError(
+                  `错误 [MCP_TOOL_ERROR]：${toolName} 返回错误：${redactString(text) || "未给出原因"}`
+                );
               }
 
               return {
@@ -326,9 +333,15 @@ export async function connectMcpServers(
                 isError: false,
               };
             } catch (err: unknown) {
-              const errMsg = err instanceof Error ? err.message : String(err);
+              const errMsg = redactString(err instanceof Error ? err.message : String(err));
               logDiagnostic(`Tool '${toolName}' call failed: ${errMsg}`);
-              throw err instanceof Error ? err : new Error(errMsg);
+              if (err instanceof McpToolError) throw err;
+              // Upstream text reaches the model only after redaction; it can
+              // carry connection strings or tokens.
+              throw new Error(
+                `错误 [MCP_TRANSPORT_ERROR]：调用 ${toolName} 失败：${errMsg}。` +
+                  "请求是否已在服务端执行未知；只读查询可稍后重试，写操作不要直接重试。"
+              );
             }
           },
         });

@@ -19,6 +19,33 @@ export interface ContextPrunerOptions {
 }
 
 const DEFAULT_PROTECT_TAIL_COUNT = 6;
+const CALL_PREVIEW_CHARS = 240;
+
+type CallInfo = { name: string; args: string };
+
+/** toolCallId -> the call that produced it, so a cleared result can say what it was. */
+function callIndex(messages: AgentMessage[]): Map<string, CallInfo> {
+  const calls = new Map<string, CallInfo>();
+  for (const msg of messages) {
+    if (msg.role !== "assistant" || !Array.isArray(msg.content)) continue;
+    for (const block of msg.content as any[]) {
+      if (block.type !== "toolCall") continue;
+      let args = JSON.stringify(block.arguments ?? {});
+      if (args.length > CALL_PREVIEW_CHARS) args = args.slice(0, CALL_PREVIEW_CHARS) + "…";
+      calls.set(String(block.id), { name: String(block.name), args });
+    }
+  }
+  return calls;
+}
+
+function describeCall(calls: Map<string, CallInfo>, id: unknown): string {
+  const call = calls.get(String(id));
+  return call ? `${call.name} ${call.args}` : "（原调用不可考）";
+}
+
+// Stack frames from Node and Python; everything else in an error is diagnosis.
+const STACK_LINE = /^\s+at\s|^\s*File ".*", line \d+|^Traceback \(most recent call last\)|^\s{4,}\S/;
+const ERROR_KEEP_CHARS = 800;
 
 export function pruneContext(
   messages: AgentMessage[],
@@ -79,6 +106,7 @@ export function pruneContext(
       }
     }
 
+    const calls = callIndex(messages);
     let firstUserPromptIndex = -1;
     for (let i = 0; i < messages.length; i += 1) {
       if (messages[i].role === "user") {
@@ -110,7 +138,9 @@ export function pruneContext(
             content: [
               {
                 type: "text" as const,
-                text: `[Output omitted: identical query repeated and superseded in a later turn]`,
+                text:
+                  `提示 [CONTEXT_CLEARED]：本次输出已从上下文移除，因为后面用相同参数又调用过一次：` +
+                  `${describeCall(calls, callId)}。两次输出未作比较，以后面那次为准。`,
               },
             ],
           });
@@ -122,17 +152,20 @@ export function pruneContext(
           const firstBlock = toolMsg.content[0];
           if (firstBlock && firstBlock.type === "text" && typeof firstBlock.text === "string") {
             const lines = firstBlock.text.split("\n");
-            if (lines.length > 4) {
-              const summaryLine = lines[0] || "Tool execution failed";
+            const kept = lines.filter((line: string) => !STACK_LINE.test(line));
+            let body = kept.join("\n").trim();
+            if (lines.length > 4 && (kept.length < lines.length || body.length > ERROR_KEEP_CHARS)) {
+              if (body.length > ERROR_KEEP_CHARS) body = body.slice(0, ERROR_KEEP_CHARS) + "…";
               result.push({
                 ...toolMsg,
                 content: [
                   {
                     type: "text" as const,
-                    // Do not claim the error was resolved: nothing here checks
-                    // for a later successful recovery, and asserting it would
-                    // mislead the model into skipping a still-broken step.
-                    text: `[Historical Error: ${summaryLine} (verbose stack trace pruned)]`,
+                    // Only the stack goes: the reason and the next step are what
+                    // the model needs. Nor is the error claimed resolved.
+                    text:
+                      `提示 [CONTEXT_CLEARED]：历史报错已去掉堆栈，原因保留如下；是否已修复未确认。` +
+                      `原调用：${describeCall(calls, callId)}\n${body}`,
                   },
                 ],
               });
@@ -165,7 +198,7 @@ export function pruneContext(
       result.push(msg);
     }
 
-    return enforceBudget(result, options?.maxContextTokens, tailStartIndex, firstUserPromptIndex);
+    return enforceBudget(result, options?.maxContextTokens, tailStartIndex, firstUserPromptIndex, calls);
   } catch (err: unknown) {
     logDiagnostic(`transformContext: context pruning failed, falling back to original: ${err}`);
     return messages;
@@ -200,7 +233,8 @@ function enforceBudget(
   messages: AgentMessage[],
   maxContextTokens: number | undefined,
   tailStartIndex: number,
-  firstUserPromptIndex: number
+  firstUserPromptIndex: number,
+  calls: Map<string, CallInfo> = new Map()
 ): AgentMessage[] {
   if (!maxContextTokens || maxContextTokens <= 0) {
     return messages;
@@ -233,9 +267,12 @@ function enforceBudget(
         : typeof directRef === "string" && directRef.length > 0
           ? directRef
           : null;
+    const origin = describeCall(calls, msg.toolCallId);
     const evictionText = resultRef
-      ? `[Output evicted to stay within the context budget. Retrieve the saved result with fetch_tool_result(result_ref=${JSON.stringify(resultRef)}).]`
-      : "[Output evicted to stay within the context budget. This content was not saved and is no longer recoverable; re-run the original tool if it is needed again.]";
+      ? `提示 [CONTEXT_CLEARED]：为控制上下文，已移除这次调用的输出（约 ${before} 字节）：${origin}。` +
+        `内容已保存，需要时取回：fetch_tool_result(${JSON.stringify({ result_ref: resultRef, offset: 0, limit: 20 })})`
+      : `提示 [CONTEXT_CLEARED]：为控制上下文，已移除这次调用的输出（约 ${before} 字节）：${origin}。` +
+        "未保存；只读调用需要时按原调用重读，有副作用的命令不要重跑。";
     const stripped = {
       ...msg,
       content: [

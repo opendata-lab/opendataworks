@@ -34,8 +34,23 @@ export interface BoundaryPolicy {
   readonly_commands: string[];
 }
 
-const PARENT_SEGMENT_DENIAL =
-  "Bash command uses a parent directory segment; stay inside the current agent workspace.";
+// Shared with the Claude Code profile (core/agent_runtime.py); the conformance
+// cases match on the codes, so keep the two wordings in step.
+function parentDenial(subject: string): string {
+  return (
+    `错误 [PARENT_SEGMENT]：${subject} 的路径含 ".." 段，已拒绝，未执行；同参重试无效。` +
+    "下一步：业务文件写相对工作区根目录的路径；技能里的脚本写成“本技能目录”下的路径。"
+  );
+}
+
+function scopeDenial(subject: string, value: string): string {
+  return (
+    `错误 [PATH_OUT_OF_SCOPE]：${subject} 的 ${value} 在允许范围（工作区与已启用技能目录）之外，已拒绝，未执行；` +
+    "同参重试无效。下一步：改用工作区内的相对路径，或已启用技能目录下的路径。"
+  );
+}
+
+const PARENT_SEGMENT_DENIAL = parentDenial("Bash 命令");
 
 /** Mirrors Python's _BASH_PARENT_SEGMENT_RE. */
 const PARENT_SEGMENT_RE = /(^|[\s;&|()])\.\.(?=$|[/\s;&|()])/;
@@ -92,14 +107,14 @@ export class WorkspaceBoundaryEnforcer {
           continue;
         }
         if (hasParentSegment(text)) {
-          return `Tool ${toolName} uses a parent directory segment; stay inside the current agent workspace.`;
+          return parentDenial(`${toolName}.${key}`);
         }
         const resolved = this.resolveCandidate(text);
         if (this.isDiscardSink(resolved)) {
           continue;
         }
         if (!this.isAllowed(resolved)) {
-          return `Tool ${toolName} references path outside workspace: ${text}`;
+          return scopeDenial(`${toolName}.${key}`, text);
         }
       }
     }
@@ -134,7 +149,7 @@ export class WorkspaceBoundaryEnforcer {
         if (this.isAllowed(resolved)) {
           continue;
         }
-        return `Bash command references absolute path outside workspace: ${value}`;
+        return scopeDenial("Bash 命令", value);
       }
     }
     return null;

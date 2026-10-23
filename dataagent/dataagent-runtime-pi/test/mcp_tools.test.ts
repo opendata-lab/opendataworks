@@ -235,3 +235,38 @@ test("prepareArguments rejects non-object raw arguments or non-object values", (
     /Field 'portal_get_table_ddl\.params' must be a non-null object, got array/
   );
 });
+
+test("an MCP tool error reaches the model labelled and redacted", async () => {
+  // A server that fails its tool with a message carrying a credential.
+  const fixture = String.raw`
+const readline = require("node:readline");
+const lines = readline.createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\n");
+lines.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.method === "initialize") {
+    send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: "2025-03-26", capabilities: { tools: {} }, serverInfo: { name: "f", version: "1" } } });
+  } else if (message.method === "tools/list") {
+    send({ jsonrpc: "2.0", id: message.id, result: { tools: [{ name: "lookup", description: "x", inputSchema: { type: "object" } }] } });
+  } else if (message.method === "tools/call") {
+    send({ jsonrpc: "2.0", id: message.id, result: { isError: true, content: [{ type: "text", text: "connect failed password=hunter2secret" }] } });
+  }
+});`;
+  const bridge = await connectMcpServers(
+    [{ name: "fixture", type: "stdio", command: process.execPath, args: ["-e", fixture] } as never],
+    { connectTimeoutMs: 2_000 }
+  );
+  try {
+    const tool = (bridge.tools as Array<{ execute: Function }>)[0];
+    await assert.rejects(
+      () => tool.execute("call-1", {}),
+      (err: Error) => {
+        assert.match(err.message, /^错误 \[MCP_TOOL_ERROR\]：lookup 返回错误：/);
+        assert.doesNotMatch(err.message, /hunter2secret/);
+        return true;
+      }
+    );
+  } finally {
+    await bridge.close?.();
+  }
+});

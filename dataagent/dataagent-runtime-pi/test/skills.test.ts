@@ -44,13 +44,15 @@ test("Skill tool is registered when skills are enabled", async () => {
     });
     assert.equal(successResult.isError, undefined);
     assert.match(successResult.content[0].text, /Test Skill Content/);
+    // The skill's own directory comes first, as Claude Code does.
+    assert.match(successResult.content[0].text, new RegExp(`^本技能目录：${skillDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\n`));
 
     // Execute Skill tool with non-enabled skill
     const deniedResult = await skillTool.execute("call-2", {
       skill_name: "unknown-skill",
     });
     assert.equal(deniedResult.isError, true);
-    assert.match(deniedResult.content[0].text, /not enabled/);
+    assert.match(deniedResult.content[0].text, /SKILL_NOT_ENABLED/);
   } finally {
     await fs.rm(tmpDir, { recursive: true, force: true });
   }

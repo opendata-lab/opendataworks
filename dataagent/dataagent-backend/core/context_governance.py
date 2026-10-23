@@ -52,7 +52,7 @@ def resolve_prune_watermarks(cfg: Any) -> tuple[float, float]:
     raw_high = getattr(cfg, "dataagent_context_prune_high_watermark_ratio", None)
     raw_target = getattr(cfg, "dataagent_context_prune_target_ratio", None)
     high = float(0.90 if raw_high is None else raw_high)
-    target = float(0.70 if raw_target is None else raw_target)
+    target = float(0.50 if raw_target is None else raw_target)
     if not (0 < target < high <= 1):
         raise InvalidContextGovernance(
             "context prune watermarks must satisfy 0 < target < high <= 1; "

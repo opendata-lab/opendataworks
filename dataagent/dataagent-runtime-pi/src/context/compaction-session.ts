@@ -32,7 +32,9 @@ export interface CompactionSettings extends ContextPrunerOptions {
 }
 
 const DEFAULT_HIGH_RATIO = 0.9;
-const DEFAULT_TARGET_RATIO = 0.7;
+// One compaction should last: each costs a full prefix cache miss, so clear
+// well below the trigger rather than just under it.
+const DEFAULT_TARGET_RATIO = 0.5;
 
 // Rough bytes-per-token, used until the provider has reported real usage.
 // Deliberately not a tokenizer: pulling one in would tie the runtime to a

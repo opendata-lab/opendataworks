@@ -109,7 +109,10 @@ test("pruneContext deduplicates repeated historical tool calls", () => {
   // Earlier tool call_1 result should be superseded
   const oldResult = result.find((m: any) => m.toolCallId === "call_1");
   assert.ok(oldResult);
-  assert.match((oldResult as any).content[0].text, /superseded in a later turn/);
+  const cleared = (oldResult as any).content[0].text;
+  assert.match(cleared, /CONTEXT_CLEARED/);
+  // It names the call it replaced, so the model knows what was there.
+  assert.match(cleared, /run_sql \{"sql":"DESCRIBE orders"\}/);
 
   // Later tool call_2 result in protected tail remains intact
   const newResult = result.find((m: any) => m.toolCallId === "call_2");
@@ -152,8 +155,10 @@ test("pruneContext condenses historical error stack traces", () => {
   const errorMsg = result.find((m: any) => m.toolCallId === "call_err");
   assert.ok(errorMsg);
   const text = (errorMsg as any).content[0].text;
-  assert.match(text, /Historical Error/);
-  assert.match(text, /verbose stack trace pruned/);
+  assert.match(text, /CONTEXT_CLEARED/);
+  // Only the stack goes; the reason and the call stay.
+  assert.match(text, /You have an error in your SQL syntax/);
+  assert.match(text, /run_sql \{"sql":"SELCT \* FROM bad"\}/);
   assert.equal(text.includes("/app/client.js"), false);
   // Nothing here checks for a later successful recovery, so the digest must not
   // assert one — telling the model a still-broken step was resolved is worse
@@ -228,9 +233,9 @@ test("budget eviction only suggests fetch_tool_result when that result has a ref
   const withoutRefText = withoutRef.content[0].text;
   const withRefText = withRef.content[0].text;
 
-  assert.match(withoutRefText, /not saved and is no longer recoverable/);
+  assert.match(withoutRefText, /未保存/);
   assert.doesNotMatch(withoutRefText, /fetch_tool_result/);
-  assert.match(withRefText, /fetch_tool_result\(result_ref="res_saved_123"\)/);
+  assert.match(withRefText, /fetch_tool_result\(\{"result_ref":"res_saved_123"/);
 });
 
 test("a failed retry does not supersede an earlier successful result", async () => {

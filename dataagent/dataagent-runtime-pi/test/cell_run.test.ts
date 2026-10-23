@@ -791,7 +791,7 @@ for (const timeout of [0.05, 2]) {
     const completed = events.find((event) => event.type === "tool.completed");
     assert.ok(completed);
     assert.equal(completed.payload.is_error, timeout < 0.3);
-    if (timeout < 0.3) assert.match(JSON.stringify(completed.payload.output), /was killed/);
+    if (timeout < 0.3) assert.match(JSON.stringify(completed.payload.output), /TOOL_TIMEOUT/);
   });
 }
 

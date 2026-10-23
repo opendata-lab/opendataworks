@@ -216,13 +216,13 @@ test("tools refuse a path outside the workspace before touching the filesystem",
   const read = tools.find((t) => t.name === "Read")!;
   await assert.rejects(
     () => read.execute("call-1", { file_path: path.join(outside, "secret.txt") }),
-    /outside workspace/
+    /PATH_OUT_OF_SCOPE/
   );
 
   const bash = tools.find((t) => t.name === "Bash")!;
   await assert.rejects(
     () => bash.execute("call-2", { command: `cat ${outside}/secret.txt` }),
-    /outside workspace/
+    /PATH_OUT_OF_SCOPE/
   );
 });
 
@@ -251,7 +251,7 @@ test("a failing shell command throws so the model and the UI both see an error",
   // The output has to survive: createErrorToolResult keeps only the message.
   await assert.rejects(
     () => bash.execute("call-3", { command: "echo before-failure; exit 7" }),
-    (err: Error) => /exited with code 7/.test(err.message) && /before-failure/.test(err.message)
+    (err: Error) => /退出码 7/.test(err.message) && /before-failure/.test(err.message)
   );
 
   const ok = await bash.execute("call-4", { command: "echo fine" });
@@ -282,6 +282,6 @@ test("a failed command inside a pipeline is not masked by a successful final sta
 
   await assert.rejects(
     () => bash.execute("call-pipefail", { command: "(echo upstream-failure >&2; exit 9) | head -n 1" }),
-    (err: Error) => /exited with code 9/.test(err.message) && /upstream-failure/.test(err.message)
+    (err: Error) => /退出码 9/.test(err.message) && /upstream-failure/.test(err.message)
   );
 });

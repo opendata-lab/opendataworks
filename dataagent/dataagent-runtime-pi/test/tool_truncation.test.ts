@@ -95,10 +95,10 @@ test("Bash reports discarded bytes in model-visible successful output", async (t
   const bash = toolsFor(root).find((tool) => tool.name === "Bash")!;
   const result = await bash.execute("bash-truncate", { command });
   const text = result.content[0].type === "text" ? result.content[0].text : "";
-  assert.match(text, /17600 bytes were discarded/);
-  assert.match(text, /cannot be recovered/);
-  assert.match(text, /filters, head, or tail/);
-  assert.match(text, /redirect it to a file and then use Read/);
+  assert.match(text, /另有 17600 字节已丢弃/);
+  assert.match(text, /无法取回/);
+  // A concrete way to get the rest, and no hint that it was saved.
+  assert.match(text, /> command-output\.log 2>&1/);
   assert.doesNotMatch(text, /fetch_tool_result/);
 });
 
@@ -113,10 +113,10 @@ test("Bash includes the truncation warning in a non-zero exit error", async (t) 
         command: "printf '%*s' 120000 '' | tr ' ' x; exit 7",
       }),
     (error: Error) => {
-      assert.match(error.message, /exited with code 7/);
-      assert.match(error.message, /17600 bytes were discarded/);
-      assert.match(error.message, /cannot be recovered/);
-      assert.match(error.message, /redirect it to a file and then use Read/);
+      assert.match(error.message, /退出码 7/);
+      assert.match(error.message, /另有 17600 字节已丢弃/);
+      assert.match(error.message, /无法取回/);
+      assert.match(error.message, /> command-output\.log 2>&1/);
       assert.doesNotMatch(error.message, /fetch_tool_result/);
       return true;
     }

@@ -176,9 +176,10 @@ export function extractDigest(
       `Do NOT assume the total count is ${sampleCount}. ` +
       `If you need specific rows or column slices, call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)'; ` +
       `to find rows without knowing where they are, call 'search_result(result_ref="${resultRef}", query="...")'. ` +
-      `Prefer either over re-running the query that produced this — the full result is already here. ` +
-      `This sampling is internal plumbing: never mention it, the ref, or the context window in your answer — ` +
-      `the reader asked about their data, not about how it reached you.]`;
+      `Prefer either over re-running the query that produced this — its ${totalRows} returned rows are stored ` +
+      `(row data only; fields around the rows such as counts or warnings are not). ` +
+      `You need not explain this storage to the reader, but never mention it, the ref, or the context window ` +
+      `unless your answer rests on rows you have not read — then say what you did not see.]`;
 
     return {
       _type: "dataagent_folded_result",
@@ -206,9 +207,9 @@ export function extractDigest(
     `Full content has been preserved in ResultStore (ref: '${resultRef}'). ` +
     `Showing truncated preview. Call 'fetch_tool_result(result_ref="${resultRef}", offset=..., limit=...)' to read more, ` +
     `or 'search_result(result_ref="${resultRef}", query="...")' to locate part of it. ` +
-    `Prefer either over re-running the tool that produced this — the full output is already here. ` +
-    `This truncation is internal plumbing: never mention it, the ref, or the context window in your answer — ` +
-    `the reader asked about their data, not about how it reached you.]`;
+    `Prefer either over re-running the tool that produced this — the captured output is stored. ` +
+    `You need not explain this storage to the reader, but never mention it, the ref, or the context window ` +
+    `unless your answer rests on output you have not read — then say what you did not see.]`;
 
   return {
     _type: "dataagent_folded_result",
@@ -239,13 +240,12 @@ export function formatDigestText(digest: CompactResultDigest): string {
 
   if (digest.is_tabular) {
     lines.push(
-      `Output too large to inline: ${digest.total_rows} rows.`,
-      `Full result saved to: ${storedPath(digest.result_ref)}`
+      `提示 [RESULT_FOLDED]：输出过大未内联；本次返回的 ${digest.total_rows} 行已保存到 ${storedPath(digest.result_ref)}` +
+        "（只存行数据，行以外的字段如总数、警告未保存）。"
     );
   } else {
     lines.push(
-      `Output too large to inline: ${digest.total_chars} characters.`,
-      `Full output saved to: ${storedPath(digest.result_ref)}`
+      `提示 [RESULT_FOLDED]：输出 ${digest.total_chars} 个字符，过大未内联；捕获到的输出已保存到 ${storedPath(digest.result_ref)}。`
     );
   }
 
@@ -254,8 +254,8 @@ export function formatDigestText(digest: CompactResultDigest): string {
     `Read a slice:  fetch_tool_result(result_ref="${digest.result_ref}", offset=0, limit=20)`,
     `Find rows:     search_result(result_ref="${digest.result_ref}", query="...")`,
     "",
-    "Prefer either over re-running the tool that produced this — the full result is already saved.",
-    "This block is internal plumbing: never mention it, the ref, or the size limit in your answer.",
+    "需要的部分优先从已保存的结果里取，不必重跑原工具。",
+    "一般不必向用户解释这些存储细节；但结论依赖你没读到的数据时，要向用户说明没看到什么。",
     ""
   );
 

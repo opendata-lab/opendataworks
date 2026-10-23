@@ -125,7 +125,7 @@ class Settings(BaseSettings):
     # only when the context crosses the high mark, because pi-ai caches the
     # prompt prefix and rewriting history on every turn invalidates it.
     dataagent_context_prune_high_watermark_ratio: float = 0.90
-    dataagent_context_prune_target_ratio: float = 0.70
+    dataagent_context_prune_target_ratio: float = 0.50
     # Prompt cache retention passed explicitly to the Cell: short | long | off.
     # DISABLE_PROMPT_CACHING never reached the Pi runtime, so caching was on
     # while the backend believed it was off.

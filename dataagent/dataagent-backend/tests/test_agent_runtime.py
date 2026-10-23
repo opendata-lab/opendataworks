@@ -479,7 +479,7 @@ def test_workspace_boundary_denies_parent_directory_file_lookup(tmp_path: Path):
     )
 
     assert denial is not None
-    assert "parent directory" in denial
+    assert "PARENT_SEGMENT" in denial
 
 
 def test_workspace_boundary_allows_workspace_and_enabled_skill_roots(tmp_path: Path):
@@ -518,7 +518,7 @@ def test_workspace_boundary_allows_workspace_and_enabled_skill_roots(tmp_path: P
         {"DATAAGENT_PYTHON_BIN": sys.executable},
     )
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_resolve_workspace_scratch_dirs_defaults_to_tmp():
@@ -570,7 +570,7 @@ def test_workspace_boundary_allows_configured_scratch_dir(tmp_path: Path):
         "Write", {"file_path": str(tmp_path / "elsewhere.csv")}, workspace, allowed_roots, runtime_env
     )
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_allows_dev_null_redirects(tmp_path: Path):
@@ -611,13 +611,13 @@ def test_workspace_boundary_still_denies_rest_of_dev(tmp_path: Path):
             "Bash", {"command": command}, workspace, allowed_roots, runtime_env
         )
         assert denial is not None, command
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
     denial = agent_runtime._validate_workspace_tool_boundary(
         "Write", {"file_path": "/dev/sda"}, workspace, allowed_roots, runtime_env
     )
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_paths_hidden_in_assignments(tmp_path: Path):
@@ -641,7 +641,7 @@ def test_workspace_boundary_denies_paths_hidden_in_assignments(tmp_path: Path):
             "Bash", {"command": command}, workspace, allowed_roots, runtime_env
         )
         assert denial is not None, command
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_assignment_check_does_not_overreach(tmp_path: Path):
@@ -801,7 +801,7 @@ def test_workspace_boundary_denies_bash_mutation_of_offloaded_tool_result(tmp_pa
             runtime_env,
         )
         assert denial is not None, f"expected denial for {command!r}"
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_complex_bash_with_offloaded_tool_result(tmp_path: Path):
@@ -828,7 +828,7 @@ def test_workspace_boundary_denies_complex_bash_with_offloaded_tool_result(tmp_p
             runtime_env,
         )
         assert denial is not None, f"expected denial for {command!r}"
-        assert "unsupported shell syntax" in denial
+        assert "OFFLOADED_RESULT_SYNTAX" in denial
 
 
 def test_workspace_boundary_denies_pager_view_of_offloaded_tool_result(tmp_path: Path):
@@ -851,7 +851,7 @@ def test_workspace_boundary_denies_pager_view_of_offloaded_tool_result(tmp_path:
             runtime_env,
         )
         assert denial is not None, f"expected denial for {command!r}"
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_session_state_and_non_read_tools(tmp_path: Path):
@@ -879,7 +879,7 @@ def test_workspace_boundary_denies_session_state_and_non_read_tools(tmp_path: Pa
             "Read", {"file_path": str(target)}, workspace, allowed_roots, runtime_env
         )
         assert denial is not None, f"expected Read denial for {target}"
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
     # The exception only covers Read and Bash on the offloaded file itself;
     # LS/Glob/Grep into the tool-results dir stay denied, and Bash into the
@@ -894,7 +894,7 @@ def test_workspace_boundary_denies_session_state_and_non_read_tools(tmp_path: Pa
             tool_name, payload, workspace, allowed_roots, runtime_env
         )
         assert denial is not None, f"expected {tool_name} denial"
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_other_topic_and_credentials_under_home(tmp_path: Path):
@@ -921,7 +921,7 @@ def test_workspace_boundary_denies_other_topic_and_credentials_under_home(tmp_pa
             runtime_env,
         )
         assert denial is not None
-        assert "outside workspace" in denial
+        assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_honors_claude_config_dir_for_tool_results(tmp_path: Path):
@@ -948,7 +948,7 @@ def test_workspace_boundary_honors_claude_config_dir_for_tool_results(tmp_path: 
         "Read", {"file_path": str(home_path)}, workspace, allowed_roots, runtime_env
     )
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_write_outside_workspace(tmp_path: Path):
@@ -965,7 +965,7 @@ def test_workspace_boundary_denies_write_outside_workspace(tmp_path: Path):
     )
 
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_edit_parent_directory(tmp_path: Path):
@@ -982,7 +982,7 @@ def test_workspace_boundary_denies_edit_parent_directory(tmp_path: Path):
     )
 
     assert denial is not None
-    assert "parent directory" in denial
+    assert "PARENT_SEGMENT" in denial
 
 
 def test_workspace_boundary_allows_write_inside_workspace(tmp_path: Path):
@@ -1013,7 +1013,7 @@ def test_workspace_boundary_denies_notebook_edit_outside_workspace(tmp_path: Pat
     )
 
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_denies_bash_parent_directory_lookup(tmp_path: Path):
@@ -1030,7 +1030,7 @@ def test_workspace_boundary_denies_bash_parent_directory_lookup(tmp_path: Path):
     )
 
     assert denial is not None
-    assert "parent directory" in denial
+    assert "PARENT_SEGMENT" in denial
 
 
 def test_workspace_boundary_denies_shared_container_runtime_root_lookup():
@@ -1046,7 +1046,7 @@ def test_workspace_boundary_denies_shared_container_runtime_root_lookup():
     )
 
     assert denial is not None
-    assert "outside workspace" in denial
+    assert "PATH_OUT_OF_SCOPE" in denial
 
 
 def test_workspace_boundary_hook_returns_pretooluse_denial(tmp_path: Path):

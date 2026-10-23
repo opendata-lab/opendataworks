@@ -369,6 +369,22 @@ def _classify_bash_operator(token: str) -> str | None:
     return "redirect" if any(ch in "<>" for ch in token) else "separator"
 
 
+
+def _parent_denial(subject: str) -> str:
+    # Same wording as the Pi enforcer; the conformance cases match on the codes.
+    return (
+        f'错误 [PARENT_SEGMENT]：{subject} 的路径含 ".." 段，已拒绝，未执行；同参重试无效。'
+        "下一步：业务文件写相对工作区根目录的路径；技能里的脚本写成“本技能目录”下的路径。"
+    )
+
+
+def _scope_denial(subject: str, value: str) -> str:
+    return (
+        f"错误 [PATH_OUT_OF_SCOPE]：{subject} 的 {value} 在允许范围（工作区与已启用技能目录）之外，已拒绝，未执行；"
+        "同参重试无效。下一步：改用工作区内的相对路径，或已启用技能目录下的路径。"
+    )
+
+
 def _validate_bash_workspace_boundary(
     command: str,
     allowed_roots: list[Path],
@@ -377,15 +393,15 @@ def _validate_bash_workspace_boundary(
 ) -> str | None:
     command = _drop_quoted_heredoc_bodies(command)
     if _BASH_PARENT_SEGMENT_RE.search(command.replace("\\", "/")):
-        return "Bash command uses a parent directory segment; stay inside the current agent workspace."
+        return _parent_denial("Bash 命令")
     tokens = _tokenize_bash_command(command)
 
     if _bash_references_offloaded_tool_result(tokens, tool_result_root) and (
         _bash_command_has_linebreak(command) or _bash_command_has_process_substitution(tokens)
     ):
         return (
-            "Bash command uses unsupported shell syntax with an offloaded tool result; "
-            "use Read or a simple single-line read-only command."
+            "错误 [OFFLOADED_RESULT_SYNTAX]：读取已落盘结果的 Bash 命令含换行或进程替换，已拒绝，未执行。"
+            "下一步：用 Read 读取该结果文件，或改成单行只读命令。"
         )
 
     python_bin = str((runtime_env or {}).get("DATAAGENT_PYTHON_BIN") or "").strip()
@@ -419,7 +435,7 @@ def _validate_bash_workspace_boundary(
         if not normalized or normalized.startswith("$") or _URL_SCHEME_RE.match(normalized):
             continue
         if _path_has_parent_segment(normalized):
-            return "Bash command uses a parent directory segment; stay inside the current agent workspace."
+            return _parent_denial("Bash 命令")
         for value in _bash_token_path_candidates(normalized):
             candidate = Path(value).expanduser().resolve(strict=False)
             if allowed_executable and candidate == allowed_executable:
@@ -434,7 +450,7 @@ def _validate_bash_workspace_boundary(
                 and _is_offloaded_tool_result_path(candidate, tool_result_root)
             ):
                 continue
-            return f"Bash command references absolute path outside workspace: {value}"
+            return _scope_denial("Bash 命令", value)
     return None
 
 
@@ -467,7 +483,7 @@ def _validate_workspace_tool_boundary(
 
     for key, value in _iter_tool_path_inputs(normalized_tool, input_payload):
         if _path_has_parent_segment(value):
-            return f"{normalized_tool} {key} uses a parent directory segment; stay inside the current agent workspace."
+            return _parent_denial(f"{normalized_tool}.{key}")
         candidate = _resolve_workspace_candidate(value, workspace)
         if _path_is_allowed(candidate, allowed_roots):
             continue
@@ -475,7 +491,7 @@ def _validate_workspace_tool_boundary(
             continue
         if _is_offloaded_tool_result_path(candidate, tool_result_root):
             continue
-        return f"{normalized_tool} {key} is outside workspace or enabled Skill roots: {value}"
+        return _scope_denial(f"{normalized_tool}.{key}", value)
     return None
 
 
