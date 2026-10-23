@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
+import com.onedata.portal.util.JdbcUrlParts;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.support.CronExpression;
@@ -13,6 +14,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Doris 集群配置服务
@@ -81,6 +83,9 @@ public class DorisClusterService {
         if (!StringUtils.hasText(cluster.getSourceType())) {
             cluster.setSourceType(exists.getSourceType());
         }
+        if (cluster.getDatabaseName() == null) {
+            cluster.setDatabaseName(exists.getDatabaseName());
+        }
         if (cluster.getAutoSync() == null) {
             cluster.setAutoSync(exists.getAutoSync());
         }
@@ -140,14 +145,22 @@ public class DorisClusterService {
         if (!StringUtils.hasText(cluster.getSourceType())) {
             cluster.setSourceType("DORIS");
         } else {
-            cluster.setSourceType(cluster.getSourceType().trim().toUpperCase());
+            cluster.setSourceType(cluster.getSourceType().trim().toUpperCase(Locale.ROOT));
         }
-        if (!"DORIS".equals(cluster.getSourceType()) && !"MYSQL".equals(cluster.getSourceType())) {
+        if (!"DORIS".equals(cluster.getSourceType()) && !"MYSQL".equals(cluster.getSourceType())
+                && !"POSTGRESQL".equals(cluster.getSourceType())) {
             throw new RuntimeException("数据源类型不支持: " + cluster.getSourceType());
+        }
+        if ("POSTGRESQL".equals(cluster.getSourceType()) && !StringUtils.hasText(cluster.getDatabaseName())) {
+            throw new IllegalArgumentException("PostgreSQL 连接数据库不能为空");
+        }
+        if (StringUtils.hasText(cluster.getDatabaseName())) {
+            cluster.setDatabaseName(cluster.getDatabaseName().trim());
         }
         if (!StringUtils.hasText(cluster.getFeHost())) {
             throw new RuntimeException("FE Host 不能为空");
         }
+        cluster.setFeHost(JdbcUrlParts.requireHost(cluster.getFeHost()));
         if (cluster.getFePort() == null) {
             throw new RuntimeException("FE Port 不能为空");
         }

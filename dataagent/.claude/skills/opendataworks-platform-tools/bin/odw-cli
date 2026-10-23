@@ -14,10 +14,10 @@ usage() {
 Usage:
   odw-cli inspect [--database DB] [--table TABLE] [--keyword KEYWORD] [--table-limit N]
   odw-cli lineage [--table TABLE] [--db-name DB] [--table-id ID] [--depth N]
-  odw-cli resolve-datasource --database DB [--preferred-engine mysql|doris]
+  odw-cli resolve-datasource --database DB [--preferred-engine mysql|doris|postgresql]
   odw-cli export --kind tables|lineage|datasource [--database DB]
   odw-cli ddl [--database DB --table TABLE] [--table-id ID]
-  odw-cli query-readonly --database DB --sql SQL [--preferred-engine mysql|doris] [--limit N] [--timeout-seconds N] [--for-export true]
+  odw-cli query-readonly --database DB --sql SQL [--preferred-engine mysql|doris|postgresql] [--limit N] [--timeout-seconds N] [--for-export true]
 EOF
   exit 2
 }

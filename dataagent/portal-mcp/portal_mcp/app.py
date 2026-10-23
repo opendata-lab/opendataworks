@@ -64,7 +64,7 @@ class LineageInput(PortalToolInput):
 
 class ResolveDatasourceInput(PortalToolInput):
     database: str = Field(..., description="数据库名")
-    preferred_engine: Literal["mysql", "doris"] | None = Field(default=None, description="期望引擎，可选")
+    preferred_engine: Literal["mysql", "doris", "postgresql"] | None = Field(default=None, description="期望引擎，可选")
 
 
 class ExportMetadataInput(PortalToolInput):
@@ -87,7 +87,7 @@ class TableDdlInput(PortalToolInput):
 class QueryReadonlyInput(PortalToolInput):
     database: str = Field(..., description="数据库名")
     sql: str = Field(..., min_length=1, description="单条只读 SQL")
-    preferred_engine: Literal["mysql", "doris"] | None = Field(default=None, description="期望引擎，可选")
+    preferred_engine: Literal["mysql", "doris", "postgresql"] | None = Field(default=None, description="期望引擎，可选")
     limit: int = Field(default=1000, ge=1, le=10000, description="结果返回上限")
     timeout_seconds: int = Field(default=30, ge=1, le=120, description="单次查询超时秒数")
 

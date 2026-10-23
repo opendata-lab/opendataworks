@@ -8,10 +8,12 @@ import com.onedata.portal.dto.WorkflowFreshnessResponse;
 import com.onedata.portal.dto.WorkflowTableRelationItem;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
+import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.TableFreshnessConfig;
 import com.onedata.portal.entity.TableFreshnessResult;
 import com.onedata.portal.mapper.DataFieldMapper;
 import com.onedata.portal.mapper.DataTableMapper;
+import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.TableFreshnessConfigMapper;
 import com.onedata.portal.mapper.TableFreshnessResultMapper;
 import com.onedata.portal.mapper.TableTaskRelationMapper;
@@ -21,6 +23,7 @@ import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -43,6 +46,7 @@ public class TableFreshnessService {
     private final TableTaskRelationMapper tableTaskRelationMapper;
     private final FreshnessContractResolver contractResolver;
     private final FreshnessCheckService freshnessCheckService;
+    private final DorisClusterMapper dorisClusterMapper;
 
     /**
      * 查询生效契约（含字段来源）与最近一次结果。
@@ -286,12 +290,15 @@ public class TableFreshnessService {
                 validateQuery(loadedAtQuery);
                 break;
             case PARTITION:
+                requireModeSupportedBySource(table, mode);
                 if (trimToNull(request.getPartitionFormat()) == null) {
                     throw new IllegalArgumentException("partition 模式必须指定分区日期格式");
                 }
                 requirePartitionColumn(table.getId());
                 break;
             case METADATA:
+                requireModeSupportedBySource(table, mode);
+                break;
             default:
                 break;
         }
@@ -302,6 +309,15 @@ public class TableFreshnessService {
         validateFilter(request.getFilterExpr());
         validateThreshold(request.getWarnAfterCount(), request.getWarnAfterPeriod(), "warn");
         validateThreshold(request.getErrorAfterCount(), request.getErrorAfterPeriod(), "error");
+    }
+
+    /** PostgreSQL 不提供表更新时间，也没有 Doris 式的分区列表；只能用 column / custom_sql 模式。 */
+    private void requireModeSupportedBySource(DataTable table, FreshnessMode mode) {
+        DorisCluster cluster = table.getClusterId() == null ? null : dorisClusterMapper.selectById(table.getClusterId());
+        if (cluster != null && "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType())) {
+            throw new IllegalArgumentException("PostgreSQL 数据源不支持 " + mode.name().toLowerCase(Locale.ROOT)
+                + " 模式，请改用 column 或 custom_sql 模式");
+        }
     }
 
     private void requireRealColumn(Long tableId, String column) {

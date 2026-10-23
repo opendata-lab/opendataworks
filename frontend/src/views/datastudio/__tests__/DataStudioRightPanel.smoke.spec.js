@@ -31,6 +31,7 @@ import DataStudioRightPanelBasic from '../components/DataStudioRightPanelBasic.v
 import DataStudioRightPanelColumns from '../components/DataStudioRightPanelColumns.vue'
 import DataStudioRightPanelAccess from '../components/DataStudioRightPanelAccess.vue'
 import DataStudioRightPanelDoris from '../components/DataStudioRightPanelDoris.vue'
+import SmartMetadataDialog from '../components/SmartMetadataDialog.vue'
 
 const buildCtx = () => {
   const activeTab = ref('t1')
@@ -70,6 +71,7 @@ const buildCtx = () => {
     getMetaDataDomainOptions: () => [],
     handleMetaBusinessDomainChange: fn(),
     isDorisTable: () => true,
+    structureEditBlockedReason: () => '',
     isPlatformMetadataMissing: () => false,
     isAggregateTable: () => false,
     isReplicaWarning: () => false,
@@ -144,6 +146,84 @@ describe('DataStudioRightPanel mount smoke', () => {
       expect(wrapper.find(marker).exists()).toBe(true)
       wrapper.unmount()
     }
+  })
+
+  it('PostgreSQL 表编辑表信息时表名和表注释只读，平台属性仍可编辑', () => {
+    const ctx = buildCtx()
+    ctx.tabStates.t1.metaEditing = true
+    ctx.tabStates.t1.metaForm = { tableName: 'orders', tableComment: '订单', layer: 'DWD' }
+    ctx.structureEditBlockedReason = () => 'PostgreSQL 暂不支持在线修改表结构，请在数据库中修改后重新同步元数据'
+    const wrapper = shallowMount(DataStudioRightPanelBasic, {
+      global: {
+        provide: { dataStudioCtx: ctx },
+        stubs: { TableTrendDialog: true, ElScrollbar: { template: '<div><slot /></div>' } },
+        // el-descriptions 的 item 是插槽内容，浅挂载默认不渲染
+        renderStubDefaultSlot: true,
+        config: { warnHandler: () => {} },
+        directives: { loading: {} },
+      },
+    })
+    // 表单控件按出现顺序：表名、表注释、分层……
+    const controls = wrapper.findAll('.meta-input')
+    expect(controls.length).toBeGreaterThan(2)
+    expect(controls[0].attributes('disabled')).toBe('true')
+    expect(controls[0].attributes('title')).toContain('PostgreSQL')
+    expect(controls[1].attributes('disabled')).toBe('true')
+    // 分层等平台属性不受影响
+    expect(controls[2].attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('智能元数据：数据源不支持改注释时不勾选、不提交表/字段描述，平台属性照常', () => {
+    const ctx = buildCtx()
+    ctx.structureEditBlockedReason = () => 'PostgreSQL 暂不支持在线修改表结构'
+    ctx.metadataDialogVisible.value = true
+    ctx.metadataResult.value = {
+      tabId: 't1',
+      table: { hasRecommendation: true, currentComment: '', suggestedComment: '订单表' },
+      attributes: [{ key: 'layer', label: '分层', hasRecommendation: true, suggestedValue: 'DWD' }],
+      freshness: { hasRecommendation: false },
+      fields: [{ fieldName: 'status', hasRecommendation: true, currentComment: '', suggestedComment: '状态' }],
+    }
+    const wrapper = shallowMount(SmartMetadataDialog, {
+      global: {
+        provide: { dataStudioCtx: ctx },
+        // 只展开弹窗本身；表格等子组件保持浅挂载
+        stubs: { ElDialog: { template: '<div><slot /><slot name="footer" /></div>' } },
+        config: { warnHandler: () => {} },
+      },
+    })
+    expect(wrapper.find('[data-test="smd-comment-blocked"]').exists()).toBe(true)
+    wrapper.vm.$.setupState.onAdopt()
+    expect(ctx.adoptMetadata).toHaveBeenCalledWith('t1', expect.objectContaining({
+      table: null,
+      fields: [],
+      attributes: [{ key: 'layer', value: 'DWD' }],
+    }))
+    wrapper.unmount()
+  })
+
+  it('智能元数据：对应的表已关闭时提示并禁用采纳', () => {
+    const ctx = buildCtx()
+    ctx.structureEditBlockedReason = () => ''
+    ctx.metadataDialogVisible.value = true
+    ctx.metadataResult.value = {
+      tabId: 'closed-tab',
+      table: { hasRecommendation: true, currentComment: '', suggestedComment: '订单表' },
+      attributes: [],
+      freshness: { hasRecommendation: false },
+      fields: [],
+    }
+    const wrapper = shallowMount(SmartMetadataDialog, {
+      global: {
+        provide: { dataStudioCtx: ctx },
+        stubs: { ElDialog: { template: '<div><slot /><slot name="footer" /></div>' } },
+        config: { warnHandler: () => {} },
+      },
+    })
+    expect(wrapper.find('[data-test="smd-target-missing"]').exists()).toBe(true)
+    expect(wrapper.vm.$.setupState.targetMissing).toBe(true)
+    wrapper.unmount()
   })
 
   it('表信息默认两列，面板收窄后退回一列', async () => {
@@ -342,6 +422,45 @@ describe('DataStudioRightPanel mount smoke', () => {
     ctx.tabStates.t1.fieldsEditing = true
     wrapper = mountPanel()
     expect(actions(wrapper)).toMatchObject({ cancel: true, save: true, generate: false, del: false })
+    wrapper.unmount()
+  })
+
+  it('PostgreSQL 表的字段编辑和删表禁用并说明原因，表信息仍可编辑', () => {
+    const ctx = buildCtx()
+    ctx.isDorisTable = () => false
+    ctx.structureEditBlockedReason = () => 'PostgreSQL 暂不支持在线修改表结构，请在数据库中修改后重新同步元数据'
+    const mountPanel = () =>
+      shallowMount(DataStudioRightPanel, {
+        global: {
+          provide: { dataStudioCtx: ctx },
+          stubs: {
+            DataStudioRightPanelLineage: true,
+            SmartMetadataDialog: true,
+            ElDropdown: { template: '<div><slot /><slot name="dropdown" /></div>' },
+            ElDropdownMenu: { template: '<div><slot /></div>' },
+            ElDropdownItem: { props: ['disabled', 'title'], template: '<div :data-disabled="String(!!disabled)" :title="title"><slot /></div>' },
+            ElTooltip: { props: ['content'], template: '<div class="tooltip-stub" :data-content="content"><slot /></div>' },
+            ElScrollbar: { template: '<div><slot /></div>' },
+          },
+          config: { warnHandler: () => {} },
+          directives: { loading: {} },
+        },
+      })
+
+    // 表信息：平台属性仍可编辑；删表禁用
+    let wrapper = mountPanel()
+    const pgReason = (w) => w.findAll('.tooltip-stub')
+      .some((t) => String(t.attributes('data-content') || '').includes('PostgreSQL 暂不支持在线修改表结构'))
+    expect(pgReason(wrapper)).toBe(false)
+    const del = wrapper.find('[data-test="action-delete"]')
+    expect(del.attributes('data-disabled')).toBe('true')
+    expect(del.attributes('title')).toContain('PostgreSQL 暂不支持在线修改表结构')
+    wrapper.unmount()
+
+    // 列信息：编辑按钮禁用并给出原因
+    ctx.tabStates.t1.metaTab = 'columns'
+    wrapper = mountPanel()
+    expect(pgReason(wrapper)).toBe(true)
     wrapper.unmount()
   })
 

@@ -3,6 +3,7 @@ package com.onedata.portal.service.table;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.util.DatasourceType;
+import com.onedata.portal.util.JdbcUrlParts;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -48,7 +49,8 @@ public class TableEngineJdbcExecutor {
         String targetDb = StringUtils.hasText(database) ? database : "information_schema";
         return String.format(
                 "jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true",
-                datasource.getFeHost(), datasource.getFePort(), targetDb);
+                JdbcUrlParts.requireHost(datasource.getFeHost()), datasource.getFePort(),
+                JdbcUrlParts.requireDatabase(targetDb));
     }
 
     private DorisCluster resolveDatasource(Long datasourceId, DatasourceType expectedType) {

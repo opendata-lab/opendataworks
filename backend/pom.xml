@@ -72,6 +72,14 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- PostgreSQL datasource driver (platform persistence remains MySQL) -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.14</version>
+            <scope>runtime</scope>
+        </dependency>
+
         <!-- Lombok -->
         <dependency>
             <groupId>org.projectlombok</groupId>

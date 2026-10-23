@@ -4,7 +4,7 @@
       <template #header>
         <div class="card-header">
           <div>
-            <span class="sub-title">统一配置 Doris / MySQL 数据源，支持连通性检测、默认数据源与元数据同步</span>
+            <span class="sub-title">统一配置 Doris / MySQL / PostgreSQL 数据源，支持连通性检测、默认数据源与元数据同步</span>
           </div>
           <div class="actions">
             <el-button type="primary" @click="openCreate">
@@ -24,8 +24,8 @@
         <el-table-column prop="clusterName" label="数据源名称" min-width="160" />
         <el-table-column label="类型" min-width="110">
           <template #default="{ row }">
-            <el-tag size="small" :type="row.sourceType === 'MYSQL' ? 'success' : 'warning'">
-              {{ row.sourceType || 'DORIS' }}
+            <el-tag size="small" :type="getSourceTypeTag(row.sourceType)">
+              {{ getSourceTypeLabel(row.sourceType) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -35,6 +35,7 @@
               <el-tag size="small" type="info">{{ row.feHost }}</el-tag>
               <span class="divider">:</span>
               <span>{{ row.fePort }}</span>
+              <span v-if="row.sourceType === 'POSTGRESQL'">/ {{ row.databaseName }}</span>
             </div>
           </template>
         </el-table-column>
@@ -92,12 +93,13 @@
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
       <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
         <el-form-item label="数据源名称" prop="clusterName">
-          <el-input v-model="form.clusterName" placeholder="例如：生产 Doris / 本地 MySQL" />
+          <el-input v-model="form.clusterName" placeholder="例如：生产 Doris / 本地 PostgreSQL" />
         </el-form-item>
         <el-form-item label="类型" prop="sourceType">
           <el-select v-model="form.sourceType" @change="handleTypeChange">
             <el-option label="DORIS" value="DORIS" />
             <el-option label="MYSQL" value="MYSQL" />
+            <el-option label="PostgreSQL" value="POSTGRESQL" />
           </el-select>
         </el-form-item>
         <el-form-item label="地址" prop="feHost">
@@ -105,6 +107,10 @@
         </el-form-item>
         <el-form-item label="端口" prop="fePort">
           <el-input-number v-model="form.fePort" :min="1" :max="65535" />
+        </el-form-item>
+        <el-form-item v-if="form.sourceType === 'POSTGRESQL'" label="连接数据库" prop="databaseName">
+          <el-input v-model="form.databaseName" placeholder="例如：postgres 或业务数据库名称" />
+          <div class="cron-tip">元数据同步读取此数据库内当前账号可访问的 schema。</div>
         </el-form-item>
         <el-form-item label="用户名" prop="username">
           <el-input v-model="form.username" placeholder="登录用户名" />
@@ -154,8 +160,8 @@
     >
       <div class="metadata-panel-header">
         <div class="meta-left">
-          <el-tag size="small" :type="selectedCluster?.sourceType === 'MYSQL' ? 'success' : 'warning'">
-            {{ selectedCluster?.sourceType || 'DORIS' }}
+          <el-tag size="small" :type="getSourceTypeTag(selectedCluster?.sourceType)">
+            {{ getSourceTypeLabel(selectedCluster?.sourceType) }}
           </el-tag>
           <span class="meta-addr">{{ selectedCluster?.feHost }}:{{ selectedCluster?.fePort }}</span>
         </div>
@@ -420,6 +426,7 @@ const formRef = ref(null)
 const form = reactive({
   clusterName: '',
   sourceType: 'DORIS',
+  databaseName: '',
   feHost: '',
   fePort: 9030,
   username: '',
@@ -458,6 +465,15 @@ const rules = {
   feHost: [{ required: true, message: '请输入地址', trigger: 'blur' }],
   fePort: [{ required: true, message: '请输入端口', trigger: 'change' }],
   username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  databaseName: [
+    {
+      validator: (_, value, callback) => {
+        callback(form.sourceType === 'POSTGRESQL' && !value?.trim()
+          ? new Error('请输入 PostgreSQL 连接数据库') : undefined)
+      },
+      trigger: 'blur'
+    }
+  ],
   syncCron: [
     {
       validator: (_, value, callback) => {
@@ -584,6 +600,8 @@ async function loadClusters() {
 function resetForm() {
   form.clusterName = ''
   form.sourceType = 'DORIS'
+  previousSourceType = 'DORIS'
+  form.databaseName = ''
   form.feHost = ''
   form.fePort = 9030
   form.username = ''
@@ -594,14 +612,17 @@ function resetForm() {
   form.status = 'active'
 }
 
+const defaultPorts = { DORIS: 9030, MYSQL: 3306, POSTGRESQL: 5432 }
+let previousSourceType = 'DORIS'
+const getSourceTypeLabel = type => type === 'POSTGRESQL' ? 'PostgreSQL' : (type || 'DORIS')
+const getSourceTypeTag = type => ({ MYSQL: 'success', POSTGRESQL: 'primary' }[type] || 'warning')
+
 function handleTypeChange(val) {
   if (!val) return
-  if (val === 'MYSQL' && form.fePort === 9030) {
-    form.fePort = 3306
+  if (form.fePort === defaultPorts[previousSourceType]) {
+    form.fePort = defaultPorts[val]
   }
-  if (val === 'DORIS' && form.fePort === 3306) {
-    form.fePort = 9030
-  }
+  previousSourceType = val
 }
 
 function openCreate() {
@@ -619,6 +640,8 @@ async function openEdit(id) {
     resetForm()
     form.clusterName = data.clusterName
     form.sourceType = data.sourceType || 'DORIS'
+    previousSourceType = form.sourceType
+    form.databaseName = data.databaseName || ''
     form.feHost = data.feHost
     form.fePort = data.fePort
     form.username = data.username
@@ -645,6 +668,7 @@ async function handleSubmit() {
   const payload = {
     clusterName: form.clusterName,
     sourceType: form.sourceType,
+    databaseName: form.sourceType === 'POSTGRESQL' ? form.databaseName.trim() : '',
     feHost: form.feHost,
     fePort: form.fePort,
     username: form.username,
@@ -721,8 +745,12 @@ async function handleSetDefault(id) {
 
 async function handleTestConnection(id) {
   try {
-    await dorisClusterApi.testConnection(id)
-    ElMessage.success('连接成功')
+    const connected = await dorisClusterApi.testConnection(id)
+    if (connected) {
+      ElMessage.success('连接成功')
+    } else {
+      ElMessage.error('连接失败，请检查数据源地址、端口、数据库及凭据')
+    }
   } catch (error) {
     console.error(error)
   }

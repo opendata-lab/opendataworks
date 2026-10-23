@@ -361,6 +361,190 @@ class BackendAgentQueryServiceTest {
     }
 
     @Test
+    void readQueryReadsDoubleQuotedSchemasAgainstAgentDataScope() {
+        // PostgreSQL 写法："schema"."table"。授权的 schema 不能因为带引号被误拒，未授权的也不能因此漏检
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            AgentReadQueryRequest denied = new AgentReadQueryRequest();
+            denied.setDatabase("ads_user");
+            denied.setSql("SELECT * FROM \"ads_user\".\"profile\" p JOIN \"ods_user\".\"orders\" o ON p.id = o.user_id");
+            IllegalArgumentException exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> backendAgentQueryService.readQuery(denied)
+            );
+            assertEquals("数据范围限制: SQL 引用了未授权 schema `ods_user`", exception.getMessage());
+
+            AgentReadQueryRequest allowed = new AgentReadQueryRequest();
+            allowed.setDatabase("ads_user");
+            allowed.setSql("SELECT * FROM \"ads_user\".\"profile\"");
+            stubPostgresqlDatasource("ads_user");
+            backendAgentQueryService.readQuery(allowed);
+            verify(agentJdbcExecutor).executeReadOnlyQuery(any(), eq(allowed.getSql()), anyInt(), anyInt());
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
+    void readQueryFollowsPostgresqlIdentifierFolding() {
+        // PostgreSQL 把未加引号的 Sales 折叠成 sales；只有带引号的 "Sales" 才是授权的 schema
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJTYWxlcyIsInNvdXJjZV90eXBlIjoiUE9TVEdSRVNRTCJ9XX0");
+        try {
+            stubPostgresqlDatasource("Sales");
+
+            AgentReadQueryRequest folded = new AgentReadQueryRequest();
+            folded.setDatabase("Sales");
+            folded.setSql("SELECT * FROM Sales.orders");
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                    () -> backendAgentQueryService.readQuery(folded));
+            assertEquals("数据范围限制: SQL 引用了未授权 schema `sales`", exception.getMessage());
+
+            AgentReadQueryRequest quoted = new AgentReadQueryRequest();
+            quoted.setDatabase("Sales");
+            quoted.setSql("SELECT * FROM \"Sales\".orders");
+            backendAgentQueryService.readQuery(quoted);
+            verify(agentJdbcExecutor).executeReadOnlyQuery(any(), eq(quoted.getSql()), anyInt(), anyInt());
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
+    void readQueryKeepsWhitespaceInsideQuotedSchemaNames() {
+        // 引号里的空白属于名称本身：" ads_user " 不是 ads_user
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            stubPostgresqlDatasource("ads_user");
+            AgentReadQueryRequest request = new AgentReadQueryRequest();
+            request.setDatabase("ads_user");
+            request.setSql("SELECT * FROM \" ads_user \".orders");
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                    () -> backendAgentQueryService.readQuery(request));
+            assertEquals("数据范围限制: SQL 引用了未授权 schema ` ads_user `", exception.getMessage());
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
+    void readQueryFoldsOnlyAsciiLettersForPostgresql() {
+        // PostgreSQL 只折叠 ASCII 大写：未加引号的 Ä 仍是 Ä，不是授权的 ä
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiLDpCIsInNvdXJjZV90eXBlIjoiUE9TVEdSRVNRTCJ9XX0");
+        try {
+            stubPostgresqlDatasource("ä");
+            AgentReadQueryRequest request = new AgentReadQueryRequest();
+            request.setDatabase("ä");
+            request.setSql("SELECT * FROM Ä.orders");
+            IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                    () -> backendAgentQueryService.readQuery(request));
+            assertEquals("数据范围限制: SQL 引用了未授权 schema `Ä`", exception.getMessage());
+            org.mockito.Mockito.verifyNoInteractions(agentJdbcExecutor);
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
+    void readQueryRejectsUnparseableSqlUnderScopeInsteadOfLexicalGuessing() {
+        // 词法检查认不出逗号连接的第二张表和含 $ 的名称；数据范围生效时这类无法解析的 SQL 一律拒绝
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            for (String engine : new String[] {"postgresql", "mysql"}) {
+                AgentDatasourceResolution datasource = new AgentDatasourceResolution();
+                datasource.setDatabase("ads_user");
+                datasource.setEngine(engine);
+                when(agentMetadataService.resolveDatasource(eq("ads_user"), any())).thenReturn(datasource);
+                for (String sql : new String[] {
+                        "SELECT * FROM private$area.orders TABLESAMPLE SYSTEM (10)",
+                        "SELECT * FROM ads_user.profile, private.orders TABLESAMPLE SYSTEM (10)"}) {
+                    AgentReadQueryRequest request = new AgentReadQueryRequest();
+                    request.setDatabase("ads_user");
+                    request.setSql(sql);
+                    IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                            () -> backendAgentQueryService.readQuery(request), engine + ": " + sql);
+                    assertTrue(exception.getMessage().startsWith("数据范围限制"), exception.getMessage());
+                }
+            }
+            org.mockito.Mockito.verifyNoInteractions(agentJdbcExecutor);
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
+    void readQueryOnlyAcceptsFixedMetadataFormsWhenSqlCannotBeParsed() {
+        // 第四轮评审给出的绕过样例：DESC 后接查询、SHOW 的 FROM/IN 库名子句、反引号、可执行注释
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            AgentDatasourceResolution datasource = new AgentDatasourceResolution();
+            datasource.setDatabase("ads_user");
+            datasource.setEngine("mysql");
+            when(agentMetadataService.resolveDatasource(eq("ads_user"), any())).thenReturn(datasource);
+            for (String sql : new String[] {
+                    "DESC SELECT * FROM ads_user.profile, private.orders",
+                    "DESC FORMAT=JSON SELECT * FROM ads_user.profile, private.orders",
+                    "DESC ANALYZE SELECT * FROM ads_user.profile, private.orders",
+                    "SHOW TABLES FROM private",
+                    "SHOW TABLES IN private",
+                    "SHOW FULL COLUMNS FROM orders FROM private",
+                    "SHOW COLUMNS IN private.orders",
+                    "DESC `private`.orders",
+                    "DESC `private$area`.orders",
+                    "SHOW TABLES /*! FROM private */"}) {
+                AgentReadQueryRequest request = new AgentReadQueryRequest();
+                request.setDatabase("ads_user");
+                request.setSql(sql);
+                IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                        () -> backendAgentQueryService.readQuery(request), sql);
+                assertTrue(exception.getMessage().startsWith("数据范围限制"), sql + " -> " + exception.getMessage());
+            }
+            org.mockito.Mockito.verifyNoInteractions(agentJdbcExecutor);
+
+            AgentJdbcExecutor.QueryExecutionResult execution = new AgentJdbcExecutor.QueryExecutionResult();
+            execution.setRows(Collections.emptyList());
+            when(agentJdbcExecutor.executeReadOnlyQuery(any(), any(), anyInt(), anyInt())).thenReturn(execution);
+            for (String sql : new String[] {"SHOW TABLES", "SHOW FULL COLUMNS FROM orders", "DESC ads_user.orders;"}) {
+                AgentReadQueryRequest request = new AgentReadQueryRequest();
+                request.setDatabase("ads_user");
+                request.setSql(sql);
+                backendAgentQueryService.readQuery(request);
+            }
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    private void stubPostgresqlDatasource(String database) {
+        AgentDatasourceResolution datasource = new AgentDatasourceResolution();
+        datasource.setDatabase(database);
+        datasource.setEngine("postgresql");
+        when(agentMetadataService.resolveDatasource(eq(database), any())).thenReturn(datasource);
+        AgentJdbcExecutor.QueryExecutionResult execution = new AgentJdbcExecutor.QueryExecutionResult();
+        execution.setRows(Collections.emptyList());
+        org.mockito.Mockito.lenient().when(agentJdbcExecutor.executeReadOnlyQuery(any(), any(), anyInt(), anyInt()))
+                .thenReturn(execution);
+    }
+
+    @Test
+    void readQueryFailsClosedOnUnparseableSqlWithDoubleQuotedIdentifiers() {
+        // JSqlParser 解析不了 TABLESAMPLE；词法回退会把双引号当字符串遮掉，必须拒绝而不是放行
+        AgentDataScopeContext.setEncodedScope("eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19");
+        try {
+            AgentReadQueryRequest request = new AgentReadQueryRequest();
+            request.setDatabase("ads_user");
+            request.setSql("SELECT * FROM \"private\".\"orders\" TABLESAMPLE SYSTEM (10)");
+            IllegalArgumentException exception = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> backendAgentQueryService.readQuery(request)
+            );
+            org.junit.jupiter.api.Assertions.assertTrue(exception.getMessage().startsWith("数据范围限制"),
+                    exception.getMessage());
+        } finally {
+            AgentDataScopeContext.clear();
+        }
+    }
+
+    @Test
     void readQueryAcceptsShowTablesWithinActiveDataScope() {
         // 数据范围生效时，SHOW 语句无法被 TablesNamesFinder 解析出表名（会抛
         // UnsupportedOperationException）。它没有 schema 引用，应回退到词法范围校验后放行，

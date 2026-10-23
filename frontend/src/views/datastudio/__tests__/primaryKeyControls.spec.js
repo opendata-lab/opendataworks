@@ -21,7 +21,7 @@ describe('primary key controls', () => {
     const ctx = {
       activeTab: ref('t1'), tabStates: reactive({ t1: { table: { sourceType, isSynced }, fieldsEditing: true } }),
       getTableSourceType: () => sourceType || 'MYSQL',
-      isDorisTable: () => sourceType === 'DORIS', isAggregateTable: () => false,
+      isDorisTable: () => sourceType === 'DORIS', structureEditBlockedReason: () => (sourceType === 'POSTGRESQL' ? 'PostgreSQL 暂不支持在线修改表结构' : ''), isAggregateTable: () => false,
       getFieldRows: () => rows, addField: vi.fn(), removeField: vi.fn(), generateMetadata: vi.fn(),
     }
     wrapper = mount(Columns, { global: { plugins: [ElementPlus], provide: { dataStudioCtx: ctx } } })

@@ -23,40 +23,38 @@ public class UserMappingService {
     private final DorisDbUserMapper dorisDbUserMapper;
 
     /**
-     * 获取用户对指定数据库的Doris凭据
+     * 获取用户对指定数据库的映射凭据。
+     *
+     * <p>该库没有登记映射账号时返回 {@code null}，表示未启用映射，由调用方使用数据源账号；
+     * 登记了映射账号但用户没有授权时抛出异常，调用方不得再退回数据源账号，否则授权形同虚设。
      *
      * @param userId       用户ID
-     * @param clusterId    集群ID
-     * @param databaseName 数据库名
-     * @return Doris用户凭据
+     * @param clusterId    数据源ID
+     * @param databaseName 数据库名（PostgreSQL 为 schema）
+     * @return 映射凭据；未启用映射时为 {@code null}
      */
     public DorisCredential getDorisCredential(String userId, Long clusterId, String databaseName) {
-        // 1. 查询用户对该数据库的权限
+        DorisDbUser dbUser = dorisDbUserMapper.selectOne(
+                new LambdaQueryWrapper<DorisDbUser>()
+                        .eq(DorisDbUser::getClusterId, clusterId)
+                        .eq(DorisDbUser::getDatabaseName, databaseName)
+        );
+        if (dbUser == null) {
+            log.debug("No mapped account registered for database {} on cluster {}", databaseName, clusterId);
+            return null;
+        }
+
         UserDatabasePermission permission = userDatabasePermissionMapper.selectOne(
                 new LambdaQueryWrapper<UserDatabasePermission>()
                         .eq(UserDatabasePermission::getUserId, userId)
                         .eq(UserDatabasePermission::getClusterId, clusterId)
                         .eq(UserDatabasePermission::getDatabaseName, databaseName)
         );
-
         if (permission == null) {
             log.warn("User {} has no permission for database {} on cluster {}", userId, databaseName, clusterId);
             throw new RuntimeException("用户没有访问数据库 " + databaseName + " 的权限");
         }
 
-        // 2. 查询该数据库的标准Doris用户配置
-        DorisDbUser dbUser = dorisDbUserMapper.selectOne(
-                new LambdaQueryWrapper<DorisDbUser>()
-                        .eq(DorisDbUser::getClusterId, clusterId)
-                        .eq(DorisDbUser::getDatabaseName, databaseName)
-        );
-
-        if (dbUser == null) {
-            log.error("Doris database user config not found for database {} on cluster {}", databaseName, clusterId);
-            throw new RuntimeException("数据库 " + databaseName + " 的Doris用户配置不存在");
-        }
-
-        // 3. 根据权限级别返回对应的Doris用户凭据
         if ("readonly".equals(permission.getPermissionLevel())) {
             log.debug("User {} mapped to readonly user for database {}", userId, databaseName);
             return new DorisCredential(dbUser.getReadonlyUsername(), dbUser.getReadonlyPassword());

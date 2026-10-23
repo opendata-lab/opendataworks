@@ -5,6 +5,7 @@ import com.onedata.portal.agentapi.dto.AgentInspectResponse;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteRequest;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteResponse;
 import com.onedata.portal.agentapi.dto.AgentTableDdlResponse;
+import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.agentapi.service.AgentJdbcExecutor;
 import com.onedata.portal.agentapi.service.BackendAgentMetadataService;
 import com.onedata.portal.dto.TableFreshnessRequest;
@@ -140,6 +141,78 @@ class BackendAgentMetadataServiceTest {
         assertEquals("readonly_user", result.getUser());
         assertEquals("readonly_pass", result.getPassword());
         assertEquals("readonly_user", result.getResolvedBy());
+    }
+
+    @Test
+    void resolveDatasourceMapsPostgresqlSchemaToPostgresqlEngine() {
+        DataTable table = new DataTable();
+        table.setId(2L);
+        table.setClusterId(21L);
+        table.setDbName("public");
+        table.setStatus("active");
+
+        DorisCluster cluster = new DorisCluster();
+        cluster.setId(21L);
+        cluster.setClusterName("pg-a");
+        cluster.setSourceType("POSTGRESQL");
+        cluster.setDatabaseName("sales");
+        cluster.setFeHost("pg-host");
+        cluster.setUsername("cluster_user");
+        cluster.setPassword("cluster_pass");
+
+        DorisDbUser readonlyUser = new DorisDbUser();
+        readonlyUser.setClusterId(21L);
+        readonlyUser.setDatabaseName("public");
+        readonlyUser.setReadonlyUsername("pg_reader");
+        readonlyUser.setReadonlyPassword("pg_reader_pass");
+
+        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
+        when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(table));
+        when(dorisClusterMapper.selectById(21L)).thenReturn(cluster);
+        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.singletonList(readonlyUser));
+
+        AgentDatasourceResolution result = backendAgentMetadataService.resolveDatasource("public", "postgresql");
+
+        assertEquals("postgresql", result.getEngine());
+        assertEquals("POSTGRESQL", result.getSourceType());
+        assertEquals("sales", result.getConnectionDatabase());
+        assertEquals(Integer.valueOf(5432), result.getPort());
+        assertEquals("pg_reader", result.getUser());
+        assertEquals("readonly_user", result.getResolvedBy());
+        assertThrows(IllegalArgumentException.class,
+                () -> backendAgentMetadataService.resolveDatasource("public", "doris"));
+    }
+
+    @Test
+    void resolveDatasourceNarrowsSameNamedSchemasByAgentDataScope() {
+        // 两个 PostgreSQL 数据源都有 public：数据范围只授权了 21，就应定位到 21 而不是报冲突
+        DataTable first = new DataTable();
+        first.setClusterId(21L);
+        DataTable second = new DataTable();
+        second.setClusterId(22L);
+
+        DorisCluster cluster = new DorisCluster();
+        cluster.setId(21L);
+        cluster.setClusterName("pg-a");
+        cluster.setSourceType("POSTGRESQL");
+        cluster.setDatabaseName("sales");
+        cluster.setFeHost("pg-host");
+        cluster.setUsername("cluster_user");
+
+        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
+        when(dataTableMapper.selectList(any())).thenReturn(Arrays.asList(first, second));
+        when(dorisClusterMapper.selectById(21L)).thenReturn(cluster);
+        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.emptyList());
+
+        AgentDataScopeContext.setEncodedScope(
+                "eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MjEsImRhdGFiYXNlIjoicHVibGljIiwic291cmNlX3R5cGUiOiJQT1NUR1JFU1FMIn1dfQ");
+        try {
+            AgentDatasourceResolution result = backendAgentMetadataService.resolveDatasource("public", null);
+            assertEquals(Long.valueOf(21L), result.getClusterId());
+            assertEquals("postgresql", result.getEngine());
+        } finally {
+            AgentDataScopeContext.clear();
+        }
     }
 
     @Test
@@ -311,7 +384,6 @@ class BackendAgentMetadataServiceTest {
         readonlyUser.setReadonlyUsername("readonly_user");
         readonlyUser.setReadonlyPassword("readonly_pass");
 
-        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
         when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(table));
         when(dataFieldMapper.selectList(any())).thenReturn(Collections.singletonList(field));
         when(dorisClusterMapper.selectById(12L)).thenReturn(cluster);

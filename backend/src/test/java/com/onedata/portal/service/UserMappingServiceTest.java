@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -91,7 +93,8 @@ class UserMappingServiceTest {
 
     @Test
     void testGetDorisCredential_NoPermission() {
-        // Given: 用户没有权限
+        // Given: 该库登记了映射账号，但用户没有授权
+        when(dorisDbUserMapper.selectOne(any())).thenReturn(dorisDbUser);
         when(userDatabasePermissionMapper.selectOne(any())).thenReturn(null);
 
         // When & Then: 应该抛出异常
@@ -103,17 +106,13 @@ class UserMappingServiceTest {
     }
 
     @Test
-    void testGetDorisCredential_NoDorisUserConfig() {
-        // Given: 有权限但没有Doris用户配置
-        when(userDatabasePermissionMapper.selectOne(any())).thenReturn(readonlyPermission);
+    void testGetDorisCredential_NoMappedAccountMeansMappingNotInUse() {
+        // Given: 该库没有登记映射账号，无论用户是否有授权记录
         when(dorisDbUserMapper.selectOne(any())).thenReturn(null);
 
-        // When & Then: 应该抛出异常
-        RuntimeException exception = assertThrows(RuntimeException.class, () -> {
-            userMappingService.getDorisCredential("user123", 1L, "test_db");
-        });
-
-        assertTrue(exception.getMessage().contains("Doris用户配置不存在"));
+        // When & Then: 返回 null，由调用方使用数据源账号
+        assertNull(userMappingService.getDorisCredential("user123", 1L, "test_db"));
+        verify(userDatabasePermissionMapper, never()).selectOne(any());
     }
 
     @Test

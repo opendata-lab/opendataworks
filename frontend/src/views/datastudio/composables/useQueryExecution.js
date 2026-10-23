@@ -84,15 +84,23 @@ const normalizeResultSetsForDisplay = (resultSets, tabId) => {
 
 export function buildDefaultSql(table) {
   if (!table?.dbName || !table?.tableName) return ''
-  return `SELECT *\nFROM \`${table.dbName}\`.\`${table.tableName}\`\nLIMIT 200;`
+  const quote = table.sourceType?.toUpperCase() === 'POSTGRESQL' ? '"' : '`'
+  const quoteIdentifier = value => quote + String(value).replaceAll(quote, quote + quote) + quote
+  return `SELECT *\nFROM ${quoteIdentifier(table.dbName)}.${quoteIdentifier(table.tableName)}\nLIMIT 200;`
 }
 
 const parseAutoSelectSql = (sql) => {
   const text = String(sql || '').trim()
   if (!text) return null
-  const match = text.match(/^select\s+\*\s+from\s+`([^`]+)`\.`([^`]+)`\s+limit\s+(\d+)\s*;?$/i)
+  const backtickMatch = text.match(/^select\s+\*\s+from\s+`((?:``|[^`])+)`\.`((?:``|[^`])+)`\s+limit\s+(\d+)\s*;?$/i)
+  const match = backtickMatch || text.match(/^select\s+\*\s+from\s+"((?:""|[^"])+)"\."((?:""|[^"])+)"\s+limit\s+(\d+)\s*;?$/i)
   if (!match) return null
-  return { schema: match[1], table: match[2], limit: Number(match[3]) }
+  const quote = backtickMatch ? '`' : '"'
+  return {
+    schema: match[1].replaceAll(quote + quote, quote),
+    table: match[2].replaceAll(quote + quote, quote),
+    limit: Number(match[3])
+  }
 }
 
 export function useQueryExecution({

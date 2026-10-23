@@ -40,8 +40,12 @@ class TableFreshnessServiceTest {
     private final FreshnessContractResolver resolver = new FreshnessContractResolver();
     private final FreshnessCheckService checkService = mock(FreshnessCheckService.class);
 
+    private final com.onedata.portal.mapper.DorisClusterMapper clusterMapper =
+        mock(com.onedata.portal.mapper.DorisClusterMapper.class);
+
     private final TableFreshnessService service = new TableFreshnessService(
-        dataTableMapper, dataFieldMapper, configMapper, resultMapper, relationMapper, resolver, checkService);
+        dataTableMapper, dataFieldMapper, configMapper, resultMapper, relationMapper, resolver, checkService,
+        clusterMapper);
 
     private void tableExists() {
         DataTable t = new DataTable();
@@ -159,6 +163,42 @@ class TableFreshnessServiceTest {
         when(configMapper.selectOne(any())).thenReturn(null);
         TableFreshnessRequest r = req("partition");
         r.setPartitionFormat("yyyyMMdd");
+        service.saveFreshness(1L, r, "alice");
+        verify(configMapper).insert(any(TableFreshnessConfig.class));
+    }
+
+    private void postgresqlDatasource() {
+        com.onedata.portal.entity.DorisCluster cluster = new com.onedata.portal.entity.DorisCluster();
+        cluster.setId(10L);
+        cluster.setSourceType("POSTGRESQL");
+        when(clusterMapper.selectById(10L)).thenReturn(cluster);
+    }
+
+    @Test
+    void postgresql_rejectsMetadataAndPartitionModes() {
+        // PostgreSQL 没有表更新时间，也没有 Doris 式的分区列表，配置时就要拒绝
+        tableExists();
+        postgresqlDatasource();
+        IllegalArgumentException metadata = assertThrows(IllegalArgumentException.class,
+            () -> service.saveFreshness(1L, req("metadata"), "alice"));
+        assertTrue(metadata.getMessage().contains("PostgreSQL"));
+
+        fields(field("ds", 1));
+        TableFreshnessRequest partition = req("partition");
+        partition.setPartitionFormat("yyyyMMdd");
+        IllegalArgumentException partitionError = assertThrows(IllegalArgumentException.class,
+            () -> service.saveFreshness(1L, partition, "alice"));
+        assertTrue(partitionError.getMessage().contains("PostgreSQL"));
+    }
+
+    @Test
+    void postgresql_allowsColumnMode() {
+        tableExists();
+        postgresqlDatasource();
+        fields(field("etl_time", 0));
+        when(configMapper.selectOne(any())).thenReturn(null);
+        TableFreshnessRequest r = req("column");
+        r.setLoadedAtField("etl_time");
         service.saveFreshness(1L, r, "alice");
         verify(configMapper).insert(any(TableFreshnessConfig.class));
     }
