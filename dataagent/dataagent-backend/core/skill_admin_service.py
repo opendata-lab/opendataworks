@@ -983,14 +983,16 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
         selected_model = enabled_models[0] if enabled_models else ""
     if selected_model not in enabled_models:
         raise ValueError("所选模型未加入已启用模型")
-    max_output_tokens = next(
+    model_details = next(
         (
-            item.get("max_output_tokens")
+            item
             for item in provider.get("models") or []
             if isinstance(item, dict) and item.get("id") == selected_model
         ),
-        None,
+        {},
     )
+    max_output_tokens = model_details.get("max_output_tokens")
+    context_window = model_details.get("context_window")
 
     return {
         "provider_id": normalized_provider_id,
@@ -1005,6 +1007,9 @@ def resolve_runtime_provider_selection(provider_id: str | None, model: str | Non
         ),
         # None when the model has no configured ceiling; the runtime then uses its default.
         "max_output_tokens": max_output_tokens if isinstance(max_output_tokens, int) and max_output_tokens > 0 else None,
+        # The model's own window, set when the model is added; None falls back to
+        # the deployment-wide context governance default.
+        "context_window": context_window if isinstance(context_window, int) and context_window > 0 else None,
     }
 
 

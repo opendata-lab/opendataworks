@@ -80,12 +80,14 @@ export function resolveApiFormatProfile(apiFormat: string): ProviderProfile {
  * the platform cannot know each model's maximum.
  */
 export const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
+export const DEFAULT_CONTEXT_WINDOW = 200_000;
 
 export function resolveModel(
   providerId: string,
   modelId: string,
   apiFormat: string,
-  maxOutputTokens?: number
+  maxOutputTokens?: number,
+  contextWindow?: number
 ): Model<Api> {
   const profile = resolveApiFormatProfile(apiFormat);
   const baseUrl = firstEnv(profile.baseUrlEnvVars) ?? profile.defaultBaseUrl;
@@ -99,7 +101,9 @@ export function resolveModel(
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 200_000,
+    // pi-ai caps a reply at the window minus the prompt, so this must be the
+    // model's real window when one is configured.
+    contextWindow: contextWindow && contextWindow > 0 ? Math.floor(contextWindow) : DEFAULT_CONTEXT_WINDOW,
     maxTokens:
       maxOutputTokens && maxOutputTokens > 0 ? Math.floor(maxOutputTokens) : DEFAULT_MAX_OUTPUT_TOKENS,
   } as unknown as Model<Api>;
@@ -165,10 +169,11 @@ export function resolveRuntimeModel(
   modelId: string,
   apiFormat: string,
   cacheRetention?: string,
-  maxOutputTokens?: number
+  maxOutputTokens?: number,
+  contextWindow?: number
 ): ResolvedRuntimeModel {
   return {
-    model: resolveModel(providerId, modelId, apiFormat, maxOutputTokens),
+    model: resolveModel(providerId, modelId, apiFormat, maxOutputTokens, contextWindow),
     streamFn: resolveStreamFn(providerId, apiFormat, cacheRetention),
   };
 }

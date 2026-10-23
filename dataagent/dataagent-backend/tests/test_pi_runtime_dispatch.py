@@ -431,3 +431,5 @@ def test_init_payload_carries_the_output_ceiling_only_when_configured(tmp_path: 
 
     assert ctx(max_output_tokens=32000)["max_output_tokens"] == 32000
     assert "max_output_tokens" not in ctx()
+    assert ctx(context_window=1000000)["context_window"] == 1000000
+    assert "context_window" not in ctx()

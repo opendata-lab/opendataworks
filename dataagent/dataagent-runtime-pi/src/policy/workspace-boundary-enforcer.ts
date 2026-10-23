@@ -40,6 +40,12 @@ const PARENT_SEGMENT_DENIAL =
 /** Mirrors Python's _BASH_PARENT_SEGMENT_RE. */
 const PARENT_SEGMENT_RE = /(^|[\s;&|()])\.\.(?=$|[/\s;&|()])/;
 /** Mirrors Python's _URL_SCHEME_RE. */
+// Quoted heredoc bodies (<<'EOF', <<"EOF", <<-'EOF') are literal stdin data: the
+// shell expands nothing inside them, so their text is never a path argument.
+// The terminator pattern accepts more lines than bash does, so stripping can only
+// stop early and leave extra text to be checked, never hide executed text.
+const QUOTED_HEREDOC_RE = /(<<-?[ \t]*(['"])([A-Za-z_][A-Za-z0-9_]*)\2[^\n]*\n)([\s\S]*?\n)?([ \t]*\3[ \t]*)(?=\n|$)/g;
+
 const URL_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
 /** Mirrors Python's _BASH_OPTION_ASSIGNMENT_RE. */
 const OPTION_ASSIGNMENT_RE = /^-{0,2}[A-Za-z_][A-Za-z0-9_-]*=/;
@@ -100,7 +106,8 @@ export class WorkspaceBoundaryEnforcer {
     return null;
   }
 
-  private validateBash(command: string): string | null {
+  private validateBash(rawCommand: string): string | null {
+    const command = rawCommand.replace(QUOTED_HEREDOC_RE, (_m, header: string, _q, _tag, _body, terminator: string) => header + terminator);
     if (PARENT_SEGMENT_RE.test(command.replace(/\\/g, "/"))) {
       return PARENT_SEGMENT_DENIAL;
     }

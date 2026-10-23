@@ -64,7 +64,8 @@ export interface RunModelFactory {
     modelId: string,
     apiFormat: string,
     cacheRetention?: string,
-    maxOutputTokens?: number
+    maxOutputTokens?: number,
+    contextWindow?: number
   ): {
     model: Model<Api>;
     streamFn: StreamFn;
@@ -123,7 +124,8 @@ export class Cell {
         init.model.model_id,
         init.model.api_format,
         init.governance_settings?.cache_retention,
-        init.model.max_output_tokens
+        init.model.max_output_tokens,
+        init.model.context_window
       );
       const boundary = new WorkspaceBoundaryEnforcer(init.boundary_policy as unknown as BoundaryPolicy);
       const tools = createTools({
@@ -180,7 +182,8 @@ export class Cell {
       const governance = init.governance_settings;
       const compaction = new CompactionSession({
         protectTailCount: governance?.protect_tail_turns ?? 6,
-        maxContextTokens: governance?.max_context_tokens ?? 64_000,
+        // A window configured on the model wins over the deployment-wide default.
+        maxContextTokens: init.model.context_window ?? governance?.max_context_tokens ?? 64_000,
         highWatermarkRatio: governance?.prune_high_watermark_ratio,
         targetRatio: governance?.prune_target_ratio,
       });

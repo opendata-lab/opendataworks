@@ -80,6 +80,8 @@ class PiRunContext:
     mcp_servers: list[dict[str, Any]] = field(default_factory=list)
     # The model's configured output ceiling per reply; None lets the Cell use its default.
     max_output_tokens: int | None = None
+    # The model's context window; None lets governance_settings.max_context_tokens decide.
+    context_window: int | None = None
     # Context governance, assembled by core.context_governance so the wire
     # contract has one producer. Field names mirror ``governance_settings`` in
     # ``src/protocol/frames.ts``; a rename on either side has to move in
@@ -113,6 +115,7 @@ class PiRunContext:
                 "api_format": self.api_format,
                 "model_id": self.model,
                 **({"max_output_tokens": self.max_output_tokens} if self.max_output_tokens else {}),
+                **({"context_window": self.context_window} if self.context_window else {}),
             },
             "workspace": {"project_cwd": str(self.project_cwd)},
             "boundary_policy": self.boundary_policy,

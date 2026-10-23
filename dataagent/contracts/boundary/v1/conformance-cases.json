@@ -271,6 +271,12 @@
       "tool": "Bash",
       "input": { "command": "curl https://example.com/data.json -o out.json" },
       "expect": "allow"
-    }
+    },
+    {"id": "bash-quoted-heredoc-body-is-data", "tool": "Bash", "input": {"command": "cat > notes.md <<'EOF'\n例子：全科 /唐医生；旧目录 ../archive；说明里提到 /etc/passwd\nEOF"}, "expect": "allow"},
+    {"id": "bash-double-quoted-heredoc-body-is-data", "tool": "Bash", "input": {"command": "cat > notes.md <<\"EOF\"\n许医生 /唐医生\nEOF"}, "expect": "allow"},
+    {"id": "bash-unquoted-heredoc-body-checked", "tool": "Bash", "input": {"command": "cat > notes.md <<EOF\n$(cat /etc/passwd)\nEOF"}, "expect": "deny", "reason_contains": "outside workspace"},
+    {"id": "bash-quoted-heredoc-redirect-target-checked", "tool": "Bash", "input": {"command": "cat > /etc/cron.d/job <<'EOF'\nhello\nEOF"}, "expect": "deny", "reason_contains": "outside workspace"},
+    {"id": "bash-unterminated-quoted-heredoc-checked", "tool": "Bash", "input": {"command": "cat > notes.md <<'EOF'\n/etc/passwd"}, "expect": "deny", "reason_contains": "outside workspace"},
+    {"id": "bash-command-after-quoted-heredoc-checked", "tool": "Bash", "input": {"command": "cat > notes.md <<'EOF'\n/唐医生\nEOF\ncat /etc/passwd"}, "expect": "deny", "reason_contains": "outside workspace"}
   ]
 }

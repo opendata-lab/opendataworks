@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAssistantMessageEventStream } from "@earendil-works/pi-ai";
 import { Cell } from "../src/kernel/cell.js";
+import { DEFAULT_CONTEXT_WINDOW, resolveModel } from "../src/providers/stream-fn-resolver.js";
 import type { CellInitPayload, NeutralAgentEvent } from "../src/protocol/frames.js";
 
 function workspace(): string {
@@ -315,6 +316,31 @@ test("the model's configured output ceiling reaches the model factory", async ()
 
   assert.equal(result.terminal_status, "success");
   assert.deepEqual(seen, [32000]);
+});
+
+test("the model's configured context window reaches the model factory", async () => {
+  // pi-ai caps each reply at the window minus the prompt; a stale default
+  // window would shrink replies to nothing on long runs.
+  const root = workspace();
+  const seen: unknown[] = [];
+  const base = textStreamFactory("hello");
+  const recording = (...args: unknown[]) => {
+    seen.push(args[5]);
+    return base();
+  };
+  const init = initPayload(root, {
+    model: { provider_id: "faux", api_format: "/v1/messages", model_id: "faux-1", context_window: 1_000_000 },
+  });
+
+  const { result } = await runCell(init, recording as never);
+
+  assert.equal(result.terminal_status, "success");
+  assert.deepEqual(seen, [1_000_000]);
+});
+
+test("resolveModel uses the configured window and otherwise the default", () => {
+  assert.equal((resolveModel("p", "m", "/v1/messages", undefined, 1_000_000) as any).contextWindow, 1_000_000);
+  assert.equal((resolveModel("p", "m", "/v1/messages") as any).contextWindow, DEFAULT_CONTEXT_WINDOW);
 });
 
 test("a thrown setup error is reported as an execution failure", async () => {

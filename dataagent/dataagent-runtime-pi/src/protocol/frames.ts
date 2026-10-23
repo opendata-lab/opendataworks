@@ -103,6 +103,8 @@ export interface CellInitPayload {
     model_id: string;
     /** The model's configured output ceiling per reply; absent means the runtime default. */
     max_output_tokens?: number;
+    /** The model's context window as configured; absent means governance_settings.max_context_tokens. */
+    context_window?: number;
   };
   workspace: { project_cwd: string };
   boundary_policy: Record<string, unknown>;

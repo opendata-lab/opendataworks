@@ -34,10 +34,47 @@ export interface CompactionSettings extends ContextPrunerOptions {
 const DEFAULT_HIGH_RATIO = 0.9;
 const DEFAULT_TARGET_RATIO = 0.7;
 
-// Rough bytes-per-token. Deliberately not a tokenizer: this only decides
-// *whether* we are near the ceiling, and pulling one in would tie the runtime
-// to a model family. Conservative for CJK, so it trips early rather than late.
+// Rough bytes-per-token, used until the provider has reported real usage.
+// Deliberately not a tokenizer: pulling one in would tie the runtime to a
+// model family. Conservative for CJK, so it trips early rather than late.
 const BYTES_PER_TOKEN = 3;
+// Serialized messages carry metadata (usage, provider, timestamps), so the
+// measured ratio is usually well above 3. The ceiling keeps one odd report
+// from disabling compaction.
+const MAX_MEASURED_BYTES_PER_TOKEN = 12;
+
+/**
+ * Bytes per token measured from the last assistant message that reports usage.
+ *
+ * Its prompt (input + cached) plus its own output covers every message up to
+ * and including it. The system prompt and tool definitions are counted in the
+ * tokens but not in the bytes, which lowers the ratio and keeps the estimate
+ * on the early side. Never below the fixed estimate, so measuring can only
+ * make compaction rarer than before, not more aggressive.
+ *
+ * Only messages from `from` on are searched: after a compaction, an older
+ * report describes the uncompacted input, not the prefix now being sent.
+ */
+export function measuredBytesPerToken(
+  messages: AgentMessage[],
+  from = 0,
+  fallback = BYTES_PER_TOKEN
+): number {
+  for (let i = messages.length - 1; i >= from; i -= 1) {
+    const usage = (messages[i] as any).usage;
+    if ((messages[i] as any).role !== "assistant" || !usage) {
+      continue;
+    }
+    const tokens =
+      (usage.input ?? 0) + (usage.cacheRead ?? 0) + (usage.cacheWrite ?? 0) + (usage.output ?? 0);
+    if (tokens <= 0) {
+      continue;
+    }
+    const ratio = estimateBytes(messages.slice(0, i + 1)) / tokens;
+    return Math.min(Math.max(ratio, BYTES_PER_TOKEN), MAX_MEASURED_BYTES_PER_TOKEN);
+  }
+  return fallback;
+}
 
 export function estimateBytes(messages: AgentMessage[]): number {
   try {
@@ -52,16 +89,19 @@ interface Generation {
   sourceLength: number;
   /** The compacted projection of those messages. */
   prefix: AgentMessage[];
+  /** Bytes per token measured when this generation was built. */
+  bytesPerToken: number;
   /**
-   * Size this generation must exceed before compacting again.
+   * Minimum size this generation must exceed before compacting again; the
+   * effective trigger is the larger of this and the current high watermark.
    *
-   * Normally the configured high watermark. But compaction cannot always reach
+   * Compaction cannot always reach
    * the target: the protected tail alone may be larger than it. Without this
    * floor, a run whose tail exceeds the watermark would re-compact on every
    * single turn, achieve nothing, and invalidate the cache each time — the
    * exact behaviour this class exists to remove.
    */
-  triggerBytes: number;
+  floorBytes: number;
 }
 
 /**
@@ -89,11 +129,18 @@ export class CompactionSession {
 
     const highRatio = this.settings.highWatermarkRatio ?? DEFAULT_HIGH_RATIO;
     const targetRatio = this.settings.targetRatio ?? DEFAULT_TARGET_RATIO;
-    const highBytes = maxTokens * BYTES_PER_TOKEN * highRatio;
-    const targetBytes = maxTokens * BYTES_PER_TOKEN * targetRatio;
-
     const reused = this.applyExistingGeneration(messages);
-    const trigger = this.generation?.triggerBytes ?? highBytes;
+    // Measured on what the model was actually sent, so the usage matches;
+    // within a generation only replies after its prefix count.
+    const bytesPerToken = measuredBytesPerToken(
+      reused,
+      this.generation?.prefix.length ?? 0,
+      this.generation?.bytesPerToken ?? BYTES_PER_TOKEN
+    );
+    const highBytes = maxTokens * bytesPerToken * highRatio;
+    const targetBytes = maxTokens * bytesPerToken * targetRatio;
+
+    const trigger = Math.max(highBytes, this.generation?.floorBytes ?? 0);
     if (estimateBytes(reused) <= trigger) {
       // Still under the ceiling: hand back the prefix we already committed to,
       // with the new messages appended. Nothing older changes, so the cached
@@ -112,14 +159,16 @@ export class CompactionSession {
     this.generation = {
       sourceLength: messages.length,
       prefix: compacted,
+      bytesPerToken,
       // If compaction fell short of the target, the next trigger is measured
       // from what it actually achieved. Re-running would only reproduce the
       // same floor while throwing away the cache.
-      triggerBytes: Math.max(highBytes, achieved * (1 + (1 - highRatio))),
+      floorBytes: achieved * (1 + (1 - highRatio)),
     };
     logDiagnostic(
       `context compaction generation ${this.generationCount}: ` +
-        `${estimateBytes(messages)}B -> ${achieved}B (target ${Math.floor(targetBytes)}B)`
+        `${estimateBytes(messages)}B -> ${achieved}B (target ${Math.floor(targetBytes)}B, ` +
+        `${bytesPerToken.toFixed(1)}B/token)`
     );
     return compacted;
   }

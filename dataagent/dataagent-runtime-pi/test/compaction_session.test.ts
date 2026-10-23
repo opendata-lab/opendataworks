@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { CompactionSession, estimateBytes } from "../src/context/compaction-session.js";
+import { CompactionSession, estimateBytes, measuredBytesPerToken } from "../src/context/compaction-session.js";
 
 function convo(turns: number, bulkChars = 400): any[] {
   const msgs: any[] = [{ role: "user", content: "起始问题" }];
@@ -125,4 +125,60 @@ test("the leading system message survives compaction unchanged", () => {
   const next = s.transform([...msgs, { role: "user", content: "追问" }]);
   // Appending must reuse the committed prefix byte for byte, not recompact it.
   assert.deepEqual(next.slice(0, out.length), out);
+});
+
+function withUsage(msgs: any[], tokens: number): any[] {
+  // The provider's report for the latest call: prompt plus its own output.
+  const last = msgs.map((m) => m.role).lastIndexOf("assistant");
+  return msgs.map((m, i) =>
+    i === last ? { ...m, usage: { input: tokens - 100, cacheRead: 0, cacheWrite: 0, output: 100 } } : m
+  );
+}
+
+test("without usage the fixed estimate is kept", () => {
+  assert.equal(measuredBytesPerToken(convo(3)), 3);
+});
+
+test("measured usage replaces the fixed estimate, never below it and capped", () => {
+  const msgs = convo(6);
+  const bytes = estimateBytes(msgs.slice(0, msgs.length - 1));
+  assert.ok(Math.abs(measuredBytesPerToken(withUsage(msgs, Math.round(bytes / 6))) - 6) < 0.1);
+  assert.equal(measuredBytesPerToken(withUsage(msgs, bytes)), 3);
+  assert.equal(measuredBytesPerToken(withUsage(msgs, 1)), 12);
+});
+
+test("a context that is far below the window by real usage is not compacted", () => {
+  // Over the ceiling at 3 bytes per token, but the provider reports far fewer
+  // tokens: compacting here would only throw the cache away.
+  const msgs = convo(12);
+  const ceilingAtThree = Math.ceil(estimateBytes(msgs) / 3 / 0.9);
+  const s = new CompactionSession({ maxContextTokens: Math.floor(ceilingAtThree * 0.8), protectTailCount: 2 });
+  const real = withUsage(msgs, Math.round(estimateBytes(msgs) / 8));
+  assert.deepEqual(s.transform(real), real);
+  assert.equal(s.generations, 0);
+  const fixed = new CompactionSession({ maxContextTokens: Math.floor(ceilingAtThree * 0.8), protectTailCount: 2 });
+  fixed.transform(msgs);
+  assert.equal(fixed.generations, 1, "the same context still compacts when no usage is known");
+});
+
+test("usage before the search start is ignored in favour of the fallback", () => {
+  // After a compaction the older report describes the uncompacted input.
+  const msgs = withUsage(convo(6), 10);
+  assert.equal(measuredBytesPerToken(msgs, msgs.length, 7), 7);
+  assert.equal(measuredBytesPerToken(msgs, 0, 7), 12);
+});
+
+test("a lower ratio reported after compaction lowers the trigger again", () => {
+  // Built while usage said 8 bytes per token; later usage says 3, so the same
+  // bytes are many more tokens and must compact rather than wait for the old mark.
+  const base = convo(12);
+  const maxTokens = Math.floor(estimateBytes(base) / 8 / 0.95);
+  const s = new CompactionSession({ maxContextTokens: maxTokens, protectTailCount: 2, targetRatio: 0.5 });
+  s.transform(withUsage(base, Math.round(estimateBytes(base) / 8)));
+  assert.equal(s.generations, 1);
+  const grown = [...base, ...convo(4).slice(1)];
+  const reply = { role: "assistant", content: [{ type: "text", text: "继续" }] };
+  const latest = withUsage([...grown, reply], Math.round(estimateBytes([...grown, reply]) / 3));
+  s.transform(latest);
+  assert.equal(s.generations, 2);
 });

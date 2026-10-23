@@ -535,6 +535,9 @@ def test_resolve_runtime_provider_selection_carries_the_models_output_ceiling(mo
 
     assert pro["max_output_tokens"] == 32000
     assert flash["max_output_tokens"] is None
+    # The window set when the model was added reaches the runtime; unset stays None.
+    assert pro["context_window"] == 1000000
+    assert flash["context_window"] is None
 
 
 def test_delete_current_provider_persists_fallback_selection(monkeypatch):

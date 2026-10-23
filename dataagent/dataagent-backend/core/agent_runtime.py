@@ -277,6 +277,20 @@ def _iter_tool_path_inputs(tool_name: str, tool_input: dict[str, Any]) -> list[t
     return results
 
 
+# Quoted heredoc bodies (<<'EOF', <<"EOF", <<-'EOF') are literal stdin data: the
+# shell expands nothing inside them, so their text is never a path argument.
+# The terminator pattern accepts more lines than bash does, so stripping can only
+# stop early and leave extra text to be checked, never hide executed text.
+_QUOTED_HEREDOC_RE = re.compile(
+    r"(<<-?[ \t]*(['\"])([A-Za-z_][A-Za-z0-9_]*)\2[^\n]*\n)(.*?\n)?([ \t]*\3[ \t]*)(?=\n|$)",
+    re.S,
+)
+
+
+def _drop_quoted_heredoc_bodies(command: str) -> str:
+    return _QUOTED_HEREDOC_RE.sub(lambda m: m.group(1) + m.group(5), command)
+
+
 def _normalize_bash_token(token: str) -> str:
     return str(token or "").strip().strip("'\"").rstrip(",;")
 
@@ -361,6 +375,7 @@ def _validate_bash_workspace_boundary(
     runtime_env: dict[str, str] | None,
     tool_result_root: Path | None = None,
 ) -> str | None:
+    command = _drop_quoted_heredoc_bodies(command)
     if _BASH_PARENT_SEGMENT_RE.search(command.replace("\\", "/")):
         return "Bash command uses a parent directory segment; stay inside the current agent workspace."
     tokens = _tokenize_bash_command(command)
