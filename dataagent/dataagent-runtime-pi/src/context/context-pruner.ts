@@ -44,8 +44,27 @@ function describeCall(calls: Map<string, CallInfo>, id: unknown): string {
 }
 
 // Stack frames from Node and Python; everything else in an error is diagnosis.
-const STACK_LINE = /^\s+at\s|^\s*File ".*", line \d+|^Traceback \(most recent call last\)|^\s{4,}\S/;
-const ERROR_KEEP_CHARS = 800;
+// A Python frame's source line follows its "File" line, so only that one
+// indented line goes with it; other indented text is diagnosis too.
+const NODE_FRAME = /^\s+at\s/;
+const PYTHON_FRAME = /^\s*File ".*", line \d+/;
+const TRACEBACK_HEADER = /^Traceback \(most recent call last\)/;
+const ERROR_HEAD_CHARS = 600;
+const ERROR_TAIL_CHARS = 400;
+
+function withoutStack(lines: string[]): string[] {
+  const kept: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i];
+    if (NODE_FRAME.test(line) || TRACEBACK_HEADER.test(line)) continue;
+    if (PYTHON_FRAME.test(line)) {
+      if (i + 1 < lines.length && /^\s{4,}\S/.test(lines[i + 1])) i += 1;
+      continue;
+    }
+    kept.push(line);
+  }
+  return kept;
+}
 
 export function pruneContext(
   messages: AgentMessage[],
@@ -152,10 +171,14 @@ export function pruneContext(
           const firstBlock = toolMsg.content[0];
           if (firstBlock && firstBlock.type === "text" && typeof firstBlock.text === "string") {
             const lines = firstBlock.text.split("\n");
-            const kept = lines.filter((line: string) => !STACK_LINE.test(line));
+            const kept = withoutStack(lines);
             let body = kept.join("\n").trim();
-            if (lines.length > 4 && (kept.length < lines.length || body.length > ERROR_KEEP_CHARS)) {
-              if (body.length > ERROR_KEEP_CHARS) body = body.slice(0, ERROR_KEEP_CHARS) + "…";
+            const limit = ERROR_HEAD_CHARS + ERROR_TAIL_CHARS;
+            if (lines.length > 4 && (kept.length < lines.length || body.length > limit)) {
+              // Head and tail: the reason leads, the next step usually closes.
+              if (body.length > limit) {
+                body = `${body.slice(0, ERROR_HEAD_CHARS)}\n…（中间省略 ${body.length - limit} 个字符）…\n${body.slice(-ERROR_TAIL_CHARS)}`;
+              }
               result.push({
                 ...toolMsg,
                 content: [
@@ -267,6 +290,11 @@ function enforceBudget(
         : typeof directRef === "string" && directRef.length > 0
           ? directRef
           : null;
+    // Without its call or a saved copy the output could never be found again;
+    // keep it rather than clear the only record.
+    if (!resultRef && !calls.has(String(msg.toolCallId))) {
+      continue;
+    }
     const origin = describeCall(calls, msg.toolCallId);
     const evictionText = resultRef
       ? `提示 [CONTEXT_CLEARED]：为控制上下文，已移除这次调用的输出（约 ${before} 字节）：${origin}。` +

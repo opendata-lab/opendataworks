@@ -14,6 +14,10 @@ const SECRET_VALUE_PATTERNS: RegExp[] = [
   /(token\s*[:=]\s*)[^\s,;'"]+/gi,
   /(api[_-]?key\s*[:=]\s*)[^\s,;'"]+/gi,
   /sk-[A-Za-z0-9_-]{16,}/g,
+  // user:password@ in a URL or DSN (mysql://reader:pass@host/db).
+  /([a-z][a-z0-9+.-]*:\/\/[^\s:/@]+:)[^\s@/]+(?=@)/gi,
+  // Quoted JSON fields: {"password": "..."}.
+  /("(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|credential)"\s*:\s*")[^"]*/gi,
   /\bBearer\s+[A-Za-z0-9._-]{16,}/gi,
 ];
 

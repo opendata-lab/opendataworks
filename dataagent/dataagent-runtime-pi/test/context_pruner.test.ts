@@ -255,3 +255,34 @@ test("a failed retry does not supersede an earlier successful result", async () 
   const first = pruned.find((m: any) => m.toolCallId === "c1") as any;
   assert.match(first.content[0].text, /GOOD_ROWS/);
 });
+
+test("historical errors keep indented diagnosis and the closing next step", () => {
+  const body = [
+    "错误 [DUPLICATE_REF]：两个片段用了同一个名字",
+    "    modeling/parts/01-types.json#/3",
+    "    modeling/parts/04-metrics.json#/0",
+    ...Array.from({ length: 40 }, (_, i) => `说明第 ${i} 行，补充一些上下文文字`),
+    "下一步：改名后重新检查",
+  ].join("\n");
+  const msgs: AgentMessage[] = [
+    mockUser("go"),
+    mockAssistant([{ type: "toolCall", id: "c1", name: "Bash", arguments: { command: "check" } }]),
+    { role: "toolResult" as any, toolCallId: "c1", toolName: "Bash", content: [{ type: "text", text: body }], isError: true, timestamp: 3 } as any,
+    mockUser("a"), mockAssistant([{ type: "text", text: "b" }]), mockUser("c"), mockAssistant([{ type: "text", text: "d" }]),
+  ];
+  const text = (pruneContext(msgs, { protectTailCount: 4 }).find((m: any) => m.toolCallId === "c1") as any).content[0].text;
+  assert.match(text, /modeling\/parts\/01-types\.json#\/3/);
+  assert.match(text, /下一步：改名后重新检查/);
+});
+
+test("budget clearing keeps an unsaved output whose call is unknown", () => {
+  const orphan = { role: "toolResult", toolCallId: "lost", toolName: "Bash", content: [{ type: "text", text: "唯一的输出".repeat(400) }], isError: false } as any;
+  const messages = [
+    { role: "user", content: "start" },
+    orphan,
+    { role: "user", content: "tail" },
+    { role: "assistant", content: "tail answer" },
+  ] as any;
+  const pruned = pruneContext(messages, { protectTailCount: 2, maxContextTokens: 1 });
+  assert.match((pruned.find((m: any) => m.toolCallId === "lost") as any).content[0].text, /唯一的输出/);
+});
