@@ -7,10 +7,10 @@ import com.onedata.portal.agentapi.dto.AgentFieldMetadata;
 import com.onedata.portal.agentapi.dto.AgentInspectResponse;
 import com.onedata.portal.agentapi.dto.AgentLineageRecord;
 import com.onedata.portal.agentapi.dto.AgentLineageResponse;
-import com.onedata.portal.agentapi.dto.AgentTableMetadata;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteRequest;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteResponse;
 import com.onedata.portal.agentapi.dto.AgentTableDdlResponse;
+import com.onedata.portal.agentapi.dto.AgentTableMetadata;
 import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.dto.TableFreshnessRequest;
 import com.onedata.portal.entity.BusinessDomain;
@@ -29,6 +29,7 @@ import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.DorisDbUserMapper;
 import com.onedata.portal.service.DataTableService;
 import com.onedata.portal.service.LineageService;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.freshness.TableFreshnessService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,8 +40,8 @@ import org.springframework.util.StringUtils;
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -63,6 +64,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
     private static final int LINEAGE_FETCH_LIMIT = 400;
     private static final int DDL_TIMEOUT_SECONDS = 20;
 
+    private final DatasourceAdapterRegistry adapterRegistry;
     private final DataTableMapper dataTableMapper;
     private final DataFieldMapper dataFieldMapper;
     private final DataLineageMapper dataLineageMapper;
@@ -240,8 +242,10 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         response.setEngine(engine);
         response.setDatabase(targetDatabase);
         response.setHost(trimToEmpty(cluster.getFeHost()));
-        response.setPort(cluster.getFePort() != null ? cluster.getFePort() : defaultPortForEngine(engine));
+        response.setPort(cluster.getFePort() != null ? cluster.getFePort()
+                : adapterRegistry.require(sourceType).descriptor().getDefaultPort());
         response.setConnectionDatabase(trimToNull(cluster.getDatabaseName()));
+        response.setConnectionOptions(cluster.getConnectionOptions());
         response.setUser(user);
         response.setPassword(password);
         response.setSourceType(sourceType);
@@ -1098,24 +1102,11 @@ public class BackendAgentMetadataService implements AgentMetadataService {
     }
 
     private String engineForSourceType(String sourceType) {
-        String normalized = normalizeSourceType(sourceType);
-        if ("MYSQL".equals(normalized)) {
-            return "mysql";
+        String engine = adapterRegistry.require(sourceType).descriptor().getAgentEngine();
+        if (!StringUtils.hasText(engine)) {
+            throw new IllegalArgumentException("数据源类型 " + sourceType + " 暂不支持智能查询");
         }
-        if ("POSTGRESQL".equals(normalized)) {
-            return "postgresql";
-        }
-        if ("DORIS".equals(normalized)) {
-            return "doris";
-        }
-        throw new IllegalArgumentException("数据源类型 " + normalized + " 暂不支持智能查询");
-    }
-
-    private int defaultPortForEngine(String engine) {
-        if ("mysql".equals(engine)) {
-            return 3306;
-        }
-        return "postgresql".equals(engine) ? 5432 : 9030;
+        return engine;
     }
 
     private String extractActualTableName(String database, String tableName) {
@@ -1133,8 +1124,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
     }
 
     private String normalizeSourceType(String sourceType) {
-        String normalized = trimToEmpty(sourceType).toUpperCase(Locale.ROOT);
-        return StringUtils.hasText(normalized) ? normalized : "DORIS";
+        return DatasourceAdapterRegistry.normalize(sourceType);
     }
 
     private String trimToNull(String value) {

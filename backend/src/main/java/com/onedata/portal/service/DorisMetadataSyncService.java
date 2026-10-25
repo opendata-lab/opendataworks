@@ -2,8 +2,8 @@ package com.onedata.portal.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
-import com.onedata.portal.entity.DataLineage;
 import com.onedata.portal.entity.DataField;
+import com.onedata.portal.entity.DataLineage;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.TableStatisticsHistory;
@@ -14,6 +14,7 @@ import com.onedata.portal.mapper.DataTableMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.TableStatisticsHistoryMapper;
 import com.onedata.portal.mapper.TableTaskRelationMapper;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.util.TableNameUtils;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +35,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class DorisMetadataSyncService {
 
+    private final DatasourceAdapterRegistry adapterRegistry;
     private final DorisConnectionService dorisConnectionService;
     private final DorisClusterMapper dorisClusterMapper;
     private final DataTableMapper dataTableMapper;
@@ -734,7 +736,7 @@ public class DorisMetadataSyncService {
     @Transactional(rollbackFor = Exception.class)
     public SyncResult syncAllMetadata(Long clusterId) {
         DorisCluster cluster = resolveCluster(clusterId);
-        boolean isDoris = isDorisCluster(cluster);
+        boolean engineProperties = hasEngineProperties(cluster);
         SyncResult result = new SyncResult();
         log.info("Starting metadata sync for cluster: {}", clusterId);
 
@@ -746,7 +748,7 @@ public class DorisMetadataSyncService {
 
             for (String database : databases) {
                 try {
-                    syncDatabaseInternal(clusterId, database, result, isDoris);
+                    syncDatabaseInternal(clusterId, database, result, engineProperties);
                 } catch (Exception e) {
                     log.error("Failed to sync database: {}", database, e);
                     result.addError("同步数据库 " + database + " 失败: " + e.getMessage());
@@ -934,11 +936,11 @@ public class DorisMetadataSyncService {
     @Transactional(rollbackFor = Exception.class)
     public SyncResult syncDatabase(Long clusterId, String database, SyncResult result) {
         DorisCluster cluster = resolveCluster(clusterId);
-        boolean isDoris = isDorisCluster(cluster);
-        return syncDatabaseInternal(clusterId, database, result, isDoris);
+        boolean engineProperties = hasEngineProperties(cluster);
+        return syncDatabaseInternal(clusterId, database, result, engineProperties);
     }
 
-    private SyncResult syncDatabaseInternal(Long clusterId, String database, SyncResult result, boolean isDoris) {
+    private SyncResult syncDatabaseInternal(Long clusterId, String database, SyncResult result, boolean engineProperties) {
         if (result == null) {
             result = new SyncResult();
         }
@@ -967,10 +969,10 @@ public class DorisMetadataSyncService {
 
                 if (localTable == null) {
                     // 新表：插入元数据
-                    syncNewTable(clusterId, database, tableName, dorisTable, result, isDoris);
+                    syncNewTable(clusterId, database, tableName, dorisTable, result, engineProperties);
                 } else {
                     // 已存在表：更新元数据
-                    syncExistingTable(clusterId, database, tableName, dorisTable, localTable, result, isDoris);
+                    syncExistingTable(clusterId, database, tableName, dorisTable, localTable, result, engineProperties);
                 }
             } catch (Exception e) {
                 log.error("Failed to sync table {}.{}", database, tableName, e);
@@ -1065,7 +1067,7 @@ public class DorisMetadataSyncService {
      * 同步新表
      */
     private void syncNewTable(Long clusterId, String database, String tableName,
-            Map<String, Object> dorisTable, SyncResult result, boolean isDoris) {
+            Map<String, Object> dorisTable, SyncResult result, boolean engineProperties) {
         log.info("Syncing new table: {}.{}", database, tableName);
 
         // 获取表的详细信息
@@ -1090,7 +1092,7 @@ public class DorisMetadataSyncService {
         newTable.setIsSynced(1);
         newTable.setSyncTime(LocalDateTime.now());
 
-        if (isDoris && !viewType) {
+        if (engineProperties && !viewType) {
             // 从建表语句中解析的信息（仅 Doris）
             if (tableCreateInfo.containsKey("bucketNum")) {
                 newTable.setBucketNum((Integer) tableCreateInfo.get("bucketNum"));
@@ -1160,7 +1162,7 @@ public class DorisMetadataSyncService {
      * 同步已存在的表
      */
     private void syncExistingTable(Long clusterId, String database, String tableName,
-            Map<String, Object> dorisTable, DataTable localTable, SyncResult result, boolean isDoris) {
+            Map<String, Object> dorisTable, DataTable localTable, SyncResult result, boolean engineProperties) {
         log.debug("Syncing existing table: {}.{}", database, tableName);
 
         // 获取表的详细信息
@@ -1208,7 +1210,7 @@ public class DorisMetadataSyncService {
             tableMetadataUpdated = true;
         }
 
-        if (isDoris && !viewType) {
+        if (engineProperties && !viewType) {
             // 更新分桶数
             if (tableCreateInfo.containsKey("bucketNum")) {
                 Integer bucketNum = (Integer) tableCreateInfo.get("bucketNum");
@@ -1574,11 +1576,11 @@ public class DorisMetadataSyncService {
     @Transactional(rollbackFor = Exception.class)
     public SyncResult syncTable(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
-        boolean isDoris = isDorisCluster(cluster);
-        return syncTableInternal(clusterId, database, tableName, isDoris);
+        boolean engineProperties = hasEngineProperties(cluster);
+        return syncTableInternal(clusterId, database, tableName, engineProperties);
     }
 
-    private SyncResult syncTableInternal(Long clusterId, String database, String tableName, boolean isDoris) {
+    private SyncResult syncTableInternal(Long clusterId, String database, String tableName, boolean engineProperties) {
         SyncResult result = new SyncResult();
         log.info("Syncing table: {}.{}", database, tableName);
 
@@ -1603,9 +1605,9 @@ public class DorisMetadataSyncService {
                             .eq(DataTable::getClusterId, clusterId));
 
             if (localTable == null) {
-                syncNewTable(clusterId, database, tableName, dorisTable, result, isDoris);
+                syncNewTable(clusterId, database, tableName, dorisTable, result, engineProperties);
             } else {
-                syncExistingTable(clusterId, database, tableName, dorisTable, localTable, result, isDoris);
+                syncExistingTable(clusterId, database, tableName, dorisTable, localTable, result, engineProperties);
             }
 
             log.info("Table sync completed: {}", result);
@@ -1642,11 +1644,9 @@ public class DorisMetadataSyncService {
         return cluster;
     }
 
-    private boolean isDorisCluster(DorisCluster cluster) {
-        if (cluster == null || !StringUtils.hasText(cluster.getSourceType())) {
-            return true;
-        }
-        return "DORIS".equalsIgnoreCase(cluster.getSourceType());
+    private boolean hasEngineProperties(DorisCluster cluster) {
+        return cluster != null && adapterRegistry.require(cluster.getSourceType()).descriptor()
+                .supports("engineProperties");
     }
 
     private String normalizeTableType(String tableType) {

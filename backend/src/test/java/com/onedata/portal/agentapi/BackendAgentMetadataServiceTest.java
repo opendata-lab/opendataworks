@@ -8,6 +8,7 @@ import com.onedata.portal.agentapi.dto.AgentTableDdlResponse;
 import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.agentapi.service.AgentJdbcExecutor;
 import com.onedata.portal.agentapi.service.BackendAgentMetadataService;
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.dto.TableFreshnessRequest;
 import com.onedata.portal.entity.BusinessDomain;
 import com.onedata.portal.entity.DataDomain;
@@ -24,12 +25,15 @@ import com.onedata.portal.mapper.DataTableMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.DorisDbUserMapper;
 import com.onedata.portal.service.DataTableService;
+import com.onedata.portal.service.DatasourceAdapterFixtures;
 import com.onedata.portal.service.LineageService;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.freshness.TableFreshnessService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 
@@ -87,6 +91,10 @@ class BackendAgentMetadataServiceTest {
 
     @Mock
     private DataDomainMapper dataDomainMapper;
+
+    @Spy
+    private DatasourceAdapterRegistry adapterRegistry =
+            DatasourceAdapterFixtures.registry(new DorisJdbcProperties());
 
     @InjectMocks
     private BackendAgentMetadataService backendAgentMetadataService;

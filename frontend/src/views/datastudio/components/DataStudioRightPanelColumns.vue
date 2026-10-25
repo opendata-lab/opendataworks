@@ -195,7 +195,7 @@ if (!ctx) {
 const {
   activeTab,
   tabStates,
-  isDorisTable,
+  hasEngineProperties,
   getTableSourceType,
   isAggregateTable,
   getFieldRows,

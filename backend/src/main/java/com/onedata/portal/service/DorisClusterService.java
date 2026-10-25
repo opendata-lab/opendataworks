@@ -4,9 +4,10 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import com.onedata.portal.util.JdbcUrlParts;
 import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.datasource.model.ConnectionConfig;
+import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
+import com.onedata.portal.util.JdbcUrlParts;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.support.CronExpression;
@@ -15,8 +16,10 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * Doris 集群配置服务
@@ -89,6 +92,25 @@ public class DorisClusterService {
         if (cluster.getDatabaseName() == null) {
             cluster.setDatabaseName(exists.getDatabaseName());
         }
+        Map<String, Object> options = cluster.getConnectionOptions() == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(cluster.getConnectionOptions());
+        if (exists.getConnectionOptions() != null
+                && DatasourceAdapterRegistry.normalize(exists.getSourceType()).equals(
+                        DatasourceAdapterRegistry.normalize(cluster.getSourceType()))) {
+            for (DatasourceDescriptor.ConnectionField field
+                    : adapterRegistry.require(cluster.getSourceType()).descriptor().getConnectionFields()) {
+                if ("password".equals(field.getControl())
+                        && (!options.containsKey(field.getKey()) || "".equals(options.get(field.getKey())))) {
+                    if (exists.getConnectionOptions().containsKey(field.getKey())) {
+                        options.put(field.getKey(), exists.getConnectionOptions().get(field.getKey()));
+                    }
+                }
+            }
+        }
+        if (cluster.getConnectionOptions() == null && exists.getConnectionOptions() != null) {
+            options.putAll(exists.getConnectionOptions());
+        }
+        cluster.setConnectionOptions(options);
         if (cluster.getAutoSync() == null) {
             cluster.setAutoSync(exists.getAutoSync());
         }
@@ -153,8 +175,7 @@ public class DorisClusterService {
         if (StringUtils.hasText(cluster.getDatabaseName())) {
             cluster.setDatabaseName(cluster.getDatabaseName().trim());
         }
-        adapterRegistry.validate(cluster.getSourceType(), new ConnectionConfig(
-            cluster.getFeHost(), cluster.getFePort(), cluster.getUsername(), cluster.getDatabaseName()));
+        adapterRegistry.validate(cluster.getSourceType(), ConnectionConfig.from(cluster));
         cluster.setFeHost(JdbcUrlParts.requireHost(cluster.getFeHost()));
         if (cluster.getPassword() == null) {
             cluster.setPassword("");

@@ -73,6 +73,26 @@ describe('DataSourceManagement PostgreSQL', () => {
     expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'TEST_DB', fePort: 15400 }))
   })
 
+  it('saves and restores adapter-declared extra fields under connectionOptions', async () => {
+    const descriptor = definition('TEST_DB', 15400)
+    descriptor.connectionFields = [...descriptor.connectionFields,
+      { key: 'serviceName', label: '服务名', control: 'text', required: true, defaultValue: 'sales' },
+      { key: 'accessToken', label: '令牌', control: 'password', required: false, defaultValue: '' }]
+    api.types.mockResolvedValue([descriptor])
+    const wrapper = mountView()
+    await flushPromises()
+    wrapper.vm.openCreate()
+    expect(wrapper.vm.rules.serviceName[0].required).toBe(true)
+    wrapper.vm.form.accessToken = 'secret'
+    await wrapper.vm.handleSubmit()
+    expect(api.create.mock.calls[0][0].connectionOptions).toEqual({ serviceName: 'sales', accessToken: 'secret' })
+    expect(api.create.mock.calls[0][0]).not.toHaveProperty('serviceName')
+    api.getById.mockResolvedValue({ sourceType: 'TEST_DB', connectionOptions: { serviceName: 'other' } })
+    await wrapper.vm.openEdit(9)
+    expect(wrapper.vm.form.serviceName).toBe('other')
+    expect(wrapper.vm.form.accessToken).toBe('')
+  })
+
   it('reports descriptor failure and disables creating a guessed type', async () => {
     api.types.mockRejectedValue(new Error('描述不可用'))
     const wrapper = mountView()

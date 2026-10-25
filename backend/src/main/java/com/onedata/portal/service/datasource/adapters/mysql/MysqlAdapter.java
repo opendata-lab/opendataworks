@@ -8,13 +8,12 @@ import org.springframework.stereotype.Component;
 @Component
 public class MysqlAdapter extends MysqlProtocolAdapter {
 
+    private final DatasourceDescriptor descriptor;
+
     public MysqlAdapter(DorisJdbcProperties properties) {
         super(properties, false);
-    }
-
-    @Override
-    public DatasourceDescriptor descriptor() {
-        return Descriptors.builder("MYSQL", "MySQL")
+        this.descriptor = Descriptors.builder("MYSQL", "MySQL")
+                .agentEngine("mysql")
                 .defaultPort(3306)
                 .namespaceLabel("数据库")
                 .identifierQuote("`")
@@ -33,10 +32,15 @@ public class MysqlAdapter extends MysqlProtocolAdapter {
                 .capability("distribution", false, "MySQL 暂不支持此引擎操作")
                 .capability("replication", false, "MySQL 暂不支持此引擎操作")
                 .capability("backup", false, "MySQL 暂不支持此引擎操作")
-                .capability("dorisProperties", false, "MySQL 暂不支持此引擎操作")
+                .capability("engineProperties", false, "MySQL 暂不支持此引擎操作")
                 .capability("freshnessMetadata", true)
                 .capability("existingPrimaryKeyEdit", false, "暂不支持在线修改已有字段的主键")
                 .capability("newPrimaryKeyEdit", true, "此引擎不支持在线修改主键列")
                 .build();
+    }
+
+    @Override
+    public DatasourceDescriptor descriptor() {
+        return descriptor;
     }
 }

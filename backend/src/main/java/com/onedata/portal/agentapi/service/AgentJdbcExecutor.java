@@ -1,10 +1,12 @@
 package com.onedata.portal.agentapi.service;
 
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
-import com.onedata.portal.config.DorisJdbcProperties;
-import com.onedata.portal.util.JdbcUrlParts;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
+import com.onedata.portal.service.datasource.core.DatasourceConnectionFactory;
+import com.onedata.portal.service.datasource.model.ConnectionConfig;
+import com.onedata.portal.service.datasource.spi.DatasourceAdapter;
+import com.onedata.portal.service.datasource.spi.DatasourceReferenceDdlReader;
 import com.onedata.portal.util.JdbcValues;
-import com.onedata.portal.util.PostgresqlMetadataSql;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +14,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -28,7 +28,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AgentJdbcExecutor {
 
-    private final DorisJdbcProperties dorisJdbcProperties;
+    private final DatasourceAdapterRegistry adapterRegistry;
+    private final DatasourceConnectionFactory connectionFactory;
 
     public QueryExecutionResult executeReadOnlyQuery(
             AgentDatasourceResolution datasource,
@@ -82,166 +83,35 @@ public class AgentJdbcExecutor {
             String tableName,
             int timeoutSeconds
     ) {
-        if (isPostgresql(datasource)) {
-            return fetchPostgresqlColumnDdl(datasource, database, tableName, timeoutSeconds);
+        String type = StringUtils.hasText(datasource.getSourceType())
+                ? datasource.getSourceType() : datasource.getEngine();
+        DatasourceAdapter adapter = adapterRegistry.require(type);
+        if (!(adapter instanceof DatasourceReferenceDdlReader)) {
+            throw new UnsupportedOperationException("此数据源不支持参考结构读取");
         }
-        String sql = "SHOW CREATE TABLE `" + escapeIdentifier(database) + "`.`" + escapeIdentifier(tableName) + "`";
-        try (Connection connection = openConnection(datasource, database);
-             Statement statement = connection.createStatement()) {
-            statement.setQueryTimeout(timeoutSeconds);
-            try (ResultSet resultSet = statement.executeQuery(sql)) {
-                if (resultSet.next()) {
-                    ResultSetMetaData metaData = resultSet.getMetaData();
-                    int ddlColumn = metaData.getColumnCount() >= 2 ? 2 : 1;
-                    return resultSet.getString(ddlColumn);
-                }
-            }
+        try (Connection connection = openConnection(datasource, database)) {
+            return ((DatasourceReferenceDdlReader) adapter)
+                    .referenceDdl(connection, database, tableName, timeoutSeconds);
         } catch (SQLException e) {
             throw new RuntimeException("获取建表语句失败: " + e.getMessage(), e);
         }
-        throw new RuntimeException(String.format("表 %s.%s 不存在", database, tableName));
-    }
-
-    /**
-     * PostgreSQL 没有 SHOW CREATE TABLE；从系统目录生成仅含列、类型、默认值和注释的参考 DDL，
-     * 供 SQL 编写参考，不作为可恢复的建表语句。
-     */
-    private String fetchPostgresqlColumnDdl(
-            AgentDatasourceResolution datasource,
-            String database,
-            String tableName,
-            int timeoutSeconds
-    ) {
-        String qualifiedName = PostgresqlMetadataSql.quoteIdentifier(database) + "."
-                + PostgresqlMetadataSql.quoteIdentifier(tableName);
-        List<String> columns = new ArrayList<>();
-        List<String> comments = new ArrayList<>();
-        List<String> primaryKeys = new ArrayList<>();
-        try (Connection connection = openConnection(datasource, database);
-             PreparedStatement statement = connection.prepareStatement(PostgresqlMetadataSql.COLUMNS)) {
-            statement.setQueryTimeout(timeoutSeconds);
-            statement.setString(1, database);
-            statement.setString(2, tableName);
-            try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    String column = PostgresqlMetadataSql.quoteIdentifier(resultSet.getString("COLUMN_NAME"));
-                    StringBuilder definition = new StringBuilder("  ").append(column).append(' ')
-                            .append(resultSet.getString("COLUMN_TYPE"));
-                    if ("NO".equals(resultSet.getString("IS_NULLABLE"))) {
-                        definition.append(" NOT NULL");
-                    }
-                    String defaultValue = resultSet.getString("COLUMN_DEFAULT");
-                    if (StringUtils.hasText(defaultValue)) {
-                        definition.append(" DEFAULT ").append(defaultValue);
-                    }
-                    columns.add(definition.toString());
-                    if ("PRI".equals(resultSet.getString("COLUMN_KEY"))) {
-                        primaryKeys.add(column);
-                    }
-                    String comment = resultSet.getString("COLUMN_COMMENT");
-                    if (StringUtils.hasText(comment)) {
-                        comments.add("COMMENT ON COLUMN " + qualifiedName + "." + column + " IS '"
-                                + comment.replace("'", "''") + "';");
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            throw new RuntimeException("获取建表语句失败: " + e.getMessage(), e);
-        }
-        if (columns.isEmpty()) {
-            throw new RuntimeException(String.format("表 %s.%s 不存在", database, tableName));
-        }
-        if (!primaryKeys.isEmpty()) {
-            columns.add("  PRIMARY KEY (" + String.join(", ", primaryKeys) + ")");
-        }
-        StringBuilder ddl = new StringBuilder("-- 由 PostgreSQL 系统目录生成，仅含列定义，不含索引/约束/分区等完整信息\n")
-                .append("CREATE TABLE ").append(qualifiedName).append(" (\n")
-                .append(String.join(",\n", columns)).append("\n);");
-        for (String comment : comments) {
-            ddl.append('\n').append(comment);
-        }
-        return ddl.toString();
     }
 
     private Connection openConnection(AgentDatasourceResolution datasource, String database) throws SQLException {
-        String targetDatabase = StringUtils.hasText(database) ? database.trim() : datasource.getDatabase();
-        String url = buildJdbcUrl(datasource, targetDatabase);
-        Connection connection = DriverManager.getConnection(
-                url,
-                trimToEmpty(datasource.getUser()),
-                trimToEmpty(datasource.getPassword())
-        );
-        try {
-            if (isPostgresql(datasource)) {
-                // 只读事务由 PostgreSQL 服务端强制，叠加在上游只读 SQL 校验之上。
-                connection.setReadOnly(true);
-                connection.setSchema(targetDatabase);
-            } else {
-                applySessionCharset(connection);
-            }
-            return connection;
-        } catch (SQLException | RuntimeException e) {
-            try {
-                connection.close();
-            } catch (SQLException closeError) {
-                e.addSuppressed(closeError);
-            }
-            throw e;
+        String type = datasource.getSourceType();
+        if (!StringUtils.hasText(type)) {
+            type = datasource.getEngine();
         }
-    }
-
-    private boolean isPostgresql(AgentDatasourceResolution datasource) {
-        return "postgresql".equals(datasource.getEngine());
-    }
-
-    private String buildJdbcUrl(AgentDatasourceResolution datasource, String database) {
-        if (isPostgresql(datasource)) {
-            if (!StringUtils.hasText(datasource.getConnectionDatabase())) {
-                throw new IllegalArgumentException("PostgreSQL 连接数据库不能为空");
-            }
-            int port = datasource.getPort() == null ? 5432 : datasource.getPort();
-            return PostgresqlMetadataSql.jdbcUrl(trimToEmpty(datasource.getHost()), port,
-                    datasource.getConnectionDatabase().trim());
-        }
-        String template = dorisJdbcProperties.getUrlTemplate();
-        if (!StringUtils.hasText(template)) {
-            throw new IllegalStateException("doris.jdbc.url-template 未配置");
-        }
-        String host = StringUtils.hasText(datasource.getHost()) ? datasource.getHost().trim() : "localhost";
-        int port = datasource.getPort() == null ? 3306 : datasource.getPort();
-        String targetDatabase = StringUtils.hasText(database) ? database.trim() : datasource.getDatabase();
-        if (!StringUtils.hasText(targetDatabase)) {
-            throw new IllegalArgumentException("database 不能为空");
-        }
-        return String.format(template, JdbcUrlParts.requireHost(host), port, JdbcUrlParts.requireDatabase(targetDatabase));
-    }
-
-    private void applySessionCharset(Connection connection) {
-        if (!dorisJdbcProperties.isSessionCharsetEnabled()) {
-            return;
-        }
-        String primaryCharset = dorisJdbcProperties.getSessionCharset();
-        if (!StringUtils.hasText(primaryCharset)) {
-            return;
-        }
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("SET NAMES " + primaryCharset);
-        } catch (SQLException primaryEx) {
-            String fallbackCharset = dorisJdbcProperties.getSessionCharsetFallback();
-            if (!StringUtils.hasText(fallbackCharset) || fallbackCharset.equalsIgnoreCase(primaryCharset)) {
-                log.warn("Failed to set agent JDBC charset to {}. reason={}", primaryCharset, primaryEx.getMessage());
-                return;
-            }
-            try (Statement statement = connection.createStatement()) {
-                statement.execute("SET NAMES " + fallbackCharset);
-            } catch (SQLException fallbackEx) {
-                log.warn("Failed to set agent JDBC fallback charset to {}. reason={}", fallbackCharset, fallbackEx.getMessage());
-            }
-        }
-    }
-
-    private String escapeIdentifier(String value) {
-        return String.valueOf(value == null ? "" : value).replace("`", "``");
+        String target = StringUtils.hasText(database) ? database.trim() : datasource.getDatabase();
+        DatasourceAdapter adapter = adapterRegistry.require(type);
+        ConnectionConfig config =
+                new ConnectionConfig(
+                        datasource.getHost(), datasource.getPort() == null
+                            ? adapter.descriptor().getDefaultPort() : datasource.getPort(),
+                        trimToEmpty(datasource.getUser()), datasource.getConnectionDatabase(),
+                        datasource.getConnectionOptions());
+        return connectionFactory.open(type, config, target,
+                trimToEmpty(datasource.getUser()), trimToEmpty(datasource.getPassword()), true);
     }
 
     private String trimToEmpty(String value) {

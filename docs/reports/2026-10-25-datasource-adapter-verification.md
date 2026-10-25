@@ -225,3 +225,158 @@ ODW_POSTGRES_TEST_PORT=55440 mvn -s .adapter-style-tmp/settings.xml -o -q -pl ba
 - `frontend/src/views/settings/DataSourceManagement.vue`
 - `frontend/src/views/settings/__tests__/DataSourceManagement.spec.js`
 - `frontend/src/views/settings/components/SchemaBackupManager.vue`
+
+
+## 2026-10-26：阶段三、Java 阶段四与连接字段扩展
+
+本节承接 `cfa12bdd` 的阶段一、二，不改 `dataagent/` Python，不实现外置驱动加载；改动保留在 feat/datasource-adapter 工作区，未 commit、未 push。
+
+### 实施与取舍
+
+1. **连接主路径**：`DatasourceConnectionFactory` 统一注册表配置校验、内置驱动检查、适配器规格、JDBC 打开和会话初始化，失败关闭连接。`DorisConnectionService` 保留用户凭据映射；`TableEngineJdbcExecutor` 通过该门面取连接，Java `AgentJdbcExecutor` 用已授权的 resolution 凭据调用工厂。URL 构造仅留在适配器，继续使用 JdbcUrlParts；PG URL 固定 readOnlyMode=always。agent 所有引擎调用 setReadOnly(true)，PG setSchema、maxRows(limit + 1)、timeout、SQL 只读守卫与数据范围检查保留。登记映射账号但用户未授权时继续直接拒绝。
+2. **参考结构**：PG 列参考 DDL 迁入 PostgreSQL 适配器的 `DatasourceReferenceDdlReader`；MySQL/Doris 复用 SHOW CREATE TABLE。参考结构与可恢复导出分开，PG ddlExport 仍为 false，pg_dump 提示不变。描述新增 agentEngine，替换 Java metadata 服务中的引擎映射与默认端口分支。
+3. **编辑类型**：handler 与 registry 使用统一 normalize 字符串，删除 util/DatasourceType 枚举；启动校验未知/重复 handler 与结构编辑能力。现有 Doris/MySQL 物理 SQL 和主键限制保留，TEST_DB + handler 契约证明无需中央枚举。Doris 专用表设计器仍使用自己的物理模型与创建 DDL，普通表结构编辑通过通用 DataTableService 分派。
+4. **能力目录**：后端 `DatasourceCapabilities` 定义 18 项能力的名称、含义与默认拒绝原因；不可变描述补全缺省能力，注册表启动拒绝未知项。dorisProperties 同步改为 engineProperties，前端辅助函数改为 hasEngineProperties。备份使用 backup，元数据物理属性使用 engineProperties；审计使用明确的 auditAccess，Tablet 巡检使用 tabletInspection。DolphinScheduler 的 DataX 默认 MYSQL 保留：它属于 Dolphin 自己的数据源协议，不是平台数据源分派。
+5. **连接选项**：`V53__add_datasource_connection_options.sql` 新增 doris_cluster.connection_options 可空 TEXT（JSON 对象，JacksonTypeHandler）。REST 旧接口增加可选 connectionOptions，旧记录 NULL 等同空对象。只有描述声明的额外 key 可保存/取连接，校验控件类型、必填、格式与长度，拒绝 URL/驱动/只读等保留键以及与顶层配置冲突的键；值不会被通用工厂拼成 JDBC 参数。额外密码控件只写、响应脱敏，更新缺省/留空保留秘密值。前端按描述生成字段，将额外值放入 connectionOptions。三个内置源不新增字段，真实 mapper 的 TEST_DB 测试覆盖描述→保存→重载→连接规格与会话初始化。
+6. **对象复用**：三个生产适配器在构造时创建描述、方言和元数据读取器，后续返回同一实例。
+
+### 环境、命令与测试结果
+
+- Java 1.8.0_271 / Spring Boot 2.7.18；临时 Maven settings 使用 id=central、mirrorOf=*，匹配离线缓存，不修改全局 settings 或 pom。
+- MySQL：复用 Podman data-portal-mysql（127.0.0.1:3306），创建独立用户与 schema `odw_adapter_20261026`、`odw_adapter_upgrade_src`、`odw_adapter_upgrade_copy`、`odw_adapter_business`。测试显式覆盖 spring.datasource URL/用户名/密码；未修改既有 opendataworks 数据，也未在其上运行 V53。
+- PostgreSQL：一次性 Podman `odw-pg-adapter-final`，postgres:16-alpine，127.0.0.1:55443，数据库 odw_smoke；由 ODW_POSTGRES_TEST_PORT=55443 开启真实集成测试。
+- 定向：DatasourceAdapterContractTest **11/11**，DatasourceConnectionOptionsIntegrationTest **1/1**，PostgresqlDatasourceIntegrationTest **8/8**，合计 **20 通过、0 失败、0 错误、0 跳过**。扩展选项测试真实落库但 JDBC TEST_DB 用测试驱动；PG 集成使用真实驱动/服务器，包含只读多语句写拒绝、schema、maxRows 和参考结构。
+最终全量中重点类全部通过：
+
+| 测试类 | 通过数 |
+| --- | ---: |
+| BackendAgentQueryServiceTest | 31 |
+| BackendAgentMetadataServiceTest | 13 |
+| DatasourceAdapterContractTest | 11 |
+| DatasourceConnectionOptionsIntegrationTest | 1 |
+| PostgresqlDatasourceIntegrationTest | 8 |
+| TableEngineJdbcExecutorUrlTest | 1 |
+| MysqlTableEngineHandlerTest | 5 |
+| DorisTableEngineHandlerTest | 7 |
+| UserMappingServiceTest | 6 |
+| DorisConnectionServiceUserContextTest | 5 |
+| 合计 | 88 |
+
+- 最终全量：**backend Tests run: 602, Failures: 7, Errors: 0, Skipped: 2（593 通过）**。odw-auth **31/31**、backend-agent-api **3/3**，reactor 合计 **636 项、627 通过、7 失败、0 错误、2 跳过**。
+- 与前轮 7 个失败逐项比对完全一致，无新增失败。均为 WorkflowRuntimeSyncRealIntegrationTest 的 bootstrapOrSkip:2131 在等待 DolphinScheduler `http://localhost:12345/dolphinscheduler` 后失败（端口检查 HTTP=000）：
+  - forwardReverseSyncAndDiffShouldWork
+  - importPreviewCommitAndExportShouldWorkWithRealDolphinExport
+  - publishPreviewShouldOnlyShowChangedTasksForExistingRuntimeWorkflow
+  - relationMismatchShouldRequireDecisionAndConvergeAfterManualSelection
+  - reversePreviewShouldFailForUnsupportedNodeType
+  - reversePreviewShouldPassForUpdateHeadWithoutInput
+  - runtimeEvolutionShouldRefreshTasksLineageAndDataResult
+- 2 个跳过仍为 RealDolphinSchedulerIntegrationTest.testConnectivity、testListProcessInstances。没有跳过本轮 PG 或连接选项测试。Maven 全量因上述既有 7 项返回退出码 1。
+- 过程中的测试修正：动态表单变量改名遗漏已修复后重跑前端全量；额外选项更新测试改为模拟真实 HTTP 的独立请求对象，避免原地修改 MyBatis 会话缓存中的实体。修正后的完整 Java 全量如上，不将中途失败计入最终通过数。
+
+全量命令（测试密码仅供临时独立用户，报告省略）：
+
+```sh
+ODW_POSTGRES_TEST_PORT=55443 \
+IT_MYSQL_DATABASE=odw_adapter_20261026 \
+IT_MYSQL_USERNAME=odw_adapter_20261026 IT_MYSQL_PASSWORD=<临时测试密码> \
+mvn -s <临时 central mirror settings> -o -q -pl backend -am test \
+  '-Dspring.datasource.url=jdbc:mysql://127.0.0.1:3306/odw_adapter_20261026?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai' \
+  -Dspring.datasource.username=odw_adapter_20261026 \
+  -Dspring.datasource.password=<临时测试密码>
+```
+
+前端每次先 `export NVM_DIR="$HOME/.nvm" && . "$NVM_DIR/nvm.sh" && nvm use`（Node 20.19.0）：
+
+- `npm --prefix frontend test -- --cache=false`：**59 文件、419 测试全部通过**；包含自动扫描前端能力引用并与后端基线 JSON 对照、额外字段保存/恢复测试。禁用 Vitest 缓存，未 install，保留 node_modules 符号链接。
+- `npm --prefix frontend run build`：通过；沿用现有 Sass 弃用与 chunk 大小提示，无构建错误。
+
+### Flyway 验证
+
+- **从零**：空 schema odw_adapter_20261026 使用全部迁移，成功应用 **53 个迁移，最终 V53**。
+- **已有数据副本升级**：独立 schema odw_adapter_upgrade_src 先迁移到 V52 并插入 upgrade-sentinel；使用 mysqldump 复制其结构、Flyway 历史及数据到 odw_adapter_upgrade_copy，再运行全部迁移，成功升级 V53。确认旧 password 哨兵值保持、新 connection_options 为 NULL。复制源和目标均为本轮新建 schema，没有复制或修改既有 opendataworks。
+- 回退无需删除可空列；回退前后端应用并保留 V53，暂停旧版本不认识的新类型配置。能力重命名要求前后端协调发布；内置驱动与旧源字段保持。
+
+### 真实 Java HTTP
+
+隔离 Java backend 绑定 127.0.0.1:18086，平台库 odw_adapter_upgrade_copy；仅本地开启匿名 admin 上下文，agent 使用临时 service token 和 X-Agent-Data-Scope。MySQL 业务库 odw_adapter_business，PG schema adapter_http_sales。**12/12 项通过**：
+
+| 引擎 | 测试连接、单表同步 | agent 只读查询（limit=1、has_more=true） | DELETE 拒绝 | outside_scope.secret 越界拒绝 | 修改表注释入口 |
+| --- | --- | --- | --- | --- | --- |
+| PostgreSQL | 通过 | 通过，真实 PG 行 | HTTP 400 | HTTP 400 | UNSUPPORTED_CAPABILITY（旧 API HTTP 200、业务 code=500），数据库注释未改变 |
+| MySQL | 通过 | 通过，真实 MySQL 行 | HTTP 400 | HTTP 400 | 允许，数据库 TABLE_COMMENT=adapter-http-edited |
+
+入口分别为 `/api/v1/ai/query/read` 与 `/api/v1/tables/{id}/comment`。MySQL 使用单独业务库，以覆盖注册数据源分派；平台元数据库有 clusterId=null 的独立 scope 语义，测试不绕过该限制。
+
+### 文档、缺口与清理
+
+- 先更新既有 design/plan 的阶段三、Java 阶段四、V53、接口/安全约束、能力目录、发布与回退，再修改代码。TODO 将已实施的架构与连接字段扩展移入已完成，保留外置加载、Python resolver、Doris/浏览器和环境验证缺口。
+- 本轮没有真实模型 NL2SQL 全链路：模型账号欠费（既有 403 Current user is in debt），未改 Python；Java agent HTTP 通过不能代替真实模型/MCP/任务与事件持久化验证。
+- 未新增生产数据库适配器，TEST_DB 是扩展契约测试。没有真实 Doris 实例，保留其真实物理操作回归；本轮未重跑完整 Data Studio 浏览器闭环。
+- 清理：本轮 Java HTTP 服务已停止；临时 PG 容器 odw-pg-adapter-final 已删除；四个独立 MySQL schema 与专用用户已删除；执行脚本/settings/日志工作目录已清理。保留 Maven surefire 报告与本验证文档，其他原有容器、服务及既有 opendataworks 库保持。
+
+### 本轮改动文件
+
+```text
+backend-agent-api/src/main/java/com/onedata/portal/agentapi/dto/AgentDatasourceResolution.java
+backend/src/main/java/com/onedata/portal/agentapi/service/AgentJdbcExecutor.java
+backend/src/main/java/com/onedata/portal/agentapi/service/BackendAgentMetadataService.java
+backend/src/main/java/com/onedata/portal/entity/DorisCluster.java
+backend/src/main/java/com/onedata/portal/service/DataTableService.java
+backend/src/main/java/com/onedata/portal/service/DorisClusterService.java
+backend/src/main/java/com/onedata/portal/service/DorisConnectionService.java
+backend/src/main/java/com/onedata/portal/service/DorisMetadataSyncService.java
+backend/src/main/java/com/onedata/portal/service/SchemaBackupService.java
+backend/src/main/java/com/onedata/portal/service/TableCreateService.java
+backend/src/main/java/com/onedata/portal/service/audit/DorisAuditAccessSyncService.java
+backend/src/main/java/com/onedata/portal/service/datasource/adapters/Descriptors.java
+backend/src/main/java/com/onedata/portal/service/datasource/adapters/doris/DorisAdapter.java
+backend/src/main/java/com/onedata/portal/service/datasource/adapters/mysql/MysqlAdapter.java
+backend/src/main/java/com/onedata/portal/service/datasource/adapters/mysql/MysqlProtocolAdapter.java
+backend/src/main/java/com/onedata/portal/service/datasource/adapters/postgresql/PostgresqlAdapter.java
+backend/src/main/java/com/onedata/portal/service/datasource/core/DatasourceAdapterRegistry.java
+backend/src/main/java/com/onedata/portal/service/datasource/core/DatasourceCapabilities.java
+backend/src/main/java/com/onedata/portal/service/datasource/core/DatasourceConnectionFactory.java
+backend/src/main/java/com/onedata/portal/service/datasource/model/ConnectionConfig.java
+backend/src/main/java/com/onedata/portal/service/datasource/model/DatasourceDescriptor.java
+backend/src/main/java/com/onedata/portal/service/datasource/spi/DatasourceReferenceDdlReader.java
+backend/src/main/java/com/onedata/portal/service/inspection/InspectionSupport.java
+backend/src/main/java/com/onedata/portal/service/table/DorisTableEngineHandler.java
+backend/src/main/java/com/onedata/portal/service/table/MysqlTableEngineHandler.java
+backend/src/main/java/com/onedata/portal/service/table/TableEngineHandler.java
+backend/src/main/java/com/onedata/portal/service/table/TableEngineHandlerRegistry.java
+backend/src/main/java/com/onedata/portal/service/table/TableEngineJdbcExecutor.java
+backend/src/main/java/com/onedata/portal/util/DatasourceType.java
+backend/src/main/resources/db/migration/V53__add_datasource_connection_options.sql
+backend/src/test/java/com/onedata/portal/agentapi/BackendAgentMetadataServiceTest.java
+backend/src/test/java/com/onedata/portal/service/DataTableMetadataSyncServiceTest.java
+backend/src/test/java/com/onedata/portal/service/DataTableServiceTest.java
+backend/src/test/java/com/onedata/portal/service/DatasourceAdapterContractTest.java
+backend/src/test/java/com/onedata/portal/service/DatasourceConnectionOptionsIntegrationTest.java
+backend/src/test/java/com/onedata/portal/service/DorisMetadataSyncServiceTest.java
+backend/src/test/java/com/onedata/portal/service/PostgresqlDatasourceIntegrationTest.java
+backend/src/test/java/com/onedata/portal/service/SchemaBackupServiceTest.java
+backend/src/test/java/com/onedata/portal/service/inspection/TableNamingRuleHandlerTest.java
+backend/src/test/java/com/onedata/portal/service/inspection/TableOwnerRuleHandlerTest.java
+backend/src/test/java/com/onedata/portal/service/table/MysqlTableEngineHandlerTest.java
+backend/src/test/java/com/onedata/portal/service/table/TableEngineJdbcExecutorUrlTest.java
+backend/src/test/resources/datasource-descriptors.json
+docs/TODO.md
+docs/design/2026-10-22-datasource-adapter-design.md
+docs/plans/2026-10-22-datasource-adapter-plan.md
+docs/reports/2026-10-25-datasource-adapter-verification.md
+frontend/src/utils/__tests__/datasourceCapabilityContract.spec.js
+frontend/src/utils/__tests__/datasourceFixtures.js
+frontend/src/views/datastudio/DataStudioNew.vue
+frontend/src/views/datastudio/__tests__/DataStudioNew.smoke.spec.js
+frontend/src/views/datastudio/__tests__/DataStudioRightPanel.smoke.spec.js
+frontend/src/views/datastudio/__tests__/primaryKeyControls.spec.js
+frontend/src/views/datastudio/__tests__/useTableActions.spec.js
+frontend/src/views/datastudio/__tests__/useTableMetaEditing.spec.js
+frontend/src/views/datastudio/components/DataStudioRightPanel.vue
+frontend/src/views/datastudio/components/DataStudioRightPanelColumns.vue
+frontend/src/views/datastudio/composables/useTableActions.js
+frontend/src/views/datastudio/composables/useTableMetaEditing.js
+frontend/src/views/settings/DataSourceManagement.vue
+frontend/src/views/settings/__tests__/DataSourceManagement.spec.js
+```

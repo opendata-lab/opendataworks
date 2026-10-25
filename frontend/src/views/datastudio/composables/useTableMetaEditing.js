@@ -15,7 +15,7 @@ export function useTableMetaEditing({
   tableRefs,
   tableStore,
   getTableKey,
-  isDorisTable,
+  hasEngineProperties,
   getTableSourceType,
   isAggregateTable,
   warnPlatformMetadataMissing,
@@ -62,7 +62,7 @@ export function useTableMetaEditing({
   }
 
   const ensureClusterSelected = (table) => {
-    if (isDorisTable(table) && !getObjectSourceId(table, clusterId.value)) {
+    if (hasEngineProperties(table) && !getObjectSourceId(table, clusterId.value)) {
       ElMessage.warning('请选择 Doris 集群')
       return false
     }

@@ -2,7 +2,6 @@ package com.onedata.portal.service.table;
 
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
-import com.onedata.portal.util.DatasourceType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
@@ -28,7 +27,7 @@ class MysqlTableEngineHandlerTest {
 
         verify(jdbcExecutor).execute(8L, "dw",
                 "ALTER TABLE `dw`.`fact_orders` COMMENT = 'order''s table'",
-                DatasourceType.MYSQL);
+                "MYSQL");
     }
 
     @Test
@@ -45,7 +44,7 @@ class MysqlTableEngineHandlerTest {
 
         verify(jdbcExecutor).execute(8L, "dw",
                 "ALTER TABLE `dw`.`fact_orders` ADD COLUMN `amount` BIGINT NOT NULL DEFAULT 0 COMMENT 'order''s amount'",
-                DatasourceType.MYSQL);
+                "MYSQL");
     }
 
     @Test
@@ -67,10 +66,10 @@ class MysqlTableEngineHandlerTest {
         InOrder inOrder = inOrder(jdbcExecutor);
         inOrder.verify(jdbcExecutor).execute(8L, "dw",
                 "ALTER TABLE `dw`.`fact_orders` RENAME COLUMN `amount` TO `total_amount`",
-                DatasourceType.MYSQL);
+                "MYSQL");
         inOrder.verify(jdbcExecutor).execute(8L, "dw",
                 "ALTER TABLE `dw`.`fact_orders` MODIFY COLUMN `total_amount` DECIMAL(12,2) NULL COMMENT 'total'",
-                DatasourceType.MYSQL);
+                "MYSQL");
     }
 
     @Test
@@ -81,7 +80,7 @@ class MysqlTableEngineHandlerTest {
 
         verify(jdbcExecutor).execute(8L, "dw",
                 "ALTER TABLE `dw`.`fact_orders` DROP COLUMN `amount`",
-                DatasourceType.MYSQL);
+                "MYSQL");
     }
 
     @Test

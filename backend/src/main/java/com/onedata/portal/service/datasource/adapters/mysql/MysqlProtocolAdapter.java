@@ -8,6 +8,7 @@ import com.onedata.portal.service.datasource.model.JdbcConnectionSpec;
 import com.onedata.portal.service.datasource.spi.DatasourceAdapter;
 import com.onedata.portal.service.datasource.spi.DatasourceDdlReader;
 import com.onedata.portal.service.datasource.spi.DatasourceMetadataReader;
+import com.onedata.portal.service.datasource.spi.DatasourceReferenceDdlReader;
 import com.onedata.portal.service.datasource.spi.DatasourceSqlDialect;
 import com.onedata.portal.util.DorisCreateTableUtils;
 import com.onedata.portal.util.JdbcUrlParts;
@@ -24,14 +25,18 @@ import java.util.HashSet;
 import java.util.Map;
 
 @Slf4j
-public abstract class MysqlProtocolAdapter implements DatasourceAdapter, DatasourceDdlReader {
+public abstract class MysqlProtocolAdapter implements DatasourceAdapter, DatasourceDdlReader,
+        DatasourceReferenceDdlReader {
 
     private final DorisJdbcProperties properties;
     private final boolean physical;
+    private final DatasourceSqlDialect dialect = new QuotedLimitDialect("`");
+    private final DatasourceMetadataReader metadata;
 
     protected MysqlProtocolAdapter(DorisJdbcProperties properties, boolean physical) {
         this.properties = properties;
         this.physical = physical;
+        this.metadata = createMetadata();
     }
 
     @Override
@@ -59,11 +64,15 @@ public abstract class MysqlProtocolAdapter implements DatasourceAdapter, Datasou
 
     @Override
     public DatasourceSqlDialect dialect() {
-        return new QuotedLimitDialect("`");
+        return dialect;
     }
 
     @Override
     public DatasourceMetadataReader metadata() {
+        return metadata;
+    }
+
+    private DatasourceMetadataReader createMetadata() {
         String objects = "SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, TABLE_COMMENT FROM information_schema.tables "
                 + "WHERE TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')";
         return new JdbcMetadataReader("SHOW DATABASES",
@@ -195,5 +204,21 @@ public abstract class MysqlProtocolAdapter implements DatasourceAdapter, Datasou
         }
 
         return info;
+    }
+
+    @Override
+    public String referenceDdl(Connection connection, String database, String tableName, int timeoutSeconds) {
+        String sql = "SHOW CREATE TABLE " + dialect.quoteIdentifier(database) + "." + dialect.quoteIdentifier(tableName);
+        try (Statement statement = connection.createStatement()) {
+            statement.setQueryTimeout(timeoutSeconds);
+            try (ResultSet rs = statement.executeQuery(sql)) {
+                if (rs.next()) {
+                    return rs.getString(rs.getMetaData().getColumnCount() >= 2 ? 2 : 1);
+                }
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("获取建表语句失败: " + e.getMessage(), e);
+        }
+        throw new RuntimeException(String.format("表 %s.%s 不存在", database, tableName));
     }
 }

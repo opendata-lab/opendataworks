@@ -1,9 +1,9 @@
 package com.onedata.portal.service.table;
 
-import com.onedata.portal.util.DatasourceType;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import org.springframework.stereotype.Service;
 
-import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -13,12 +13,12 @@ import java.util.Map;
 @Service
 public class TableEngineHandlerRegistry {
 
-    private final Map<DatasourceType, TableEngineHandler> handlers;
+    private final Map<String, TableEngineHandler> handlers;
 
     public TableEngineHandlerRegistry(List<TableEngineHandler> handlerList) {
-        EnumMap<DatasourceType, TableEngineHandler> registry = new EnumMap<>(DatasourceType.class);
+        Map<String, TableEngineHandler> registry = new LinkedHashMap<>();
         for (TableEngineHandler handler : handlerList) {
-            TableEngineHandler previous = registry.put(handler.sourceType(), handler);
+            TableEngineHandler previous = registry.put(DatasourceAdapterRegistry.normalize(handler.sourceType()), handler);
             if (previous != null) {
                 throw new IllegalStateException("Duplicate table engine handler for " + handler.sourceType());
             }
@@ -26,15 +26,15 @@ public class TableEngineHandlerRegistry {
         this.handlers = registry;
     }
 
-    public TableEngineHandler require(DatasourceType sourceType) {
-        TableEngineHandler handler = handlers.get(sourceType);
+    public TableEngineHandler require(String sourceType) {
+        TableEngineHandler handler = handlers.get(DatasourceAdapterRegistry.normalize(sourceType));
         if (handler == null) {
-            throw new RuntimeException("暂不支持数据源类型: " + sourceType.name());
+            throw new RuntimeException("暂不支持数据源类型: " + sourceType);
         }
         return handler;
     }
 
-    public TableEngineHandler find(DatasourceType sourceType) {
-        return handlers.get(sourceType);
+    public TableEngineHandler find(String sourceType) {
+        return handlers.get(DatasourceAdapterRegistry.normalize(sourceType));
     }
 }

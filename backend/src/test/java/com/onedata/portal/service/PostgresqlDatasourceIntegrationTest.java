@@ -8,6 +8,7 @@ import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.dto.DorisCredential;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
+import com.onedata.portal.service.datasource.core.DatasourceConnectionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.sql.Connection;
 import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -130,12 +133,14 @@ class PostgresqlDatasourceIntegrationTest {
         datasource.setPort(cluster.getFePort());
         datasource.setUser("postgres");
         datasource.setPassword("odw_smoke_password");
-        AgentJdbcExecutor executor = new AgentJdbcExecutor(new DorisJdbcProperties());
+        AgentJdbcExecutor executor = new AgentJdbcExecutor(DatasourceAdapterFixtures.registry(new DorisJdbcProperties()),
+                new DatasourceConnectionFactory(
+                        DatasourceAdapterFixtures.registry(new DorisJdbcProperties())));
 
         AgentJdbcExecutor.QueryExecutionResult result =
                 executor.executeReadOnlyQuery(datasource, "SELECT note, labels FROM orders", 10, 10);
         assertEquals("ok", result.getRows().get(0).get("note"));
-        assertEquals(java.util.Arrays.asList("a", "b"), result.getRows().get(0).get("labels"));
+        assertEquals(Arrays.asList("a", "b"), result.getRows().get(0).get("labels"));
         AgentJdbcExecutor.QueryExecutionResult limited =
                 executor.executeReadOnlyQuery(datasource, "SELECT g FROM generate_series(1, 50) g", 3, 10);
         assertEquals(3, limited.getRowCount());
@@ -194,9 +199,9 @@ class PostgresqlDatasourceIntegrationTest {
         Map<String, Object> row = service.previewTableData(1L, schema, "orders", 10).get(0);
         assertEquals("quoted", row.get("odd\"column"));
         // Arrays come back as plain lists that survive the closed connection, not a live PgArray.
-        assertEquals(java.util.Arrays.asList("a", "b"), row.get("labels"));
+        assertEquals(Arrays.asList("a", "b"), row.get("labels"));
         assertEquals("quoted", service.profileColumnValues(1L, schema, "orders",
-                java.util.Collections.singletonList("odd\"column"), 5).get(0).getValues().get(0).getValue());
+                Collections.singletonList("odd\"column"), 5).get(0).getValues().get(0).getValue());
     }
 
     @Test

@@ -1,6 +1,6 @@
 # 数据源适配器架构设计
 
-日期：2026-10-22。状态：**阶段一、二已实施（2026-10-25）**。本轮不实施阶段三、四；既有 PostgreSQL 变更另见[原设计](2026-10-22-postgresql-datasource-design.md)。
+日期：2026-10-22。状态：**阶段一、二已实施；阶段三与 Java 阶段四已实施（2026-10-26，验证缺口见报告）**。Python 和外置加载继续单列后续；既有 PostgreSQL 变更另见[原设计](2026-10-22-postgresql-datasource-design.md)。
 
 ## 1. 目标与边界
 
@@ -10,7 +10,7 @@
 
 第一阶段迁移 Doris、MySQL、PostgreSQL 验证机制，不顺带新增一批数据库。MongoDB、Redis、Elasticsearch 等非关系查询模型不硬塞 JDBC 表结构契约；确有业务需求时另设连接器接口。
 
-## 2. 当前问题与受影响栈
+## 2. 原始问题与受影响栈（阶段一、二实施前）
 
 | 层 | 当前实现 | 问题 |
 | --- | --- | --- |
@@ -18,7 +18,7 @@
 | Java 元数据同步 | `DorisMetadataSyncService` | 消费统一结果，但夹杂 Doris 专属统计和物理属性语义 |
 | Java 表编辑 | `TableEngineHandler` / Registry | 已有独立编辑处理器，可复用；类型依赖枚举，不能当成基础接入门槛 |
 | Vue 3 / Element Plus | 数据源管理、Data Studio | 类型、端口、数据库必填、标识符引号、默认 SQL 和 UI 分支含硬编码 |
-| Java agent API | `AgentJdbcExecutor`、`BackendAgentMetadataService` | 独立拼接 MySQL JDBC/DDL，源类型映射只有 MySQL/Doris |
+| Java agent API | `AgentJdbcExecutor`、`BackendAgentMetadataService` | 独立拼接 JDBC/参考 DDL，另行维护 MySQL/Doris/PostgreSQL 映射 |
 | Python DataAgent | `core/datasource_resolver.py` | 同样有 MySQL/Doris 二选一映射，新增类型可能被误判 |
 | MySQL / 部署 | `doris_cluster`、Flyway、应用 JDBC 依赖 | 配置字段固定，特殊连接参数缺少明确扩展槽；驱动有 Java 版本约束 |
 
@@ -109,17 +109,17 @@ interface DatasourceAdapter {
 
 适配器返回规范化 DTO，不要求其他引擎伪装成 MySQL 的 `information_schema` 字段别名。JDBC `DatabaseMetaData` 或引擎 catalog SQL 由适配器自行选择一条主路径；只有已验证的版本差异才允许局部、单层 fallback。Doris 与 MySQL 可复用已验证的 MySQL 协议工具，不建立多级继承树。
 
-注册器使用字符串 type，新基础引擎无需修改 `DatasourceType` 中央枚举。旧枚举先仅留在物理编辑处理器中，后续编辑扩展单独迁移，不能影响基础读取和查询。
+注册器与物理编辑 handler 均使用同一归一化字符串 type；阶段三删除中央 `DatasourceType` 枚举。新增编辑引擎只需增加适配器与 handler。
 
 ## 5. 配置与 namespace 模型
 
-保留现有 `doris_cluster` 及 `feHost`/`fePort` 对外字段，第一阶段不批量改名。本轮内部映射为不含密码的 `ConnectionConfig(host, port, username, databaseName)`。`driverId`/`options` 在可选外置加载或真实连接扩展需求出现时再加入，不新增空转的持久字段。
+保留现有 `doris_cluster` 及 `feHost`/`fePort` 对外字段，第一阶段不批量改名。阶段一、二内部映射为不含密码的 `ConnectionConfig(host, port, username, databaseName)`；本轮追加受控 options，凭据仍由调用方授权选择。`driverId` 保留到可选外置加载时实施。
 
-第一阶段限制：连接字段 key 固定为 `feHost`、`fePort`、`databaseName`、`username`、`password`；注册表遇到其他 key 直接拒绝，本轮不改变此行为。Oracle service name、额外 JDBC 参数等扩展字段，需要连同配置持久化、后端校验与前端表单一起设计，见 [TODO](../TODO.md)。
+阶段一、二曾固定五个连接字段。阶段三解除此限制，采用下述声明、持久化与校验契约；旧字段和请求保持兼容。
 
-类型描述定义允许的连接字段：key、label、控件类型、是否必填、默认值及帮助文本。常见控件限于文本、数字、开关、下拉和既有密码框；前端无需为每种数据库写专用表单。后端重复校验类型和允许参数，前端校验不替代后端校验。
+类型描述定义允许的连接字段：key、label、控件类型、是否必填、默认值及帮助文本。本轮控件限于文本、数字、开关和既有密码框；前端无需为每种数据库写专用表单。后端重复校验类型和允许参数，前端校验不替代后端校验。
 
-如需要 serviceName、SSL 模式等非敏感选项，新增可空 `connection_options` JSON 扩展槽，Flyway 版本在实施时检查后分配。密码继续走既有凭据字段，不混入 options、类型描述、查询日志或 API 响应。适配器仅接受自身白名单参数，不开放任意驱动类、脚本或任意 JDBC URL 参数注入。
+本轮为 serviceName、SSL 模式等声明选项通过 V53 新增可空 TEXT `connection_options`（JSON 对象），具体校验与密码控件处理见第 11 节。主密码继续走既有凭据字段；额外秘密选项仅存储在 options 并在内部传递，不进入类型描述或 API 响应。适配器仅接受自身白名单参数，不开放任意驱动类、脚本或任意 JDBC URL 参数注入。
 
 显式区分 `catalog/database` 与 `schema`：
 
@@ -131,11 +131,11 @@ interface DatasourceAdapter {
 
 ## 6. 类型描述与能力驱动前端
 
-拟新增 `GET /api/v1/datasource-types`，返回注册器生成的类型描述；配置列表和详情附只读 `typeDefinition`，使用同一份描述，不复制维护两套定义。
+已新增 `GET /api/v1/datasource-types`，返回注册器生成的类型描述；配置列表和详情附只读 `typeDefinition`，使用同一份描述，不复制维护两套定义。
 
 描述包含：type、label、defaultPort、connectionFields、namespaceLabel、identifierQuote、默认 SELECT 规格、支持的编辑器方言以及 capabilities。schema 必须有版本，前端不认识的可选展示属性忽略；缺失的必需属性或未知类型明确报错，不回退为 Doris/MySQL。
 
-第一阶段能力建议如下：
+内置能力摘要如下（完整名称与默认原因以唯一能力目录及适配器描述为准）：
 
 | 能力 | Doris | MySQL | PostgreSQL |
 | --- | --- | --- | --- |
@@ -144,7 +144,7 @@ interface DatasourceAdapter {
 | 完整 DDL 读取 | 已有实现 | 已有实现 | 暂不声明，不能用不完整重建伪装 |
 | 物理结构编辑 | 沿用现有处理器 | 沿用已实现范围与主键限制 | 暂不声明 |
 | Doris 分桶/副本/快照 | 沿用既有范围 | 不开放 | 不开放 |
-| DataAgent 执行 | 按现有授权路径 | 按现有授权路径 | 后续统一入口后再验证开放 |
+| Java agent API 执行 | 保留授权与只读路径 | 保留授权与只读路径 | 本轮统一连接并验证只读路径；模型全链路另验 |
 
 capabilities 表示真实已实现的能力；注册器校验可选 DDL reader 存在，启动完成前的 `DatasourceCapabilityValidator` 校验既有编辑 handler（避免 Doris handler 依赖连接门面形成构造循环），不能只改布尔值就宣称支持。按钮可用性还要与对象类型和用户权限取交集，例如视图、现有主键列、只读账号不能因为数据源声明 EDIT 就一概可编辑。后端执行时仍强制检查，不能只依赖隐藏按钮。
 
@@ -152,13 +152,13 @@ capabilities 表示真实已实现的能力；注册器校验可选 DDL reader �
 
 完整 DDL 不可用时显示明确说明，基本信息和字段仍可正常加载，不把 DDL 请求与表详情串成必须全部成功的 Promise 链。
 
-## 7. DataAgent 的统一方向
+## 7. DataAgent 的统一边界
 
-最终应由 Java agent API 复用同一注册器、dialect 和 metadata reader，保留 agent 数据范围、只读 SQL、超时和结果数量限制。Python 按 sourceId/namespace 调用受控工具，获取源类型和方言描述，不再用 `MYSQL ? mysql : doris` 猜测引擎，也不重复维护每种数据库的驱动和 catalog SQL。
+本轮由 Java agent API 复用同一注册器、连接工厂及参考结构 SPI，保留 agent 数据范围、只读 SQL、超时和结果数量限制。Python 按 sourceId/namespace 调用受控工具，获取源类型和方言描述，不再用 `MYSQL ? mysql : doris` 猜测引擎，也不重复维护每种数据库的驱动和 catalog SQL。
 
 接入前必须审计当前 Python 直接连接/脚本调用路径，避免遗漏绕过 Java 的执行入口。不得把数据库适配细节塞入 `core/agent_runtime.py`；域技能按其边界调用统一工具。
 
-该阶段影响 Java agent API 与 Python resolver/工具契约，需独立更新设计接口、回归测试并运行真实模型 NL2SQL 冒烟。未完成前 UI 应将其标为“待适配/不开放”，不能宣传一个基础适配器自动打通所有智能查询。
+本轮只改变 Java agent API 内部连接与描述消费，不改 Python resolver/工具契约。真实模型因账号欠费无法冒烟；Java API 的 PostgreSQL/MySQL HTTP 验证单独验收，不能宣传一个基础适配器自动打通所有 Python 执行入口或模型全链路。
 
 ## 8. 错误、验证与扩展验收
 
@@ -190,3 +190,36 @@ capabilities 表示真实已实现的能力；注册器校验可选 DDL reader �
 - 描述声明 DDL、结构编辑、分区、分桶、副本、备份、新鲜度来源、已有/新增列主键编辑能力及原因。前端保持现有 Element Plus/Sass 布局；未知/缺失能力明确禁用。旧物理 handler 的数据库规则与备份实现不改，阶段三不在本轮范围。
 - 不新增 Maven 子模块、运行依赖、Flyway 迁移或驱动目录配置；不修改 agent API 与 Python。完整外置加载在 [TODO](../TODO.md) 单列，不能将本轮可用性检测视为已支持挂载 JAR。
 - 验证命令、真实数据库/HTTP/浏览器覆盖及缺口见 [验证报告](../reports/2026-10-25-datasource-adapter-verification.md)。
+
+
+## 11. 阶段三、Java 阶段四与连接字段扩展（2026-10-26）
+
+### 现状与范围
+
+阶段一、二已由 `cfa12bdd` 落地。物理编辑执行器与 Java agent 执行器仍各自构造 URL；handler 使用枚举，能力无统一目录，连接配置固定五字段，适配器重复创建描述/方言/读取器。本轮收敛这些路径，保持 Java 8、Spring Boot 2.7 和 Maven 模块边界。Python resolver、真实模型 NL2SQL 及外置驱动加载不在本轮，不能将 Java API 验证称为模型全链路验证。
+
+### 统一连接与只读边界
+
+新增 `DatasourceConnectionFactory`，接收类型、`ConnectionConfig`、namespace、已选择的凭据及只读模式。工厂统一执行注册表配置校验、驱动可用性检查、适配器连接规格、JDBC 打开与会话初始化；初始化失败关闭连接。URL 只在适配器构造，继续使用 `JdbcUrlParts`。PostgreSQL URL 固定 `readOnlyMode=always`，PostgreSQL 初始化仍设置 schema。只读模式下工厂调用适配器的 `applyReadOnly`：默认 `setReadOnly(true)`（PostgreSQL、MySQL）；Doris 覆盖为不设置，保持改造前行为，因为 MySQL 驱动会把它转成发给服务端的 `SET SESSION TRANSACTION READ ONLY`，Doris 是否接受尚未在真实环境验证，Doris 只读仍由只读 SQL 守卫与账号权限保证。
+
+`DorisConnectionService` 继续负责用户映射凭据选择；结构编辑通过该门面获取连接，不引入绕过用户映射的默认账号路径。Java agent 的凭据仍由 metadata resolution 在授权后选择；工厂不重新选择凭据。只读语句守卫、scope 校验、超时与 `setMaxRows(limit + 1)` 保留在 agent 服务/执行器。描述新增 `agentEngine`，取代通用服务的类型映射，未知类型仍报错。
+
+SPI 提供独立参考结构读取接口，PostgreSQL 系统目录参考 DDL 迁入其适配器；它不代表可恢复导出，`ddlExport=false` 与 pg_dump 提示不变。MySQL 协议参考结构复用既有 SHOW CREATE TABLE。
+
+### 能力与编辑注册
+
+后端唯一能力目录声明名称、含义和默认拒绝原因；builder 补全未声明项为不支持，注册表拒绝未知能力。`dorisProperties` 同次前后端改为 `engineProperties`，前端辅助函数使用中性名称。新增产品审计能力 `auditAccess`，明确指 Doris 审计日志协议；`tabletInspection` 明确指现有 Tablet 巡检协议，避免普通引擎属性能力误开放 Doris SQL。备份、引擎物理属性、新鲜度等按对应能力判断；DolphinScheduler 自己的 DataX 类型默认 MYSQL 属于外部系统协议，保留。
+
+handler 注册器使用 `DatasourceAdapterRegistry.normalize`，拒绝重复和未知类型；能力校验继续在 singleton 构造完成后进行以避免现有依赖循环。适配器构造时缓存不可变描述、方言和读取器。
+
+### 额外连接字段与接口
+
+新增 Flyway `V53__add_datasource_connection_options.sql`，在 `doris_cluster` 增加可空 TEXT `connection_options`，JSON 对象经实体类型处理器持久化。旧记录 NULL 等价空对象。旧 REST 配置接口增加可选 `connectionOptions` 对象；基础五字段仍使用原有顶层字段。描述中的额外字段与基础字段同样供前端生成控件。
+
+字段声明是唯一白名单，注册时校验 key 唯一、控件和约束；保存与打开连接均校验未知 key、必填、值类型、长度/格式。额外选项不会由工厂拼到 URL，只有适配器可以将明确声明且已验证的语义字段映射到固定连接参数；禁止任意 URL 参数槽、保留键及安全参数覆盖（包括 readOnlyMode）。密码控件字段在 JSON 响应中剔除，更新时保留未提供的秘密值；描述不包含秘密默认值。保留字段名（含顶层配置键）不可作为额外字段，避免动态表单覆盖配置。TEST_DB 覆盖额外字段从描述、保存、持久化到连接规格的链路；三个内置引擎不新增选项。
+
+### 发布、回退与取舍
+
+先执行兼容的可空列迁移，再协调发布后端与前端（能力重命名需同版本配套）。旧配置无需补值或绑定驱动版本。回退应用及前端时保留可空列，不执行破坏性 down migration；暂停旧版本不认识的新类型配置，三个内置引擎仍使用原字段。连接字段不提供任意 JDBC 参数注入、适配器热加载或外置 JAR 加载。
+
+验证包括定向/全量 Java、PG 临时容器、独立 MySQL schema 的从零迁移和有数据副本升级、PG/MySQL Java agent HTTP 与编辑能力门禁、前端测试/构建。只允许隔离 schema 测试，不修改既有 opendataworks 数据；真实模型因账号欠费不能执行，记录缺口与后续项。结果追加到既有验证报告的 2026-10-26 章节。

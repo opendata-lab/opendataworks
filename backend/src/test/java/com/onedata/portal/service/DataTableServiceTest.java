@@ -1,5 +1,6 @@
 package com.onedata.portal.service;
 
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
@@ -10,17 +11,23 @@ import com.onedata.portal.mapper.DataTaskMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.TableTaskRelationMapper;
 import com.onedata.portal.mapper.TaskExecutionLogMapper;
+import com.onedata.portal.service.lineage.TaskLineageWriteService;
 import com.onedata.portal.service.table.TableEngineHandler;
 import com.onedata.portal.service.table.TableEngineHandlerRegistry;
-import com.onedata.portal.util.DatasourceType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.junit.jupiter.api.Assertions.assertSame;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.Set;
+
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -68,7 +75,7 @@ class DataTableServiceTest {
     private DataTableService service;
 
     @Mock
-    private com.onedata.portal.service.lineage.TaskLineageWriteService taskLineageWriteService;
+    private TaskLineageWriteService taskLineageWriteService;
 
     @BeforeEach
     void setUp() {
@@ -81,7 +88,7 @@ class DataTableServiceTest {
                 dataLineageMapper,
                 dorisClusterMapper,
                 tableEngineHandlerRegistry,
-                DatasourceAdapterFixtures.registry(new com.onedata.portal.config.DorisJdbcProperties()),
+                DatasourceAdapterFixtures.registry(new DorisJdbcProperties()),
                 tableMetadataVersionService,
                 taskLineageWriteService);
     }
@@ -125,7 +132,7 @@ class DataTableServiceTest {
         table.setReplicaNum(1);
         table.setDistributionColumn("id");
         when(dorisClusterMapper.selectById(8L)).thenReturn(cluster(8L, "MYSQL"));
-        when(tableEngineHandlerRegistry.find(DatasourceType.MYSQL)).thenReturn(mysqlHandler);
+        when(tableEngineHandlerRegistry.find("MYSQL")).thenReturn(mysqlHandler);
         doAnswer(invocation -> {
             TableEngineHandler.clearDorisPhysicalMetadata(invocation.getArgument(0));
             return null;
@@ -169,7 +176,7 @@ class DataTableServiceTest {
         when(dataTableMapper.selectById(10L)).thenReturn(table);
         when(dataFieldMapper.selectOne(any())).thenReturn(null);
         when(dorisClusterMapper.selectById(7L)).thenReturn(cluster(7L, "DORIS"));
-        when(tableEngineHandlerRegistry.require(DatasourceType.DORIS)).thenReturn(dorisHandler);
+        when(tableEngineHandlerRegistry.require("DORIS")).thenReturn(dorisHandler);
 
         DataField field = field("amount", "BIGINT");
 
@@ -188,7 +195,7 @@ class DataTableServiceTest {
         when(dataTableMapper.selectById(10L)).thenReturn(table);
         when(dataFieldMapper.selectOne(any())).thenReturn(null);
         when(dorisClusterMapper.selectById(8L)).thenReturn(cluster(8L, "MYSQL"));
-        when(tableEngineHandlerRegistry.require(DatasourceType.MYSQL)).thenReturn(mysqlHandler);
+        when(tableEngineHandlerRegistry.require("MYSQL")).thenReturn(mysqlHandler);
 
         DataField field = field("amount", "BIGINT");
         DataField result = service.createField(10L, field, null);
@@ -229,7 +236,7 @@ class DataTableServiceTest {
         DataTable update = new DataTable();
         update.setLayer("DWD");
         update.setTableComment("new comment");
-        when(tableEngineHandlerRegistry.require(DatasourceType.MYSQL)).thenReturn(mysqlHandler);
+        when(tableEngineHandlerRegistry.require("MYSQL")).thenReturn(mysqlHandler);
 
         DataTable result = service.updateTable(10L, update, null);
 
@@ -259,14 +266,14 @@ class DataTableServiceTest {
     void purgeCollectsAffectedWorkflowsBeforeDeleteAndRefreshesDefinitionOnce() {
         // 删表会让引用它的任务少掉一条边，definitionJson 必须同步重建；
         // 受影响工作流只能在删除关系之前收集，删完就查不到归属了。
-        java.util.Set<Long> taskIds = new java.util.LinkedHashSet<>(java.util.Arrays.asList(1L, 2L));
-        java.util.Set<Long> workflowIds = new java.util.LinkedHashSet<>(java.util.Arrays.asList(10L));
+        Set<Long> taskIds = new LinkedHashSet<>(Arrays.asList(1L, 2L));
+        Set<Long> workflowIds = new LinkedHashSet<>(Arrays.asList(10L));
         when(taskLineageWriteService.findTaskIdsByTableId(5L)).thenReturn(taskIds);
         when(taskLineageWriteService.findWorkflowIdsByTaskIds(taskIds)).thenReturn(workflowIds);
 
         service.purgeTableMetadata(5L);
 
-        org.mockito.InOrder inOrder = org.mockito.Mockito.inOrder(
+        InOrder inOrder = Mockito.inOrder(
                 taskLineageWriteService, dataTableMapper);
         inOrder.verify(taskLineageWriteService).findTaskIdsByTableId(5L);
         inOrder.verify(dataTableMapper).deleteById(5L);

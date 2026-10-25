@@ -103,11 +103,11 @@
           </el-select>
         </el-form-item>
         <el-form-item v-for="field in selectedDefinition?.connectionFields || []" :key="field.key" :label="field.label" :prop="field.key">
-          <el-input-number v-if="field.control === 'number'" v-model="form[field.key]" :min="1" :max="65535" />
+          <el-input-number v-if="field.control === 'number'" v-model="form[field.key]" :min="field.key === 'fePort' ? 1 : undefined" :max="field.key === 'fePort' ? 65535 : undefined" />
           <el-select v-else-if="field.control === 'select'" v-model="form[field.key]">
             <el-option v-for="option in field.options || []" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
-          <el-switch v-else-if="field.control === 'boolean'" v-model="form[field.key]" />
+          <el-switch v-else-if="field.control === 'switch'" v-model="form[field.key]" />
           <el-input v-else v-model="form[field.key]" :type="field.control === 'password' ? 'password' : 'text'" :show-password="field.control === 'password'" />
           <div v-if="field.help" class="cron-tip">{{ field.help }}</div>
         </el-form-item>
@@ -581,6 +581,9 @@ async function loadClusters() {
 }
 
 function resetForm() {
+  for (const definition of typeDefinitions.value) {
+    for (const field of definition.connectionFields || []) delete form[field.key]
+  }
   form.clusterName = ''
   form.sourceType = typeDefinitions.value[0]?.type || ''
   previousSourceType = form.sourceType
@@ -595,6 +598,7 @@ function resetForm() {
   form.status = 'active'
 }
 
+const baseConnectionKeys = new Set(['feHost', 'fePort', 'databaseName', 'username', 'password'])
 let previousSourceType = ''
 const getSourceTypeLabel = type => typeDefinitions.value.find(d => d.type === type)?.label || type || '未知类型'
 const getSourceTypeTag = () => 'info'
@@ -602,6 +606,12 @@ function handleTypeChange(val) {
   const previous = typeDefinitions.value.find(d => d.type === previousSourceType)
   const current = typeDefinitions.value.find(d => d.type === val)
   if (form.fePort === previous?.defaultPort) form.fePort = current?.defaultPort
+  for (const field of previous?.connectionFields || []) {
+    if (!baseConnectionKeys.has(field.key)) delete form[field.key]
+  }
+  for (const field of current?.connectionFields || []) {
+    if (!baseConnectionKeys.has(field.key)) form[field.key] = field.defaultValue
+  }
   previousSourceType = val
 }
 
@@ -630,6 +640,8 @@ async function openEdit(id) {
     form.isDefault = data.isDefault
     form.status = data.status || 'active'
     form.password = ''
+    Object.assign(form, connectionDefaults(selectedDefinition.value), data, data.connectionOptions || {})
+    form.password = ''
     dialogVisible.value = true
   } catch (error) {
     console.error(error)
@@ -646,10 +658,14 @@ async function handleSubmit() {
   }
 
   saving.value = true
+  const connectionOptions = Object.fromEntries((selectedDefinition.value?.connectionFields || [])
+    .filter(field => !baseConnectionKeys.has(field.key))
+    .map(field => [field.key, form[field.key]]))
   const payload = {
+    connectionOptions,
     clusterName: form.clusterName,
     sourceType: form.sourceType,
-    ...Object.fromEntries((selectedDefinition.value?.connectionFields || []).filter(f => f.key !== 'password').map(f => [f.key, typeof form[f.key] === 'string' ? form[f.key].trim() : form[f.key]])),
+    ...Object.fromEntries((selectedDefinition.value?.connectionFields || []).filter(f => baseConnectionKeys.has(f.key) && f.key !== 'password').map(f => [f.key, typeof form[f.key] === 'string' ? form[f.key].trim() : form[f.key]])),
     feHost: form.feHost,
     fePort: form.fePort,
     username: form.username,

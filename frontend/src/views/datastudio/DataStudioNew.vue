@@ -453,14 +453,14 @@ const structureEditBlockedReason = table => {
   if (!table?.sourceId && !table?.clusterId && table?.isSynced !== 1) return ''
   return capabilityReason(getTableDefinition(table), 'structureEdit')
 }
-const isDorisTable = table => !!getTableDefinition(table)?.capabilities?.dorisProperties?.supported
+const hasEngineProperties = table => !!getTableDefinition(table)?.capabilities?.engineProperties?.supported
 
 const MISSING_PLATFORM_METADATA_MESSAGE = '该表未同步到平台，需同步后才能操作'
 
 const isPlatformMetadataMissing = (table) => {
   if (!table) return false
   if (table.metadataMissing === true || table.metadataStatus === 'missing') return true
-  return isDorisTable(table) && !table.id && hasText(table.dbName) && hasText(table.tableName)
+  return hasEngineProperties(table) && !table.id && hasText(table.dbName) && hasText(table.tableName)
 }
 
 const warnPlatformMetadataMissing = (table) => {
@@ -495,7 +495,7 @@ const {
   tableStore,
   getTableKey,
   getTableSourceType,
-  isDorisTable,
+  hasEngineProperties,
   isAggregateTable,
   warnPlatformMetadataMissing,
 })
@@ -612,7 +612,7 @@ const {
   createDrawerVisible,
   taskDrawerRef,
   router,
-  isDorisTable,
+  hasEngineProperties,
   isPlatformMetadataMissing,
   warnPlatformMetadataMissing,
   tableStore,
@@ -725,7 +725,7 @@ watch(
   businessDomainOptions,
   getMetaDataDomainOptions,
   handleMetaBusinessDomainChange,
-  isDorisTable,
+  hasEngineProperties,
   getTableSourceType,
   structureEditBlockedReason,
   isPlatformMetadataMissing,

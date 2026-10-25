@@ -1,5 +1,6 @@
 package com.onedata.portal.service;
 
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.config.DorisJdbcProperties;
@@ -7,16 +8,22 @@ import com.onedata.portal.controller.DatasourceTypeController;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.service.datasource.adapters.Descriptors;
+import com.onedata.portal.service.datasource.adapters.doris.DorisAdapter;
+import com.onedata.portal.service.datasource.adapters.mysql.MysqlAdapter;
 import com.onedata.portal.service.datasource.adapters.postgresql.PostgresqlAdapter;
 import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.datasource.driver.JdbcDriverRegistry;
 import com.onedata.portal.service.datasource.model.ConnectionConfig;
 import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
+import com.onedata.portal.service.datasource.model.DatasourceTypeDefinition;
 import com.onedata.portal.service.datasource.model.JdbcConnectionSpec;
 import com.onedata.portal.service.datasource.model.Namespace;
 import com.onedata.portal.service.datasource.model.TableMetadata;
 import com.onedata.portal.service.datasource.spi.DatasourceAdapter;
 import com.onedata.portal.service.datasource.spi.DatasourceMetadataReader;
+import com.onedata.portal.service.table.TableEngineHandler;
+import com.onedata.portal.service.table.TableEngineHandlerRegistry;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -31,8 +38,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
 
@@ -42,9 +51,11 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -72,9 +83,22 @@ class DatasourceAdapterContractTest {
     }
 
     @Test
-    void builtinDescriptionsKeepThePreCleanupJsonContract() throws Exception {
+    void readOnlyIsSetOnMysqlButLeftToSqlGuardOnDoris() throws Exception {
+        DorisJdbcProperties properties = new DorisJdbcProperties();
+        Connection mysqlConnection = mock(Connection.class);
+        Connection dorisConnection = mock(Connection.class);
+
+        new MysqlAdapter(properties).applyReadOnly(mysqlConnection);
+        new DorisAdapter(properties).applyReadOnly(dorisConnection);
+
+        verify(mysqlConnection).setReadOnly(true);
+        verify(dorisConnection, never()).setReadOnly(anyBoolean());
+    }
+
+    @Test
+    void builtinDescriptionsMatchThePublishedJsonContract() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        // 基线取自清理前编译产物，锁定全部字段、默认值、能力和提示文案。
+        // 基线锁定公开字段、默认值、能力及提示文案；接口变化须显式更新。
         try (InputStream baseline = getClass().getResourceAsStream("/datasource-descriptors.json")) {
             assertNotNull(baseline);
             JsonNode expected = mapper.readTree(baseline);
@@ -190,12 +214,18 @@ class DatasourceAdapterContractTest {
                 @Override
                 public DatasourceDescriptor descriptor() {
                     return testDescriptor("Test database", TestDriver.class.getName())
+                            .connectionField(new DatasourceDescriptor.ConnectionField(
+                                    "serviceName", "服务名", "text", true, "", ""))
+                            .connectionField(new DatasourceDescriptor.ConnectionField(
+                                    "accessToken", "访问令牌", "password", false, "", ""))
                             .capability("ddlExport", false)
                             .build();
                 }
 
                 @Override
                 public JdbcConnectionSpec connectionSpec(ConnectionConfig config, String namespace) {
+                    assertEquals("sales", config.getOptions().get("serviceName"));
+                    assertEquals("secret-token", config.getOptions().get("accessToken"));
                     return new JdbcConnectionSpec("jdbc:adaptertest:db", TestDriver.class.getName());
                 }
 
@@ -227,8 +257,24 @@ class DatasourceAdapterContractTest {
             cluster.setFeHost("localhost");
             cluster.setFePort(1234);
             cluster.setUsername("reader");
+            Map<String, Object> options = new LinkedHashMap<>();
+            options.put("serviceName", "sales");
+            options.put("accessToken", "secret-token");
+            cluster.setConnectionOptions(options);
             new DorisClusterService(mapper, registry).create(cluster);
             verify(mapper).insert(cluster);
+            String json = new ObjectMapper().writeValueAsString(cluster);
+            assertTrue(json.contains("sales"));
+            assertFalse(json.contains("secret-token"));
+            DorisCluster roundTrip = new ObjectMapper().readValue(
+                    "{\"connectionOptions\":{\"serviceName\":\"sales\",\"accessToken\":\"secret-token\"}}", DorisCluster.class);
+            assertEquals(options, roundTrip.getConnectionOptions());
+            // 存储层 JSON 编解码契约与数据库 TEXT 列使用相同类型处理器。
+            JacksonTypeHandler handler =
+                    new JacksonTypeHandler(Map.class);
+            PreparedStatement stored = mock(PreparedStatement.class);
+            handler.setNonNullParameter(stored, 1, options, org.apache.ibatis.type.JdbcType.VARCHAR);
+            verify(stored).setString(1, new ObjectMapper().writeValueAsString(options));
             assertEquals("TEST_DB", cluster.getTypeDefinition().getDescriptor().getType());
             when(mapper.selectById(7L)).thenReturn(cluster);
             when(metadata.namespaces(connection))
@@ -260,6 +306,10 @@ class DatasourceAdapterContractTest {
                     Collections.singletonList(adapter), new JdbcDriverRegistry());
             DorisCluster cluster = new DorisCluster();
             cluster.setSourceType("POSTGRESQL");
+            cluster.setFeHost("localhost");
+            cluster.setFePort(5432);
+            cluster.setUsername("reader");
+            cluster.setDatabaseName("business");
             DorisClusterMapper mapper = mock(DorisClusterMapper.class);
             when(mapper.selectById(1L)).thenReturn(cluster);
             DorisConnectionService service = new DorisConnectionService(
@@ -269,6 +319,71 @@ class DatasourceAdapterContractTest {
         } finally {
             DriverManager.deregisterDriver(driver);
         }
+    }
+
+    @Test
+    void capabilityCatalogRejectsUnknownNamesAndDefaultsToDenied() {
+        assertThrows(IllegalStateException.class,
+                () -> testDescriptor("Test", TestDriver.class.getName()).capability("typo", true));
+        DatasourceDescriptor descriptor = testDescriptor("Test", TestDriver.class.getName()).build();
+        assertFalse(descriptor.supports("backup"));
+        assertEquals("此数据源不支持备份", descriptor.getCapabilities().get("backup").getReason());
+        for (DatasourceTypeDefinition definition
+                : DatasourceAdapterFixtures.registry(properties()).definitions()) {
+            DatasourceAdapter adapter = DatasourceAdapterFixtures.registry(properties()).require(
+                    definition.getDescriptor().getType());
+            Assertions.assertSame(adapter.descriptor(), adapter.descriptor());
+            Assertions.assertSame(adapter.dialect(), adapter.dialect());
+            Assertions.assertSame(adapter.metadata(), adapter.metadata());
+        }
+    }
+
+    @Test
+    void undeclaredAndUnsafeConnectionOptionsAreRejected() {
+        DatasourceAdapterRegistry registry = DatasourceAdapterFixtures.registry(properties());
+        assertThrows(IllegalArgumentException.class, () -> registry.validate("MYSQL", new ConnectionConfig(
+                "localhost", 3306, "reader", "db", Collections.singletonMap("readOnlyMode", "never"))));
+        for (String key : Arrays.asList("readOnlyMode", "sourceType", "constructor", "jdbcUrl")) {
+            DatasourceAdapter unsafe = new PostgresqlAdapter() {
+                @Override
+                public DatasourceDescriptor descriptor() {
+                    return testDescriptor("Test", "org.postgresql.Driver")
+                            .connectionField(new DatasourceDescriptor.ConnectionField(
+                                    key, "不安全字段", "text", false, "", "")).build();
+                }
+            };
+            assertThrows(IllegalStateException.class, () -> new DatasourceAdapterRegistry(
+                    Collections.singletonList(unsafe), new JdbcDriverRegistry()));
+        }
+    }
+
+    @Test
+    void newEditingAdapterAndHandlerUseTheSameNormalizedStringType() {
+        DatasourceAdapter adapter = new PostgresqlAdapter() {
+            private final DatasourceDescriptor descriptor = testDescriptor("Test", "org.postgresql.Driver")
+                    .capability("structureEdit", true).build();
+
+            @Override
+            public DatasourceDescriptor descriptor() {
+                return descriptor;
+            }
+        };
+        TableEngineHandler handler =
+                new TableEngineHandler() {
+                    @Override
+                    public String sourceType() {
+                        return " test_db ";
+                    }
+                };
+        DatasourceAdapterRegistry registry = new DatasourceAdapterRegistry(
+                Collections.singletonList(adapter), new JdbcDriverRegistry());
+        registry.validateEditHandlers(Collections.singletonList(handler));
+        TableEngineHandlerRegistry handlers =
+                new TableEngineHandlerRegistry(Collections.singletonList(handler));
+        Assertions.assertSame(handler, handlers.require("TEST_DB"));
+        assertThrows(IllegalStateException.class, () ->
+                new TableEngineHandlerRegistry(Arrays.asList(handler, handler)));
+        assertThrows(IllegalStateException.class, () -> registry.validateEditHandlers(Collections.emptyList()));
     }
 
     public static class TestDriver implements Driver {

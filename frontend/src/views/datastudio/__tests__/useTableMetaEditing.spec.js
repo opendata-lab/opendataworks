@@ -27,7 +27,7 @@ function setup(table = { tableModel: 'UNIQUE' }, fields = [{ id: 1, fieldName: '
     tableRefs: ref({}),
     tableStore: reactive({}),
     getTableKey: () => 't1',
-    isDorisTable: () => false,
+    hasEngineProperties: () => false,
     isAggregateTable: (t) => String(t?.tableModel || '').toUpperCase() === 'AGGREGATE',
     warnPlatformMetadataMissing: () => false,
   })
@@ -105,7 +105,7 @@ it('保存对象元数据锁定对象连接，确认期间切换查询连接不�
   tableApi.getById.mockResolvedValue({ id: 9, tableName: 't', sourceId: 'object-source', dbName: 'db', layer: 'ODS' })
   const clusterId = ref('query-source')
   const tabStates = reactive({ t1: { table: { id: 9, sourceId: 'object-source', dbName: 'db' }, metaForm: { tableName: 't', layer: 'ODS' } } })
-  const api = useTableMetaEditing({ clusterId, tabStates, openTabs: ref([]), activeTab: ref('t1'), selectedTableKey: ref(''), tableRefs: ref({}), tableStore: {}, getTableKey: () => 't1', isDorisTable: () => true, warnPlatformMetadataMissing: () => false })
+  const api = useTableMetaEditing({ clusterId, tabStates, openTabs: ref([]), activeTab: ref('t1'), selectedTableKey: ref(''), tableRefs: ref({}), tableStore: {}, getTableKey: () => 't1', hasEngineProperties: () => true, warnPlatformMetadataMissing: () => false })
   const saving = api.saveMetaEdit('t1')
   clusterId.value = 'other-query-source'
   confirm()

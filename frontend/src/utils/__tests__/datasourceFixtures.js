@@ -12,7 +12,7 @@ export const definition = (type, port = 1234, overrides = {}) => ({
   capabilities: {
     ddlExport: { supported: type !== 'POSTGRESQL', reason: 'PostgreSQL 暂不支持在线 DDL 导出' },
     structureEdit: { supported: type !== 'POSTGRESQL', reason: 'PostgreSQL 暂不支持在线修改表结构' },
-    dorisProperties: { supported: type === 'DORIS', reason: '不支持引擎配置' },
+    engineProperties: { supported: type === 'DORIS', reason: '不支持引擎配置' },
     existingPrimaryKeyEdit: { supported: false, reason: '已有字段主键不可修改' },
     newPrimaryKeyEdit: { supported: type !== 'DORIS', reason: '新增字段主键不可修改' },
     freshnessMetadata: { supported: type !== 'POSTGRESQL', reason: '不提供表更新时间' },

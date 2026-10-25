@@ -4,9 +4,14 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.Data;
 
+import java.util.Map;
+
 @Data
 public class AgentDatasourceResolution {
     private String engine;
+
+    @JsonIgnore
+    private Map<String, Object> connectionOptions;
     private String database;
 
     /** PostgreSQL 连接的 database；database 字段对应其中的 schema。 */

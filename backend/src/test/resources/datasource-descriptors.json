@@ -44,6 +44,14 @@
     "help" : "编辑时留空表示不修改"
   } ],
   "capabilities" : {
+    "tabletInspection" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "auditAccess" : {
+      "supported" : true,
+      "reason" : ""
+    },
     "catalog" : {
       "supported" : true,
       "reason" : ""
@@ -92,7 +100,7 @@
       "supported" : true,
       "reason" : ""
     },
-    "dorisProperties" : {
+    "engineProperties" : {
       "supported" : true,
       "reason" : ""
     },
@@ -110,6 +118,7 @@
     }
   },
   "driverClass" : "com.mysql.cj.jdbc.Driver",
+  "agentEngine" : "doris",
   "driverStatus" : "AVAILABLE"
 }, {
   "schemaVersion" : 1,
@@ -157,6 +166,14 @@
     "help" : "编辑时留空表示不修改"
   } ],
   "capabilities" : {
+    "tabletInspection" : {
+      "supported" : false,
+      "reason" : "此数据源不支持Tablet 巡检"
+    },
+    "auditAccess" : {
+      "supported" : false,
+      "reason" : "此数据源不支持Doris 审计访问统计"
+    },
     "catalog" : {
       "supported" : true,
       "reason" : ""
@@ -205,7 +222,7 @@
       "supported" : false,
       "reason" : "MySQL 暂不支持此引擎操作"
     },
-    "dorisProperties" : {
+    "engineProperties" : {
       "supported" : false,
       "reason" : "MySQL 暂不支持此引擎操作"
     },
@@ -223,6 +240,7 @@
     }
   },
   "driverClass" : "com.mysql.cj.jdbc.Driver",
+  "agentEngine" : "mysql",
   "driverStatus" : "AVAILABLE"
 }, {
   "schemaVersion" : 1,
@@ -270,6 +288,14 @@
     "help" : "编辑时留空表示不修改"
   } ],
   "capabilities" : {
+    "tabletInspection" : {
+      "supported" : false,
+      "reason" : "此数据源不支持Tablet 巡检"
+    },
+    "auditAccess" : {
+      "supported" : false,
+      "reason" : "此数据源不支持Doris 审计访问统计"
+    },
     "catalog" : {
       "supported" : true,
       "reason" : ""
@@ -318,7 +344,7 @@
       "supported" : false,
       "reason" : "PostgreSQL 暂不支持此引擎操作"
     },
-    "dorisProperties" : {
+    "engineProperties" : {
       "supported" : false,
       "reason" : "PostgreSQL 暂不支持此引擎操作"
     },
@@ -336,5 +362,6 @@
     }
   },
   "driverClass" : "org.postgresql.Driver",
+  "agentEngine" : "postgresql",
   "driverStatus" : "AVAILABLE"
 } ]

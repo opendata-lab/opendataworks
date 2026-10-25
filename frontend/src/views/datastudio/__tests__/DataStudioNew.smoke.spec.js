@@ -114,9 +114,9 @@ describe('DataStudioNew runtime mount smoke', () => {
       config: { warnHandler: () => {} }, directives: { loading: {} },
     } })
     const state = wrapper.vm.$.setupState
-    expect(state.isDorisTable({ sourceType: 'POSTGRESQL', typeDefinition: definition('POSTGRESQL'), isSynced: 1 })).toBe(false)
-    expect(state.isDorisTable({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })).toBe(false)
-    expect(state.isDorisTable({ sourceType: 'DORIS', typeDefinition: definition('DORIS'), isSynced: 1 })).toBe(true)
+    expect(state.hasEngineProperties({ sourceType: 'POSTGRESQL', typeDefinition: definition('POSTGRESQL'), isSynced: 1 })).toBe(false)
+    expect(state.hasEngineProperties({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })).toBe(false)
+    expect(state.hasEngineProperties({ sourceType: 'DORIS', typeDefinition: definition('DORIS'), isSynced: 1 })).toBe(true)
     // 只有 Doris/MySQL 能改物理结构；类型未知的已同步表不放行，未同步的平台表不涉及物理结构
     expect(state.structureEditBlockedReason({ sourceType: 'POSTGRESQL', typeDefinition: definition('POSTGRESQL'), isSynced: 1 })).toContain('PostgreSQL')
     expect(state.structureEditBlockedReason({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })).toBe('')

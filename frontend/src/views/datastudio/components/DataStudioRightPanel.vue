@@ -74,7 +74,7 @@
             <DataStudioRightPanelBasic />
           </el-tab-pane>
 
-          <el-tab-pane v-if="isDorisTable(state.table)" name="doris" label="Doris" lazy>
+          <el-tab-pane v-if="hasEngineProperties(state.table)" name="doris" label="引擎配置" lazy>
             <DataStudioRightPanelDoris />
           </el-tab-pane>
 
@@ -190,7 +190,7 @@ const {
   openTabs,
   activeTab,
   tabStates,
-  isDorisTable,
+  hasEngineProperties,
   structureEditBlockedReason,
   isPlatformMetadataMissing,
   syncMissingTableMetadata,
@@ -239,7 +239,7 @@ const state = computed(() => {
 })
 
 const moreMetaItems = computed(() => [
-  ...(isDorisTable(state.value?.table) ? [{ value: 'doris', label: '引擎配置' }] : []),
+  ...(hasEngineProperties(state.value?.table) ? [{ value: 'doris', label: '引擎配置' }] : []),
   { value: 'access', label: '访问统计' },
   { value: 'versions', label: '变更记录' }
 ])
@@ -260,7 +260,7 @@ const completeness = computed(() =>
 // 头部操作区随 tab 联动：概览、字段与引擎配置（分桶/副本，与概览共用同一元数据编辑链路）可编辑
 const canEditCurrentTab = computed(() => {
   const tab = String(state.value?.metaTab || '')
-  if (tab === 'doris') return isDorisTable(state.value?.table)
+  if (tab === 'doris') return hasEngineProperties(state.value?.table)
   return ['basic', 'columns'].includes(tab)
 })
 
@@ -276,7 +276,7 @@ const isSaving = computed(() =>
 const editDisabledReason = computed(() => {
   if (!canEditCurrentTab.value) return ''
   if (isPlatformMetadataMissing(state.value?.table)) return '请先同步到平台元数据后再操作'
-  if (isDorisTable(state.value?.table) && !getObjectSourceId(state.value?.table, clusterId.value)) return '请选择 Doris 集群后再操作'
+  if (hasEngineProperties(state.value?.table) && !getObjectSourceId(state.value?.table, clusterId.value)) return '请选择数据源后再操作'
   if (state.value?.metaTab === 'columns') return structureEditBlockedReason(state.value?.table)
   return ''
 })

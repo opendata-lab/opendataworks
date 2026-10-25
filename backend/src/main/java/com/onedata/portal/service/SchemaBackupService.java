@@ -12,6 +12,7 @@ import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.MinioConfig;
 import com.onedata.portal.entity.SchemaBackupConfig;
 import com.onedata.portal.mapper.SchemaBackupConfigMapper;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -53,6 +54,7 @@ public class SchemaBackupService {
     private static final String DEFAULT_REGION = "us-east-1";
     private static final String DEFAULT_BACKUP_TIME = "02:00";
 
+    private final DatasourceAdapterRegistry adapterRegistry;
     private final SchemaBackupConfigMapper schemaBackupConfigMapper;
     private final DorisClusterService dorisClusterService;
     private final DorisConnectionService dorisConnectionService;
@@ -447,9 +449,7 @@ public class SchemaBackupService {
         if (cluster == null) {
             throw new IllegalArgumentException("数据源不存在: " + clusterId);
         }
-        if (!"DORIS".equalsIgnoreCase(cluster.getSourceType())) {
-            throw new IllegalStateException("仅支持 DORIS 数据源执行备份");
-        }
+        adapterRegistry.requireCapability(cluster.getSourceType(), "backup");
         return cluster;
     }
 

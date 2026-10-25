@@ -22,10 +22,10 @@ import com.onedata.portal.mapper.DataTaskMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.TableTaskRelationMapper;
 import com.onedata.portal.mapper.TaskExecutionLogMapper;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.lineage.TaskLineageWriteService;
 import com.onedata.portal.service.table.TableEngineHandler;
 import com.onedata.portal.service.table.TableEngineHandlerRegistry;
-import com.onedata.portal.util.DatasourceType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -56,7 +56,7 @@ public class DataTableService {
     private final DataLineageMapper dataLineageMapper;
     private final DorisClusterMapper dorisClusterMapper;
     private final TableEngineHandlerRegistry tableEngineHandlerRegistry;
-    private final com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry datasourceAdapterRegistry;
+    private final DatasourceAdapterRegistry datasourceAdapterRegistry;
     private final TableMetadataVersionService tableMetadataVersionService;
     private final TaskLineageWriteService taskLineageWriteService;
 
@@ -268,8 +268,8 @@ public class DataTableService {
         if (cluster == null) {
             throw new RuntimeException("数据源不存在: " + clusterId);
         }
-        DatasourceType sourceType = DatasourceType.from(cluster.getSourceType());
-        if (sourceType == DatasourceType.DORIS) {
+        String sourceType = DatasourceAdapterRegistry.normalize(cluster.getSourceType());
+        if (datasourceAdapterRegistry.require(sourceType).descriptor().supports("engineProperties")) {
             return;
         }
         TableEngineHandler handler = tableEngineHandlerRegistry.find(sourceType);
@@ -531,10 +531,7 @@ public class DataTableService {
                         || e.getMessage().startsWith("MySQL 数据源不支持"))) {
                     throw new RuntimeException(e.getMessage());
                 }
-                String engineName = engine.handler.sourceType().name();
-                if (engine.handler.sourceType() == DatasourceType.DORIS) {
-                    engineName = "Doris";
-                }
+                String engineName = datasourceAdapterRegistry.require(engine.handler.sourceType()).descriptor().getLabel();
                 throw new RuntimeException("同步 " + engineName + " 失败: " + e.getMessage());
             }
         } else if (physicalTableUpdate && isSyncedPhysicalTable(existing)) {
@@ -988,7 +985,8 @@ public class DataTableService {
 
     public boolean requiresDorisPhysicalSync(DataTable table, Long clusterId) {
         ResolvedTableEngine engine = resolveSyncedPhysicalEngine(table, clusterId);
-        return engine != null && engine.handler.sourceType() == DatasourceType.DORIS;
+        return engine != null && datasourceAdapterRegistry.require(engine.handler.sourceType())
+                .descriptor().supports("engineProperties");
     }
 
     public boolean isSyncedPhysicalTable(DataTable table) {
@@ -1018,7 +1016,7 @@ public class DataTableService {
             throw new RuntimeException("数据源不存在: " + actualClusterId);
         }
         datasourceAdapterRegistry.requireCapability(cluster.getSourceType(), "structureEdit");
-        DatasourceType sourceType = DatasourceType.from(cluster.getSourceType());
+        String sourceType = DatasourceAdapterRegistry.normalize(cluster.getSourceType());
         TableEngineHandler handler = tableEngineHandlerRegistry.require(sourceType);
         return new ResolvedTableEngine(handler, actualClusterId);
     }

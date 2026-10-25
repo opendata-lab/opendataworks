@@ -39,7 +39,7 @@ function setup(overrides = {}) {
     createDrawerVisible: ref(false),
     taskDrawerRef,
     router,
-    isDorisTable: vi.fn(() => true),
+    hasEngineProperties: vi.fn(() => true),
     isPlatformMetadataMissing: vi.fn(() => false),
     warnPlatformMetadataMissing: vi.fn(() => false),
     tableStore: reactive({}),

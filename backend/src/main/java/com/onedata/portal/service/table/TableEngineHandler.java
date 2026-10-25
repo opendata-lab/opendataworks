@@ -3,14 +3,13 @@ package com.onedata.portal.service.table;
 import com.onedata.portal.dto.TableCreateRequest;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
-import com.onedata.portal.util.DatasourceType;
 
 /**
  * Engine-specific table metadata normalization and physical DDL operations.
  */
 public interface TableEngineHandler {
 
-    DatasourceType sourceType();
+    String sourceType();
 
     default void prepareCreateMetadata(DataTable table, TableCreateRequest request, String ddl) {
         clearDorisPhysicalMetadata(table);
@@ -59,7 +58,7 @@ public interface TableEngineHandler {
     }
 
     default RuntimeException unsupported() {
-        return new RuntimeException("暂不支持同步 " + sourceType().name() + " 数据源的表变更");
+        return new RuntimeException("暂不支持同步 " + sourceType() + " 数据源的表变更");
     }
 
     static void clearDorisPhysicalMetadata(DataTable table) {

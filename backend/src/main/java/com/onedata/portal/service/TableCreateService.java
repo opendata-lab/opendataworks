@@ -11,9 +11,9 @@ import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DataFieldMapper;
 import com.onedata.portal.mapper.DataTableMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.table.TableEngineHandler;
 import com.onedata.portal.service.table.TableEngineHandlerRegistry;
-import com.onedata.portal.util.DatasourceType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -22,7 +22,9 @@ import org.springframework.util.CollectionUtils;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 表创建服务
@@ -45,7 +47,7 @@ public class TableCreateService {
     public TableDesignPreviewResponse preview(TableCreateRequest request) {
         validateRequest(request);
         TableNameComponentsWrapper components = buildComponents(request);
-        TableEngineHandler dorisHandler = tableEngineHandlerRegistry.require(DatasourceType.DORIS);
+        TableEngineHandler dorisHandler = tableEngineHandlerRegistry.require("DORIS");
         String ddl = dorisHandler.buildCreateDdl(components.getTableName(), request);
         return new TableDesignPreviewResponse(components.getTableName(), ddl);
     }
@@ -58,7 +60,7 @@ public class TableCreateService {
         validateRequest(request);
         validateDorisDatasource(request);
         TableNameComponentsWrapper components = buildComponents(request);
-        TableEngineHandler dorisHandler = tableEngineHandlerRegistry.require(DatasourceType.DORIS);
+        TableEngineHandler dorisHandler = tableEngineHandlerRegistry.require("DORIS");
 
         ensureTableNotExists(components.getTableName(), request.getDbName(), request.getDorisClusterId());
 
@@ -133,9 +135,9 @@ public class TableCreateService {
         if (datasource == null) {
             throw new RuntimeException("数据源不存在: " + datasourceId);
         }
-        DatasourceType sourceType = DatasourceType.from(datasource.getSourceType());
-        if (sourceType != DatasourceType.DORIS) {
-            throw new RuntimeException("表设计器仅支持 Doris 数据源: " + sourceType.name());
+        String sourceType = DatasourceAdapterRegistry.normalize(datasource.getSourceType());
+        if (!"DORIS".equals(sourceType)) {
+            throw new RuntimeException("表设计器仅支持 Doris 数据源: " + sourceType);
         }
     }
 
@@ -206,12 +208,12 @@ public class TableCreateService {
 
     private List<String> normalizeList(List<String> columns) {
         if (CollectionUtils.isEmpty(columns)) {
-            return java.util.Collections.emptyList();
+            return Collections.emptyList();
         }
         return columns.stream()
             .filter(StringUtils::hasText)
             .map(String::trim)
-            .collect(java.util.stream.Collectors.toList());
+            .collect(Collectors.toList());
     }
 
     private boolean containsIgnoreCase(List<String> list, String value) {

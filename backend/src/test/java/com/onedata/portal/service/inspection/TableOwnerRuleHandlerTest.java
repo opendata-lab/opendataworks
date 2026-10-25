@@ -1,13 +1,17 @@
 package com.onedata.portal.service.inspection;
 
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.InspectionIssue;
 import com.onedata.portal.entity.InspectionRule;
 import com.onedata.portal.mapper.DataTableMapper;
+import com.onedata.portal.service.DatasourceAdapterFixtures;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Arrays;
@@ -28,6 +32,10 @@ class TableOwnerRuleHandlerTest {
 
     @Mock
     private DataTableMapper dataTableMapper;
+
+    @Spy
+    private DatasourceAdapterRegistry adapterRegistry =
+            DatasourceAdapterFixtures.registry(new DorisJdbcProperties());
 
     @InjectMocks
     private TableOwnerRuleHandler handler;

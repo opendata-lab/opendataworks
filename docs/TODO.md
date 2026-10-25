@@ -46,15 +46,12 @@
 - 数据查询页对 PostgreSQL 实际执行 analyze/execute 的 HTTP 冒烟（含风险确认、取消、超时）和浏览器手工验证。
 - DataAgent 只读查询接口只接受 database 名，没有数据源 ID：多个数据源存在同名 schema（如 `public`）且智能体未配置数据范围时，仍会报"命中多个 cluster_id"。需要在接口、odw-cli 和 MCP 中增加可选的数据源 ID。
 
-### 数据源适配器架构
+### 数据源适配器架构（剩余事项）
 
-- **现状**（2026-10-25）：架构实施中，阶段一、二已落地（验证覆盖见报告），阶段三、四未实施，见 [数据源适配器设计](design/2026-10-22-datasource-adapter-design.md) 和 [计划](plans/2026-10-22-datasource-adapter-plan.md)。
-- **已决定**（2026-10-25）：内置驱动为主，保留 Doris/MySQL/PostgreSQL pom 依赖，升级无需目录或版本绑定迁移；外置目录仅可选补充新 JDBC 数据库或显式覆盖内置版本。
-- **后续**（来源：2026-10-25 阶段一、二范围取舍）：当前只检查驱动类可用性；需实现可选 manifest、独立 ClassLoader、Java/依赖/校验和检查、driverId 持久绑定及选择器，以双版本隔离验证平台连接不受影响。阶段三物理编辑扩展、阶段四 DataAgent 统一仍独立验收。见上述设计、计划及 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
-
-- **连接字段扩展**（来源：2026-10-25 代码风格复核）：第一阶段仅接受 `feHost`/`fePort`/`databaseName`/`username`/`password`，其他 key 会被注册表拒绝。后续支持适配器声明额外连接字段（如 Oracle service name、额外 JDBC 参数），须将配置存储、参数校验与前端表单一起设计，不只放宽 key 检查。见 [设计](design/2026-10-22-datasource-adapter-design.md) 和 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
-
-- **验证补齐**（来源：2026-10-25 阶段一、二验证）：真实 PostgreSQL 与 MySQL HTTP 已覆盖；数据源表单浏览器检查通过，Data Studio 字段/DDL/SQL 结果的完整浏览器闭环仍需补跑；本机没有可用 Doris 实例，需补跑 Doris 真实同步、预览、DDL、分区和新鲜度回归；DolphinScheduler 不可达的既有全量集成用例需在环境恢复后复跑。见 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
+- **现状**（2026-10-26）：阶段一至三、Java 阶段四、能力目录和额外连接字段已实施，已完成部分移至文末。见 [设计](design/2026-10-22-datasource-adapter-design.md)、[计划](plans/2026-10-22-datasource-adapter-plan.md)、[验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
+- **驱动已决定、加载待实施**（2026-10-25 决策；2026-10-26 确认本轮不纳入）：内置为主，保留 Doris/MySQL/PostgreSQL 驱动；外置目录仅可选新增 JDBC 数据库或覆盖内置版本。当前只检查驱动类可用性；后续需 manifest、独立 ClassLoader、Java/依赖/校验和检查、driverId 持久绑定与选择器，并验证双版本隔离不影响平台连接。升级仍无需目录或旧源版本绑定迁移。
+- **Python 与模型全链路**（来源：2026-10-26 范围与环境）：本轮统一 Java agent API，不改 Python resolver/tool；Python 直连路径见“测试与工程卫生”的既有单列项。真实模型账号欠费（403 Current user is in debt），恢复后按 DataAgent 规则补跑模型/MCP/任务、事件与消息持久化全流程；Java HTTP 验证不能替代此覆盖。
+- **验证补齐**（2026-10-25 发现，2026-10-26 延续）：PG/MySQL Java agent HTTP 及结构编辑能力门禁已验证；完整 Data Studio 字段/DDL/查询结果浏览器闭环仍未重跑。本机无真实 Doris 实例，需补同步、预览、DDL、分区、新鲜度及物理编辑回归；同时确认 Doris 是否接受 `SET SESSION TRANSACTION READ ONLY`，接受则去掉 `DorisAdapter.applyReadOnly` 的覆盖，让 DataAgent 的 Doris 只读连接也由服务端强制（2026-10-26 复核发现）。DolphinScheduler 不可达的既有集成用例需在环境恢复后复跑。原因与结果见上述报告。
 
 ### 完全关闭认证时的查询历史
 
@@ -108,4 +105,8 @@
 
 ## 已完成
 
-（暂无）
+### 数据源适配器阶段一至三、Java 阶段四与连接字段扩展
+
+- **完成**（2026-10-26）：阶段一、二由 cfa12bdd 提交；本轮续作统一连接获取、字符串编辑 handler、能力目录与前后端中性能力名、PG 参考结构 SPI、适配器对象缓存。Java agent 只读与范围守卫、用户映射拒绝保持。
+- **连接字段扩展完成**：原 2026-10-25 复核确认的固定五字段限制已解除；V53 可空 connection_options、声明白名单/值校验、密码脱敏与保留、动态表单、TEST_DB 真实持久化到连接测试均实施。三个内置源不新增选项，旧配置无需改写。
+- **结果**：[2026-10-26 验证章节](reports/2026-10-25-datasource-adapter-verification.md#2026-10-26阶段三java-阶段四与连接字段扩展)；[设计](design/2026-10-22-datasource-adapter-design.md)、[计划](plans/2026-10-22-datasource-adapter-plan.md)。外置加载、Python 与环境验证缺口保留在上方剩余事项，未删除。

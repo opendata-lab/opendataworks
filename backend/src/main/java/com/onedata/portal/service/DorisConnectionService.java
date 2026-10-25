@@ -1,22 +1,20 @@
 package com.onedata.portal.service;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.auth.context.UserContextHolder;
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.dto.ColumnValueProfile;
 import com.onedata.portal.dto.DorisCredential;
 import com.onedata.portal.dto.TablePartitionInfo;
 import com.onedata.portal.dto.TableStatistics;
-import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.DataField;
+import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import com.onedata.portal.util.JdbcValues;
-import com.onedata.portal.util.DorisCreateTableUtils;
 import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
+import com.onedata.portal.service.datasource.core.DatasourceConnectionFactory;
 import com.onedata.portal.service.datasource.model.*;
 import com.onedata.portal.service.datasource.spi.*;
-import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
+import com.onedata.portal.util.DorisCreateTableUtils;
+import com.onedata.portal.util.JdbcValues;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -25,21 +23,33 @@ import org.springframework.util.StringUtils;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.Date;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Doris 连接服务
  */
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class DorisConnectionService {
 
     private final DorisClusterMapper dorisClusterMapper;
     private final DorisJdbcProperties dorisJdbcProperties;
     private final UserMappingService userMappingService;
     private final DatasourceAdapterRegistry adapterRegistry;
+    private final DatasourceConnectionFactory connectionFactory;
+
+    public DorisConnectionService(DorisClusterMapper mapper, DorisJdbcProperties properties,
+            UserMappingService mappings, DatasourceAdapterRegistry registry) {
+        this.dorisClusterMapper = mapper;
+        this.dorisJdbcProperties = properties;
+        this.userMappingService = mappings;
+        this.adapterRegistry = registry;
+        this.connectionFactory = new DatasourceConnectionFactory(registry);
+    }
+
     private static final Pattern NUMERIC_PATTERN = Pattern.compile("^-?\\d+(\\.\\d+)?$");
     private static final Pattern SIZE_WITH_UNIT_PATTERN = Pattern.compile("^([0-9]+(?:\\.[0-9]+)?)\\s*([KMGT]?B)?$",
             Pattern.CASE_INSENSITIVE);
@@ -105,11 +115,6 @@ public class DorisConnectionService {
      * 否则使用集群默认凭据
      */
     private Connection getConnection(DorisCluster cluster, String database) throws SQLException {
-        String targetDb = StringUtils.hasText(database) ? database : dorisJdbcProperties.getDefaultDatabase();
-        DatasourceAdapter adapter = adapterRegistry.require(cluster.getSourceType());
-        adapterRegistry.requireDriver(adapter);
-        String url = adapter.connectionSpec(config(cluster), targetDb).getUrl();
-
         // 尝试从用户上下文获取用户ID
         String userId = UserContextHolder.getCurrentUserId();
 
@@ -131,22 +136,8 @@ public class DorisConnectionService {
             password = cluster.getPassword() == null ? "" : cluster.getPassword();
         }
 
-        Connection connection = DriverManager.getConnection(url, username, password);
-        try {
-            adapter.initializeSession(connection, database);
-            return connection;
-        } catch (SQLException | RuntimeException e) {
-            try {
-                connection.close();
-            } catch (SQLException closeError) {
-                e.addSuppressed(closeError);
-            }
-            throw e;
-        }
-    }
-
-    private ConnectionConfig config(DorisCluster cluster) {
-        return new ConnectionConfig(cluster.getFeHost(), cluster.getFePort(), cluster.getUsername(), cluster.getDatabaseName());
+        return connectionFactory.open(cluster.getSourceType(), ConnectionConfig.from(cluster), database,
+                username, password, false);
     }
 
     private String quoteIdentifier(DorisCluster cluster, String identifier) {
@@ -171,7 +162,7 @@ public class DorisConnectionService {
     public Optional<TableRuntimeStats> getTableRuntimeStats(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
 
-        if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("dorisProperties")) {
+        if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("engineProperties")) {
             return Optional.empty(); // Base catalog statistics are supplied by the adapter.
         }
 
@@ -238,7 +229,7 @@ public class DorisConnectionService {
             return Optional.empty();
         }
         DorisCluster cluster = resolveCluster(clusterId);
-        if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("dorisProperties")) {
+        if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("engineProperties")) {
             return Optional.empty();
         }
         try (Connection connection = getConnection(cluster, null)) {
@@ -369,8 +360,8 @@ public class DorisConnectionService {
             if (value instanceof Timestamp) {
                 return (Timestamp) value;
             }
-            if (value instanceof java.util.Date) {
-                return new Timestamp(((java.util.Date) value).getTime());
+            if (value instanceof Date) {
+                return new Timestamp(((Date) value).getTime());
             }
             if (value instanceof String) {
                 try {

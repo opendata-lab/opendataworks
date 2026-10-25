@@ -2,7 +2,6 @@ package com.onedata.portal.service.table;
 
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
-import com.onedata.portal.util.DatasourceType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -23,8 +22,8 @@ public class MysqlTableEngineHandler implements TableEngineHandler {
     private final TableEngineJdbcExecutor jdbcExecutor;
 
     @Override
-    public DatasourceType sourceType() {
-        return DatasourceType.MYSQL;
+    public String sourceType() {
+        return "MYSQL";
     }
 
     @Override

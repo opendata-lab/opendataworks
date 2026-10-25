@@ -17,6 +17,13 @@ public interface DatasourceAdapter {
 
     void initializeSession(Connection connection, String namespace) throws SQLException;
 
+    /**
+     * 为只读路径设置连接级只读。默认交给驱动；服务端不一定接受该设置的引擎可以覆盖。
+     */
+    default void applyReadOnly(Connection connection) throws SQLException {
+        connection.setReadOnly(true);
+    }
+
     DatasourceMetadataReader metadata();
 
     DatasourceSqlDialect dialect();
