@@ -11,6 +11,9 @@ import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.util.DorisCreateTableUtils;
+import com.onedata.portal.util.JdbcUrlParts;
+import com.onedata.portal.util.JdbcValues;
+import com.onedata.portal.util.PostgresqlMetadataSql;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -110,43 +113,68 @@ public class DorisConnectionService {
         String username;
         String password;
 
+        DorisCredential credential = null;
         if (userId != null && StringUtils.hasText(database)) {
-            // 有用户上下文且指定了数据库，使用用户映射的Doris凭据
-            try {
-                DorisCredential credential = userMappingService.getDorisCredential(userId, cluster.getId(), database);
-                username = credential.getUsername();
-                password = credential.getPassword();
-                log.debug("Using user-mapped Doris credential for user {} on database {}", userId, database);
-            } catch (Exception e) {
-                // 如果获取用户凭据失败，记录警告并使用集群默认凭据
-                log.warn(
-                        "Failed to get user-mapped credential for user {} on database {}, falling back to cluster default: {}",
-                        userId, database, e.getMessage());
-                username = cluster.getUsername();
-                password = cluster.getPassword() == null ? "" : cluster.getPassword();
-            }
+            // 映射拒绝直接抛出：此时退回数据源账号，等于让用户访问未授权的库
+            credential = userMappingService.getDorisCredential(userId, cluster.getId(), database);
+        }
+        if (credential != null) {
+            username = credential.getUsername();
+            password = credential.getPassword();
+            log.debug("Using mapped credential for user {} on database {}", userId, database);
         } else {
-            // 没有用户上下文或未指定数据库，使用集群默认凭据
+            // 无用户上下文、未指定库，或该库未登记映射账号：使用数据源账号
             username = cluster.getUsername();
             password = cluster.getPassword() == null ? "" : cluster.getPassword();
-            if (userId == null) {
-                log.debug("No user context found, using cluster default credential");
-            } else {
-                log.debug("No database specified, using cluster default credential");
-            }
         }
 
         Connection connection = DriverManager.getConnection(url, username, password);
-        applySessionCharset(connection);
-        return connection;
+        try {
+            if (isPostgresql(cluster)) {
+                if (StringUtils.hasText(database)) {
+                    connection.setSchema(database);
+                }
+            } else {
+                applySessionCharset(connection);
+            }
+            return connection;
+        } catch (SQLException | RuntimeException e) {
+            try {
+                connection.close();
+            } catch (SQLException closeError) {
+                e.addSuppressed(closeError);
+            }
+            throw e;
+        }
     }
 
     private String buildJdbcUrl(DorisCluster cluster, String database) {
+        if (isPostgresql(cluster)) {
+            if (!StringUtils.hasText(cluster.getDatabaseName())) {
+                throw new IllegalArgumentException("PostgreSQL 连接数据库不能为空");
+            }
+            return PostgresqlMetadataSql.jdbcUrl(cluster.getFeHost(), cluster.getFePort(), cluster.getDatabaseName());
+        }
         String template = dorisJdbcProperties.getUrlTemplate();
         if (!StringUtils.hasText(template)) {
             throw new IllegalStateException("doris.jdbc.url-template 未配置，请在 application.yml 或环境变量中指定");
         }
-        return String.format(template, cluster.getFeHost(), cluster.getFePort(), database);
+        return String.format(template, JdbcUrlParts.requireHost(cluster.getFeHost()), cluster.getFePort(),
+                JdbcUrlParts.requireDatabase(database));
+    }
+
+    private boolean isPostgresql(DorisCluster cluster) {
+        return "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType());
+    }
+
+    private String quoteIdentifier(DorisCluster cluster, String identifier) {
+        return isPostgresql(cluster) ? PostgresqlMetadataSql.quoteIdentifier(identifier)
+                : "`" + identifier.replace("`", "``") + "`";
+    }
+
+    private static Long nullableLong(ResultSet rs, String column) throws SQLException {
+        long value = rs.getLong(column);
+        return rs.wasNull() ? null : value;
     }
 
     private DorisCluster resolveCluster(Long clusterId) {
@@ -162,6 +190,10 @@ public class DorisConnectionService {
 
     public Optional<TableRuntimeStats> getTableRuntimeStats(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
+
+        if (isPostgresql(cluster)) {
+            return Optional.empty(); // Catalog statistics are already included by getTablesInDatabase.
+        }
 
         try (Connection connection = getConnection(cluster, null)) {
             Optional<TableRuntimeStats> stats = queryTableStats(connection, database, tableName);
@@ -226,6 +258,9 @@ public class DorisConnectionService {
             return Optional.empty();
         }
         DorisCluster cluster = resolveCluster(clusterId);
+        if (isPostgresql(cluster)) {
+            return Optional.empty();
+        }
         try (Connection connection = getConnection(cluster, null)) {
             return queryTableTabletStats(connection, database.trim(), tableName.trim());
         } catch (SQLException e) {
@@ -658,6 +693,10 @@ public class DorisConnectionService {
                 "FROM information_schema.tables " +
                 "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
 
+        if (isPostgresql(cluster)) {
+            sql = PostgresqlMetadataSql.TABLES + " AND n.nspname = ? AND c.relname = ?";
+        }
+
         try (Connection connection = getConnection(cluster, null);
                 PreparedStatement stmt = connection.prepareStatement(sql)) {
 
@@ -682,7 +721,7 @@ public class DorisConnectionService {
                         stats.setLastUpdateTime(updateTimestamp.toLocalDateTime());
                     }
 
-                    stats.setRowCount(rs.getLong("TABLE_ROWS"));
+                    stats.setRowCount(nullableLong(rs, "TABLE_ROWS"));
 
                     long dataSize = rs.getLong("DATA_LENGTH");
                     stats.setDataSize(dataSize);
@@ -693,7 +732,9 @@ public class DorisConnectionService {
                     stats.setLastCheckTime(LocalDateTime.now());
 
                     // 获取分区和副本信息
-                    enrichTableDetails(connection, database, tableName, stats);
+                    if (!isPostgresql(cluster)) {
+                        enrichTableDetails(connection, database, tableName, stats);
+                    }
 
                     return stats;
                 }
@@ -727,6 +768,10 @@ public class DorisConnectionService {
                 "WHERE TABLE_SCHEMA = ? " +
                 "ORDER BY TABLE_NAME";
 
+        if (isPostgresql(cluster)) {
+            sql = PostgresqlMetadataSql.TABLES + " AND n.nspname = ? ORDER BY c.relname";
+        }
+
         try (Connection connection = getConnection(cluster, null);
                 PreparedStatement stmt = connection.prepareStatement(sql)) {
 
@@ -750,7 +795,7 @@ public class DorisConnectionService {
                         stats.setLastUpdateTime(updateTimestamp.toLocalDateTime());
                     }
 
-                    stats.setRowCount(rs.getLong("TABLE_ROWS"));
+                    stats.setRowCount(nullableLong(rs, "TABLE_ROWS"));
 
                     long dataSize = rs.getLong("DATA_LENGTH");
                     stats.setDataSize(dataSize);
@@ -829,6 +874,9 @@ public class DorisConnectionService {
      */
     public String getTableDdl(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
+        if (isPostgresql(cluster)) {
+            throw new UnsupportedOperationException("PostgreSQL 暂不支持在线 DDL 导出，请使用 pg_dump --schema-only");
+        }
         String showCreateSql = "SHOW CREATE TABLE `" + database + "`.`" + tableName + "`";
 
         try (Connection connection = getConnection(cluster, null);
@@ -869,10 +917,12 @@ public class DorisConnectionService {
                 if (!StringUtils.hasText(column)) {
                     continue;
                 }
+                String quotedColumn = quoteIdentifier(cluster, column);
                 String sql = String.format(
-                        "SELECT `%s` AS v, COUNT(*) AS c FROM `%s`.`%s` WHERE `%s` IS NOT NULL "
-                                + "GROUP BY `%s` ORDER BY c DESC LIMIT %d",
-                        column, database, tableName, column, column, maxDistinct + 1);
+                        "SELECT %s AS v, COUNT(*) AS c FROM %s.%s WHERE %s IS NOT NULL "
+                                + "GROUP BY %s ORDER BY c DESC LIMIT %d",
+                        quotedColumn, quoteIdentifier(cluster, database), quoteIdentifier(cluster, tableName),
+                        quotedColumn, quotedColumn, maxDistinct + 1);
                 try (Statement stmt = connection.createStatement()) {
                     stmt.setQueryTimeout(COLUMN_PROFILE_TIMEOUT_SECONDS);
                     try (ResultSet rs = stmt.executeQuery(sql)) {
@@ -910,7 +960,8 @@ public class DorisConnectionService {
 
         // 限制最大预览行数
         int maxLimit = Math.min(limit, 1000);
-        String sql = "SELECT * FROM `" + database + "`.`" + tableName + "` LIMIT " + maxLimit;
+        String sql = "SELECT * FROM " + quoteIdentifier(cluster, database) + "."
+                + quoteIdentifier(cluster, tableName) + " LIMIT " + maxLimit;
 
         try (Connection connection = getConnection(cluster, database);
                 Statement stmt = connection.createStatement();
@@ -923,8 +974,7 @@ public class DorisConnectionService {
                 Map<String, Object> row = new LinkedHashMap<>();
                 for (int i = 1; i <= columnCount; i++) {
                     String columnName = metaData.getColumnName(i);
-                    Object value = rs.getObject(i);
-                    row.put(columnName, value);
+                    row.put(columnName, JdbcValues.read(rs, i));
                 }
                 result.add(row);
             }
@@ -945,6 +995,9 @@ public class DorisConnectionService {
      */
     public List<TablePartitionInfo> listPartitions(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
+        if (isPostgresql(cluster)) {
+            throw new UnsupportedOperationException("PostgreSQL 暂不支持分区详情");
+        }
         String sql = "SHOW PARTITIONS FROM `" + database + "`.`" + tableName + "`";
         List<TablePartitionInfo> partitions = new ArrayList<>();
 
@@ -1009,8 +1062,9 @@ public class DorisConnectionService {
         DorisCluster cluster = resolveCluster(clusterId);
         String column = requireSafeIdentifier(loadedAtField, "加载时间列");
         StringBuilder sql = new StringBuilder()
-            .append("SELECT MAX(`").append(column).append("`) AS max_loaded_at, NOW() AS snapshotted_at FROM `")
-            .append(database).append("`.`").append(tableName).append("`");
+            .append("SELECT MAX(").append(quoteIdentifier(cluster, column))
+            .append(") AS max_loaded_at, NOW() AS snapshotted_at FROM ")
+            .append(quoteIdentifier(cluster, database)).append(".").append(quoteIdentifier(cluster, tableName));
         if (StringUtils.hasText(filterExpr)) {
             sql.append(" WHERE ").append(filterExpr);
         }
@@ -1036,6 +1090,9 @@ public class DorisConnectionService {
     public FreshnessProbe probeMetadataUpdateTime(Long clusterId, String database, String tableName,
                                                   int timeoutSeconds) {
         DorisCluster cluster = resolveCluster(clusterId);
+        if (isPostgresql(cluster)) {
+            throw new UnsupportedOperationException("PostgreSQL 不提供表更新时间，请改用 column 或 custom_sql 模式");
+        }
         String sql = "SELECT UPDATE_TIME AS max_loaded_at, NOW() AS snapshotted_at "
             + "FROM information_schema.tables WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
         try (Connection connection = getConnection(cluster, null);
@@ -1157,7 +1214,7 @@ public class DorisConnectionService {
         DorisCluster cluster = resolveCluster(clusterId);
         List<String> databases = new ArrayList<>();
 
-        String sql = "SHOW DATABASES";
+        String sql = isPostgresql(cluster) ? PostgresqlMetadataSql.SCHEMAS : "SHOW DATABASES";
 
         try (Connection connection = getConnection(cluster, null);
                 Statement stmt = connection.createStatement();
@@ -1166,7 +1223,7 @@ public class DorisConnectionService {
             while (rs.next()) {
                 String dbName = rs.getString(1);
                 // 过滤掉系统数据库
-                if (!SYSTEM_DATABASES.contains(dbName)) {
+                if (isPostgresql(cluster) || !SYSTEM_DATABASES.contains(dbName)) {
                     databases.add(dbName);
                 }
             }
@@ -1196,8 +1253,9 @@ public class DorisConnectionService {
         }
         sqlBuilder.append(" ORDER BY TABLE_SCHEMA, TABLE_NAME");
 
+        String sql = isPostgresql(cluster) ? PostgresqlMetadataSql.schemaObjects(hasKeyword) : sqlBuilder.toString();
         try (Connection connection = getConnection(cluster, null);
-                PreparedStatement stmt = connection.prepareStatement(sqlBuilder.toString())) {
+                PreparedStatement stmt = connection.prepareStatement(sql)) {
             if (hasKeyword) {
                 String normalizedKeyword = normalizeSearchKeyword(keyword);
                 stmt.setString(1, normalizedKeyword);
@@ -1231,6 +1289,10 @@ public class DorisConnectionService {
         String sql = "SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT, CREATE_TIME, UPDATE_TIME, TABLE_ROWS, DATA_LENGTH " +
                 "FROM information_schema.tables WHERE TABLE_SCHEMA = ?";
 
+        if (isPostgresql(cluster)) {
+            sql = PostgresqlMetadataSql.TABLES + " AND n.nspname = ? ORDER BY c.relname";
+        }
+
         try (Connection connection = getConnection(cluster, null);
                 PreparedStatement stmt = connection.prepareStatement(sql)) {
 
@@ -1244,7 +1306,7 @@ public class DorisConnectionService {
                     table.put("tableComment", rs.getString("TABLE_COMMENT"));
                     table.put("createTime", rs.getTimestamp("CREATE_TIME"));
                     table.put("updateTime", rs.getTimestamp("UPDATE_TIME"));
-                    table.put("tableRows", rs.getLong("TABLE_ROWS"));
+                    table.put("tableRows", nullableLong(rs, "TABLE_ROWS"));
                     table.put("dataLength", rs.getLong("DATA_LENGTH"));
                     tables.add(table);
                 }
@@ -1268,6 +1330,10 @@ public class DorisConnectionService {
         String sql = "SELECT COLUMN_NAME, COLUMN_TYPE, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT, ORDINAL_POSITION, COLUMN_KEY "
                 + "FROM information_schema.columns WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION";
 
+        if (isPostgresql(cluster)) {
+            sql = PostgresqlMetadataSql.COLUMNS;
+        }
+
         try (Connection connection = getConnection(cluster, null);
                 PreparedStatement stmt = connection.prepareStatement(sql)) {
 
@@ -1290,7 +1356,7 @@ public class DorisConnectionService {
             }
 
             // Doris 某些版本中 information_schema.columns.COLUMN_TYPE 可能为空，回退到 SHOW FULL COLUMNS.Type。
-            if (!isMysql) {
+            if (!isMysql && !isPostgresql(cluster)) {
                 Map<String, String> fallbackTypeMap = loadColumnTypesByShowFullColumns(connection, database, tableName);
                 for (Map<String, Object> column : columns) {
                     String currentType = (String) column.get("dataType");
@@ -1355,6 +1421,10 @@ public class DorisConnectionService {
     public Map<String, Object> getTableCreateInfo(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
         Map<String, Object> info = new HashMap<>();
+
+        if (isPostgresql(cluster)) {
+            return info; // PostgreSQL has no SHOW CREATE TABLE; do not persist an incomplete reconstruction.
+        }
 
         String showCreateSql = "SHOW CREATE TABLE `" + database + "`.`" + tableName + "`";
 

@@ -8,6 +8,7 @@ import java.util.Locale;
 public enum DatasourceType {
     DORIS,
     MYSQL,
+    POSTGRESQL,
     OCEANBASE,
     UNKNOWN;
 

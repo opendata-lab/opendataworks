@@ -19,9 +19,12 @@ public class DorisCluster {
     private String clusterName;
 
     /**
-     * 数据源类型：DORIS / MYSQL
+     * 数据源类型：DORIS / MYSQL / POSTGRESQL
      */
     private String sourceType;
+
+    /** PostgreSQL 连接数据库；其内的 schema 使用现有 dbName 表示。 */
+    private String databaseName;
 
     private String feHost;
 

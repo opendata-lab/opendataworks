@@ -1,6 +1,7 @@
 package com.onedata.portal.agentapi.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentFieldMetadata;
 import com.onedata.portal.agentapi.dto.AgentInspectResponse;
@@ -201,6 +202,11 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             throw new IllegalArgumentException("未在 opendataworks 中找到 database `" + targetDatabase + "` 的数据源");
         }
 
+        return resolveClusterDatasource(clusterId, targetDatabase, normalizedPreferredEngine, resolvedBy);
+    }
+
+    private AgentDatasourceResolution resolveClusterDatasource(
+            Long clusterId, String targetDatabase, String normalizedPreferredEngine, String resolvedBy) {
         DorisCluster cluster = dorisClusterMapper.selectById(clusterId);
         if (cluster == null) {
             throw new IllegalArgumentException("cluster_id `" + clusterId + "` 不存在");
@@ -208,12 +214,12 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         AgentDataScopeContext.requireAllowed(clusterId, targetDatabase);
 
         String sourceType = normalizeSourceType(cluster.getSourceType());
-        String engine = "MYSQL".equals(sourceType) ? "mysql" : "doris";
+        String engine = engineForSourceType(sourceType);
         ensurePreferredEngine(targetDatabase, normalizedPreferredEngine, engine);
 
         String user = trimToEmpty(cluster.getUsername());
         String password = trimToEmpty(cluster.getPassword());
-        if ("doris".equals(engine)) {
+        if (!"mysql".equals(engine)) {
             List<DorisDbUser> matchedUsers = dorisDbUserMapper.selectList(
                     new LambdaQueryWrapper<DorisDbUser>()
                             .eq(DorisDbUser::getClusterId, clusterId)
@@ -234,7 +240,8 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         response.setEngine(engine);
         response.setDatabase(targetDatabase);
         response.setHost(trimToEmpty(cluster.getFeHost()));
-        response.setPort(cluster.getFePort() != null ? cluster.getFePort() : ("mysql".equals(engine) ? 3306 : 9030));
+        response.setPort(cluster.getFePort() != null ? cluster.getFePort() : defaultPortForEngine(engine));
+        response.setConnectionDatabase(trimToNull(cluster.getDatabaseName()));
         response.setUser(user);
         response.setPassword(password);
         response.setSourceType(sourceType);
@@ -267,7 +274,10 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             throw new IllegalArgumentException("database 或 table 无法确定");
         }
 
-        AgentDatasourceResolution datasource = resolveDatasource(targetDatabase, null);
+        // 已定位到具体表时沿用它的数据源，不再按 database 名全局解析（同名 schema 会冲突）
+        AgentDatasourceResolution datasource = matchedTable != null && matchedTable.getClusterId() != null
+                ? resolveClusterDatasource(matchedTable.getClusterId(), targetDatabase, null, "data_table")
+                : resolveDatasource(targetDatabase, null);
         String ddl = agentJdbcExecutor.fetchTableDdl(datasource, targetDatabase, actualTableName, DDL_TIMEOUT_SECONDS);
 
         AgentTableDdlResponse response = new AgentTableDdlResponse();
@@ -932,18 +942,22 @@ public class BackendAgentMetadataService implements AgentMetadataService {
     }
 
     private Long resolveClusterIdFromTables(String database) {
+        // 不同数据源可能有同名 database（典型如多个 PostgreSQL 的 public），先按授权范围收窄再判冲突
         List<DataTable> tables = dataTableMapper.selectList(
-                new LambdaQueryWrapper<DataTable>()
-                        .eq(DataTable::getDbName, database)
-                        .ne(DataTable::getStatus, "deprecated")
-                        .last("LIMIT 8")
+                new QueryWrapper<DataTable>()
+                        .select("DISTINCT cluster_id")
+                        .eq("db_name", database)
+                        .ne("status", "deprecated")
         );
         Set<Long> clusterIds = tables.stream()
                 .map(DataTable::getClusterId)
                 .filter(Objects::nonNull)
+                .filter(clusterId -> !AgentDataScopeContext.isActive()
+                        || AgentDataScopeContext.isAllowed(clusterId, database))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         if (clusterIds.size() > 1) {
-            throw new IllegalArgumentException("database `" + database + "` 命中了多个 cluster_id");
+            throw new IllegalArgumentException("database `" + database + "` 命中了多个 cluster_id " + clusterIds
+                    + "，请在智能体的数据范围中限定数据源");
         }
         return clusterIds.stream().findFirst().orElse(null);
     }
@@ -994,6 +1008,8 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         Set<Long> clusterIds = dbUsers.stream()
                 .map(DorisDbUser::getClusterId)
                 .filter(Objects::nonNull)
+                .filter(clusterId -> !AgentDataScopeContext.isActive()
+                        || AgentDataScopeContext.isAllowed(clusterId, database))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         if (clusterIds.size() > 1) {
             throw new IllegalArgumentException("database `" + database + "` 在 doris_database_users 中命中了多个 cluster_id");
@@ -1082,7 +1098,24 @@ public class BackendAgentMetadataService implements AgentMetadataService {
     }
 
     private String engineForSourceType(String sourceType) {
-        return "MYSQL".equals(normalizeSourceType(sourceType)) ? "mysql" : "doris";
+        String normalized = normalizeSourceType(sourceType);
+        if ("MYSQL".equals(normalized)) {
+            return "mysql";
+        }
+        if ("POSTGRESQL".equals(normalized)) {
+            return "postgresql";
+        }
+        if ("DORIS".equals(normalized)) {
+            return "doris";
+        }
+        throw new IllegalArgumentException("数据源类型 " + normalized + " 暂不支持智能查询");
+    }
+
+    private int defaultPortForEngine(String engine) {
+        if ("mysql".equals(engine)) {
+            return 3306;
+        }
+        return "postgresql".equals(engine) ? 5432 : 9030;
     }
 
     private String extractActualTableName(String database, String tableName) {

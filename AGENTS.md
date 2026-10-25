@@ -106,6 +106,7 @@ When working in this repository, optimize for:
 - `docs/plans`: execution plans paired with design documents
 - `docs/handbook`: long-lived handbook and feature documentation
 - `docs/reports`: reports, validation notes, and post-change summaries
+- `docs/TODO.md`: the single backlog of confirmed but deferred work
 
 ## Working Rules
 
@@ -140,6 +141,14 @@ When working in this repository, optimize for:
 - Applicability:
   - repository-wide rules apply to the whole repo
   - modules may define stricter local rules in addenda, but may not weaken the repository-wide rules
+
+## Backlog
+
+- `docs/TODO.md` is the single place for deferred work. Record every confirmed follow-up there: items a review or verification found but the current change does not fix, known gaps of a shipped feature, pre-existing failures noticed in passing, and environment blockers that left verification undone.
+- Do not leave deferred work only in code comments, commit messages, chat summaries, or scattered TODO files.
+- Each entry states the current state, what needs to be done, and its source with the date it was found, and links the related design, plan, or report.
+- Before starting a backlog item, check whether it is medium or large; if so, write the design and plan first and link them from the entry.
+- When an item is done, move it to the "已完成" section of `docs/TODO.md` with a link to the result instead of deleting it.
 
 ## Module Addenda
 

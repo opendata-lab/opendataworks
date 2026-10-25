@@ -1507,6 +1507,21 @@ def _skill_version_from_front_matter(skill_md: Path) -> str:
     return _front_matter_value(skill_md, "version")
 
 
+def _skill_tree_digest(root: Path) -> str:
+    """Hash every file's relative path and bytes, so two copies of a Skill
+    compare equal exactly when their contents match.
+
+    The SKILL.md standard has no ``version`` field, so re-import decides
+    "nothing changed" from content rather than from front matter.
+    """
+    digest = hashlib.sha256()
+    for path in sorted(item for item in root.rglob("*") if item.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
 def _resolve_imported_skill_root(extract_root: Path) -> tuple[Path, str]:
     root_skill_md = extract_root / "SKILL.md"
     if root_skill_md.is_file():
@@ -1563,8 +1578,8 @@ def import_skill_from_zip(file_name: str, content: bytes) -> dict[str, Any]:
             if not target.is_dir() or target.is_symlink():
                 raise ValueError("invalid skill folder path")
             previous_version = _skill_version_from_front_matter(target / "SKILL.md")
-            if incoming_version == previous_version:
-                raise ValueError("同名 Skill 已存在且版本相同，请更新 SKILL.md front matter 中的 version 后重新导入")
+            if _skill_tree_digest(skill_root) == _skill_tree_digest(target):
+                raise ValueError("同名 Skill 已存在且内容完全相同，无需重新导入")
             shutil.rmtree(target)
             replaced = True
         target.parent.mkdir(parents=True, exist_ok=True)

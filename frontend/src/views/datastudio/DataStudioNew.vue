@@ -446,11 +446,21 @@ const getTableSourceType = (table) => {
     .toUpperCase()
 }
 
+// 表名、注释、字段和删表会改物理表，只有 Doris/MySQL 有对应的表引擎处理器。
+// 返回禁用原因，空字符串表示可以操作。
+const STRUCTURE_EDIT_SOURCE_TYPES = ['DORIS', 'MYSQL']
+const structureEditBlockedReason = (table) => {
+  const sourceType = getTableSourceType(table)
+  if (sourceType === 'POSTGRESQL') return 'PostgreSQL 暂不支持在线修改表结构，请在数据库中修改后重新同步元数据'
+  if (sourceType) return STRUCTURE_EDIT_SOURCE_TYPES.includes(sourceType) ? '' : `${sourceType} 暂不支持在线修改表结构`
+  // 类型未知：未同步的平台表不涉及物理结构；已同步的表要等数据源信息加载后再判断
+  return table?.isSynced === 1 ? '数据源信息未加载，请刷新数据源后再操作' : ''
+}
+
 const isDorisTable = (table) => {
   if (!table) return false
   const sourceType = getTableSourceType(table)
-  if (sourceType === 'MYSQL') return false
-  if (sourceType === 'DORIS') return true
+  if (sourceType) return sourceType === 'DORIS'
   if (table.isSynced === 1) return true
   return (
     hasText(table.tableModel) ||
@@ -647,6 +657,7 @@ const {
   loadDdl,
   layerOptions,
   warnPlatformMetadataMissing,
+  structureEditBlockedReason,
 })
 
 watch(
@@ -733,6 +744,7 @@ watch(
   handleMetaBusinessDomainChange,
   isDorisTable,
   getTableSourceType,
+  structureEditBlockedReason,
   isPlatformMetadataMissing,
   isAggregateTable,
   isReplicaWarning,

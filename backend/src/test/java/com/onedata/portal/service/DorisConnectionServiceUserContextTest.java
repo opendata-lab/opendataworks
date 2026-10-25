@@ -99,25 +99,34 @@ class DorisConnectionServiceUserContextTest {
     }
 
     @Test
-    void testGetConnectionFallbackToClusterCredentialOnError() throws Exception {
-        // 设置用户上下文
+    void testGetConnectionRejectsDeniedMappingInsteadOfFallingBack() throws Exception {
         UserContext userContext = new UserContext("user456", "anotheruser", "user", "local");
         UserContextHolder.setContext(userContext);
 
-        // Mock用户映射服务抛出异常
+        // 该库登记了映射账号但用户未授权：必须拒绝，不能退回数据源账号
         when(userMappingService.getDorisCredential("user456", 1L, "test_db"))
-                .thenThrow(new RuntimeException("User has no permission"));
+                .thenThrow(new RuntimeException("用户没有访问数据库 test_db 的权限"));
 
-        // 调用getConnection应该回退到集群默认凭据
+        RuntimeException error = assertThrows(RuntimeException.class,
+                () -> dorisConnectionService.getConnection(1L, "test_db"));
+        assertTrue(error.getMessage().contains("没有访问数据库"));
+    }
+
+    @Test
+    void testGetConnectionUsesClusterCredentialWhenNoMappedAccount() throws Exception {
+        UserContext userContext = new UserContext("user456", "anotheruser", "user", "local");
+        UserContextHolder.setContext(userContext);
+
+        // 该库未登记映射账号：使用数据源账号，映射服务只被询问一次
+        when(userMappingService.getDorisCredential("user456", 1L, "test_db")).thenReturn(null);
+
         try {
             dorisConnectionService.getConnection(1L, "test_db");
         } catch (Exception e) {
-            // 预期会失败，因为没有真实的Doris服务器
+            // 没有真实的 Doris 服务器，连接本身会失败
+            assertFalse(e.getMessage() != null && e.getMessage().contains("没有访问数据库"));
         }
-
-        // 验证UserMappingService被调用了
-        verify(userMappingService, times(1))
-                .getDorisCredential("user456", 1L, "test_db");
+        verify(userMappingService, times(1)).getDorisCredential("user456", 1L, "test_db");
     }
 
     @Test

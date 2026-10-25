@@ -52,6 +52,7 @@
 - 用途：根据 database 判断 engine 和 datasource 摘要。
 - 必须满足：`--database` 必填，值直接取自已确认 database/schema。
 - 成功一次后不要重复调用。
+- 返回的 `engine` 决定 SQL 方言：`mysql`/`doris` 用反引号标识符；`postgresql` 用双引号标识符，`database` 对应该 PostgreSQL 库内的 schema，日期函数等按 PostgreSQL 写法（如 `date_trunc`、`interval '30 days'`）。
 - 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/resolve_datasource.py" --database <database>`
 
 ## get_lineage.py
@@ -87,7 +88,7 @@
   - `result_state=success`：已拿到真实结果，直接收口回答。
   - `result_state=empty_result`：查询成功但无数据，说明口径和空结果，不换表试探。
   - `result_state=failed`：按 `error_code`、`failure_attribution`、`stop_reason` 说明原因。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/run_sql.py" --database <db> --engine <mysql|doris> --sql "<SQL>"`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/run_sql.py" --database <db> --engine <mysql|doris|postgresql> --sql "<SQL>"`
 - 注意：`run_sql.py` 与 `portal_query_readonly` 的结果会进模型上下文，受结果字节守卫（默认 512KB）约束；超限会返回 `truncated_by_size=true` 与 `error_code=result_truncated`。大结果或要落盘时改用 `export_query.py`。
 
 ## export_query.py
@@ -98,7 +99,7 @@
 - 行数上限：默认且最大 10000 行；命中上限时 `has_more=true`，应改用更精确的过滤或聚合。
 - 后续处理：模型用 Bash/Python 读取返回的 `file_path`（CSV）再生成最终文件，不要把 CSV 内容整体读进上下文。
 - 落盘位置：所有要交付给用户、可下载的产物（CSV/Excel/HTML/图片等）必须写到工作区的 `output/` 目录下（如 `output/result.csv`）。只有 `output/` 与 `uploads/` 目录下的文件会出现在会话文件面板并可下载；写到工作区根目录或其他子目录的文件视为临时草稿，不会展示也不可下载。
-- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/export_query.py" --database <db> --engine <mysql|doris> --sql "<SQL>" --output output/<name>.csv`
+- 命令模板：`"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/opendataworks-platform-tools/scripts/export_query.py" --database <db> --engine <mysql|doris|postgresql> --sql "<SQL>" --output output/<name>.csv`
 
 ## 图表与报告
 

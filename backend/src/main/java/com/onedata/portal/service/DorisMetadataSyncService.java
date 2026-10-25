@@ -423,14 +423,14 @@ public class DorisMetadataSyncService {
      * 稽核指定集群的所有元数据（只比对不同步）
      */
     public AuditResult auditAllMetadata(Long clusterId) {
-        resolveCluster(clusterId);
+        DorisCluster cluster = resolveCluster(clusterId);
         AuditResult result = new AuditResult();
         log.info("Starting metadata audit for cluster: {}", clusterId);
 
         try {
             // 获取所有数据库
             List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
-                    .filter(db -> !IGNORED_DATABASES.contains(db))
+                    .filter(db -> "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType()) || !IGNORED_DATABASES.contains(db))
                     .collect(Collectors.toList());
             log.info("Found {} databases to audit (filtered)", databases.size());
 
@@ -743,7 +743,7 @@ public class DorisMetadataSyncService {
         try {
             // 获取所有数据库
             List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
-                    .filter(db -> !IGNORED_DATABASES.contains(db))
+                    .filter(db -> "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType()) || !IGNORED_DATABASES.contains(db))
                     .collect(Collectors.toList());
             log.info("Found {} databases to sync", databases.size());
 
@@ -773,13 +773,13 @@ public class DorisMetadataSyncService {
      */
     @Transactional(rollbackFor = Exception.class)
     public SyncResult syncAllStatistics(Long clusterId) {
-        resolveCluster(clusterId);
+        DorisCluster cluster = resolveCluster(clusterId);
         SyncResult result = new SyncResult();
         log.info("Starting metadata statistics sync for cluster: {}", clusterId);
 
         try {
             List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
-                    .filter(db -> !IGNORED_DATABASES.contains(db))
+                    .filter(db -> "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType()) || !IGNORED_DATABASES.contains(db))
                     .collect(Collectors.toList());
 
             for (String database : databases) {

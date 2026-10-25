@@ -29,7 +29,7 @@
                 <el-button v-else-if="canEditCurrentTab" data-test="action-edit" type="primary" size="small" :disabled="isDemoMode" @click="startCurrentEdit"><svg class="metadata-action-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="m15 5 4 4M4 20l4-1L20 7a2.83 2.83 0 0 0-4-4L4 15v5ZM12 20h8" /></svg>编辑</el-button>
                 <el-dropdown trigger="click">
                   <el-button size="small" text aria-label="更多对象操作" title="更多对象操作"><el-icon><MoreFilled /></el-icon></el-button>
-                  <template #dropdown><el-dropdown-menu><el-dropdown-item data-test="action-delete" :disabled="isDemoMode || !!editDisabledReason" @click="handleDeleteTable"><span class="delete-object-action">删除表</span></el-dropdown-item></el-dropdown-menu></template>
+                  <template #dropdown><el-dropdown-menu><el-dropdown-item data-test="action-delete" :disabled="isDemoMode || !!deleteDisabledReason" :title="deleteDisabledReason" @click="handleDeleteTable"><span class="delete-object-action">删除表</span></el-dropdown-item></el-dropdown-menu></template>
                 </el-dropdown>
               </template>
             </div>
@@ -189,6 +189,7 @@ const {
   activeTab,
   tabStates,
   isDorisTable,
+  structureEditBlockedReason,
   isPlatformMetadataMissing,
   syncMissingTableMetadata,
   copyDdl,
@@ -274,8 +275,14 @@ const editDisabledReason = computed(() => {
   if (!canEditCurrentTab.value) return ''
   if (isPlatformMetadataMissing(state.value?.table)) return '请先同步到平台元数据后再操作'
   if (isDorisTable(state.value?.table) && !getObjectSourceId(state.value?.table, clusterId.value)) return '请选择 Doris 集群后再操作'
+  if (state.value?.metaTab === 'columns') return structureEditBlockedReason(state.value?.table)
   return ''
 })
+
+// 删表会删除物理表，不受当前 tab 影响
+const deleteDisabledReason = computed(() =>
+  editDisabledReason.value || structureEditBlockedReason(state.value?.table)
+)
 
 const startCurrentEdit = () => {
   if (state.value?.metaTab === 'columns') startFieldsEdit(activeTabId.value)

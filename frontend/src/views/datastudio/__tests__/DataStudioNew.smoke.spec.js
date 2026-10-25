@@ -106,6 +106,24 @@ describe('DataStudioNew runtime mount smoke', () => {
     expect(wrapper.find('.data-studio, .datastudio, [class]').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('keeps synced PostgreSQL objects out of Doris-only panels and operations', () => {
+    const wrapper = shallowMount(DataStudioNew, { global: {
+      stubs: { PersistentTabs: true, TaskEditDrawer: true, DataStudioResultGrid: true, DataStudioRightPanel: true, SqlEditor: true, CreateTableDrawer: true },
+      config: { warnHandler: () => {} }, directives: { loading: {} },
+    } })
+    const state = wrapper.vm.$.setupState
+    expect(state.isDorisTable({ sourceType: 'POSTGRESQL', isSynced: 1 })).toBe(false)
+    expect(state.isDorisTable({ sourceType: 'MYSQL', isSynced: 1 })).toBe(false)
+    expect(state.isDorisTable({ sourceType: 'DORIS', isSynced: 1 })).toBe(true)
+    // 只有 Doris/MySQL 能改物理结构；类型未知的已同步表不放行，未同步的平台表不涉及物理结构
+    expect(state.structureEditBlockedReason({ sourceType: 'POSTGRESQL', isSynced: 1 })).toContain('PostgreSQL')
+    expect(state.structureEditBlockedReason({ sourceType: 'MYSQL', isSynced: 1 })).toBe('')
+    expect(state.structureEditBlockedReason({ sourceType: 'DORIS', isSynced: 1 })).toBe('')
+    expect(state.structureEditBlockedReason({ isSynced: 1 })).toContain('数据源信息未加载')
+    expect(state.structureEditBlockedReason({ isSynced: 0 })).toBe('')
+    wrapper.unmount()
+  })
   it('incoming table link wins over restored tabs during delayed connection loading, preserving cached SQL', async () => {
     const target = { id: 20, tableName: 'target_table', dbName: 'db', clusterId: 3, sourceType: 'MYSQL', isSynced: 1 }
     routeState.query = { clusterId: '3', database: 'db', tableId: '20', tableName: 'target_table', tab: '3::db.target_table' }

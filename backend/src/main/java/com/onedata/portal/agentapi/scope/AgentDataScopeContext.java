@@ -120,6 +120,24 @@ public final class AgentDataScopeContext {
         }
     }
 
+    /**
+     * 与 {@link #requireSqlSchemaAllowed} 相同，但不做 trim：调用方已经按引擎规则得出实际名称，
+     * 带引号名称中的空白属于名称本身。
+     */
+    public static void requireSqlSchemaAllowedExactly(String schema) {
+        if (!isActive()) {
+            return;
+        }
+        if (schema != null && !schema.isEmpty()) {
+            for (DataScopeItem item : currentScopes()) {
+                if (schema.equals(item.getDatabase())) {
+                    return;
+                }
+            }
+        }
+        throw new IllegalArgumentException("数据范围限制: SQL 引用了未授权 schema `" + schema + "`");
+    }
+
     public static List<String> allowedDatabases() {
         if (!isActive()) {
             return Collections.emptyList();

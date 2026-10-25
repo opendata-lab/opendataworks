@@ -1,5 +1,11 @@
 <template>
   <el-dialog v-model="visible" title="智能元数据" width="960px" append-to-body :close-on-click-modal="false">
+    <p v-if="targetMissing" class="smd-blocked" data-test="smd-target-missing">
+      对应的表已关闭，这些建议无法写回。请重新打开该表后再生成。
+    </p>
+    <p v-if="result && commentBlockedReason" class="smd-blocked" data-test="smd-comment-blocked">
+      {{ commentBlockedReason }}。字段描述和表描述建议只供参考，不会写回；平台属性和新鲜度仍可采纳。
+    </p>
     <el-tabs v-if="result" v-model="tab">
       <el-tab-pane label="字段描述" name="fields">
         <div class="smd-toolbar">
@@ -24,7 +30,7 @@
             </template>
             <template #default="{ row, $index }">
               <span class="smd-select-cell">
-                <el-checkbox v-model="selected[row.fieldName]" :disabled="!row.hasRecommendation" />
+                <el-checkbox v-model="selected[row.fieldName]" :disabled="!row.hasRecommendation || !!commentBlockedReason" />
                 <span class="smd-idx">{{ $index + 1 }}</span>
               </span>
             </template>
@@ -66,7 +72,7 @@
           </div>
           <div class="smd-line">
             <span class="smd-label">
-              <el-checkbox v-model="adoptTable" :disabled="!result.table.hasRecommendation" />
+              <el-checkbox v-model="adoptTable" :disabled="!result.table.hasRecommendation || !!commentBlockedReason" />
               生成推荐描述
             </span>
             <el-input
@@ -129,7 +135,7 @@
         <span>
           <el-button :loading="metadataGenerating" @click="regenerate">重新生成</el-button>
           <el-button @click="visible = false">取消</el-button>
-          <el-button type="primary" :loading="metadataAdopting" :disabled="totalSelected === 0" @click="onAdopt">
+          <el-button type="primary" :loading="metadataAdopting" :disabled="totalSelected === 0 || targetMissing" @click="onAdopt">
             采纳
           </el-button>
         </span>
@@ -155,10 +161,17 @@ const {
   metadataGenerating,
   adoptMetadata,
   generateMetadata,
-  activeTab
+  activeTab,
+  tabStates,
+  structureEditBlockedReason
 } = ctx
 
 const result = computed(() => metadataResult.value)
+const currentTabId = () => String(result.value?.tabId || activeTab.value || '')
+// 生成期间关闭了原 tab 时，建议已无处写回
+const targetMissing = computed(() => !!result.value && !tabStates[currentTabId()]?.table)
+// 表描述和字段描述会改物理注释；不支持时只采纳平台属性和新鲜度
+const commentBlockedReason = computed(() => structureEditBlockedReason(tabStates[currentTabId()]?.table))
 const visible = computed({
   get: () => metadataDialogVisible.value,
   set: (value) => {
@@ -185,10 +198,11 @@ watch(
       selectedAttrs[item.key] = item.hasRecommendation
     })
     localFields.value = (value?.fields || []).map((field) => ({ ...field, editedComment: field.suggestedComment }))
+    const commentsAdoptable = !commentBlockedReason.value
     localFields.value.forEach((field) => {
-      selected[field.fieldName] = field.hasRecommendation
+      selected[field.fieldName] = field.hasRecommendation && commentsAdoptable
     })
-    adoptTable.value = !!value?.table?.hasRecommendation
+    adoptTable.value = !!value?.table?.hasRecommendation && commentsAdoptable
     tableText.value = value?.table?.suggestedComment || ''
     adoptFreshness.value = !!value?.freshness?.hasRecommendation
     tab.value = 'fields'
@@ -204,7 +218,9 @@ const visibleFields = computed(() =>
   })
 )
 
-const selectableVisible = computed(() => visibleFields.value.filter((field) => field.hasRecommendation))
+const selectableVisible = computed(() =>
+  commentBlockedReason.value ? [] : visibleFields.value.filter((field) => field.hasRecommendation)
+)
 
 const allSelected = computed(
   () => selectableVisible.value.length > 0 && selectableVisible.value.every((field) => selected[field.fieldName])
@@ -222,7 +238,13 @@ const toggleAll = (value) => {
 }
 
 const selectedFields = computed(() =>
-  localFields.value.filter((field) => field.hasRecommendation && selected[field.fieldName])
+  commentBlockedReason.value
+    ? []
+    : localFields.value.filter((field) => field.hasRecommendation && selected[field.fieldName])
+)
+
+const adoptTableActive = computed(
+  () => adoptTable.value && !!result.value?.table?.hasRecommendation && !commentBlockedReason.value
 )
 
 const selectedAttributes = computed(() =>
@@ -237,15 +259,14 @@ const totalSelected = computed(
   () =>
     selectedFields.value.length +
     selectedAttributes.value.length +
-    (adoptTable.value && result.value?.table?.hasRecommendation ? 1 : 0) +
+    (adoptTableActive.value ? 1 : 0) +
     (adoptFreshnessActive.value ? 1 : 0)
 )
 
-const currentTabId = () => String(result.value?.tabId || activeTab.value || '')
 
 const onAdopt = () => {
   adoptMetadata(currentTabId(), {
-    table: adoptTable.value && result.value?.table?.hasRecommendation ? { text: tableText.value } : null,
+    table: adoptTableActive.value ? { text: tableText.value } : null,
     attributes: selectedAttributes.value.map((item) => ({ key: item.key, value: item.suggestedValue })),
     freshness: adoptFreshnessActive.value ? result.value.freshness.suggested : null,
     fields: selectedFields.value.map((field) => ({ fieldName: field.fieldName, text: field.editedComment }))
@@ -256,6 +277,11 @@ const regenerate = () => generateMetadata(currentTabId(), { force: true })
 </script>
 
 <style scoped>
+.smd-blocked {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 13px;
+}
 .smd-toolbar {
   display: flex;
   align-items: center;

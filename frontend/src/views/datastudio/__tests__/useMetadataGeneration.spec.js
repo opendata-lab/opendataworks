@@ -54,7 +54,8 @@ const buildDeps = () => {
     taskApi: { getById: vi.fn() },
     loadDdl: vi.fn(),
     layerOptions: [{ value: 'ODS' }, { value: 'DWD' }],
-    warnPlatformMetadataMissing: () => false
+    warnPlatformMetadataMissing: () => false,
+    structureEditBlockedReason: () => ''
   }
 }
 
@@ -230,6 +231,25 @@ describe('useMetadataGeneration agent 解析', () => {
       'object-source'
     )
     expect(deps.tabStates.t1.table.layer).toBe('DWD')
+  })
+
+  it('数据源不支持改物理注释时丢弃表/字段描述，仍保存平台属性', async () => {
+    tableApiMock.update.mockResolvedValue({ layer: 'DWD' })
+    tableApiMock.getFields.mockResolvedValue([])
+    const deps = buildDeps()
+    deps.structureEditBlockedReason = () => 'PostgreSQL 暂不支持在线修改表结构'
+    const { adoptMetadata } = useMetadataGeneration(deps)
+
+    await adoptMetadata('t1', {
+      table: { text: '订单表' },
+      attributes: [{ key: 'layer', value: 'DWD' }],
+      fields: [{ fieldName: 'status', text: '状态' }]
+    })
+
+    expect(tableApiMock.updateComment).not.toHaveBeenCalled()
+    expect(tableApiMock.updateField).not.toHaveBeenCalled()
+    expect(tableApiMock.update).toHaveBeenCalledWith(1, { layer: 'DWD' }, 'object-source')
+    expect(elMessageMock.success).toHaveBeenCalled()
   })
 
   it('表无分层且未采纳分层时给出明确提示，不调用 update', async () => {

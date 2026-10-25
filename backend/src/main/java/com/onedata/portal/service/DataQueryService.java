@@ -13,6 +13,7 @@ import com.onedata.portal.dto.SqlQueryResultSet;
 import com.onedata.portal.entity.DataQueryHistory;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DataQueryHistoryMapper;
+import com.onedata.portal.util.JdbcValues;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -815,7 +816,7 @@ public class DataQueryService {
                 }
                 Map<String, Object> row = new LinkedHashMap<>();
                 for (int i = 1; i <= columnCount; i++) {
-                    row.put(columns.get(i - 1), resultSet.getObject(i));
+                    row.put(columns.get(i - 1), JdbcValues.read(resultSet, i));
                 }
                 rows.add(row);
                 rowIndex++;

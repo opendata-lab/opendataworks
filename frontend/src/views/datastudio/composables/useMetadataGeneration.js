@@ -84,7 +84,8 @@ export function useMetadataGeneration({
   taskApi,
   loadDdl,
   layerOptions,
-  warnPlatformMetadataMissing
+  warnPlatformMetadataMissing,
+  structureEditBlockedReason
 }) {
   const metadataGenerating = ref(false)
   const metadataAdopting = ref(false)
@@ -336,7 +337,11 @@ export function useMetadataGeneration({
   const adoptMetadata = async (tabId, payload = {}) => {
     const state = tabStates[tabId]
     if (!state?.table?.id) return
-    const { table = null, attributes = [], freshness = null, fields = [] } = payload
+    const { attributes = [], freshness = null } = payload
+    // 表描述和字段描述会改物理注释：数据源不支持时丢弃，平台属性和新鲜度照常写回
+    const commentsBlocked = !!structureEditBlockedReason(state.table)
+    const table = commentsBlocked ? null : payload.table || null
+    const fields = commentsBlocked ? [] : payload.fields || []
     const sourceId = getObjectSourceId(state.table, clusterId.value)
 
     metadataAdopting.value = true

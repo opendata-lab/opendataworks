@@ -9,6 +9,10 @@ public class AgentDatasourceResolution {
     private String engine;
     private String database;
 
+    /** PostgreSQL 连接的 database；database 字段对应其中的 schema。 */
+    @JsonIgnore
+    private String connectionDatabase;
+
     @JsonIgnore
     private String host;
 

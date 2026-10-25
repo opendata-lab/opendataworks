@@ -6,7 +6,7 @@ vi.mock('@/api/query', () => ({ dataQueryApi: { analyze: vi.fn(), execute: vi.fn
 
 import { dataQueryApi } from '@/api/query'
 
-import { useQueryExecution } from '../composables/useQueryExecution'
+import { buildDefaultSql, useQueryExecution } from '../composables/useQueryExecution'
 
 // 在真实组件实例内运行 composable，使 onBeforeUnmount/watch 合法
 function withSetup(composable) {
@@ -69,6 +69,13 @@ beforeEach(() => {
   })
 
 describe('useQueryExecution (pure helpers + state)', () => {
+
+  it('generates PostgreSQL SELECT with escaped double-quoted identifiers', () => {
+    expect(buildDefaultSql({ sourceType: 'POSTGRESQL', dbName: 'public', tableName: 'order"items' }))
+      .toBe('SELECT *\nFROM "public"."order""items"\nLIMIT 200;')
+    expect(buildDefaultSql({ sourceType: 'MYSQL', dbName: 'db', tableName: 'orders' }))
+      .toBe('SELECT *\nFROM `db`.`orders`\nLIMIT 200;')
+  })
 
 
   it('isResultSetType treats default/RESULT_SET as a result set, UPDATE_COUNT as not', () => {

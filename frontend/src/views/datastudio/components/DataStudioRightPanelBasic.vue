@@ -5,7 +5,14 @@
         <h3>对象定义</h3>
         <el-descriptions :column="1" size="small" class="meta-descriptions overview-descriptions">
         <el-descriptions-item label="表名">
-          <el-input v-if="state.metaEditing" v-model="state.metaForm.tableName" size="small" class="meta-input" />
+          <el-input
+            v-if="state.metaEditing"
+            v-model="state.metaForm.tableName"
+            size="small"
+            class="meta-input"
+            :disabled="!!physicalEditBlockedReason"
+            :title="physicalEditBlockedReason"
+          />
           <span v-else>{{ state.table.tableName || '-' }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="数据库">
@@ -17,6 +24,8 @@
             v-model="state.metaForm.tableComment"
             size="small"
             class="meta-input"
+            :disabled="!!physicalEditBlockedReason"
+            :title="physicalEditBlockedReason"
           />
           <span v-else>{{ state.table.tableComment || '-' }}</span>
         </el-descriptions-item>
@@ -147,6 +156,7 @@ const {
   businessDomainOptions,
   getMetaDataDomainOptions,
   handleMetaBusinessDomainChange,
+  structureEditBlockedReason,
   formatDateTime,
 } = ctx
 
@@ -157,6 +167,8 @@ const state = computed(() => {
   return tabStates[id] || null
 })
 const dataDomainOptions = computed(() => getMetaDataDomainOptions(activeTabId.value))
+// 表名和表注释会改物理表；不支持时只读，分层、业务域等平台属性仍可编辑
+const physicalEditBlockedReason = computed(() => structureEditBlockedReason(state.value?.table))
 const trendDialogRef = ref(null)
 
 // 根据面板实际宽度决定列数；无边框布局为短属性留出两列空间。
