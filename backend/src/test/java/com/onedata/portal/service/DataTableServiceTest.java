@@ -81,6 +81,7 @@ class DataTableServiceTest {
                 dataLineageMapper,
                 dorisClusterMapper,
                 tableEngineHandlerRegistry,
+                DatasourceAdapterFixtures.registry(new com.onedata.portal.config.DorisJdbcProperties()),
                 tableMetadataVersionService,
                 taskLineageWriteService);
     }

@@ -56,6 +56,7 @@ public class DataTableService {
     private final DataLineageMapper dataLineageMapper;
     private final DorisClusterMapper dorisClusterMapper;
     private final TableEngineHandlerRegistry tableEngineHandlerRegistry;
+    private final com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry datasourceAdapterRegistry;
     private final TableMetadataVersionService tableMetadataVersionService;
     private final TaskLineageWriteService taskLineageWriteService;
 
@@ -1016,10 +1017,8 @@ public class DataTableService {
         if (cluster == null) {
             throw new RuntimeException("数据源不存在: " + actualClusterId);
         }
+        datasourceAdapterRegistry.requireCapability(cluster.getSourceType(), "structureEdit");
         DatasourceType sourceType = DatasourceType.from(cluster.getSourceType());
-        if (sourceType == DatasourceType.POSTGRESQL) {
-            throw new RuntimeException("PostgreSQL 暂不支持在线修改表结构（表名、注释、字段、删表），请在数据库中修改后重新同步元数据");
-        }
         TableEngineHandler handler = tableEngineHandlerRegistry.require(sourceType);
         return new ResolvedTableEngine(handler, actualClusterId);
     }

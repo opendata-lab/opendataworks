@@ -83,10 +83,7 @@ const normalizeResultSetsForDisplay = (resultSets, tabId) => {
 }
 
 export function buildDefaultSql(table) {
-  if (!table?.dbName || !table?.tableName) return ''
-  const quote = table.sourceType?.toUpperCase() === 'POSTGRESQL' ? '"' : '`'
-  const quoteIdentifier = value => quote + String(value).replaceAll(quote, quote + quote) + quote
-  return `SELECT *\nFROM ${quoteIdentifier(table.dbName)}.${quoteIdentifier(table.tableName)}\nLIMIT 200;`
+  return table?.defaultQuery || ''
 }
 
 const parseAutoSelectSql = (sql) => {
@@ -231,6 +228,7 @@ export function useQueryExecution({
 
     state.table.dbName = ''
     state.table.tableName = ''
+    state.table.defaultQuery = ''
     state.table.id = undefined
     tab.dbName = ''
 
@@ -278,6 +276,7 @@ export function useQueryExecution({
     tab.dbName = dbName
 
     state.table.tableName = ''
+    state.table.defaultQuery = ''
     state.table.id = undefined
 
     const sourceId = String(state.table.sourceId || tab.sourceId || '')

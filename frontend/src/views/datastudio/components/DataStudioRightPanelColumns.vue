@@ -72,7 +72,7 @@
             <template #default="{ row }">
               <template v-if="state.fieldsEditing">
                 <el-tooltip v-if="isPrimaryKeyLocked(row)"
-                  :content="isDorisTable(state.table) ? 'Doris 不支持在线修改主键列' : 'MySQL 暂不支持在线修改已有字段的主键'" placement="top">
+                  :content="state.table.typeDefinition?.capabilities?.existingPrimaryKeyEdit?.reason || '当前数据源不支持修改主键列'" placement="top">
                   <span>
                     <el-switch v-model="row.isPrimary" :active-value="1" :inactive-value="0" size="small" disabled />
                   </span>
@@ -210,7 +210,8 @@ const state = computed(() => {
   if (!id) return null
   return tabStates[id] || null
 })
-const isPrimaryKeyLocked = (row) => isDorisTable(state.value?.table) ||
+const isPrimaryKeyLocked = (row) =>
+  (state.value?.table?.typeDefinition && !state.value.table.typeDefinition.capabilities?.newPrimaryKeyEdit?.supported) ||
   isMysqlPrimaryKeyLocked(state.value?.table, row, getTableSourceType?.(state.value?.table))
 const fieldRows = computed(() => getFieldRows(activeTabId.value))
 

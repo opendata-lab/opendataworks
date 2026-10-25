@@ -157,6 +157,8 @@
 </template>
 
 <script setup>
+import { capabilityReason } from '@/utils/datasourceTypes'
+
 import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -446,31 +448,12 @@ const getTableSourceType = (table) => {
     .toUpperCase()
 }
 
-// 表名、注释、字段和删表会改物理表，只有 Doris/MySQL 有对应的表引擎处理器。
-// 返回禁用原因，空字符串表示可以操作。
-const STRUCTURE_EDIT_SOURCE_TYPES = ['DORIS', 'MYSQL']
-const structureEditBlockedReason = (table) => {
-  const sourceType = getTableSourceType(table)
-  if (sourceType === 'POSTGRESQL') return 'PostgreSQL 暂不支持在线修改表结构，请在数据库中修改后重新同步元数据'
-  if (sourceType) return STRUCTURE_EDIT_SOURCE_TYPES.includes(sourceType) ? '' : `${sourceType} 暂不支持在线修改表结构`
-  // 类型未知：未同步的平台表不涉及物理结构；已同步的表要等数据源信息加载后再判断
-  return table?.isSynced === 1 ? '数据源信息未加载，请刷新数据源后再操作' : ''
+const getTableDefinition = table => getDatasourceById(table?.sourceId || table?.clusterId)?.typeDefinition || table?.typeDefinition
+const structureEditBlockedReason = table => {
+  if (!table?.sourceId && !table?.clusterId && table?.isSynced !== 1) return ''
+  return capabilityReason(getTableDefinition(table), 'structureEdit')
 }
-
-const isDorisTable = (table) => {
-  if (!table) return false
-  const sourceType = getTableSourceType(table)
-  if (sourceType) return sourceType === 'DORIS'
-  if (table.isSynced === 1) return true
-  return (
-    hasText(table.tableModel) ||
-    hasPositiveNumber(table.bucketNum) ||
-    hasPositiveNumber(table.replicaNum) ||
-    hasText(table.distributionColumn) ||
-    hasText(table.keyColumns) ||
-    hasText(table.partitionColumn)
-  )
-}
+const isDorisTable = table => !!getTableDefinition(table)?.capabilities?.dorisProperties?.supported
 
 const MISSING_PLATFORM_METADATA_MESSAGE = '该表未同步到平台，需同步后才能操作'
 

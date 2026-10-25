@@ -48,8 +48,18 @@
 
 ### 数据源适配器架构
 
-- **现状**：提案阶段，见 [数据源适配器设计](design/2026-10-22-datasource-adapter-design.md) 和 [计划](plans/2026-10-22-datasource-adapter-plan.md)。
-- **待定**：驱动外置的范围。建议默认使用内置驱动，外置目录只作为覆盖或补充；第一阶段不强制 Doris/MySQL 驱动外置，避免现有部署升级后数据源全部失效。
+- **现状**（2026-10-25）：架构实施中，阶段一、二已落地（验证覆盖见报告），阶段三、四未实施，见 [数据源适配器设计](design/2026-10-22-datasource-adapter-design.md) 和 [计划](plans/2026-10-22-datasource-adapter-plan.md)。
+- **已决定**（2026-10-25）：内置驱动为主，保留 Doris/MySQL/PostgreSQL pom 依赖，升级无需目录或版本绑定迁移；外置目录仅可选补充新 JDBC 数据库或显式覆盖内置版本。
+- **后续**（来源：2026-10-25 阶段一、二范围取舍）：当前只检查驱动类可用性；需实现可选 manifest、独立 ClassLoader、Java/依赖/校验和检查、driverId 持久绑定及选择器，以双版本隔离验证平台连接不受影响。阶段三物理编辑扩展、阶段四 DataAgent 统一仍独立验收。见上述设计、计划及 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
+
+- **连接字段扩展**（来源：2026-10-25 代码风格复核）：第一阶段仅接受 `feHost`/`fePort`/`databaseName`/`username`/`password`，其他 key 会被注册表拒绝。后续支持适配器声明额外连接字段（如 Oracle service name、额外 JDBC 参数），须将配置存储、参数校验与前端表单一起设计，不只放宽 key 检查。见 [设计](design/2026-10-22-datasource-adapter-design.md) 和 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
+
+- **验证补齐**（来源：2026-10-25 阶段一、二验证）：真实 PostgreSQL 与 MySQL HTTP 已覆盖；数据源表单浏览器检查通过，Data Studio 字段/DDL/SQL 结果的完整浏览器闭环仍需补跑；本机没有可用 Doris 实例，需补跑 Doris 真实同步、预览、DDL、分区和新鲜度回归；DolphinScheduler 不可达的既有全量集成用例需在环境恢复后复跑。见 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
+
+### 完全关闭认证时的查询历史
+
+- **现状**（来源：2026-10-25 适配器 HTTP 冒烟）：设置 `odw.auth.enabled=false` 时没有用户上下文，查询历史 `executed_by` 为 NULL；历史接口使用 `executed_by = NULL` 筛选，记录已落库但列表为空。使用认证模块的本地匿名上下文后，同一执行与历史链路正常。
+- **要做**：单独统一关闭认证时的历史归属和查询语义，并补回归；本轮未修改认证和查询历史实现。见 [验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
 
 ## DataAgent 运行时与插件
 

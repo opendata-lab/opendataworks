@@ -1,3 +1,4 @@
+import { capabilityReason } from '@/utils/datasourceTypes'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { tableApi } from '@/api/table'
 import { getObjectSourceId } from '../objectSource'
@@ -213,6 +214,8 @@ export function useTableActions({
   const loadDdl = async (tabId) => {
     const state = tabStates[tabId]
     if (!state?.table) return
+    const blocked = capabilityReason(state.table.typeDefinition, 'ddlExport')
+    if (blocked) { state.ddlError = blocked; return }
     const sourceId = getObjectSourceId(state.table, clusterId.value)
     if (!sourceId) {
       ElMessage.warning('请选择数据源')

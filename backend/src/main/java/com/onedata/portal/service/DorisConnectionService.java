@@ -10,10 +10,12 @@ import com.onedata.portal.dto.TableStatistics;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import com.onedata.portal.util.DorisCreateTableUtils;
-import com.onedata.portal.util.JdbcUrlParts;
 import com.onedata.portal.util.JdbcValues;
-import com.onedata.portal.util.PostgresqlMetadataSql;
+import com.onedata.portal.util.DorisCreateTableUtils;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
+import com.onedata.portal.service.datasource.model.*;
+import com.onedata.portal.service.datasource.spi.*;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -37,11 +39,10 @@ public class DorisConnectionService {
     private final DorisClusterMapper dorisClusterMapper;
     private final DorisJdbcProperties dorisJdbcProperties;
     private final UserMappingService userMappingService;
+    private final DatasourceAdapterRegistry adapterRegistry;
     private static final Pattern NUMERIC_PATTERN = Pattern.compile("^-?\\d+(\\.\\d+)?$");
     private static final Pattern SIZE_WITH_UNIT_PATTERN = Pattern.compile("^([0-9]+(?:\\.[0-9]+)?)\\s*([KMGT]?B)?$",
             Pattern.CASE_INSENSITIVE);
-    private static final Set<String> SYSTEM_DATABASES = new HashSet<>(
-            Arrays.asList("information_schema", "mysql", "performance_schema", "sys"));
     /** 单列取值统计的查询超时（秒）：候选列可能有十几个，单列必须快速失败 */
     private static final int COLUMN_PROFILE_TIMEOUT_SECONDS = 20;
 
@@ -105,7 +106,9 @@ public class DorisConnectionService {
      */
     private Connection getConnection(DorisCluster cluster, String database) throws SQLException {
         String targetDb = StringUtils.hasText(database) ? database : dorisJdbcProperties.getDefaultDatabase();
-        String url = buildJdbcUrl(cluster, targetDb);
+        DatasourceAdapter adapter = adapterRegistry.require(cluster.getSourceType());
+        adapterRegistry.requireDriver(adapter);
+        String url = adapter.connectionSpec(config(cluster), targetDb).getUrl();
 
         // 尝试从用户上下文获取用户ID
         String userId = UserContextHolder.getCurrentUserId();
@@ -130,13 +133,7 @@ public class DorisConnectionService {
 
         Connection connection = DriverManager.getConnection(url, username, password);
         try {
-            if (isPostgresql(cluster)) {
-                if (StringUtils.hasText(database)) {
-                    connection.setSchema(database);
-                }
-            } else {
-                applySessionCharset(connection);
-            }
+            adapter.initializeSession(connection, database);
             return connection;
         } catch (SQLException | RuntimeException e) {
             try {
@@ -148,33 +145,16 @@ public class DorisConnectionService {
         }
     }
 
-    private String buildJdbcUrl(DorisCluster cluster, String database) {
-        if (isPostgresql(cluster)) {
-            if (!StringUtils.hasText(cluster.getDatabaseName())) {
-                throw new IllegalArgumentException("PostgreSQL 连接数据库不能为空");
-            }
-            return PostgresqlMetadataSql.jdbcUrl(cluster.getFeHost(), cluster.getFePort(), cluster.getDatabaseName());
-        }
-        String template = dorisJdbcProperties.getUrlTemplate();
-        if (!StringUtils.hasText(template)) {
-            throw new IllegalStateException("doris.jdbc.url-template 未配置，请在 application.yml 或环境变量中指定");
-        }
-        return String.format(template, JdbcUrlParts.requireHost(cluster.getFeHost()), cluster.getFePort(),
-                JdbcUrlParts.requireDatabase(database));
-    }
-
-    private boolean isPostgresql(DorisCluster cluster) {
-        return "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType());
+    private ConnectionConfig config(DorisCluster cluster) {
+        return new ConnectionConfig(cluster.getFeHost(), cluster.getFePort(), cluster.getUsername(), cluster.getDatabaseName());
     }
 
     private String quoteIdentifier(DorisCluster cluster, String identifier) {
-        return isPostgresql(cluster) ? PostgresqlMetadataSql.quoteIdentifier(identifier)
-                : "`" + identifier.replace("`", "``") + "`";
+        return adapterRegistry.require(cluster.getSourceType()).dialect().quoteIdentifier(identifier);
     }
 
-    private static Long nullableLong(ResultSet rs, String column) throws SQLException {
-        long value = rs.getLong(column);
-        return rs.wasNull() ? null : value;
+    public String defaultQuery(Long clusterId, String database, String tableName) {
+        return adapterRegistry.require(resolveCluster(clusterId).getSourceType()).dialect().defaultQuery(database, tableName, 200);
     }
 
     private DorisCluster resolveCluster(Long clusterId) {
@@ -191,8 +171,8 @@ public class DorisConnectionService {
     public Optional<TableRuntimeStats> getTableRuntimeStats(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
 
-        if (isPostgresql(cluster)) {
-            return Optional.empty(); // Catalog statistics are already included by getTablesInDatabase.
+        if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("dorisProperties")) {
+            return Optional.empty(); // Base catalog statistics are supplied by the adapter.
         }
 
         try (Connection connection = getConnection(cluster, null)) {
@@ -258,7 +238,7 @@ public class DorisConnectionService {
             return Optional.empty();
         }
         DorisCluster cluster = resolveCluster(clusterId);
-        if (isPostgresql(cluster)) {
+        if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("dorisProperties")) {
             return Optional.empty();
         }
         try (Connection connection = getConnection(cluster, null)) {
@@ -472,34 +452,6 @@ public class DorisConnectionService {
         }
     }
 
-    private void applySessionCharset(Connection connection) {
-        if (!dorisJdbcProperties.isSessionCharsetEnabled()) {
-            return;
-        }
-        String primaryCharset = dorisJdbcProperties.getSessionCharset();
-        if (!StringUtils.hasText(primaryCharset)) {
-            return;
-        }
-        try (Statement stmt = connection.createStatement()) {
-            stmt.execute("SET NAMES " + primaryCharset);
-        } catch (SQLException primaryEx) {
-            String fallbackCharset = dorisJdbcProperties.getSessionCharsetFallback();
-            if (!StringUtils.hasText(fallbackCharset) || fallbackCharset.equalsIgnoreCase(primaryCharset)) {
-                log.warn("Failed to set Doris session charset to {}. reason={}", primaryCharset,
-                        primaryEx.getMessage());
-                return;
-            }
-            log.warn("Doris does not support {} charset, fallback to {}. reason={}", primaryCharset, fallbackCharset,
-                    primaryEx.getMessage());
-            try (Statement fallback = connection.createStatement()) {
-                fallback.execute("SET NAMES " + fallbackCharset);
-            } catch (SQLException secondaryEx) {
-                log.warn("Failed to set Doris session charset to {}. reason={}", fallbackCharset,
-                        secondaryEx.getMessage());
-            }
-        }
-    }
-
     private String abbreviate(String sql) {
         if (!StringUtils.hasText(sql)) {
             return "";
@@ -679,71 +631,15 @@ public class DorisConnectionService {
      */
     public TableStatistics getTableStatistics(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
-
-        String sql = "SELECT " +
-                "TABLE_SCHEMA, " +
-                "TABLE_NAME, " +
-                "TABLE_TYPE, " +
-                "TABLE_COMMENT, " +
-                "CREATE_TIME, " +
-                "UPDATE_TIME, " +
-                "TABLE_ROWS, " +
-                "DATA_LENGTH, " +
-                "ENGINE " +
-                "FROM information_schema.tables " +
-                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
-
-        if (isPostgresql(cluster)) {
-            sql = PostgresqlMetadataSql.TABLES + " AND n.nspname = ? AND c.relname = ?";
-        }
-
-        try (Connection connection = getConnection(cluster, null);
-                PreparedStatement stmt = connection.prepareStatement(sql)) {
-
-            stmt.setString(1, database);
-            stmt.setString(2, tableName);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                if (rs.next()) {
-                    TableStatistics stats = new TableStatistics();
-                    stats.setDatabaseName(rs.getString("TABLE_SCHEMA"));
-                    stats.setTableName(rs.getString("TABLE_NAME"));
-                    stats.setTableType(rs.getString("TABLE_TYPE"));
-                    stats.setTableComment(rs.getString("TABLE_COMMENT"));
-
-                    Timestamp createTimestamp = rs.getTimestamp("CREATE_TIME");
-                    if (createTimestamp != null) {
-                        stats.setCreateTime(createTimestamp.toLocalDateTime());
-                    }
-
-                    Timestamp updateTimestamp = rs.getTimestamp("UPDATE_TIME");
-                    if (updateTimestamp != null) {
-                        stats.setLastUpdateTime(updateTimestamp.toLocalDateTime());
-                    }
-
-                    stats.setRowCount(nullableLong(rs, "TABLE_ROWS"));
-
-                    long dataSize = rs.getLong("DATA_LENGTH");
-                    stats.setDataSize(dataSize);
-                    stats.setDataSizeReadable(formatBytes(dataSize));
-
-                    stats.setEngine(rs.getString("ENGINE"));
-                    stats.setAvailable(true);
-                    stats.setLastCheckTime(LocalDateTime.now());
-
-                    // 获取分区和副本信息
-                    if (!isPostgresql(cluster)) {
-                        enrichTableDetails(connection, database, tableName, stats);
-                    }
-
-                    return stats;
-                }
+        try (Connection connection = getConnection(cluster, null)) {
+            for (TableMetadata table : adapterRegistry.require(cluster.getSourceType()).metadata().tables(connection, database)) {
+                if(!tableName.equals(table.getTableName())) continue;
+                TableStatistics stats = toStatistics(database, table);
+                if (adapterRegistry.require(cluster.getSourceType()).descriptor().supports("ddlExport"))
+                    enrichTableDetails(connection, database, tableName, stats);
+                return stats;
             }
-        } catch (SQLException e) {
-            log.error("Failed to get table statistics for {}.{}", database, tableName, e);
-            throw new RuntimeException("获取表统计信息失败: " + e.getMessage(), e);
-        }
-
+        } catch (SQLException e) { throw new RuntimeException("获取表统计信息失败: " + e.getMessage(),e); }
         throw new RuntimeException(String.format("表 %s.%s 不存在", database, tableName));
     }
 
@@ -752,68 +648,25 @@ public class DorisConnectionService {
      */
     public List<TableStatistics> getAllTableStatistics(Long clusterId, String database) {
         DorisCluster cluster = resolveCluster(clusterId);
-        List<TableStatistics> result = new ArrayList<>();
-
-        String sql = "SELECT " +
-                "TABLE_SCHEMA, " +
-                "TABLE_NAME, " +
-                "TABLE_TYPE, " +
-                "TABLE_COMMENT, " +
-                "CREATE_TIME, " +
-                "UPDATE_TIME, " +
-                "TABLE_ROWS, " +
-                "DATA_LENGTH, " +
-                "ENGINE " +
-                "FROM information_schema.tables " +
-                "WHERE TABLE_SCHEMA = ? " +
-                "ORDER BY TABLE_NAME";
-
-        if (isPostgresql(cluster)) {
-            sql = PostgresqlMetadataSql.TABLES + " AND n.nspname = ? ORDER BY c.relname";
-        }
-
-        try (Connection connection = getConnection(cluster, null);
-                PreparedStatement stmt = connection.prepareStatement(sql)) {
-
-            stmt.setString(1, database);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    TableStatistics stats = new TableStatistics();
-                    stats.setDatabaseName(rs.getString("TABLE_SCHEMA"));
-                    stats.setTableName(rs.getString("TABLE_NAME"));
-                    stats.setTableType(rs.getString("TABLE_TYPE"));
-                    stats.setTableComment(rs.getString("TABLE_COMMENT"));
-
-                    Timestamp createTimestamp = rs.getTimestamp("CREATE_TIME");
-                    if (createTimestamp != null) {
-                        stats.setCreateTime(createTimestamp.toLocalDateTime());
-                    }
-
-                    Timestamp updateTimestamp = rs.getTimestamp("UPDATE_TIME");
-                    if (updateTimestamp != null) {
-                        stats.setLastUpdateTime(updateTimestamp.toLocalDateTime());
-                    }
-
-                    stats.setRowCount(nullableLong(rs, "TABLE_ROWS"));
-
-                    long dataSize = rs.getLong("DATA_LENGTH");
-                    stats.setDataSize(dataSize);
-                    stats.setDataSizeReadable(formatBytes(dataSize));
-
-                    stats.setEngine(rs.getString("ENGINE"));
-                    stats.setAvailable(true);
-                    stats.setLastCheckTime(LocalDateTime.now());
-
-                    result.add(stats);
-                }
+        try (Connection connection = getConnection(cluster, null)) {
+            List<TableStatistics> result = new ArrayList<>();
+            for (TableMetadata table : adapterRegistry.require(cluster.getSourceType()).metadata().tables(connection, database)) {
+                result.add(toStatistics(database, table));
             }
-        } catch (SQLException e) {
-            log.error("Failed to get all table statistics for database {}", database, e);
-            throw new RuntimeException("获取数据库表统计信息失败: " + e.getMessage(), e);
-        }
+            return result;
+        } catch (SQLException e) { throw new RuntimeException("获取数据库表统计信息失败: " + e.getMessage(), e); }
+    }
 
-        return result;
+    private TableStatistics toStatistics(String database, TableMetadata table) {
+        TableStatistics stats = new TableStatistics();
+        stats.setDatabaseName(database); stats.setTableName(table.getTableName());
+        stats.setTableType(table.getTableType()); stats.setTableComment(table.getTableComment());
+        if(table.getCreateTime()!=null) stats.setCreateTime(table.getCreateTime().toLocalDateTime());
+        if(table.getUpdateTime()!=null) stats.setLastUpdateTime(table.getUpdateTime().toLocalDateTime());
+        stats.setRowCount(table.getTableRows()); stats.setDataSize(table.getDataLength());
+        if(table.getDataLength()!=null) stats.setDataSizeReadable(formatBytes(table.getDataLength()));
+        stats.setEngine(table.getEngine()); stats.setAvailable(true); stats.setLastCheckTime(LocalDateTime.now());
+        return stats;
     }
 
     /**
@@ -873,25 +726,10 @@ public class DorisConnectionService {
      * 获取表的建表语句（DDL）
      */
     public String getTableDdl(Long clusterId, String database, String tableName) {
-        DorisCluster cluster = resolveCluster(clusterId);
-        if (isPostgresql(cluster)) {
-            throw new UnsupportedOperationException("PostgreSQL 暂不支持在线 DDL 导出，请使用 pg_dump --schema-only");
-        }
-        String showCreateSql = "SHOW CREATE TABLE `" + database + "`.`" + tableName + "`";
-
-        try (Connection connection = getConnection(cluster, null);
-                Statement stmt = connection.createStatement();
-                ResultSet rs = stmt.executeQuery(showCreateSql)) {
-
-            if (rs.next()) {
-                return rs.getString(2);
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get DDL for {}.{}", database, tableName, e);
-            throw new RuntimeException("获取建表语句失败: " + e.getMessage(), e);
-        }
-
-        throw new RuntimeException(String.format("表 %s.%s 不存在", database, tableName));
+        adapterRegistry.requireCapability(resolveCluster(clusterId).getSourceType(), "ddlExport");
+        Object ddl = getTableCreateInfo(clusterId, database, tableName).get("createTableSql");
+        if (ddl == null) throw new RuntimeException(String.format("表 %s.%s 不存在", database, tableName));
+        return String.valueOf(ddl);
     }
 
     /**
@@ -960,8 +798,7 @@ public class DorisConnectionService {
 
         // 限制最大预览行数
         int maxLimit = Math.min(limit, 1000);
-        String sql = "SELECT * FROM " + quoteIdentifier(cluster, database) + "."
-                + quoteIdentifier(cluster, tableName) + " LIMIT " + maxLimit;
+        String sql = adapterRegistry.require(cluster.getSourceType()).dialect().defaultQuery(database, tableName, maxLimit);
 
         try (Connection connection = getConnection(cluster, database);
                 Statement stmt = connection.createStatement();
@@ -995,9 +832,7 @@ public class DorisConnectionService {
      */
     public List<TablePartitionInfo> listPartitions(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
-        if (isPostgresql(cluster)) {
-            throw new UnsupportedOperationException("PostgreSQL 暂不支持分区详情");
-        }
+        adapterRegistry.requireCapability(cluster.getSourceType(), "partitions");
         String sql = "SHOW PARTITIONS FROM `" + database + "`.`" + tableName + "`";
         List<TablePartitionInfo> partitions = new ArrayList<>();
 
@@ -1090,9 +925,7 @@ public class DorisConnectionService {
     public FreshnessProbe probeMetadataUpdateTime(Long clusterId, String database, String tableName,
                                                   int timeoutSeconds) {
         DorisCluster cluster = resolveCluster(clusterId);
-        if (isPostgresql(cluster)) {
-            throw new UnsupportedOperationException("PostgreSQL 不提供表更新时间，请改用 column 或 custom_sql 模式");
-        }
+        adapterRegistry.requireCapability(cluster.getSourceType(), "freshnessMetadata");
         String sql = "SELECT UPDATE_TIME AS max_loaded_at, NOW() AS snapshotted_at "
             + "FROM information_schema.tables WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
         try (Connection connection = getConnection(cluster, null);
@@ -1212,27 +1045,9 @@ public class DorisConnectionService {
      */
     public List<String> getAllDatabases(Long clusterId) {
         DorisCluster cluster = resolveCluster(clusterId);
-        List<String> databases = new ArrayList<>();
-
-        String sql = isPostgresql(cluster) ? PostgresqlMetadataSql.SCHEMAS : "SHOW DATABASES";
-
-        try (Connection connection = getConnection(cluster, null);
-                Statement stmt = connection.createStatement();
-                ResultSet rs = stmt.executeQuery(sql)) {
-
-            while (rs.next()) {
-                String dbName = rs.getString(1);
-                // 过滤掉系统数据库
-                if (isPostgresql(cluster) || !SYSTEM_DATABASES.contains(dbName)) {
-                    databases.add(dbName);
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get databases from cluster {}", cluster.getClusterName(), e);
-            throw new RuntimeException("获取数据库列表失败: " + e.getMessage(), e);
-        }
-
-        return databases;
+        try (Connection connection = getConnection(cluster, null)) {
+            return adapterRegistry.require(cluster.getSourceType()).metadata().namespaces(connection).stream().map(Namespace::getName).collect(Collectors.toList());
+        } catch (SQLException e) { throw new RuntimeException("读取元数据失败: " + e.getMessage(), e); }
     }
 
     /**
@@ -1240,43 +1055,9 @@ public class DorisConnectionService {
      */
     public List<Map<String, Object>> getSchemaObjects(Long clusterId, String keyword) {
         DorisCluster cluster = resolveCluster(clusterId);
-        List<Map<String, Object>> objects = new ArrayList<>();
-
-        StringBuilder sqlBuilder = new StringBuilder("SELECT TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, TABLE_COMMENT ")
-                .append("FROM information_schema.tables ")
-                .append("WHERE TABLE_SCHEMA NOT IN ('information_schema', 'mysql', 'performance_schema', 'sys')");
-
-        boolean hasKeyword = StringUtils.hasText(keyword);
-        if (hasKeyword) {
-            sqlBuilder.append(" AND (LOCATE(?, LOWER(TABLE_NAME)) > 0 ")
-                    .append("OR LOCATE(?, LOWER(IFNULL(TABLE_COMMENT, ''))) > 0)");
-        }
-        sqlBuilder.append(" ORDER BY TABLE_SCHEMA, TABLE_NAME");
-
-        String sql = isPostgresql(cluster) ? PostgresqlMetadataSql.schemaObjects(hasKeyword) : sqlBuilder.toString();
-        try (Connection connection = getConnection(cluster, null);
-                PreparedStatement stmt = connection.prepareStatement(sql)) {
-            if (hasKeyword) {
-                String normalizedKeyword = normalizeSearchKeyword(keyword);
-                stmt.setString(1, normalizedKeyword);
-                stmt.setString(2, normalizedKeyword);
-            }
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> object = new HashMap<>();
-                    object.put("schemaName", rs.getString("TABLE_SCHEMA"));
-                    object.put("tableName", rs.getString("TABLE_NAME"));
-                    object.put("tableType", rs.getString("TABLE_TYPE"));
-                    object.put("tableComment", rs.getString("TABLE_COMMENT"));
-                    objects.add(object);
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to list schema objects from cluster {}", cluster.getClusterName(), e);
-            throw new RuntimeException("获取 schema 对象列表失败: " + e.getMessage(), e);
-        }
-
-        return objects;
+        try (Connection connection = getConnection(cluster, null)) {
+            return adapterRegistry.require(cluster.getSourceType()).metadata().objects(connection, keyword).stream().map(TableMetadata::toMap).collect(Collectors.toList());
+        } catch (SQLException e) { throw new RuntimeException("读取元数据失败: " + e.getMessage(), e); }
     }
 
     /**
@@ -1284,135 +1065,26 @@ public class DorisConnectionService {
      */
     public List<Map<String, Object>> getTablesInDatabase(Long clusterId, String database) {
         DorisCluster cluster = resolveCluster(clusterId);
-        List<Map<String, Object>> tables = new ArrayList<>();
-
-        String sql = "SELECT TABLE_NAME, TABLE_TYPE, TABLE_COMMENT, CREATE_TIME, UPDATE_TIME, TABLE_ROWS, DATA_LENGTH " +
-                "FROM information_schema.tables WHERE TABLE_SCHEMA = ?";
-
-        if (isPostgresql(cluster)) {
-            sql = PostgresqlMetadataSql.TABLES + " AND n.nspname = ? ORDER BY c.relname";
-        }
-
-        try (Connection connection = getConnection(cluster, null);
-                PreparedStatement stmt = connection.prepareStatement(sql)) {
-
-            stmt.setString(1, database);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> table = new HashMap<>();
-                    table.put("tableName", rs.getString("TABLE_NAME"));
-                    table.put("tableType", rs.getString("TABLE_TYPE"));
-                    table.put("tableComment", rs.getString("TABLE_COMMENT"));
-                    table.put("createTime", rs.getTimestamp("CREATE_TIME"));
-                    table.put("updateTime", rs.getTimestamp("UPDATE_TIME"));
-                    table.put("tableRows", nullableLong(rs, "TABLE_ROWS"));
-                    table.put("dataLength", rs.getLong("DATA_LENGTH"));
-                    tables.add(table);
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get tables from database {}", database, e);
-            throw new RuntimeException("获取表列表失败: " + e.getMessage(), e);
-        }
-
-        return tables;
+        try (Connection connection = getConnection(cluster, null)) {
+            return adapterRegistry.require(cluster.getSourceType()).metadata().tables(connection, database).stream().map(table -> tableMap(cluster, database, table)).collect(Collectors.toList());
+        } catch (SQLException e) { throw new RuntimeException("读取元数据失败: " + e.getMessage(), e); }
     }
 
     /**
      * 获取指定表的所有列信息
      */
+    private Map<String, Object> tableMap(DorisCluster cluster, String database, TableMetadata table) {
+        Map<String, Object> result = table.toMap();
+        result.put("defaultQuery", adapterRegistry.require(cluster.getSourceType()).dialect().defaultQuery(database, table.getTableName(), 200));
+        result.put("typeDefinition", adapterRegistry.definition(cluster.getSourceType()));
+        return result;
+    }
+
     public List<Map<String, Object>> getColumnsInTable(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
-        List<Map<String, Object>> columns = new ArrayList<>();
-
-        boolean isMysql = "MYSQL".equalsIgnoreCase(cluster.getSourceType());
-        String sql = "SELECT COLUMN_NAME, COLUMN_TYPE, DATA_TYPE, IS_NULLABLE, COLUMN_DEFAULT, COLUMN_COMMENT, ORDINAL_POSITION, COLUMN_KEY "
-                + "FROM information_schema.columns WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION";
-
-        if (isPostgresql(cluster)) {
-            sql = PostgresqlMetadataSql.COLUMNS;
-        }
-
-        try (Connection connection = getConnection(cluster, null);
-                PreparedStatement stmt = connection.prepareStatement(sql)) {
-
-            stmt.setString(1, database);
-            stmt.setString(2, tableName);
-
-            try (ResultSet rs = stmt.executeQuery()) {
-                while (rs.next()) {
-                    Map<String, Object> column = new HashMap<>();
-                    column.put("columnName", rs.getString("COLUMN_NAME"));
-                    column.put("dataType", resolveColumnDataType(rs));
-                    column.put("isNullable", "YES".equalsIgnoreCase(rs.getString("IS_NULLABLE")) ? 1 : 0);
-                    column.put("defaultValue", rs.getString("COLUMN_DEFAULT"));
-                    column.put("columnComment", rs.getString("COLUMN_COMMENT"));
-                    column.put("ordinalPosition", rs.getInt("ORDINAL_POSITION"));
-                    column.put("columnKey", rs.getString("COLUMN_KEY"));
-                    column.put("isPrimary", "PRI".equalsIgnoreCase(rs.getString("COLUMN_KEY")) ? 1 : 0);
-                    columns.add(column);
-                }
-            }
-
-            // Doris 某些版本中 information_schema.columns.COLUMN_TYPE 可能为空，回退到 SHOW FULL COLUMNS.Type。
-            if (!isMysql && !isPostgresql(cluster)) {
-                Map<String, String> fallbackTypeMap = loadColumnTypesByShowFullColumns(connection, database, tableName);
-                for (Map<String, Object> column : columns) {
-                    String currentType = (String) column.get("dataType");
-                    if (StringUtils.hasText(currentType)) {
-                        continue;
-                    }
-                    String columnName = (String) column.get("columnName");
-                    String fallbackType = fallbackTypeMap.get(columnName);
-                    if (StringUtils.hasText(fallbackType)) {
-                        column.put("dataType", fallbackType);
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get columns from table {}.{}", database, tableName, e);
-            throw new RuntimeException("获取列信息失败: " + e.getMessage(), e);
-        }
-
-        return columns;
-    }
-
-    private String normalizeSearchKeyword(String keyword) {
-        return String.valueOf(keyword).trim().toLowerCase(Locale.ROOT);
-    }
-
-    private String resolveColumnDataType(ResultSet rs) throws SQLException {
-        String columnType = rs.getString("COLUMN_TYPE");
-        if (StringUtils.hasText(columnType)) {
-            return columnType;
-        }
-        return rs.getString("DATA_TYPE");
-    }
-
-    private Map<String, String> loadColumnTypesByShowFullColumns(Connection connection, String database, String tableName) {
-        Map<String, String> typeMap = new HashMap<>();
-        String sql = String.format("SHOW FULL COLUMNS FROM `%s`.`%s`", database, tableName);
-        try (Statement stmt = connection.createStatement();
-                ResultSet rs = stmt.executeQuery(sql)) {
-            while (rs.next()) {
-                Map<String, Object> row = extractRow(rs);
-                Object field = row.get("field");
-                Object type = row.get("type");
-                if (field == null || type == null) {
-                    continue;
-                }
-                String fieldName = String.valueOf(field);
-                String fullType = String.valueOf(type);
-                if (!StringUtils.hasText(fieldName) || !StringUtils.hasText(fullType)) {
-                    continue;
-                }
-                typeMap.put(fieldName, fullType);
-            }
-        } catch (SQLException e) {
-            log.warn("SHOW FULL COLUMNS fallback failed for {}.{}, reason={}", database, tableName, e.getMessage());
-        }
-        return typeMap;
+        try (Connection connection = getConnection(cluster, null)) {
+            return adapterRegistry.require(cluster.getSourceType()).metadata().columns(connection, database, tableName).stream().map(ColumnMetadata::toMap).collect(Collectors.toList());
+        } catch (SQLException e) { throw new RuntimeException("读取元数据失败: " + e.getMessage(), e); }
     }
 
     /**
@@ -1420,95 +1092,10 @@ public class DorisConnectionService {
      */
     public Map<String, Object> getTableCreateInfo(Long clusterId, String database, String tableName) {
         DorisCluster cluster = resolveCluster(clusterId);
-        Map<String, Object> info = new HashMap<>();
-
-        if (isPostgresql(cluster)) {
-            return info; // PostgreSQL has no SHOW CREATE TABLE; do not persist an incomplete reconstruction.
-        }
-
-        String showCreateSql = "SHOW CREATE TABLE `" + database + "`.`" + tableName + "`";
-
-        try (Connection connection = getConnection(cluster, null);
-                Statement stmt = connection.createStatement();
-                ResultSet rs = stmt.executeQuery(showCreateSql)) {
-
-            if (rs.next()) {
-                String createTableSql = rs.getString(2);
-                info.put("createTableSql", createTableSql);
-                if ("MYSQL".equalsIgnoreCase(cluster.getSourceType())) {
-                    return info;
-                }
-
-                // 解析副本数（支持 replication_allocation / dynamic_partition.replication_allocation）
-                Integer replicationNum = DorisCreateTableUtils.parseReplicationNum(createTableSql);
-                if (replicationNum != null) {
-                    info.put("replicationNum", replicationNum);
-                }
-
-                // 解析分桶数
-                if (createTableSql.contains("BUCKETS ")) {
-                    int start = createTableSql.indexOf("BUCKETS ") + 8;
-                    int end = start;
-                    while (end < createTableSql.length() && Character.isDigit(createTableSql.charAt(end))) {
-                        end++;
-                    }
-                    if (end > start) {
-                        try {
-                            info.put("bucketNum", Integer.parseInt(createTableSql.substring(start, end)));
-                        } catch (NumberFormatException e) {
-                            log.warn("Failed to parse bucket num", e);
-                        }
-                    }
-                }
-
-                // 解析分区字段（兼容大小写/换行/不同分区类型）
-                String partitionColumn = DorisCreateTableUtils.parsePartitionColumn(createTableSql);
-                if (StringUtils.hasText(partitionColumn)) {
-                    info.put("partitionColumn", partitionColumn);
-                }
-
-                // 解析分桶字段
-                if (createTableSql.contains("DISTRIBUTED BY HASH")) {
-                    int start = createTableSql.indexOf("DISTRIBUTED BY HASH(") + 20;
-                    int end = createTableSql.indexOf(")", start);
-                    if (start > 19 && end > start) {
-                        String distributionColumn = createTableSql.substring(start, end).trim();
-                        info.put("distributionColumn", distributionColumn);
-                    }
-                }
-
-                // 解析 Key 类型和列
-                if (createTableSql.contains("UNIQUE KEY")) {
-                    int start = createTableSql.indexOf("UNIQUE KEY(") + 11;
-                    int end = createTableSql.indexOf(")", start);
-                    if (start > 10 && end > start) {
-                        String keyColumns = createTableSql.substring(start, end).trim();
-                        info.put("keyColumns", keyColumns);
-                        info.put("tableModel", "UNIQUE");
-                    }
-                } else if (createTableSql.contains("AGGREGATE KEY")) {
-                    int start = createTableSql.indexOf("AGGREGATE KEY(") + 14;
-                    int end = createTableSql.indexOf(")", start);
-                    if (start > 13 && end > start) {
-                        String keyColumns = createTableSql.substring(start, end).trim();
-                        info.put("keyColumns", keyColumns);
-                        info.put("tableModel", "AGGREGATE");
-                    }
-                } else if (createTableSql.contains("DUPLICATE KEY")) {
-                    int start = createTableSql.indexOf("DUPLICATE KEY(") + 14;
-                    int end = createTableSql.indexOf(")", start);
-                    if (start > 13 && end > start) {
-                        String keyColumns = createTableSql.substring(start, end).trim();
-                        info.put("keyColumns", keyColumns);
-                        info.put("tableModel", "DUPLICATE");
-                    }
-                }
-            }
-        } catch (SQLException e) {
-            log.error("Failed to get create info for table {}.{}", database, tableName, e);
-            throw new RuntimeException("获取建表信息失败: " + e.getMessage(), e);
-        }
-
-        return info;
+        DatasourceAdapter adapter = adapterRegistry.require(cluster.getSourceType());
+        if (!adapter.descriptor().supports("ddlExport")) return Collections.emptyMap();
+        try (Connection connection = getConnection(cluster, null)) {
+            return ((DatasourceDdlReader) adapter).createInfo(connection, database, tableName);
+        } catch (SQLException e) { throw new RuntimeException("获取建表信息失败: " + e.getMessage(), e); }
     }
 }

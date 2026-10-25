@@ -23,6 +23,10 @@ public class DorisCluster {
      */
     private String sourceType;
 
+    @TableField(exist = false)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private com.onedata.portal.service.datasource.model.DatasourceTypeDefinition typeDefinition;
+
     /** PostgreSQL 连接数据库；其内的 schema 使用现有 dbName 表示。 */
     private String databaseName;
 

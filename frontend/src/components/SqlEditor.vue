@@ -9,10 +9,11 @@ import { EditorState, Compartment } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { autocompletion, acceptCompletion } from '@codemirror/autocomplete'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { sql, MySQL } from '@codemirror/lang-sql'
+import { sql, MySQL, PostgreSQL, MSSQL, StandardSQL } from '@codemirror/lang-sql'
 import { createSqlCompletionSource } from './sqlCompletion'
 
 const props = defineProps({
+  dialect: { type: String, default: 'standard' },
   modelValue: {
     type: String,
     default: ''
@@ -38,6 +39,8 @@ const props = defineProps({
     default: () => []
   }
 })
+
+watch(() => props.dialect, () => { if (view) view.dispatch({ effects: languageCompartment.reconfigure(sql({ dialect: editorDialect() })) }) })
 
 const emit = defineEmits(['update:modelValue', 'selection-change'])
 
@@ -93,6 +96,8 @@ const completionSource = createSqlCompletionSource({
   getTableNames: () => props.tableNames
 })
 
+const editorDialect = () => ({ mysql: MySQL, postgresql: PostgreSQL, mssql: MSSQL }[props.dialect] || StandardSQL)
+
 const buildExtensions = () => {
   const extensions = [
     lineNumbers(),
@@ -125,7 +130,7 @@ const buildExtensions = () => {
   ]
 
   extensions.push(
-    languageCompartment.of(sql({ dialect: MySQL })),
+    languageCompartment.of(sql({ dialect: editorDialect() })),
     editableCompartment.of(EditorView.editable.of(!props.readOnly)),
     placeholderCompartment.of(props.placeholder ? cmPlaceholder(props.placeholder) : []),
     completionCompartment.of(

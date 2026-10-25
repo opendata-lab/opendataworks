@@ -319,7 +319,7 @@ export function useTableMetaEditing({
         return
       }
     }
-    if (isDorisTable(state.table)) {
+    if (state.table?.typeDefinition && !state.table.typeDefinition.capabilities?.newPrimaryKeyEdit?.supported) {
       const primaryChanged = updateList.some((row) => {
         const original = originalMap.get(row.id)
         return Number(row.isPrimary ?? 0) !== Number(original?.isPrimary ?? 0)

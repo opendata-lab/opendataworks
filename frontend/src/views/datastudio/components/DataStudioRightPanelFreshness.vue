@@ -86,7 +86,7 @@
             <el-select v-model="form.mode" style="width: 100%">
               <el-option label="表字段 · 取某列的最大值" value="column" />
               <el-option label="自定义查询 · 写 SQL 取最新时间" value="custom_sql" />
-              <el-option label="表元数据 · 读表最后更新时间" value="metadata" />
+              <el-option label="表元数据 · 读表最后更新时间" value="metadata" :disabled="!!capabilityReason(table?.typeDefinition, 'freshnessMetadata')" :title="capabilityReason(table?.typeDefinition, 'freshnessMetadata')" />
             </el-select>
             <div v-if="form.mode === 'metadata'" class="mode-hint">不看数据内容，只能发现长期无写入</div>
           </el-form-item>
@@ -172,6 +172,8 @@
 </template>
 
 <script setup>
+import { capabilityReason } from '@/utils/datasourceTypes'
+
 import { computed, h, inject, reactive, ref, watch, onBeforeUnmount } from 'vue'
 import { ElMessage, ElMessageBox, ElTooltip, ElIcon } from 'element-plus'
 import { QuestionFilled } from '@element-plus/icons-vue'

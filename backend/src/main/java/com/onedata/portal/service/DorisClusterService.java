@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.util.JdbcUrlParts;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
+import com.onedata.portal.service.datasource.model.ConnectionConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.support.CronExpression;
@@ -25,22 +27,23 @@ import java.util.Locale;
 public class DorisClusterService {
 
     private final DorisClusterMapper dorisClusterMapper;
+    private final DatasourceAdapterRegistry adapterRegistry;
 
     /**
      * 查询所有集群
      */
     public List<DorisCluster> listAll() {
-        return dorisClusterMapper.selectList(
+        return describe(dorisClusterMapper.selectList(
                 new LambdaQueryWrapper<DorisCluster>()
                         .orderByDesc(DorisCluster::getIsDefault)
-                        .orderByAsc(DorisCluster::getClusterName));
+                        .orderByAsc(DorisCluster::getClusterName)));
     }
 
     /**
      * 根据ID获取集群
      */
     public DorisCluster getById(Long id) {
-        return dorisClusterMapper.selectById(id);
+        return describe(dorisClusterMapper.selectById(id));
     }
 
     /**
@@ -65,7 +68,7 @@ public class DorisClusterService {
         }
         dorisClusterMapper.insert(cluster);
         log.info("Created Doris cluster: {}", cluster.getClusterName());
-        return cluster;
+        return describe(cluster);
     }
 
     /**
@@ -106,7 +109,7 @@ public class DorisClusterService {
         handleDefaultFlag(cluster, id);
         dorisClusterMapper.updateById(cluster);
         log.info("Updated Doris cluster: {}", cluster.getClusterName());
-        return dorisClusterMapper.selectById(id);
+        return describe(dorisClusterMapper.selectById(id));
     }
 
     /**
@@ -147,26 +150,12 @@ public class DorisClusterService {
         } else {
             cluster.setSourceType(cluster.getSourceType().trim().toUpperCase(Locale.ROOT));
         }
-        if (!"DORIS".equals(cluster.getSourceType()) && !"MYSQL".equals(cluster.getSourceType())
-                && !"POSTGRESQL".equals(cluster.getSourceType())) {
-            throw new RuntimeException("数据源类型不支持: " + cluster.getSourceType());
-        }
-        if ("POSTGRESQL".equals(cluster.getSourceType()) && !StringUtils.hasText(cluster.getDatabaseName())) {
-            throw new IllegalArgumentException("PostgreSQL 连接数据库不能为空");
-        }
         if (StringUtils.hasText(cluster.getDatabaseName())) {
             cluster.setDatabaseName(cluster.getDatabaseName().trim());
         }
-        if (!StringUtils.hasText(cluster.getFeHost())) {
-            throw new RuntimeException("FE Host 不能为空");
-        }
+        adapterRegistry.validate(cluster.getSourceType(), new ConnectionConfig(
+            cluster.getFeHost(), cluster.getFePort(), cluster.getUsername(), cluster.getDatabaseName()));
         cluster.setFeHost(JdbcUrlParts.requireHost(cluster.getFeHost()));
-        if (cluster.getFePort() == null) {
-            throw new RuntimeException("FE Port 不能为空");
-        }
-        if (!StringUtils.hasText(cluster.getUsername())) {
-            throw new RuntimeException("用户名不能为空");
-        }
         if (cluster.getPassword() == null) {
             cluster.setPassword("");
         }
@@ -192,6 +181,15 @@ public class DorisClusterService {
         } else if (StringUtils.hasText(cluster.getSyncCron())) {
             cluster.setSyncCron(cluster.getSyncCron().trim());
         }
+    }
+
+    private DorisCluster describe(DorisCluster cluster) {
+        if (cluster != null) cluster.setTypeDefinition(adapterRegistry.definition(cluster.getSourceType()));
+        return cluster;
+    }
+    private List<DorisCluster> describe(List<DorisCluster> clusters) {
+        clusters.forEach(this::describe);
+        return clusters;
     }
 
     private void handleDefaultFlag(DorisCluster cluster, Long currentId) {

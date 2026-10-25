@@ -1,8 +1,9 @@
+import { builtinDefinitions, definition } from '@/utils/__tests__/datasourceFixtures'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const api = vi.hoisted(() => ({
-  list: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), testConnection: vi.fn()
+  types: vi.fn(), list: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), testConnection: vi.fn()
 }))
 const messages = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock('@/api/doris', () => ({ dorisClusterApi: api }))
@@ -28,13 +29,16 @@ const mountView = () => shallowMount(DataSourceManagement, {
 describe('DataSourceManagement PostgreSQL', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    api.types.mockResolvedValue(builtinDefinitions)
     api.list.mockResolvedValue([])
     api.create.mockResolvedValue({})
     api.update.mockResolvedValue({})
   })
 
-  it('offers PostgreSQL and switches default ports while retaining custom ports', () => {
+  it('offers PostgreSQL and switches default ports while retaining custom ports', async () => {
     const wrapper = mountView()
+    await flushPromises()
+    wrapper.vm.openCreate()
     expect(wrapper.findAllComponents({ name: 'ElOption' }).some(o => o.attributes('value') === 'POSTGRESQL')).toBe(true)
     const vm = wrapper.vm
     vm.handleTypeChange('POSTGRESQL')
@@ -46,21 +50,40 @@ describe('DataSourceManagement PostgreSQL', () => {
     expect(vm.form.fePort).toBe(15432)
   })
 
-  it('requires a database only for PostgreSQL', () => {
-    const vm = mountView().vm
-    const callback = vi.fn()
+  it('requires a database only when declared by the descriptor', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const vm = wrapper.vm
     vm.form.sourceType = 'POSTGRESQL'
-    vm.rules.databaseName[0].validator(null, '  ', callback)
-    expect(callback).toHaveBeenLastCalledWith(expect.any(Error))
-    vm.rules.databaseName[0].validator(null, 'business', callback)
-    expect(callback).toHaveBeenLastCalledWith(undefined)
+    expect(vm.rules.databaseName[0].required).toBe(true)
     vm.form.sourceType = 'MYSQL'
-    vm.rules.databaseName[0].validator(null, '', callback)
-    expect(callback).toHaveBeenLastCalledWith(undefined)
+    expect(vm.rules.databaseName).toEqual([])
+  })
+
+  it('renders a newly registered type and uses its fields and port without engine branches', async () => {
+    api.types.mockResolvedValue([definition('TEST_DB', 15400)])
+    const wrapper = mountView()
+    await flushPromises()
+    wrapper.vm.openCreate()
+    expect(wrapper.vm.form.sourceType).toBe('TEST_DB')
+    expect(wrapper.vm.form.fePort).toBe(15400)
+    expect(wrapper.vm.rules.feHost[0].required).toBe(true)
+    expect(wrapper.findAllComponents({ name: 'ElOption' }).some(o => o.attributes('value') === 'TEST_DB')).toBe(true)
+    await wrapper.vm.handleSubmit()
+    expect(api.create).toHaveBeenCalledWith(expect.objectContaining({ sourceType: 'TEST_DB', fePort: 15400 }))
+  })
+
+  it('reports descriptor failure and disables creating a guessed type', async () => {
+    api.types.mockRejectedValue(new Error('描述不可用'))
+    const wrapper = mountView()
+    await flushPromises()
+    expect(wrapper.vm.typeError).toBe('描述不可用')
+    expect(wrapper.vm.typeDefinitions).toEqual([])
   })
 
   it('creates a PostgreSQL datasource with its database', async () => {
     const vm = mountView().vm
+    await flushPromises()
     Object.assign(vm.form, {
       clusterName: 'pgsql', sourceType: 'POSTGRESQL', databaseName: ' business ',
       feHost: '127.0.0.1', fePort: 5432, username: 'reader', password: 'secret'
@@ -77,6 +100,7 @@ describe('DataSourceManagement PostgreSQL', () => {
       feHost: '127.0.0.1', fePort: 5432, username: 'reader', isDefault: 0
     })
     const vm = mountView().vm
+    await flushPromises()
     await vm.openEdit(9)
     expect(vm.form.databaseName).toBe('business')
     await vm.handleSubmit()

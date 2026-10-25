@@ -1,3 +1,4 @@
+import { definition } from '@/utils/__tests__/datasourceFixtures'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { reactive, ref } from 'vue'
 
@@ -141,7 +142,7 @@ describe('MySQL primary key save guard', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('rejects programmatic primary changes on existing physical columns before confirmation/API calls', async () => {
-    const { tabStates, api } = setup({ id: 9, clusterId: 3, sourceType: 'MYSQL', isSynced: 1 })
+    const { tabStates, api } = setup({ id: 9, clusterId: 3, sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })
     api.startFieldsEdit('t1')
     tabStates.t1.fieldsDraft[0].isPrimary = 1
     await api.saveFieldsEdit('t1')
@@ -153,12 +154,12 @@ describe('MySQL primary key save guard', () => {
 
   it('allows a primary key on a new physical column and edits to a platform draft', async () => {
     tableApi.getFields.mockResolvedValue([])
-    const { tabStates, api } = setup({ id: 9, clusterId: 3, sourceType: 'MYSQL', isSynced: 1 })
+    const { tabStates, api } = setup({ id: 9, clusterId: 3, sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })
     api.startFieldsEdit('t1')
     tabStates.t1.fieldsDraft.push({ fieldName: 'b', fieldType: 'int', isPrimary: 1 })
     await api.saveFieldsEdit('t1')
     expect(tableApi.createField).toHaveBeenCalledWith(9, expect.objectContaining({ isPrimary: 1 }), 3)
-    const draft = setup({ id: 10, clusterId: 3, sourceType: 'MYSQL', isSynced: 0 })
+    const draft = setup({ id: 10, clusterId: 3, sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 0 })
     draft.api.startFieldsEdit('t1')
     draft.tabStates.t1.fieldsDraft[0].isPrimary = 1
     await draft.api.saveFieldsEdit('t1')
@@ -169,7 +170,7 @@ describe('MySQL primary key save guard', () => {
 it('comment-only field edits preserve null defaults and leave untouched fields unsubmitted', async () => {
   vi.clearAllMocks()
   tableApi.getFields.mockResolvedValue([])
-  const { tabStates, api } = setup({ id: 9, clusterId: 3, sourceType: 'MYSQL', isSynced: 1 }, [
+  const { tabStates, api } = setup({ id: 9, clusterId: 3, sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 }, [
     { id: 1, fieldName: 'a', fieldType: 'int', fieldComment: 'old', defaultValue: null },
     { id: 2, fieldName: 'b', fieldType: 'int', fieldComment: 'untouched', defaultValue: null },
   ])

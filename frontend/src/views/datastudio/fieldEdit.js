@@ -40,7 +40,7 @@ export const isOnlyCommentChanged = (next, original) => {
   )
 }
 
-// MySQL 仅限制已有物理列；平台草稿和新增列继续使用既有能力。
-export const isMysqlPrimaryKeyLocked = (table, row, sourceType = table?.sourceType) =>
-  String(sourceType || '').toUpperCase() === 'MYSQL' &&
-  Number(table?.isSynced) === 1 && !!row?.id
+// Existing physical columns require the capability even when they are currently non-key columns.
+export const isMysqlPrimaryKeyLocked = (table, row) =>
+  Number(table?.isSynced) === 1 && !!row?.id &&
+  !table?.typeDefinition?.capabilities?.existingPrimaryKeyEdit?.supported

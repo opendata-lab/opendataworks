@@ -47,6 +47,7 @@ public class TableFreshnessService {
     private final FreshnessContractResolver contractResolver;
     private final FreshnessCheckService freshnessCheckService;
     private final DorisClusterMapper dorisClusterMapper;
+    private final com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry adapterRegistry;
 
     /**
      * 查询生效契约（含字段来源）与最近一次结果。
@@ -314,9 +315,10 @@ public class TableFreshnessService {
     /** PostgreSQL 不提供表更新时间，也没有 Doris 式的分区列表；只能用 column / custom_sql 模式。 */
     private void requireModeSupportedBySource(DataTable table, FreshnessMode mode) {
         DorisCluster cluster = table.getClusterId() == null ? null : dorisClusterMapper.selectById(table.getClusterId());
-        if (cluster != null && "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType())) {
-            throw new IllegalArgumentException("PostgreSQL 数据源不支持 " + mode.name().toLowerCase(Locale.ROOT)
-                + " 模式，请改用 column 或 custom_sql 模式");
+        if (cluster != null) {
+            String capability = mode == FreshnessMode.PARTITION ? "partitions" : "freshnessMetadata";
+            try { adapterRegistry.requireCapability(cluster.getSourceType(), capability); }
+            catch (UnsupportedOperationException e) { throw new IllegalArgumentException(e.getMessage(), e); }
         }
     }
 

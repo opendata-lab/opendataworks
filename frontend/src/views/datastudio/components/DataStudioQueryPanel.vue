@@ -20,7 +20,7 @@
             <template #prefix><el-icon><Link /></el-icon></template>
             <el-option v-for="source in dataSources" :key="String(source.id)" :label="source.clusterName || source.name || `DataSource ${source.id}`" :value="String(source.id)" />
           </el-select>
-          <el-select :model-value="tabStates[tab.id].query.dbName ?? tabStates[tab.id].table.dbName" size="small" filterable class="query-select query-select--db" placeholder="选择 Schema" aria-label="查询 Schema" :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping || !(tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId)" @change="value => handleQueryDatabaseSelect(tab.id, value)">
+          <el-select :model-value="tabStates[tab.id].query.dbName ?? tabStates[tab.id].table.dbName" size="small" filterable class="query-select query-select--db" :placeholder="`选择 ${queryDefinition?.namespaceLabel || '命名空间'}`" :aria-label="`查询 ${queryDefinition?.namespaceLabel || '命名空间'}`" :disabled="tabStates[tab.id].queryLoading || tabStates[tab.id].queryStopping || !(tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId)" @change="value => handleQueryDatabaseSelect(tab.id, value)">
             <template #prefix><el-icon><Coin /></el-icon></template>
             <el-option v-for="db in getSchemaOptions(tabStates[tab.id].query.sourceId ?? tabStates[tab.id].table.sourceId)" :key="db" :label="db" :value="db" />
           </el-select>
@@ -33,11 +33,11 @@
         </el-popover>
       </div>
     </div>
-    <SqlEditor v-model="tabStates[tab.id].query.sql" class="sql-editor" placeholder="-- 输入 SQL，点击执行查看结果" :completion-context="getSqlCompletionContext(tab.id)" @selection-change="(payload) => handleSqlSelectionChange(tab.id, payload)" />
+    <SqlEditor :dialect="queryDefinition?.editorDialect" v-model="tabStates[tab.id].query.sql" class="sql-editor" placeholder="-- 输入 SQL，点击执行查看结果" :completion-context="getSqlCompletionContext(tab.id)" @selection-change="(payload) => handleSqlSelectionChange(tab.id, payload)" />
   </div>
 </template>
 <script setup>
-import { defineAsyncComponent, inject } from 'vue'
+import { computed, defineAsyncComponent, inject, unref } from 'vue'
 import { CaretRight, VideoPause, MoreFilled, Link, Coin, ArrowDown, DataAnalysis, FolderAdd } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 
@@ -48,7 +48,7 @@ const SqlEditor = defineAsyncComponent({
 
 // P2-2 F16b：查询工具栏 + SQL 编辑器从 DataStudioNew.vue 抽出。
 // 数据与行为通过 dataStudioQueryCtx 注入，键集合见 DataStudioNew.vue 的 provide。
-defineProps({
+const props = defineProps({
   tab: {
     type: Object,
     required: true,
@@ -73,6 +73,12 @@ const {
   getSqlCompletionContext,
   handleSqlSelectionChange,
 } = ctx
+
+const queryDefinition = computed(() => {
+  const state = tabStates[props.tab.id]
+  const sourceId = state?.query?.sourceId ?? state?.table?.sourceId
+  return (unref(dataSources) || []).find(source => String(source.id) === String(sourceId))?.typeDefinition
+})
 </script>
 
 <style scoped>

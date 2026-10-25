@@ -1,6 +1,10 @@
 import request from '@/utils/request'
 
 export const dorisClusterApi = {
+  types() { return request.get('/v1/datasource-types') },
+  defaultQuery(id, database, tableName) {
+    return request.get(`/v1/doris-clusters/${id}/default-query`, { params: { database, tableName } })
+  },
   list() {
     return request.get('/v1/doris-clusters')
   },

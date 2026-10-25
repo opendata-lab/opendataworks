@@ -48,7 +48,7 @@ class PostgresqlDatasourceIntegrationTest {
         DorisJdbcProperties properties = new DorisJdbcProperties();
         properties.setSessionCharsetEnabled(true);
         properties.setSessionCharset("utf8mb4");
-        service = new DorisConnectionService(mapper, properties, userMapping);
+        service = new DorisConnectionService(mapper, properties, userMapping, DatasourceAdapterFixtures.registry(properties));
         try (Connection c = service.getConnection(1L); Statement s = c.createStatement()) {
             s.execute("CREATE SCHEMA " + schema);
             s.execute("CREATE TABLE " + schema + ".orders (id bigint PRIMARY KEY, amount numeric(18,2) DEFAULT 0, "
@@ -221,6 +221,22 @@ class PostgresqlDatasourceIntegrationTest {
                 s.execute("DROP OWNED BY " + role);
                 s.execute("DROP ROLE " + role);
             }
+        }
+    }
+
+    @Test
+    void sameNamedTablesAndQuotedSchemasStayIsolated() throws Exception {
+        String other = schema + "_other";
+        try (Connection c = service.getConnection(1L); Statement statement = c.createStatement()) {
+            statement.execute("CREATE SCHEMA " + other);
+            try {
+                statement.execute("CREATE TABLE " + other + ".orders (note text)");
+                statement.execute("INSERT INTO " + other + ".orders VALUES ('other schema')");
+                assertEquals("other schema", service.previewTableData(1L, other, "orders", 1).get(0).get("note"));
+                assertEquals("ok", service.previewTableData(1L, schema, "orders", 1).get(0).get("note"));
+                assertEquals(1, service.getColumnsInTable(1L, other, "orders").size());
+                assertEquals(5, service.getColumnsInTable(1L, schema, "orders").size());
+            } finally { statement.execute("DROP SCHEMA " + other + " CASCADE"); }
         }
     }
 

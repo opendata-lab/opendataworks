@@ -45,7 +45,7 @@ class TableFreshnessServiceTest {
 
     private final TableFreshnessService service = new TableFreshnessService(
         dataTableMapper, dataFieldMapper, configMapper, resultMapper, relationMapper, resolver, checkService,
-        clusterMapper);
+        clusterMapper, com.onedata.portal.service.DatasourceAdapterFixtures.registry(new com.onedata.portal.config.DorisJdbcProperties()));
 
     private void tableExists() {
         DataTable t = new DataTable();

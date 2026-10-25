@@ -1,8 +1,8 @@
 # 数据源适配器实施计划
 
-日期：2026-10-22。状态：**待评审，未开始实施**。
+日期：2026-10-22。状态：**阶段一、二已实施，验证范围见报告（2026-10-25）**。
 
-设计：[数据源适配器架构](../design/2026-10-22-datasource-adapter-design.md)。本轮只交付方案，不继续代码改造。
+设计：[数据源适配器架构](../design/2026-10-22-datasource-adapter-design.md)。本轮实施阶段一、二；阶段三、四独立后续实施。
 
 ## 阶段一：基础接入适配器
 
@@ -13,10 +13,10 @@
 5. `DorisMetadataSyncService` 消费统一 DTO，保留差异、版本和同步历史编排，剥离由 adapter 负责的目录过滤；未知统计不覆盖已知数据。
 6. 若实施连接扩展字段，检查最新 Flyway 后分配新迁移，增加可空 `connection_options`；原 Doris/MySQL/PG 配置无需改写。
 7. 增加测试专用新 type 适配器，验证基础扩展无需中央枚举或业务服务变更。
-8. 新增 driver 模块：外置目录/manifest、驱动描述、Java/依赖检查、Driver 实例加载及 driverId 绑定。数据源新增可空 driver_id，版本号在实施时分配；现有数据源由明确升级配置绑定驱动，禁止隐式使用平台驱动或最新版。
-9. 调整用户数据源 JDBC 驱动的打包/部署方式：独立目录挂载，应用启动加载；不增加每个厂商驱动的主程序 runtime 依赖。平台元数据库驱动独立处理，第一阶段保留现状；若也外置，另验证 Spring/Hikari/Flyway 的启动加载顺序与发行包布局。
+8. 新增 driver 模块声明 driverClass 并报告可用/缺失，执行前检查；保留未来 driverId、manifest、Java/依赖检查和独立 ClassLoader 的边界。完整外置加载记入 TODO，本轮不增加 driver_id 或连接扩展字段。
+9. 保留 backend/pom.xml 中 Doris/MySQL/PostgreSQL 内置驱动及平台元数据库启动布局。外置目录仅用于新增 JDBC 数据库或显式覆盖版本，后续实施；升级不准备目录、不做旧源版本绑定迁移。
 
-主要文件：`backend/src/main/java/com/onedata/portal/service/datasource/`、`DorisConnectionService`、`DorisClusterService`、`DorisMetadataSyncService`、配置 DTO/controller、`backend/pom.xml`、必要 Flyway 与 Java 契约测试。
+主要文件：`backend/src/main/java/com/onedata/portal/service/datasource/`、`DorisConnectionService`、`DorisClusterService`、`DorisMetadataSyncService`、配置 DTO/controller、新鲜度能力校验及 Java 契约测试。当前不需要修改 pom 或 Flyway。
 
 ## 阶段二：前端消费描述
 
@@ -25,7 +25,7 @@
 3. 默认 SELECT/预览由后端 dialect 生成；编辑器高亮按描述使用已支持方言，未知方言采用标准 SQL。保留用户已编辑的 SQL。
 4. 以能力、对象约束及权限决定 DDL/编辑/备份可用性；后端仍验证能力。无法导出 DDL 不影响表结构和基本信息。
 5. 增加虚拟新类型描述的组件回归，证明不用添加新类型分支。
-6. 表单增加 driverId 选择和驱动缺失/不兼容提示；第一阶段仅从已挂载驱动包选择，不包含网页上传或 Maven 自动下载。
+6. 表单展示描述中的内置驱动可用/缺失状态；缺失时禁用保存/连接并说明原因。本轮不提供尚未实现的 driverId 选择，外置加载与选择器作为后续项。
 
 主要文件：`frontend/src/api/doris.js`、`DataSourceManagement.vue`、Data Studio catalog/tab/query composables、`DataStudioRightPanel*`、`SqlEditor.vue` 及相关测试。保持 Vue/Element Plus 当前布局，不引入视觉重构。
 
@@ -47,17 +47,17 @@
 - 真实 PostgreSQL：独立容器和平台 MySQL 测试 schema，实际 HTTP 走配置 → 连接 → 同步 → 历史 → 表基本信息/字段 → analyze/execute → 查询历史。补充真实浏览器操作验证新表单、字段面板和查询结果。
 - 真实 MySQL/Doris：按可用环境运行原功能冒烟；环境不可用时单独列出缺失覆盖，不以 mock 代替真实执行宣称通过。
 - 扩展性：新增测试适配器仅带驱动/私有实现/测试即可被全链路识别；前端不得新增类型列表或引擎判断。
-- 驱动：外置 JDBC 单包/多依赖包、缺失/错误类/JDK不兼容/校验错误、明确版本绑定及双版本隔离；验证平台元数据库连接和 Flyway 不受影响。更换挂载驱动并重启无需重新打包应用。
+- 驱动：本轮验证内置驱动可用/缺失及错误类报告、旧配置兼容。外置包、Java/校验和、双版本隔离与版本选择留待外置加载独立验收。
 - 文档：更新数据源接入说明和能力矩阵、验证报告，确保描述与已实现能力一致。
 
 ## 发布与回退
 
-阶段一、二作为一个兼容发布：先准备外部驱动目录、manifest 和现有源的版本绑定，再发布后端（可空配置字段迁移、描述 API、旧 API 门面），后前端。阶段三、四独立发布和验收。
+阶段一、二作为一个兼容发布：先发布后端（描述 API、旧 API 门面），后前端。保留现有内置驱动，无 schema 或驱动版本迁移，无需新增挂载目录。阶段三、四独立发布和验收。
 
-回退前关闭新引擎自动同步和查询入口，保留新增可空列及原有配置，回退应用版本。保持旧三种数据源的字段和类型值不变，不做配置破坏性转换。
+回退前关闭后续新引擎自动同步和查询入口，保留原有配置，回退应用版本。本轮只有原三种生产适配器，没有新增列。保持旧三种数据源的字段和类型值不变，不做配置破坏性转换。
 
-外置驱动目录、manifest 与原驱动包一并保留；回退时恢复明确的版本绑定和相应启动布局，不能仅回退数据库字段后依赖 classpath 偶然选中旧驱动。
+本轮回退只需恢复原应用与前端版本，驱动依赖及启动布局不变。后续外置加载发布另行验证 manifest、版本绑定及驱动包的回退。
 
 ## 当前状态
 
-适配器改造未实施；未新增运行依赖或平台 schema。用户要求先出方案后，已撤回未接入的适配器草稿并停止/清理临时 HTTP 测试实例。之前 PostgreSQL 修改、验证记录及查询页局部修复不属于此架构方案的已实施成果。
+阶段一、二代码及契约验证已完成；真实 Doris 和 DolphinScheduler 环境缺口保留在 TODO。内置为主、外置可选已经决定。本轮不更改 DataAgent 或物理编辑实现，不新增 Maven 子模块。验证结果见 [验证报告](../reports/2026-10-25-datasource-adapter-verification.md)。

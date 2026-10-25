@@ -24,7 +24,7 @@ function withSetup(composable) {
 function setup(overrides = {}) {
   const tabStates = reactive({
     t1: {
-      table: { tableName: 'orders', dbName: 'db', sourceId: '1' },
+      table: { tableName: 'orders', dbName: 'db', sourceId: '1', defaultQuery: 'SELECT generated_by_backend' },
       query: { sql: '', selectionText: 'x', hasSelection: true, limit: 200 },
       queryTiming: { startedAt: 0, elapsedMs: 0 },
       page: { current: 1 },
@@ -70,13 +70,11 @@ beforeEach(() => {
 
 describe('useQueryExecution (pure helpers + state)', () => {
 
-  it('generates PostgreSQL SELECT with escaped double-quoted identifiers', () => {
-    expect(buildDefaultSql({ sourceType: 'POSTGRESQL', dbName: 'public', tableName: 'order"items' }))
-      .toBe('SELECT *\nFROM "public"."order""items"\nLIMIT 200;')
-    expect(buildDefaultSql({ sourceType: 'MYSQL', dbName: 'db', tableName: 'orders' }))
-      .toBe('SELECT *\nFROM `db`.`orders`\nLIMIT 200;')
+  it('uses backend-generated SQL for any adapter and never guesses a dialect', () => {
+    const sql = 'SELECT TOP 200 * FROM [sales].[orders];'
+    expect(buildDefaultSql({ sourceType: 'TEST_DB', defaultQuery: sql })).toBe(sql)
+    expect(buildDefaultSql({ sourceType: 'POSTGRESQL', dbName: 'public', tableName: 'orders' })).toBe('')
   })
-
 
   it('isResultSetType treats default/RESULT_SET as a result set, UPDATE_COUNT as not', () => {
     const { api, unmount } = setup()

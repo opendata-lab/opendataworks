@@ -4,10 +4,10 @@
       <template #header>
         <div class="card-header">
           <div>
-            <span class="sub-title">统一配置 Doris / MySQL / PostgreSQL 数据源，支持连通性检测、默认数据源与元数据同步</span>
+            <span class="sub-title">统一配置数据源，支持连通性检测、默认数据源与元数据同步</span>
           </div>
           <div class="actions">
-            <el-button type="primary" @click="openCreate">
+            <el-button type="primary" :disabled="!typeDefinitions.length" @click="openCreate">
               <el-icon><Plus /></el-icon>
               新增数据源
             </el-button>
@@ -15,10 +15,12 @@
         </div>
       </template>
 
+      <el-alert v-if="typeError" :title="typeError" type="error" :closable="false" />
       <el-table v-loading="loading" :data="clusters" border style="width: 100%">
         <el-table-column type="expand" width="42">
           <template #default="{ row }">
-            <SchemaBackupManager :cluster="row" />
+            <SchemaBackupManager v-if="!capabilityReason(row.typeDefinition, 'backup')" :cluster="row" />
+            <el-text v-else type="info">{{ capabilityReason(row.typeDefinition, 'backup') }}</el-text>
           </template>
         </el-table-column>
         <el-table-column prop="clusterName" label="数据源名称" min-width="160" />
@@ -35,7 +37,7 @@
               <el-tag size="small" type="info">{{ row.feHost }}</el-tag>
               <span class="divider">:</span>
               <span>{{ row.fePort }}</span>
-              <span v-if="row.sourceType === 'POSTGRESQL'">/ {{ row.databaseName }}</span>
+              <span v-if="row.databaseName">/ {{ row.databaseName }}</span>
             </div>
           </template>
         </el-table-column>
@@ -77,7 +79,7 @@
         <el-table-column label="操作" fixed="right" width="500">
           <template #default="{ row }">
             <el-button type="primary" text size="small" @click="openEdit(row.id)">编辑</el-button>
-            <el-button type="success" text size="small" @click="handleTestConnection(row.id)">测试连接</el-button>
+            <el-button type="success" text size="small" :disabled="row.typeDefinition?.driverStatus !== 'AVAILABLE'" :title="row.typeDefinition?.driverStatus !== 'AVAILABLE' ? '所需 JDBC 驱动不可用' : ''" @click="handleTestConnection(row.id)">测试连接</el-button>
             <el-button type="warning" text size="small" :disabled="row.isDefault === 1" @click="handleSetDefault(row.id)"
               >设为默认</el-button
             >
@@ -97,32 +99,19 @@
         </el-form-item>
         <el-form-item label="类型" prop="sourceType">
           <el-select v-model="form.sourceType" @change="handleTypeChange">
-            <el-option label="DORIS" value="DORIS" />
-            <el-option label="MYSQL" value="MYSQL" />
-            <el-option label="PostgreSQL" value="POSTGRESQL" />
+            <el-option v-for="definition in typeDefinitions" :key="definition.type" :label="definition.label" :value="definition.type" />
           </el-select>
         </el-form-item>
-        <el-form-item label="地址" prop="feHost">
-          <el-input v-model="form.feHost" placeholder="例如：localhost" />
+        <el-form-item v-for="field in selectedDefinition?.connectionFields || []" :key="field.key" :label="field.label" :prop="field.key">
+          <el-input-number v-if="field.control === 'number'" v-model="form[field.key]" :min="1" :max="65535" />
+          <el-select v-else-if="field.control === 'select'" v-model="form[field.key]">
+            <el-option v-for="option in field.options || []" :key="option.value" :label="option.label" :value="option.value" />
+          </el-select>
+          <el-switch v-else-if="field.control === 'boolean'" v-model="form[field.key]" />
+          <el-input v-else v-model="form[field.key]" :type="field.control === 'password' ? 'password' : 'text'" :show-password="field.control === 'password'" />
+          <div v-if="field.help" class="cron-tip">{{ field.help }}</div>
         </el-form-item>
-        <el-form-item label="端口" prop="fePort">
-          <el-input-number v-model="form.fePort" :min="1" :max="65535" />
-        </el-form-item>
-        <el-form-item v-if="form.sourceType === 'POSTGRESQL'" label="连接数据库" prop="databaseName">
-          <el-input v-model="form.databaseName" placeholder="例如：postgres 或业务数据库名称" />
-          <div class="cron-tip">元数据同步读取此数据库内当前账号可访问的 schema。</div>
-        </el-form-item>
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="登录用户名" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="form.password"
-            placeholder="可为空（编辑时留空表示不修改）"
-            type="password"
-            show-password
-          />
-        </el-form-item>
+        <el-alert v-if="selectedDefinition && selectedDefinition.driverStatus !== 'AVAILABLE'" title="所需 JDBC 驱动不可用，请联系管理员" type="error" :closable="false" />
         <el-form-item label="自动同步" prop="autoSync">
           <el-switch v-model="form.autoSync" :active-value="1" :inactive-value="0" />
         </el-form-item>
@@ -147,7 +136,7 @@
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="dialogVisible = false">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="handleSubmit">保存</el-button>
+          <el-button type="primary" :loading="saving" :disabled="selectedDefinition?.driverStatus !== 'AVAILABLE'" @click="handleSubmit">保存</el-button>
         </div>
       </template>
     </el-dialog>
@@ -407,6 +396,8 @@
 </template>
 
 <script setup>
+import { capabilityReason, connectionRules, connectionDefaults, validateDefinitions } from '@/utils/datasourceTypes'
+
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Warning, CircleCheck } from '@element-plus/icons-vue'
@@ -425,10 +416,10 @@ const currentId = ref(null)
 const formRef = ref(null)
 const form = reactive({
   clusterName: '',
-  sourceType: 'DORIS',
+  sourceType: '',
   databaseName: '',
   feHost: '',
-  fePort: 9030,
+  fePort: null,
   username: '',
   password: '',
   autoSync: 0,
@@ -459,21 +450,13 @@ const pendingDeletionLoading = ref(false)
 const pendingDeletionCluster = ref(null)
 const pendingDeletionList = ref([])
 
-const rules = {
+const typeDefinitions = ref([])
+const typeError = ref('')
+const selectedDefinition = computed(() => typeDefinitions.value.find(d => d.type === form.sourceType))
+const rules = computed(() => ({
   clusterName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }],
   sourceType: [{ required: true, message: '请选择类型', trigger: 'change' }],
-  feHost: [{ required: true, message: '请输入地址', trigger: 'blur' }],
-  fePort: [{ required: true, message: '请输入端口', trigger: 'change' }],
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
-  databaseName: [
-    {
-      validator: (_, value, callback) => {
-        callback(form.sourceType === 'POSTGRESQL' && !value?.trim()
-          ? new Error('请输入 PostgreSQL 连接数据库') : undefined)
-      },
-      trigger: 'blur'
-    }
-  ],
+  ...connectionRules(selectedDefinition.value),
   syncCron: [
     {
       validator: (_, value, callback) => {
@@ -486,7 +469,7 @@ const rules = {
       trigger: 'blur'
     }
   ]
-}
+}))
 
 const dialogTitle = computed(() => (isEdit.value ? '编辑数据源' : '新增数据源'))
 
@@ -599,11 +582,11 @@ async function loadClusters() {
 
 function resetForm() {
   form.clusterName = ''
-  form.sourceType = 'DORIS'
-  previousSourceType = 'DORIS'
+  form.sourceType = typeDefinitions.value[0]?.type || ''
+  previousSourceType = form.sourceType
   form.databaseName = ''
   form.feHost = ''
-  form.fePort = 9030
+  Object.assign(form, connectionDefaults(selectedDefinition.value))
   form.username = ''
   form.password = ''
   form.autoSync = 0
@@ -612,16 +595,13 @@ function resetForm() {
   form.status = 'active'
 }
 
-const defaultPorts = { DORIS: 9030, MYSQL: 3306, POSTGRESQL: 5432 }
-let previousSourceType = 'DORIS'
-const getSourceTypeLabel = type => type === 'POSTGRESQL' ? 'PostgreSQL' : (type || 'DORIS')
-const getSourceTypeTag = type => ({ MYSQL: 'success', POSTGRESQL: 'primary' }[type] || 'warning')
-
+let previousSourceType = ''
+const getSourceTypeLabel = type => typeDefinitions.value.find(d => d.type === type)?.label || type || '未知类型'
+const getSourceTypeTag = () => 'info'
 function handleTypeChange(val) {
-  if (!val) return
-  if (form.fePort === defaultPorts[previousSourceType]) {
-    form.fePort = defaultPorts[val]
-  }
+  const previous = typeDefinitions.value.find(d => d.type === previousSourceType)
+  const current = typeDefinitions.value.find(d => d.type === val)
+  if (form.fePort === previous?.defaultPort) form.fePort = current?.defaultPort
   previousSourceType = val
 }
 
@@ -639,7 +619,7 @@ async function openEdit(id) {
     const data = await dorisClusterApi.getById(id)
     resetForm()
     form.clusterName = data.clusterName
-    form.sourceType = data.sourceType || 'DORIS'
+    form.sourceType = data.sourceType || ''
     previousSourceType = form.sourceType
     form.databaseName = data.databaseName || ''
     form.feHost = data.feHost
@@ -657,6 +637,7 @@ async function openEdit(id) {
 }
 
 async function handleSubmit() {
+  if (selectedDefinition.value?.driverStatus !== 'AVAILABLE') return
   if (!formRef.value) return
   try {
     await formRef.value.validate()
@@ -668,7 +649,7 @@ async function handleSubmit() {
   const payload = {
     clusterName: form.clusterName,
     sourceType: form.sourceType,
-    databaseName: form.sourceType === 'POSTGRESQL' ? form.databaseName.trim() : '',
+    ...Object.fromEntries((selectedDefinition.value?.connectionFields || []).filter(f => f.key !== 'password').map(f => [f.key, typeof form[f.key] === 'string' ? form[f.key].trim() : form[f.key]])),
     feHost: form.feHost,
     fePort: form.fePort,
     username: form.username,
@@ -973,7 +954,12 @@ const performSync = async (cluster = selectedCluster.value) => {
   }
 }
 
-loadClusters()
+async function initialize() {
+  try { typeDefinitions.value = validateDefinitions(await dorisClusterApi.types()) }
+  catch (error) { typeError.value = error.message || '数据源类型描述加载失败' }
+  await loadClusters()
+}
+initialize()
 </script>
 
 <style scoped>

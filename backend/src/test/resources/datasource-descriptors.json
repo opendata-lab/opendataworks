@@ -1,0 +1,340 @@
+[ {
+  "schemaVersion" : 1,
+  "type" : "DORIS",
+  "label" : "Doris",
+  "defaultPort" : 9030,
+  "namespaceLabel" : "数据库",
+  "identifierQuote" : "`",
+  "editorDialect" : "mysql",
+  "iconUrl" : "/datasource-icons/doris.svg",
+  "connectionFields" : [ {
+    "key" : "feHost",
+    "label" : "地址",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : ""
+  }, {
+    "key" : "fePort",
+    "label" : "端口",
+    "control" : "number",
+    "required" : true,
+    "defaultValue" : 9030,
+    "help" : ""
+  }, {
+    "key" : "databaseName",
+    "label" : "连接数据库",
+    "control" : "text",
+    "required" : false,
+    "defaultValue" : "",
+    "help" : "可选"
+  }, {
+    "key" : "username",
+    "label" : "用户名",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : ""
+  }, {
+    "key" : "password",
+    "label" : "密码",
+    "control" : "password",
+    "required" : false,
+    "defaultValue" : "",
+    "help" : "编辑时留空表示不修改"
+  } ],
+  "capabilities" : {
+    "catalog" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "query" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "preview" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "statistics" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessColumn" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessCustomSql" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "ddlExport" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "structureEdit" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "partitions" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "distribution" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "replication" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "backup" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "dorisProperties" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessMetadata" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "existingPrimaryKeyEdit" : {
+      "supported" : false,
+      "reason" : "暂不支持在线修改已有字段的主键"
+    },
+    "newPrimaryKeyEdit" : {
+      "supported" : false,
+      "reason" : "此引擎不支持在线修改主键列"
+    }
+  },
+  "driverClass" : "com.mysql.cj.jdbc.Driver",
+  "driverStatus" : "AVAILABLE"
+}, {
+  "schemaVersion" : 1,
+  "type" : "MYSQL",
+  "label" : "MySQL",
+  "defaultPort" : 3306,
+  "namespaceLabel" : "数据库",
+  "identifierQuote" : "`",
+  "editorDialect" : "mysql",
+  "iconUrl" : "/datasource-icons/mysql.svg",
+  "connectionFields" : [ {
+    "key" : "feHost",
+    "label" : "地址",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : ""
+  }, {
+    "key" : "fePort",
+    "label" : "端口",
+    "control" : "number",
+    "required" : true,
+    "defaultValue" : 3306,
+    "help" : ""
+  }, {
+    "key" : "databaseName",
+    "label" : "连接数据库",
+    "control" : "text",
+    "required" : false,
+    "defaultValue" : "",
+    "help" : "可选"
+  }, {
+    "key" : "username",
+    "label" : "用户名",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : ""
+  }, {
+    "key" : "password",
+    "label" : "密码",
+    "control" : "password",
+    "required" : false,
+    "defaultValue" : "",
+    "help" : "编辑时留空表示不修改"
+  } ],
+  "capabilities" : {
+    "catalog" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "query" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "preview" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "statistics" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessColumn" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessCustomSql" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "ddlExport" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "structureEdit" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "partitions" : {
+      "supported" : false,
+      "reason" : "MySQL 暂不支持此引擎操作"
+    },
+    "distribution" : {
+      "supported" : false,
+      "reason" : "MySQL 暂不支持此引擎操作"
+    },
+    "replication" : {
+      "supported" : false,
+      "reason" : "MySQL 暂不支持此引擎操作"
+    },
+    "backup" : {
+      "supported" : false,
+      "reason" : "MySQL 暂不支持此引擎操作"
+    },
+    "dorisProperties" : {
+      "supported" : false,
+      "reason" : "MySQL 暂不支持此引擎操作"
+    },
+    "freshnessMetadata" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "existingPrimaryKeyEdit" : {
+      "supported" : false,
+      "reason" : "暂不支持在线修改已有字段的主键"
+    },
+    "newPrimaryKeyEdit" : {
+      "supported" : true,
+      "reason" : "此引擎不支持在线修改主键列"
+    }
+  },
+  "driverClass" : "com.mysql.cj.jdbc.Driver",
+  "driverStatus" : "AVAILABLE"
+}, {
+  "schemaVersion" : 1,
+  "type" : "POSTGRESQL",
+  "label" : "PostgreSQL",
+  "defaultPort" : 5432,
+  "namespaceLabel" : "Schema",
+  "identifierQuote" : "\"",
+  "editorDialect" : "postgresql",
+  "iconUrl" : "/datasource-icons/postgresql.svg",
+  "connectionFields" : [ {
+    "key" : "feHost",
+    "label" : "地址",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : ""
+  }, {
+    "key" : "fePort",
+    "label" : "端口",
+    "control" : "number",
+    "required" : true,
+    "defaultValue" : 5432,
+    "help" : ""
+  }, {
+    "key" : "databaseName",
+    "label" : "连接数据库",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : "同步当前数据库内可访问的 schema"
+  }, {
+    "key" : "username",
+    "label" : "用户名",
+    "control" : "text",
+    "required" : true,
+    "defaultValue" : "",
+    "help" : ""
+  }, {
+    "key" : "password",
+    "label" : "密码",
+    "control" : "password",
+    "required" : false,
+    "defaultValue" : "",
+    "help" : "编辑时留空表示不修改"
+  } ],
+  "capabilities" : {
+    "catalog" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "query" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "preview" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "statistics" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessColumn" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "freshnessCustomSql" : {
+      "supported" : true,
+      "reason" : ""
+    },
+    "ddlExport" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持在线 DDL 导出，请使用 pg_dump --schema-only"
+    },
+    "structureEdit" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持在线修改表结构，请在数据库中修改后重新同步元数据"
+    },
+    "partitions" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持此引擎操作"
+    },
+    "distribution" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持此引擎操作"
+    },
+    "replication" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持此引擎操作"
+    },
+    "backup" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持此引擎操作"
+    },
+    "dorisProperties" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 暂不支持此引擎操作"
+    },
+    "freshnessMetadata" : {
+      "supported" : false,
+      "reason" : "PostgreSQL 不提供表更新时间，请改用 column 或 custom_sql 模式"
+    },
+    "existingPrimaryKeyEdit" : {
+      "supported" : false,
+      "reason" : "暂不支持在线修改已有字段的主键"
+    },
+    "newPrimaryKeyEdit" : {
+      "supported" : false,
+      "reason" : "此引擎不支持在线修改主键列"
+    }
+  },
+  "driverClass" : "org.postgresql.Driver",
+  "driverStatus" : "AVAILABLE"
+} ]

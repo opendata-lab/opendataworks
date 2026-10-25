@@ -56,7 +56,7 @@ class DorisConnectionServiceTest {
         dorisJdbcProperties.setDefaultDatabase("information_schema");
         dorisJdbcProperties.setSessionCharsetEnabled(false);
 
-        dorisConnectionService = new DorisConnectionService(dorisClusterMapper, dorisJdbcProperties, userMappingService);
+        dorisConnectionService = new DorisConnectionService(dorisClusterMapper, dorisJdbcProperties, userMappingService, DatasourceAdapterFixtures.registry(dorisJdbcProperties));
 
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);

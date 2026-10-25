@@ -94,7 +94,7 @@
                 <div class="code-shell">
                   <el-scrollbar class="ddl-scroll">
                     <div v-if="state.ddl" class="ddl-content"><div v-for="(line, index) in state.ddl.split('\n')" :key="index" class="ddl-line"><span class="ddl-line-number" aria-hidden="true">{{ index + 1 }}</span><code>{{ line || ' ' }}</code></div></div>
-                    <div v-else class="ddl-placeholder">加载中或暂无 DDL</div>
+                    <div v-else class="ddl-placeholder">{{ capabilityReason(state.table.typeDefinition, 'ddlExport') || state.ddlError || '加载中或暂无 DDL' }}</div>
                   </el-scrollbar>
                 </div>
               </section>
@@ -155,6 +155,8 @@
 </template>
 
 <script setup>
+import { capabilityReason } from '@/utils/datasourceTypes'
+
 import { getObjectSourceId } from '../objectSource'
 import { computed, inject } from 'vue'
 import { Grid, MoreFilled, ArrowDown, Check } from '@element-plus/icons-vue'

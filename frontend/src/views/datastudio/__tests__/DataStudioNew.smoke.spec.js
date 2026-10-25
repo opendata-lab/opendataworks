@@ -1,3 +1,4 @@
+import { definition } from '@/utils/__tests__/datasourceFixtures'
 // 运行时挂载冒烟（P2-2 F4+ 的安全网）。
 // shallowMount 会真正执行 DataStudioNew 的 script setup / composables / computed /
 // onMounted 与模板渲染（子组件被 stub）。若 composable 抽取破坏了引用或响应式，
@@ -113,14 +114,14 @@ describe('DataStudioNew runtime mount smoke', () => {
       config: { warnHandler: () => {} }, directives: { loading: {} },
     } })
     const state = wrapper.vm.$.setupState
-    expect(state.isDorisTable({ sourceType: 'POSTGRESQL', isSynced: 1 })).toBe(false)
-    expect(state.isDorisTable({ sourceType: 'MYSQL', isSynced: 1 })).toBe(false)
-    expect(state.isDorisTable({ sourceType: 'DORIS', isSynced: 1 })).toBe(true)
+    expect(state.isDorisTable({ sourceType: 'POSTGRESQL', typeDefinition: definition('POSTGRESQL'), isSynced: 1 })).toBe(false)
+    expect(state.isDorisTable({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })).toBe(false)
+    expect(state.isDorisTable({ sourceType: 'DORIS', typeDefinition: definition('DORIS'), isSynced: 1 })).toBe(true)
     // 只有 Doris/MySQL 能改物理结构；类型未知的已同步表不放行，未同步的平台表不涉及物理结构
-    expect(state.structureEditBlockedReason({ sourceType: 'POSTGRESQL', isSynced: 1 })).toContain('PostgreSQL')
-    expect(state.structureEditBlockedReason({ sourceType: 'MYSQL', isSynced: 1 })).toBe('')
-    expect(state.structureEditBlockedReason({ sourceType: 'DORIS', isSynced: 1 })).toBe('')
-    expect(state.structureEditBlockedReason({ isSynced: 1 })).toContain('数据源信息未加载')
+    expect(state.structureEditBlockedReason({ sourceType: 'POSTGRESQL', typeDefinition: definition('POSTGRESQL'), isSynced: 1 })).toContain('PostgreSQL')
+    expect(state.structureEditBlockedReason({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 })).toBe('')
+    expect(state.structureEditBlockedReason({ sourceType: 'DORIS', typeDefinition: definition('DORIS'), isSynced: 1 })).toBe('')
+    expect(state.structureEditBlockedReason({ isSynced: 1 })).toContain('数据源类型描述未加载')
     expect(state.structureEditBlockedReason({ isSynced: 0 })).toBe('')
     wrapper.unmount()
   })

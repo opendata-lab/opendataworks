@@ -43,7 +43,6 @@ public class DorisMetadataSyncService {
     private final TableStatisticsHistoryMapper tableStatisticsHistoryMapper;
     private final TableMetadataVersionService tableMetadataVersionService;
 
-    private static final Set<String> IGNORED_DATABASES = new HashSet<>(Arrays.asList("performance_schema", "sys"));
     private static final int MAX_COMMENT_LENGTH = 5000;
 
     /**
@@ -430,7 +429,6 @@ public class DorisMetadataSyncService {
         try {
             // 获取所有数据库
             List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
-                    .filter(db -> "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType()) || !IGNORED_DATABASES.contains(db))
                     .collect(Collectors.toList());
             log.info("Found {} databases to audit (filtered)", databases.size());
 
@@ -743,7 +741,6 @@ public class DorisMetadataSyncService {
         try {
             // 获取所有数据库
             List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
-                    .filter(db -> "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType()) || !IGNORED_DATABASES.contains(db))
                     .collect(Collectors.toList());
             log.info("Found {} databases to sync", databases.size());
 
@@ -779,7 +776,6 @@ public class DorisMetadataSyncService {
 
         try {
             List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
-                    .filter(db -> "POSTGRESQL".equalsIgnoreCase(cluster.getSourceType()) || !IGNORED_DATABASES.contains(db))
                     .collect(Collectors.toList());
 
             for (String database : databases) {

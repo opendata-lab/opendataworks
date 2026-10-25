@@ -63,7 +63,7 @@ class DorisConnectionServicePartitionsTest {
         properties.setDefaultDatabase("information_schema");
         properties.setSessionCharsetEnabled(false);
 
-        dorisConnectionService = new DorisConnectionService(dorisClusterMapper, properties, userMappingService);
+        dorisConnectionService = new DorisConnectionService(dorisClusterMapper, properties, userMappingService, DatasourceAdapterFixtures.registry(properties));
 
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);
