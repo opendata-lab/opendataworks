@@ -1101,32 +1101,62 @@ def test_import_skill_rejects_unsafe_zip_path(monkeypatch, tmp_path):
         )
 
 
-def test_import_skill_rejects_duplicate_folder_with_same_version(monkeypatch, tmp_path):
+def test_import_skill_rejects_reimport_with_identical_content(monkeypatch, tmp_path):
     discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
-    (discovery_root / "marketing-insights").mkdir()
-    (discovery_root / "marketing-insights" / "SKILL.md").write_text(
-        "---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing\n",
-        encoding="utf-8",
-    )
+    (discovery_root / "marketing-insights" / "reference").mkdir(parents=True)
+    (discovery_root / "marketing-insights" / "SKILL.md").write_text("# Marketing\n", encoding="utf-8")
+    (discovery_root / "marketing-insights" / "reference" / "guide.md").write_text("# Guide\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="版本相同"):
+    with pytest.raises(ValueError, match="内容完全相同"):
         skill_admin_service.import_skill_from_zip(
             "marketing-insights.zip",
             make_zip(
-                {"marketing-insights/SKILL.md": "---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing\n"}
+                {
+                    "marketing-insights/SKILL.md": "# Marketing\n",
+                    "marketing-insights/reference/guide.md": "# Guide\n",
+                }
             ),
         )
 
 
-def test_import_skill_rejects_duplicate_folder_without_version(monkeypatch, tmp_path):
-    discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+def test_import_skill_replaces_existing_without_version_when_content_differs(monkeypatch, tmp_path):
+    # SKILL.md has no standard version field; a changed file alone must be enough to update.
+    discovery_root, store, _ = configure_skill_filesystem(monkeypatch, tmp_path)
     (discovery_root / "marketing-insights").mkdir()
+    (discovery_root / "marketing-insights" / "SKILL.md").write_text(
+        "---\nname: marketing-insights\n---\n# Marketing v1\n",
+        encoding="utf-8",
+    )
 
-    with pytest.raises(ValueError, match="版本相同"):
-        skill_admin_service.import_skill_from_zip(
-            "marketing-insights.zip",
-            make_zip({"marketing-insights/SKILL.md": "# Marketing\n"}),
-        )
+    payload = skill_admin_service.import_skill_from_zip(
+        "marketing-insights.zip",
+        make_zip({"marketing-insights/SKILL.md": "---\nname: marketing-insights\n---\n# Marketing v2\n"}),
+    )
+
+    assert payload["replaced"] is True
+    assert payload["version"] == ""
+    assert payload["previous_version"] == ""
+    assert "Marketing v2" in store.documents["marketing-insights/SKILL.md"]["current_content"]
+
+
+def test_import_skill_replaces_existing_with_same_version_when_a_file_changes(monkeypatch, tmp_path):
+    discovery_root, _, _ = configure_skill_filesystem(monkeypatch, tmp_path)
+    skill_md = "---\nname: marketing-insights\nversion: 1.0.0\n---\n# Marketing\n"
+    (discovery_root / "marketing-insights").mkdir()
+    (discovery_root / "marketing-insights" / "SKILL.md").write_text(skill_md, encoding="utf-8")
+
+    payload = skill_admin_service.import_skill_from_zip(
+        "marketing-insights.zip",
+        make_zip(
+            {
+                "marketing-insights/SKILL.md": skill_md,
+                "marketing-insights/scripts/run.py": "print('ok')\n",
+            }
+        ),
+    )
+
+    assert payload["replaced"] is True
+    assert (discovery_root / "marketing-insights" / "scripts" / "run.py").exists()
 
 
 def test_import_skill_replaces_existing_when_version_differs(monkeypatch, tmp_path):

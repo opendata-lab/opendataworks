@@ -14,7 +14,7 @@ Upgrade Skill management from a single-active Skill model to multi-active Skill 
 - Extract shared provider/prompt/env helpers into `core/agent_runtime.py` and remove the unused direct `stream_agent_reply` executor so only the task executor owns agent execution.
 - Simplify frontend copy and layout: `已启用 / 未启用`, compact cards, custom detail title bar, merged left overview/file tree, `SKILL.md` first, lower-weight version history.
 - Add `POST /api/v1/dataagent/skills/imports` for ZIP upload. Safely extract one Skill, reject unsafe paths/symlinks, index files, and keep a first-time imported Skill disabled by default.
-- Support re-import of an existing managed Skill when the front matter `version` differs: replace files in place, prune stale document rows, and preserve the enabled state. Reject same-version re-import and built-in Skill overwrite.
+- Support re-import of an existing managed Skill when its contents differ from the installed copy (file-tree digest, front matter `version` not required): replace files in place, prune stale document rows, and preserve the enabled state. Reject identical-content re-import and built-in Skill overwrite.
 - Add `DELETE /api/v1/dataagent/skills/{folder}` for managed Skill uninstall. Reject built-in Skill removal and last-enabled removal, remove indexed documents, clean `skill_runtime`, and reassign primary Skill when needed.
 - Add list/detail UI actions for importing ZIP packages and uninstalling `source=managed` Skills with typed folder confirmation.
 
