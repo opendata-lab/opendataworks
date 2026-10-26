@@ -15,7 +15,7 @@
 
 - **状态**（2026-10-26 最终讨论）：**方案中，已决定、待一次性交付**。见 [设计](design/2026-10-26-dataagent-datasource-identity-design.md) 和 [计划](plans/2026-10-26-dataagent-datasource-identity-plan.md)；本次只改文档。
 - **现状**（2026-10-23 核实，2026-10-26 复核）：V3 库级账号缺管理入口，platform_users 无写入链路，旧权限接口不完整；主门户问数可能仍是匿名身份，目录未统一按实际用户账号列出。
-- **已决定 / 要做**：平台不建授权表，只登记人（`sys_user`）和各智能体在每个数据源上的数据库账号，多主体可共用账号；DBA 建账号并 GRANT，智能体账号只读，缺映射直接拒绝。人工查询、写入、结构编辑、目录都用人的账号，数据源原账号只用于同步和运维；删除旧三表、`UserMappingService` 和 `/v1/permissions`，不迁移。DataAgent 调平台沿用现有服务令牌，由其后端在请求头填写用户 ID（第三方 OAuth 用户 ID，对应 `sys_user.external_id`）和智能体 ID；拆分后的 MCP 用同一契约。
+- **已决定 / 要做**：平台不建授权表，只登记人（`sys_user`）和各智能体在每个数据源上的数据库账号，多主体可共用账号；DBA 建账号并 GRANT，智能体账号只读，缺映射直接拒绝。人工查询、写入、结构编辑、目录都用人的账号，数据源原账号只用于同步和运维；删除旧三表、`UserMappingService` 和 `/v1/permissions`，不迁移。DataAgent 调平台沿用现有服务令牌，由其后端在请求头填写带来源前缀的用户标识（`local:<用户名>` 或 `<provider>:<sub>`，平台据此找 `sys_user`）和智能体 ID；拆分后的 MCP 用同一契约。
 
 ### DataAgent 数据范围改为数据库层隔离
 

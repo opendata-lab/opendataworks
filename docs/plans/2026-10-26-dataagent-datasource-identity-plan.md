@@ -8,13 +8,13 @@
 
 | # | 栈 | 任务 |
 | --- | --- | --- |
-| 1 | Flyway | 删除 `user_database_permissions`、`doris_database_users`、`platform_users`；创建 `datasource_subject_account`；`sys_user.external_id` 加唯一约束；查询历史增加人、智能体、检查账号、执行账号字段。 |
+| 1 | Flyway | 删除 `user_database_permissions`、`doris_database_users`、`platform_users`；创建 `datasource_subject_account`；OAuth 用户的 `external_id` 加唯一约束；查询历史增加人、智能体、检查账号、执行账号字段。 |
 | 2 | backend | 删除 `UserMappingService`、`PermissionManagementController` 及相关 entity/mapper；新增账号映射的增删改查接口（仅管理员，保存时测试连接，不回传密码）。 |
 | 3 | backend | `DorisConnectionService` 改为按当前用户取映射账号，缺映射拒绝；Data Studio 目录用该账号实时列出，合并已同步元数据时过滤不可见对象；结构编辑同样使用人的账号。元数据同步继续用数据源账号。 |
-| 4 | backend-agent-api | 请求头读取用户 ID、智能体 ID、独立模式；按 `sys_user.external_id` 找人；代人问数：人账号 EXPLAIN → 智能体账号执行；独立模式只用智能体账号；给模型的元数据取两个账号可见对象的交集。删除 `X-Agent-Data-Scope`、`AgentDataScopeFilter/Context`、表引用范围检查、平台库旁路。保留只读检查。 |
-| 5 | DataAgent Python | 调平台时由后端填写用户 ID（登录会话的第三方用户 ID）和智能体 ID，定时任务设置独立模式；删除数据范围的发送和配置字段（Alembic 迁移）；服务令牌不进入模型可见环境。portal-mcp、odw-cli 同步。 |
+| 4 | backend-agent-api | 请求头读取用户标识、智能体 ID、独立模式；按标识前缀找 `sys_user`（`local:<用户名>` 或 `<provider>:<sub>`）；代人问数：人账号 EXPLAIN → 智能体账号执行；独立模式只用智能体账号；给模型的元数据取两个账号可见对象的交集。删除 `X-Agent-Data-Scope`、`AgentDataScopeFilter/Context`、表引用范围检查、平台库旁路。保留只读检查。 |
+| 5 | DataAgent Python | 调平台时由后端填写用户标识（登录会话现有的 `auth_user_id`）和智能体 ID，定时任务设置独立模式；删除数据范围的发送和配置字段（Alembic 迁移）；服务令牌不进入模型可见环境。portal-mcp、odw-cli 同步。 |
 | 6 | frontend | 数据源页增加"账号映射"；智能体页删除"数据范围"；Data Studio 缺映射、无权限时给出明确提示。 |
-| 7 | 部署文档 | 必须开启认证、平台与 DataAgent 接同一个第三方 OAuth；升级前 DBA 为人和智能体建好账号并登记。 |
+| 7 | 部署文档 | 必须开启认证；本地登录时平台与 DataAgent 的用户名保持一致，OAuth 登录时两边接同一个第三方；升级前 DBA 为人和智能体建好账号并登记。 |
 
 ## 2. 验证
 
@@ -24,7 +24,7 @@
 - 视图：账号只有视图权限、没有底表权限时，EXPLAIN 和执行都能通过。
 - 撤销：删除映射或 REVOKE 后，下一次请求失败。
 - Data Studio：目录只显示人的账号能看到的对象；写入和结构编辑按账号权限允许或拒绝。
-- 身份：缺用户 ID 的普通问数被拒绝；没有服务令牌被拒绝。
+- 身份：本地登录用户和 OAuth 用户都能问数；缺用户标识的普通问数被拒绝；找不到对应 `sys_user` 被拒绝；没有服务令牌被拒绝。
 - 回归：后端、Python、前端测试和构建；按 AGENTS.md 跑一次真实模型问数（模型账号可用时）。
 
 Doris 由用户在内网验证：EXPLAIN 对无权表报错；视图权限不依赖底表。

@@ -49,13 +49,14 @@ EXPLAIN 只生成执行计划、不执行，但会检查 SQL 引用的每个对�
 
 ## 4. 身份传递
 
-- 平台和 DataAgent 都接入同一个第三方 OAuth 登录。DataAgent 后续独立部署，保留自己的登录和会话。
-- 同一个人在第三方的用户 ID 相同；平台用 `sys_user.external_id` 识别他（加唯一约束）。
+- 支持本地登录和第三方 OAuth 两种方式。DataAgent 后续独立部署，保留自己的登录和会话。
+- 用户标识带来源前缀，沿用 DataAgent 现有的 `auth_user_id` 格式：本地登录为 `local:<用户名>`，第三方 OAuth 为 `<provider>:<sub>`。平台按前缀找 `sys_user`：`local:` 对应 `auth_source = local` 且 `username` 相同的用户；OAuth 对应 `external_id` 相同的 OAuth 用户。找不到就拒绝。
+- 本地登录时，平台与 DataAgent 各有本地账号，靠相同的用户名对应同一个人，部署时需保持一致。
 - DataAgent 调平台（现在是 HTTP agent API，拆分后是平台的 MCP，用同一个契约）时：
   - 现有服务令牌 `X-Agent-Service-Token` 证明调用方是 DataAgent 后端；
-  - 请求头带用户 ID（第三方用户 ID）和智能体 ID，由 DataAgent 后端从已验证的登录会话和会话配置中填写，不来自模型或前端；
+  - 请求头带用户标识和智能体 ID，由 DataAgent 后端从已验证的登录会话和会话配置中填写，不来自模型或前端；
   - 独立运行必须显式标明"独立模式"，由后端为定时任务设置。普通问数缺用户 ID 直接拒绝，不能自动变成独立模式。
-- 平台信任持有服务令牌的 DataAgent 后端，按用户 ID 找到 `sys_user`、再找两个映射。
+- 平台信任持有服务令牌的 DataAgent 后端，按用户标识找到 `sys_user`、再找两个映射。
 - 服务令牌和数据库密码不进入模型能接触到的环境（工具参数、工作目录、Bash 环境变量）。
 - 问数必须有登录用户；匿名部署或认证关闭时，不提供代人问数。
 
