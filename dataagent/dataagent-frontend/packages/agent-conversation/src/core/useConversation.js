@@ -268,11 +268,7 @@ export function useConversation({ transport, generation, emit, settings }) {
         }
         flushEvents()
         closeTurn(taskId, item.run.status, item.run.detail)
-        // An older task's stream can end after a newer run started; it closes
-        // its own turn and leaves the current run alone.
-        if (!run.value?.taskId || run.value.taskId === item.run.taskId) {
-          setRun({ ...item.run, metadata: item.run.metadata || runMetadata.get(item.run.taskId) })
-        }
+        setRun({ ...item.run, metadata: item.run.metadata || runMetadata.get(item.run.taskId) })
         await refreshMessages(at)
         return
       }
@@ -293,14 +289,12 @@ export function useConversation({ transport, generation, emit, settings }) {
         return fail(error)
       }
 
-      // A dropped stream usually comes back on reconnect with nothing lost,
-      // so it is only reported once the retries are used up.
+      fail(error)
       const delay = RETRY_DELAYS_MS[attempt]
       if (delay !== undefined) {
         pollTimer = setTimeout(() => subscribe(taskId, lastSeq, at, attempt + 1), delay)
         return
       }
-      fail(error)
       poll(at)
     }
   }
