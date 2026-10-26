@@ -152,6 +152,22 @@ test("a rejected plan returns the user's revision to the model and keeps the hol
   assert.equal(events.filter((e) => e.type === "tool.denied").length, 1);
 });
 
+test("commands see the plan state flip from pending to approved", async (t) => {
+  const { broker } = answeringBroker((kind) => (kind === "plan" ? { decision: "allow" } : {}));
+  const probe = { name: "Bash", arguments: { command: "printf %s \"$DATAAGENT_PLAN_STATE\"" } };
+  const { events } = await run(
+    initPayload(workspace(t), { permission_mode: "plan", plan_denied_tools: [] }),
+    scriptedFactory([probe, { name: "ExitPlanMode", arguments: { plan: "# 计划" } }, probe]),
+    broker
+  );
+  const outputs = events
+    .filter((e) => e.type === "tool.completed" && e.payload.tool_name === "Bash")
+    .map((e) => JSON.stringify(e.payload.output));
+  assert.equal(outputs.length, 2);
+  assert.match(outputs[0], /pending/);
+  assert.match(outputs[1], /approved/);
+});
+
 test("ExitPlanMode is only offered in plan mode", async (t) => {
   const { broker } = answeringBroker(() => ({ decision: "allow" }));
   const { events } = await run(
