@@ -3,9 +3,11 @@ package com.onedata.portal.service.datasource.adapters.mysql;
 import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.service.datasource.adapters.Descriptors;
 import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 @Component
+@Order(20)
 public class MysqlAdapter extends MysqlProtocolAdapter {
 
     private final DatasourceDescriptor descriptor;

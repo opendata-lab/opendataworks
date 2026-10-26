@@ -380,3 +380,48 @@ frontend/src/views/datastudio/composables/useTableMetaEditing.js
 frontend/src/views/settings/DataSourceManagement.vue
 frontend/src/views/settings/__tests__/DataSourceManagement.spec.js
 ```
+
+## 2026-10-26 PostgreSQL / MySQL 浏览器端到端验证
+
+在提交 `eec99afe` 之上，用真实数据库和浏览器走完"新增数据源 → 测试连接 → 元数据同步 → Data Studio 浏览与查询 → 查询历史"，并直接调用 Java agent 只读接口。Doris 留待内网环境验证。
+
+### 环境
+
+- 后端：本 worktree 打包的 jar，Java 1.8.0_271，端口 18086；平台库为本机 `data-portal-mysql`（MySQL 8，127.0.0.1:3306）上新建的 `odw_e2e_platform`，Flyway 从空库迁移到 V53；`AUTH_ANONYMOUS_ENABLED=true`（本地匿名 admin），`AGENT_API_SERVICE_TOKEN` 设为测试值。
+- 前端：Vite 开发服务器（Node 20.19.0），代理到 18086；浏览器为 Playwright 驱动的 Chrome。
+- PostgreSQL 16：临时容器，库 `shop`，`public.customer`（`BIGSERIAL` 主键、`TEXT[]`、`JSONB`、带单引号的数据）、`sales.orders`（按季度 RANGE 分区、联合主键、`NUMERIC(12,2)`）、`sales."MixedCase"`（大小写敏感标识符）、视图 `sales.v_daily`。
+- MySQL 业务库：同一 MySQL 实例上的 `odw_e2e_biz`（`product`、联合主键的 `stock`、视图），连接账号只有 `SELECT, SHOW VIEW`。
+
+### 结果
+
+| 环节 | PostgreSQL | MySQL |
+| --- | --- | --- |
+| 新增表单 | 按描述生成，端口 5432，连接数据库必填 | 端口 3306，连接数据库可选 |
+| 测试连接 | 成功 | 成功 |
+| 首次同步 | SUCCESS，4 表 14 字段；分区子表不单列，父表行数为分区合计 200 | SUCCESS，3 表 11 字段 |
+| 字段元数据 | 中文注释、联合主键、精度、数组、jsonb、默认值、大写字段名正确 | 注释、联合主键、默认值正确 |
+| 比对后再同步 | — | 发现 3 处差异，确认后更新 2 表 8 字段 |
+| 目录树 | public / sales，表与视图分组正确 | 只显示授权的业务库 |
+| 默认查询 | 后端生成双引号 `"sales"."orders"`，200 行 | 反引号，3 行 |
+| 自定义 SQL | 跨 schema JOIN + 聚合 + `->>` + `string_agg`，结果与 psql 一致；不带 schema 前缀查询 `"MixedCase"`，`current_schema()` 为 `sales` | JOIN + 聚合结果正确 |
+| EXPLAIN | 返回计划 | — |
+| 高风险语句 | — | DELETE 弹出强确认；确认后因账号无权限被数据库拒绝，错误就地显示 |
+| DDL 页签 | 显示适配器声明的不支持原因（pg_dump 提示） | 显示建表语句 |
+| 字段编辑入口 | 按能力禁用 | — |
+| 查询历史 | 两个数据源的执行、EXPLAIN、失败语句均已记录 | 同左 |
+| agent 只读查询 | 成功，`has_more` 正确；多语句被拒；`set_config('transaction_read_only','off')` 被服务端拒绝 | 成功；DELETE 被拒；会话 `transaction_read_only = 1` |
+| agent 参考结构 | 返回字段与注释 | 返回字段与注释 |
+
+### 本轮发现并修复
+
+- **新建数据源的默认类型不固定**：前端取类型描述列表第一项，而注册表顺序取决于 Spring 注入顺序，本次实测默认变成了 PostgreSQL（改造前固定为 Doris）。适配器加 `@Order`（Doris、MySQL、PostgreSQL），注册表按此排序；新增契约测试以逆序传入验证顺序。重启后接口返回 `DORIS, MYSQL, POSTGRESQL`，表单默认 Doris / 9030。
+- **切换类型时空字段立即标红**：必填规则随描述重算，Element Plus 默认在规则变化时校验。表单设为 `validate-on-rule-change=false`，浏览器复测切换后无错误提示。
+
+验证：后端适配器、连接、结构编辑与 agent 相关测试 87 项通过；前端 59 个文件 419 项通过。
+
+### 未覆盖
+
+- Doris（用户在内网自行验证），包括 `DorisAdapter.applyReadOnly` 的后续决定。
+- 经真实模型的 DataAgent NL2SQL（模型账号欠费）。
+- 数据集成（DataX / DolphinScheduler 同步任务）：DolphinScheduler 本地不可用。
+- 第一次灌入 MySQL 测试数据时客户端字符集不对，导致源数据本身是双重编码；用 utf8mb4 重灌后同步结果正确，这是测试数据问题，不是平台问题。

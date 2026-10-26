@@ -12,6 +12,7 @@ import com.onedata.portal.service.datasource.spi.DatasourceReferenceDdlReader;
 import com.onedata.portal.service.datasource.spi.DatasourceSqlDialect;
 import com.onedata.portal.util.JdbcUrlParts;
 import com.onedata.portal.util.PostgresqlMetadataSql;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
@@ -24,6 +25,7 @@ import java.util.Collections;
 import java.util.List;
 
 @Component
+@Order(30)
 public class PostgresqlAdapter implements DatasourceAdapter, DatasourceReferenceDdlReader {
 
     private final DatasourceSqlDialect dialect = new QuotedLimitDialect("\"");

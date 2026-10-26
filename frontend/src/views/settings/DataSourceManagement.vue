@@ -93,7 +93,8 @@
     </el-card>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="120px">
+      <!-- 规则随类型描述变化，切换类型时不应把尚未填写的字段立即标红 -->
+      <el-form ref="formRef" :model="form" :rules="rules" :validate-on-rule-change="false" label-width="120px">
         <el-form-item label="数据源名称" prop="clusterName">
           <el-input v-model="form.clusterName" placeholder="例如：生产 Doris / 本地 PostgreSQL" />
         </el-form-item>

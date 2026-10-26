@@ -7,8 +7,10 @@ import com.onedata.portal.service.datasource.model.DatasourceTypeDefinition;
 import com.onedata.portal.service.datasource.spi.DatasourceAdapter;
 import com.onedata.portal.service.datasource.spi.DatasourceDdlReader;
 import com.onedata.portal.service.table.TableEngineHandler;
+import org.springframework.core.annotation.AnnotationAwareOrderComparator;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -26,7 +28,10 @@ public class DatasourceAdapterRegistry {
 
     public DatasourceAdapterRegistry(List<DatasourceAdapter> implementations, JdbcDriverRegistry drivers) {
         this.drivers = drivers;
-        for (DatasourceAdapter adapter : implementations) {
+        // 描述列表的顺序决定前端类型下拉和新建时的默认类型，按适配器的 @Order 固定，不依赖 Bean 扫描顺序。
+        List<DatasourceAdapter> ordered = new ArrayList<>(implementations);
+        AnnotationAwareOrderComparator.sort(ordered);
+        for (DatasourceAdapter adapter : ordered) {
             DatasourceDescriptor descriptor = adapter.descriptor();
             String key = normalize(descriptor.getType());
             if (!key.equals(descriptor.getType()) || descriptor.getSchemaVersion() != 1

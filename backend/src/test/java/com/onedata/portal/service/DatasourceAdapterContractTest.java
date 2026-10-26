@@ -44,6 +44,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.logging.Logger;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -80,6 +81,20 @@ class DatasourceAdapterContractTest {
                 .editorDialect("standard")
                 .driverClass(driverClass)
                 .connectionDatabaseRequired(false);
+    }
+
+    @Test
+    void definitionsFollowAdapterOrderSoDorisStaysTheDefaultType() {
+        DorisJdbcProperties properties = new DorisJdbcProperties();
+        DatasourceAdapterRegistry registry = new DatasourceAdapterRegistry(
+                Arrays.asList(new PostgresqlAdapter(), new MysqlAdapter(properties), new DorisAdapter(properties)),
+                new JdbcDriverRegistry());
+
+        List<String> types = registry.definitions().stream()
+                .map(definition -> definition.getDescriptor().getType())
+                .collect(Collectors.toList());
+
+        assertEquals(Arrays.asList("DORIS", "MYSQL", "POSTGRESQL"), types);
     }
 
     @Test
