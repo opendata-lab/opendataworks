@@ -262,9 +262,11 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "title": str(data.get("title") or ""),
                 "summary": str(data.get("summary") or ""),
                 "payload_preview": data.get("payload_preview"),
+                "deadline_at": str(data.get("deadline_at") or ""),
                 "decision": "pending",
                 "note": "",
                 "decided_at": "",
+                "source": "",
                 "_idx": len(ordered_blocks),
             }
             ordered_blocks.append(block)
@@ -280,6 +282,7 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 block["decision"] = str(data.get("decision") or "pending")
                 block["note"] = str(data.get("note") or "")
                 block["decided_at"] = str(data.get("decided_at") or "")
+                block["source"] = str(data.get("source") or "user")
 
         elif record_type == "question_request":
             request_id = str(data.get("request_id") or "")
@@ -288,9 +291,11 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 "type": "question_request",
                 "request_id": request_id,
                 "questions": questions if isinstance(questions, list) else [],
+                "deadline_at": str(data.get("deadline_at") or ""),
                 "answers": [],
                 "answered": False,
                 "answered_at": "",
+                "source": "",
                 "_idx": len(ordered_blocks),
             }
             ordered_blocks.append(block)
@@ -307,6 +312,7 @@ def _project_sdk_records(records: list[dict[str, Any]]) -> dict[str, Any]:
                 block["answers"] = answers if isinstance(answers, list) else []
                 block["answered"] = True
                 block["answered_at"] = str(data.get("answered_at") or "")
+                block["source"] = str(data.get("source") or "user")
 
         elif record_type == "tool_result":
             tool_use_id = str(data.get("tool_use_id") or "")
@@ -1861,6 +1867,7 @@ class TopicTaskStore:
         decision: str,
         note: str = "",
         decided_at: str = "",
+        source: str = "user",
     ) -> str:
         return self._append_interaction_if_waiting(
             task_id=task_id,
@@ -1872,6 +1879,7 @@ class TopicTaskStore:
                 "decision": normalize_permission_decision(decision),
                 "note": str(note or ""),
                 "decided_at": decided_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "source": str(source or "user"),
             },
         )
 
@@ -1963,6 +1971,7 @@ class TopicTaskStore:
         request_id: str,
         answers: Any,
         answered_at: str = "",
+        source: str = "user",
     ) -> str:
         return self._append_interaction_if_waiting(
             task_id=task_id,
@@ -1973,6 +1982,7 @@ class TopicTaskStore:
                 "request_id": str(request_id),
                 "answers": answers if isinstance(answers, list) else [],
                 "answered_at": answered_at or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "source": str(source or "user"),
             },
         )
 
@@ -2144,6 +2154,7 @@ class TopicTaskStore:
                 else:
                     questions = data.get("questions")
                     request["questions"] = questions if isinstance(questions, list) else []
+                request["deadline_at"] = str(data.get("deadline_at") or "")
             elif record_type == resolved_type:
                 resolved = {
                     "request_id": request_id,
@@ -2167,6 +2178,7 @@ class TopicTaskStore:
                             "answered_at": str(data.get("answered_at") or ""),
                         }
                     )
+                resolved["source"] = str(data.get("source") or "user")
         if resolved:
             if request:
                 resolved.setdefault("topic_id", request.get("topic_id"))

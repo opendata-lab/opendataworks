@@ -26,6 +26,13 @@ import {
 } from "../context/tabular-digest.js";
 import { CompactionSession } from "../context/compaction-session.js";
 import { UiToolResultRegistry } from "./ui-tool-result-registry.js";
+import type { InteractionBroker } from "../interaction/interaction-broker.js";
+import { createAskUserQuestionTool, createExitPlanModeTool } from "../interaction/interaction-tools.js";
+
+/** `mcp__portal__portal_create_task` -> `portal_create_task`. */
+function bareToolName(name: string): string {
+  return name.startsWith("mcp__") ? name.split("__").pop() ?? name : name;
+}
 
 /**
  * Attach fold provenance without touching anything the tool wrote.
@@ -92,7 +99,8 @@ export class Cell {
   public async run(
     init: CellInitPayload,
     sink: EventSink,
-    onHeartbeat: HeartbeatSink = () => {}
+    onHeartbeat: HeartbeatSink = () => {},
+    broker: InteractionBroker | null = null
   ): Promise<CellRunResult> {
     const heartbeat = onHeartbeat;
     const sm = new RunStateMachine(init.run_id, init.task_id, init.run_id);
@@ -114,6 +122,10 @@ export class Cell {
     let limitDenial: string | null = null;
     let mcpBridge: McpBridgeResult | null = null;
     let activeToolTimer: NodeJS.Timeout | null = null;
+    // Plan mode holds the listed tools until the user approves a plan.
+    const planMode = init.permission_mode === "plan";
+    let planApproved = false;
+    const planDenied = new Set((init.plan_denied_tools ?? []).map(bareToolName));
 
     try {
       mcpBridge = await connectMcpServers(init.mcp_servers, { connectTimeoutMs: 10_000 });
@@ -134,7 +146,12 @@ export class Cell {
         toolTimeoutMs: init.limits.bash_timeout_seconds * 1000,
         runtimeEnv: init.runtime_env ?? {},
         skills: init.skills,
-        extraTools: mcpBridge.tools,
+        extraTools: [
+          ...mcpBridge.tools,
+          // Without a broker there is nobody to ask, so the tools are not offered.
+          ...(broker ? [createAskUserQuestionTool(broker)] : []),
+          ...(broker && planMode ? [createExitPlanModeTool(broker, () => { planApproved = true; })] : []),
+        ],
       });
 
       // Extract history messages and current prompt
@@ -331,7 +348,10 @@ export class Cell {
           // but a tool added later must not be able to skip it by forgetting.
           const toolName = String(context.toolCall?.name ?? "");
           const args = (context.toolCall?.arguments ?? {}) as Record<string, unknown>;
-          const reason = boundary.validate(toolName, args);
+          const reason =
+            planMode && !planApproved && planDenied.has(bareToolName(toolName))
+              ? `计划模式：批准计划前不能调用 ${toolName}。先调用 ExitPlanMode 提交计划，批准后再执行。`
+              : boundary.validate(toolName, args);
           if (reason) {
             emit(
               sm.createEvent("tool.denied", {

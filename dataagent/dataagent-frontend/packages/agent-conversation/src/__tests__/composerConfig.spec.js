@@ -514,6 +514,59 @@ describe('permission mode', () => {
   })
 })
 
+describe('plan switch', () => {
+  it('starts as the host says and sends plan while on', async () => {
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: { planMode: { enabled: true, default: true } }
+    })
+    const toggle = el.shadowRoot.querySelector('[data-control="plan-mode"]')
+    expect(toggle.getAttribute('aria-pressed')).toBe('true')
+
+    await el.sendMessage('建一个订单主题模型')
+    await settle()
+    expect(transport.sendMessage.mock.calls[0][0].settings.permission_mode).toBe('plan')
+    el.remove()
+  })
+
+  it('sends default once switched off', async () => {
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: { planMode: { enabled: true, default: true } }
+    })
+    const toggle = el.shadowRoot.querySelector('[data-control="plan-mode"]')
+    toggle.click()
+    await settle()
+    expect(toggle.getAttribute('aria-pressed')).toBe('false')
+
+    await el.sendMessage('再补一个门店维度')
+    await settle()
+    expect(transport.sendMessage.mock.calls[0][0].settings.permission_mode).toBe('default')
+    el.remove()
+  })
+
+  it('falls back to the picker mode when switched off', async () => {
+    const transport = makeTransport()
+    const el = await mount({
+      transportFactory: () => transport,
+      composerConfig: { ...CONFIG, permissionMode: 'bypassPermissions', planMode: { enabled: true } }
+    })
+
+    await el.sendMessage('开始')
+    await settle()
+    expect(transport.sendMessage.mock.calls[0][0].settings.permission_mode).toBe('bypassPermissions')
+    el.remove()
+  })
+
+  it('is absent unless the host enables it', async () => {
+    const el = await mount({ transportFactory: () => makeTransport(), composerConfig: CONFIG })
+    expect(el.shadowRoot.querySelector('[data-control="plan-mode"]')).toBeNull()
+    el.remove()
+  })
+})
+
 describe('textarea auto-resize', () => {
   it('starts at rows=1 and auto-resizes up to 160px', async () => {
     const el = await mount({ transportFactory: () => makeTransport() })

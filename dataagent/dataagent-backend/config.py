@@ -100,6 +100,10 @@ class Settings(BaseSettings):
     # 加入 allowed_tools，且在无写工具门控的会话中 can_use_tool 回到 None、prompt 回到
     # 纯字符串形态（更接近 v1.3.0 的调用形态）。写工具确认门控不受本开关影响。
     dataagent_ask_user_question_enabled: bool = True
+    # A question or plan card left unanswered this long is settled by policy:
+    # questions take their recommended option (or are skipped), a plan follows
+    # the agent's plan_timeout_action. 0 waits for the user indefinitely.
+    dataagent_interaction_timeout_seconds: int = Field(default=600, ge=0)
 
     # ---- Agent runtime kind (data plane engine) ----
     # Which execution engine runs one NL2SQL turn. This is orthogonal to

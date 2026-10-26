@@ -22,9 +22,17 @@ async def wait_for_decision(
     *,
     poll_interval_seconds: float = 1.0,
     cancel_reason: Any = None,
+    deadline: Any = None,
+    on_timeout: Any = None,
 ) -> str:
-    """Poll MySQL for the user's decision; return callback verb ``allow``/``deny``."""
+    """Poll MySQL for the user's decision; return callback verb ``allow``/``deny``.
+
+    Past ``deadline`` (an ``InteractionDeadline``) ``on_timeout`` records the
+    policy's decision once; polling continues, so a user reply that won the race
+    is what gets returned.
+    """
     store = get_topic_task_store()
+    timed_out = False
     while True:
         reason = await _read_cancel_reason(cancel_reason)
         if reason == "user_cancel":
@@ -46,6 +54,14 @@ async def wait_for_decision(
                 if callback_decision:
                     return callback_decision
                 return "deny"
+        if not timed_out and on_timeout is not None and deadline is not None and deadline.expired:
+            try:
+                on_timeout()
+                timed_out = True
+                continue
+            except Exception:
+                # Retried next poll: a blip in MySQL must not leave the run waiting forever.
+                logger.warning("permission_wait: timeout policy failed task_id=%s", task_id, exc_info=True)
         await asyncio.sleep(max(0.1, float(poll_interval_seconds)))
 
 

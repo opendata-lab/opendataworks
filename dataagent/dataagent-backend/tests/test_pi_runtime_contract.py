@@ -403,3 +403,97 @@ async def test_idle_timeout_does_not_mislabel_a_pending_cancel(tmp_path: Path):
 
     assert outcome.terminal_status == "cancelled"
     assert outcome.error_code != "PI_RUN_IDLE_TIMEOUT"
+
+
+_INTERACTION_REQUEST = """
+read()
+event(1, "run.started")
+send("interaction.request", {"request_id": "q-1", "kind": "question", "payload": {"questions": []}})
+"""
+
+
+@pytest.mark.asyncio
+async def test_interaction_round_trip_pauses_the_timers(tmp_path: Path):
+    writer = _RecordingWriter()
+    cell = _stub_cell(
+        _INTERACTION_REQUEST
+        + textwrap.dedent(
+            """
+        frame = read()
+        assert frame["type"] == "interaction.resolved", frame
+        event(2, "run.completed", {"answer": json.dumps(frame["payload"])})
+        """
+        )
+    )
+
+    async def handler(kind: str, request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        # Longer than the idle timeout: a person deciding is not a stalled run.
+        await asyncio.sleep(1.5)
+        return {"answers": [{"selected": ["按天"]}], "kind": kind, "request_id": request_id}
+
+    outcome = await execute_pi_run(
+        _context(tmp_path, idle_timeout_seconds=1),
+        writer=writer,
+        cell_command=cell,
+        interaction_handler=handler,
+    )
+
+    assert outcome.terminal_status == "success", outcome
+    resolved = json.loads(writer.events[-1]["payload"]["answer"])
+    assert resolved == {
+        "request_id": "q-1",
+        "result": {"answers": [{"selected": ["按天"]}], "kind": "question", "request_id": "q-1"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_cancel_while_waiting_sends_run_cancel_not_an_answer(tmp_path: Path):
+    writer = _RecordingWriter()
+    cell = _stub_cell(
+        _INTERACTION_REQUEST
+        + textwrap.dedent(
+            """
+        frame = read()
+        assert frame["type"] == "run.cancel", frame
+        event(2, "run.cancelled", {"reason": frame["payload"].get("reason")})
+        """
+        )
+    )
+    cancelled = {"value": ""}
+
+    async def handler(kind: str, request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        cancelled["value"] = "user_cancel"
+        await asyncio.sleep(30)
+        return {}
+
+    async def cancel_reason() -> str:
+        return cancelled["value"]
+
+    outcome = await execute_pi_run(
+        _context(tmp_path),
+        writer=writer,
+        cell_command=cell,
+        cancel_reason=cancel_reason,
+        interaction_handler=handler,
+    )
+
+    assert outcome.terminal_status == "cancelled"
+    assert writer.events[-1]["type"] == "run.cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cell_exit_while_waiting_is_cell_loss(tmp_path: Path):
+    writer = _RecordingWriter()
+    cell = _stub_cell(_INTERACTION_REQUEST + "\nsys.exit(0)\n")
+
+    async def handler(kind: str, request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        await asyncio.sleep(30)
+        return {}
+
+    outcome = await asyncio.wait_for(
+        execute_pi_run(_context(tmp_path), writer=writer, cell_command=cell, interaction_handler=handler),
+        timeout=8,
+    )
+
+    assert outcome.terminal_status == "failed"
+    assert outcome.error_code == "CELL_LOSS"

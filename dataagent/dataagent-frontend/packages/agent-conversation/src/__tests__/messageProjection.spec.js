@@ -128,7 +128,7 @@ describe('history projection', () => {
       }
     ], { taskId: 't-1', status: 'waiting_input', detail: '' })
 
-    expect(el.shadowRoot.querySelector('.v2-q-card')).toBeTruthy()
+    expect(el.shadowRoot.querySelector('.dac-q-card')).toBeTruthy()
     expect(rendered(el)).toContain('按下单时间还是发货时间统计？')
     el.remove()
   })

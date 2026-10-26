@@ -20,6 +20,18 @@ Point the element at a base path and implement these six endpoints under it:
 | POST | `{endpoint}/interactions` | `{ task_id, kind, request_id, payload }` | `{ "ok": true }` |
 | GET | `{endpoint}/files/{rel_path}` | — | binary |
 
+`interactions` payloads, forwarded unchanged by the BFF:
+
+- `kind: "question"` → `{ answers: [{ header, question, selected, other, skipped }] }`
+- `kind: "permission"` → `{ decision: "allow" | "deny", note? }`. For a plan card
+  (`risk_level: "plan"`), `deny` with `note` asks the agent to revise the plan.
+
+Request records may carry `deadline_at` (ISO time; the card counts down) and
+answers carry `source` (`user` or `auto_timeout`). Expanding a plan dispatches a
+cancelable, composed `dataagent-plan-open` event with `{ markdown, title, body, requestId }`
+(`body` is the markdown without its first heading, which `title` carries); a host
+that calls `preventDefault()` shows it itself, otherwise the card expands in place.
+
 ```jsonc
 // ConversationSnapshot
 {

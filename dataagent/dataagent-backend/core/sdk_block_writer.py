@@ -368,6 +368,7 @@ class SdkBlockWriter:
         title: str = "",
         summary: str = "",
         payload_preview: Any = None,
+        deadline_at: str = "",
     ) -> None:
         """Record a generic Chat V2 permission-request block.
 
@@ -388,6 +389,8 @@ class SdkBlockWriter:
                 "title": str(title or ""),
                 "summary": str(summary or ""),
                 "payload_preview": payload_preview,
+                # When the card settles by policy if unanswered; empty waits indefinitely.
+                "deadline_at": str(deadline_at or ""),
             },
         )
 
@@ -423,6 +426,7 @@ class SdkBlockWriter:
         *,
         request_id: str,
         questions: Any,
+        deadline_at: str = "",
     ) -> None:
         """Record an ``ask_user_question`` request block.
 
@@ -439,6 +443,7 @@ class SdkBlockWriter:
             data={
                 "request_id": str(request_id),
                 "questions": questions if isinstance(questions, list) else [],
+                "deadline_at": str(deadline_at or ""),
             },
         )
 

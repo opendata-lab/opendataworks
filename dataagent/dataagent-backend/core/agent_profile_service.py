@@ -13,6 +13,7 @@ from config import get_settings
 from core.mcp_admin_service import available_mcp_servers as list_available_mcp_servers
 from core.agent_visibility import normalize_agent_visibility
 from core.data_scope import normalize_data_scope
+from core.interaction_policy import PLAN_TIMEOUT_ACTIONS, normalize_plan_timeout_action
 
 DEFAULT_AGENT_ID = "agent_default"
 DEFAULT_AGENT_NAME = "默认助手"
@@ -145,6 +146,13 @@ def _validate_max_turns(value: Any) -> int:
     return turns
 
 
+def _validate_plan_timeout_action(value: Any) -> str:
+    text = str(value or "").strip().lower() or "park"
+    if text not in PLAN_TIMEOUT_ACTIONS:
+        raise ValueError("plan_timeout_action must be park or approve")
+    return text
+
+
 def _validate_env_vars(value: Any) -> dict[str, str]:
     if value in (None, ""):
         return {}
@@ -214,6 +222,9 @@ def normalize_agent_profile_payload(
         label="skill folder",
     )
     max_turns = _validate_max_turns(data.get("max_turns", base.get("max_turns") or 0))
+    plan_timeout_action = _validate_plan_timeout_action(
+        data.get("plan_timeout_action", base.get("plan_timeout_action") or "park")
+    )
     env_vars = _validate_env_vars(data.get("env_vars", base.get("env_vars") or {}))
     data_scope = normalize_data_scope(data.get("data_scope", base.get("data_scope") or {}))
     visibility = normalize_agent_visibility(
@@ -230,6 +241,7 @@ def normalize_agent_profile_payload(
         "mcp_server_ids": mcp_server_ids,
         "skill_folders": skill_folders,
         "max_turns": max_turns,
+        "plan_timeout_action": plan_timeout_action,
         "env_vars": env_vars,
         "data_scope": data_scope,
         "visibility": visibility,
@@ -247,6 +259,7 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "mcp_server_ids": _dedupe_strings(profile.get("mcp_server_ids")),
         "skill_folders": _dedupe_strings(profile.get("skill_folders")),
         "max_turns": int(profile.get("max_turns") or 0),
+        "plan_timeout_action": normalize_plan_timeout_action(profile.get("plan_timeout_action")),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
         "data_scope": normalize_data_scope(profile.get("data_scope") or {}),
         "is_default": bool(profile.get("is_default")),
@@ -399,6 +412,7 @@ class AgentProfileStore:
             "mcp_server_ids": _dedupe_strings(_safe_json_load(row.get("mcp_server_ids_json"), [])),
             "skill_folders": _dedupe_strings(_safe_json_load(row.get("skill_folders_json"), [])),
             "max_turns": int(row.get("max_turns") or 0),
+            "plan_timeout_action": normalize_plan_timeout_action(row.get("plan_timeout_action")),
             "env_vars": _validate_env_vars(_safe_json_load(row.get("env_vars_json"), {})),
             "data_scope": normalize_data_scope(_safe_json_load(row.get("data_scope_json"), {})),
             "visibility": normalize_agent_visibility(_safe_json_load(row.get("visibility_json"), {})),
@@ -419,7 +433,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, data_scope_json, visibility_json,
+                           max_turns, plan_timeout_action, env_vars_json, data_scope_json, visibility_json,
                            preset_questions_json,
                            is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
@@ -440,7 +454,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, env_vars_json, data_scope_json, visibility_json,
+                           max_turns, plan_timeout_action, env_vars_json, data_scope_json, visibility_json,
                            preset_questions_json,
                            is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
@@ -466,10 +480,10 @@ class AgentProfileStore:
             INSERT INTO da_agent_profile (
                 agent_id, name, description, system_prompt,
                 allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                max_turns, env_vars_json, data_scope_json, visibility_json,
+                max_turns, plan_timeout_action, env_vars_json, data_scope_json, visibility_json,
                 preset_questions_json,
                 is_default, is_builtin
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
                 description = VALUES(description),
@@ -478,6 +492,7 @@ class AgentProfileStore:
                 mcp_server_ids_json = VALUES(mcp_server_ids_json),
                 skill_folders_json = VALUES(skill_folders_json),
                 max_turns = VALUES(max_turns),
+                plan_timeout_action = VALUES(plan_timeout_action),
                 env_vars_json = VALUES(env_vars_json),
                 data_scope_json = VALUES(data_scope_json),
                 visibility_json = VALUES(visibility_json),
@@ -495,6 +510,7 @@ class AgentProfileStore:
                 _json_dump(_dedupe_strings(profile.get("mcp_server_ids"))),
                 _json_dump(_dedupe_strings(profile.get("skill_folders"))),
                 int(profile.get("max_turns") or 0),
+                normalize_plan_timeout_action(profile.get("plan_timeout_action")),
                 _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
                 _json_dump(normalize_data_scope(profile.get("data_scope") or {})),
                 _json_dump(normalize_agent_visibility(profile.get("visibility") or {})),

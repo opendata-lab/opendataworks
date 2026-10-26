@@ -86,9 +86,11 @@ function _handlePermissionRequest(state, data) {
     title: data.title || '',
     summary: data.summary || '',
     payload_preview: data.payload_preview ?? null,
+    deadline_at: data.deadline_at || '',
     decision: 'pending',
     note: '',
     decided_at: '',
+    source: '',
   }
   if (currentTurn) currentTurn.blocks.push(block)
   state.blocks.push(block)
@@ -101,6 +103,7 @@ function _handlePermissionDecision(state, data) {
   block.decision = data.decision || 'pending'
   block.note = data.note || ''
   block.decided_at = data.decided_at || ''
+  block.source = data.source || 'user'
 }
 
 function _handleQuestionRequest(state, data) {
@@ -113,9 +116,11 @@ function _handleQuestionRequest(state, data) {
     status: 'done',
     requestId: data.request_id || '',
     questions: Array.isArray(data.questions) ? data.questions : [],
+    deadline_at: data.deadline_at || '',
     answers: [],
     answered: false,
     answered_at: '',
+    source: '',
   }
   if (currentTurn) currentTurn.blocks.push(block)
   state.blocks.push(block)
@@ -128,6 +133,7 @@ function _handleQuestionAnswer(state, data) {
   block.answers = Array.isArray(data.answers) ? data.answers : []
   block.answered = true
   block.answered_at = data.answered_at || ''
+  block.source = data.source || 'user'
 }
 
 function _handleStreamEvent(state, evt) {

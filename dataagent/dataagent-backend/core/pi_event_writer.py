@@ -141,6 +141,50 @@ class PiEventWriter:
                 detail=str(payload.get("detail") or ""),
             )
 
+    def append_question_request(self, *, request_id: str, questions: Any, deadline_at: str = "") -> None:
+        """Same record as ``SdkBlockWriter.append_question_request``: the card is engine-agnostic."""
+        self._store.append_sdk_record(
+            task_id=self._task_id,
+            topic_id=self._topic_id,
+            turn_index=self._turn_index,
+            record_type="question_request",
+            event_type=None,
+            data={
+                "request_id": str(request_id),
+                "questions": questions if isinstance(questions, list) else [],
+                "deadline_at": str(deadline_at or ""),
+            },
+        )
+
+    def append_permission_request(
+        self,
+        *,
+        request_id: str,
+        tool_name: str,
+        risk_level: str = "high",
+        title: str = "",
+        summary: str = "",
+        payload_preview: Any = None,
+        deadline_at: str = "",
+    ) -> None:
+        """Same record as ``SdkBlockWriter.append_permission_request``."""
+        self._store.append_sdk_record(
+            task_id=self._task_id,
+            topic_id=self._topic_id,
+            turn_index=self._turn_index,
+            record_type="permission_request",
+            event_type=None,
+            data={
+                "request_id": str(request_id),
+                "tool_name": str(tool_name or ""),
+                "risk_level": str(risk_level or "high"),
+                "title": str(title or ""),
+                "summary": str(summary or ""),
+                "payload_preview": payload_preview,
+                "deadline_at": str(deadline_at or ""),
+            },
+        )
+
     def append_error(self, *, code: str = "pi_runtime_error", message: str = "请求失败", detail: str = "") -> None:
         """Emit the shared terminal error record.
 
