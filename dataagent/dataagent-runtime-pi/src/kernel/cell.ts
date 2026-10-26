@@ -126,6 +126,13 @@ export class Cell {
     const planMode = init.permission_mode === "plan";
     let planApproved = false;
     const planDenied = new Set((init.plan_denied_tools ?? []).map(bareToolName));
+    // Commands see the plan state too: skill scripts that write results refuse
+    // while it is pending, since Bash itself stays open for read-only research.
+    // Bash reads this object on every call, so approval reaches later commands.
+    const runtimeEnv: Record<string, string> = { ...(init.runtime_env ?? {}) };
+    if (planMode) {
+      runtimeEnv.DATAAGENT_PLAN_STATE = "pending";
+    }
 
     try {
       mcpBridge = await connectMcpServers(init.mcp_servers, { connectTimeoutMs: 10_000 });
@@ -144,13 +151,16 @@ export class Cell {
         boundary,
         workspaceRoot: init.workspace.project_cwd,
         toolTimeoutMs: init.limits.bash_timeout_seconds * 1000,
-        runtimeEnv: init.runtime_env ?? {},
+        runtimeEnv,
         skills: init.skills,
         extraTools: [
           ...mcpBridge.tools,
           // Without a broker there is nobody to ask, so the tools are not offered.
           ...(broker ? [createAskUserQuestionTool(broker)] : []),
-          ...(broker && planMode ? [createExitPlanModeTool(broker, () => { planApproved = true; })] : []),
+          ...(broker && planMode ? [createExitPlanModeTool(broker, () => {
+            planApproved = true;
+            runtimeEnv.DATAAGENT_PLAN_STATE = "approved";
+          })] : []),
         ],
       });
 
