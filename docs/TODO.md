@@ -11,24 +11,18 @@
 
 ## 权限与数据源
 
-### 数据库账号映射与用户授权管理
+### 主体数据库账号映射（原数据库账号映射与用户授权管理）
 
-- **现状**（2026-10-23 核实）：数据模型在 V3 迁移里都有，但功能没做完，实际部署基本没有启用：
-  - 库级账号 `doris_database_users`（每个库一对只读/读写账号）：只有读取方（`UserMappingService`、DataAgent 数据源解析），**没有新增或修改的接口，也没有页面**，只能手写 SQL；表名带 Doris，但结构是通用的。
-  - 用户级授权 `user_database_permissions`：有后端接口 `/v1/permissions/*`（`PermissionManagementController`），**没有前端页面**；外键依赖的 `platform_users` 在代码中没有任何写入；`expires_at` 字段没有生效，取凭据时不检查过期。
-  - 元数据枚举（表、字段、对象列表）固定用数据源账号，不走用户映射。
-- **要做**：库级账号的管理接口和页面（含密码脱敏）；用户授权页面；`platform_users` 的来源和同步方式；过期时间生效；元数据枚举按用户权限过滤；三种数据源（Doris/MySQL/PostgreSQL）统一行为。
-- **关联**：PostgreSQL 修复中已把"登记了映射账号但用户未授权时拒绝，不再退回数据源账号"改为三种类型统一规则；完整的权限功能需单独写设计文档。
+- **状态**（2026-10-26 最终讨论）：**方案中，已决定、待一次性交付**。见 [设计](design/2026-10-26-dataagent-datasource-identity-design.md) 和 [计划](plans/2026-10-26-dataagent-datasource-identity-plan.md)；本次只改文档。
+- **现状**（2026-10-23 核实，2026-10-26 复核）：V3 库级账号缺管理入口，platform_users 无写入链路，旧权限接口不完整；主门户问数可能仍是匿名身份，目录未统一按实际用户账号列出。
+- **已决定 / 要做**：平台不建授权表，只登记人（`sys_user`）和各智能体在每个数据源上的数据库账号，多主体可共用账号；DBA 建账号并 GRANT，智能体账号只读，缺映射直接拒绝。人工查询、写入、结构编辑、目录都用人的账号，数据源原账号只用于同步和运维；删除旧三表、`UserMappingService` 和 `/v1/permissions`，不迁移。DataAgent 调平台沿用现有服务令牌，由其后端在请求头填写用户 ID（第三方 OAuth 用户 ID，对应 `sys_user.external_id`）和智能体 ID；拆分后的 MCP 用同一契约。
 
 ### DataAgent 数据范围改为数据库层隔离
 
-- **现状**（2026-10-23，codex 五轮评审）：DataAgent 的"数据范围"靠执行前解析 SQL 文本拦截越权引用，只能作为辅助拦截。已确认仍可绕过的写法：
-  - MySQL 可执行注释藏在可解析的语句里，例如 `SELECT * /*! FROM private.orders */`：JSqlParser 当作普通注释，MySQL 会执行；
-  - 表达式里的子查询，例如 `SELECT ((SELECT secret FROM private.orders LIMIT 1) = 'x') IS TRUE`，以及 JOIN ON、ORDER BY、GROUP BY 中的子查询：`TablesNamesFinder` 提取不到；
-  - PostgreSQL 三段名 `ads_user.private.orders`：校验的是第一段（database），实际访问的 schema 是 `private`。
-  前两项在 MySQL/Doris 上原本就存在，不是 PostgreSQL 引入的。
-- **结论**：不再继续修补 SQL 解析。可靠隔离要在数据库层做：按数据范围给每个库或 schema 配只读账号，DataAgent 用对应账号连接，未授权的库从权限上就读不到。
-- **要做**：并入下面"数据库账号映射与用户授权管理"一起设计实施。在此之前，数据范围只能防误用，不能当作安全边界；智能体连接所用账号的权限应尽量收窄。
+- **状态**（2026-10-26 最终讨论）：**方案中，已决定、待一次性交付**，与上项合并。见 [设计](design/2026-10-26-dataagent-datasource-identity-design.md) 和 [计划](plans/2026-10-26-dataagent-datasource-identity-plan.md)。
+- **现状**（2026-10-23 codex 五轮评审，2026-10-26 复核）：SQL 范围检查可被 MySQL 可执行注释、嵌套子查询、PG 三段名绕过；只读守卫尚未发现绕过。未签名 X-Agent-Data-Scope 和共享服务令牌不证明真实主体，平台库还有 Spring 凭据旁路。
+- **已决定 / 要做**：代人问数先用人的账号 EXPLAIN，再用智能体账号只读执行；给模型的元数据取两个账号可见对象的交集；独立任务只用智能体账号；普通问数必须有登录用户。删除 SQL 表引用范围检查、`X-Agent-Data-Scope`、智能体数据范围配置和平台库旁路，只读检查保留。两个账号都能读即可跨库 JOIN；撤权下一次请求生效。
+- **核实边界**（2026-10-26）：PostgreSQL、MySQL 的 EXPLAIN 会检查引用对象权限；Doris 的 EXPLAIN 需要 `Select_priv`，视图只看视图本身权限，需在内网实测确认。交集是对象级的：行级安全、按当前用户变化的视图或函数、`SECURITY DEFINER` 函数不保证行级交集，DBA 不应让智能体账号访问这类对象。
 
 ### PostgreSQL 数据源的后续支持
 
@@ -41,17 +35,17 @@
 - domain 类型上的 `NOT NULL` 约束（目前只看 `attnotnull`）。
 - DolphinScheduler 中 PostgreSQL 数据源的调度接入。
 - DataAgent 经真实模型、MCP、Java agent API 到 PostgreSQL 的 NL2SQL 全链路冒烟。
-- DataAgent 数据范围校验对 MySQL/Doris 未加引号的标识符按原样比较：开启 `lower_case_table_names=1/2` 的实例上，大小写不同但实际合法的引用会被误拒（不会扩大授权）。需要按实例配置决定比较方式。
-- 数据范围生效时，无法被 JSqlParser 4.6 完整解析的 SQL 直接拒绝；只有 MySQL/Doris 的几种固定元数据语句例外（`SHOW [FULL] TABLES [LIKE '...']`、`SHOW [FULL] COLUMNS|FIELDS FROM|IN [db.]tbl`、`DESC|DESCRIBE [db.]tbl`）。实测被拒绝的常用写法：PostgreSQL `TABLESAMPLE`；MySQL `GROUP BY ... WITH ROLLUP`、`JSON_TABLE(...)`、`MEMBER OF(...)`；Doris `LATERAL VIEW explode(...)`、`TABLET(...)`、`TABLESAMPLE n PERCENT`。如果这些写法常用，需要换用能完整识别表引用的解析方案。（2026-10-23，codex 第四轮评审）
+- DataAgent 旧数据范围校验在 MySQL/Doris `lower_case_table_names=1/2` 上可能大小写误拒（2026-10-23）；随上述主体映射方案删除该授权检查，不再单独扩展解析器。实时目录/元数据对象匹配仍须遵循引擎大小写语义。
+- 旧表引用范围解析误拒 `TABLESAMPLE`、`WITH ROLLUP`、`JSON_TABLE` 等语法（2026-10-23 codex 第四轮评审）；随上述方案删除范围解析，不再规划替代的范围解析器。只读守卫仍保留，其语法支持单独验证，不能保证删除范围解析就支持全部语法。
 - 数据查询页对 PostgreSQL 实际执行 analyze/execute 的 HTTP 冒烟（含风险确认、取消、超时）和浏览器手工验证。
-- DataAgent 只读查询接口只接受 database 名，没有数据源 ID：多个数据源存在同名 schema（如 `public`）且智能体未配置数据范围时，仍会报"命中多个 cluster_id"。需要在接口、odw-cli 和 MCP 中增加可选的数据源 ID。
+- DataAgent 旧接口只接受 database 名，多源同名 schema（如 `public`）可能定位冲突；上述方案接口、odw-cli、MCP 应显式传数据源 ID，再按主体/数据源映射取账号，不再依赖待删除的数据范围配置消歧。
 
 ### 数据源适配器架构（剩余事项）
 
 - **现状**（2026-10-26）：阶段一至三、Java 阶段四、能力目录和额外连接字段已实施，已完成部分移至文末。见 [设计](design/2026-10-22-datasource-adapter-design.md)、[计划](plans/2026-10-22-datasource-adapter-plan.md)、[验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
 - **驱动已决定、加载待实施**（2026-10-25 决策；2026-10-26 确认本轮不纳入）：内置为主，保留 Doris/MySQL/PostgreSQL 驱动；外置目录仅可选新增 JDBC 数据库或覆盖内置版本。当前只检查驱动类可用性；后续需 manifest、独立 ClassLoader、Java/依赖/校验和检查、driverId 持久绑定与选择器，并验证双版本隔离不影响平台连接。升级仍无需目录或旧源版本绑定迁移。
 - **Python 与模型全链路**（来源：2026-10-26 范围与环境）：本轮统一 Java agent API，不改 Python resolver/tool；Python 直连路径见“测试与工程卫生”的既有单列项。真实模型账号欠费（403 Current user is in debt），恢复后按 DataAgent 规则补跑模型/MCP/任务、事件与消息持久化全流程；Java HTTP 验证不能替代此覆盖。
-- **验证补齐**（2026-10-25 发现，2026-10-26 延续）：PG/MySQL Java agent HTTP 及结构编辑能力门禁已验证；完整 Data Studio 字段/DDL/查询结果浏览器闭环仍未重跑。本机无真实 Doris 实例，需补同步、预览、DDL、分区、新鲜度及物理编辑回归；同时确认 Doris 是否接受 `SET SESSION TRANSACTION READ ONLY`，接受则去掉 `DorisAdapter.applyReadOnly` 的覆盖，让 DataAgent 的 Doris 只读连接也由服务端强制（2026-10-26 复核发现）。DolphinScheduler 不可达的既有集成用例需在环境恢复后复跑。原因与结果见上述报告。
+- **验证补齐**（2026-10-25 发现，2026-10-26 延续）：PG/MySQL Java agent HTTP 及结构编辑能力门禁已验证；完整 Data Studio 字段/DDL/查询结果浏览器闭环仍未重跑。本机无真实 Doris 实例，需补同步、预览、DDL、分区、新鲜度及物理编辑回归；按上述身份设计保持 `DorisAdapter.applyReadOnly` 空实现，智能体只读靠账号的 `Select_priv`；补测 Doris EXPLAIN 对无权对象报错、视图权限不依赖底表（2026-10-26 决定）。DolphinScheduler 不可达的既有集成用例需在环境恢复后复跑。原因与结果见上述报告。
 
 ### 完全关闭认证时的查询历史
 

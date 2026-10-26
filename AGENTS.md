@@ -117,6 +117,7 @@ When working in this repository, optimize for:
 - Prefer small, targeted changes that preserve existing module boundaries.
 - When changing a public API, schema, runtime contract, or deployment behavior, update the related docs in the same change when the impact is medium or large.
 - Do not move skill-specific behavior into shared runtime modules unless the behavior is genuinely generic.
+- Design for the simplest solution that works, delivered in one step. Do not add transition periods, phased rollouts, or optional branches unless the user asks for them.
 
 ## Design & Plan Workflow
 
