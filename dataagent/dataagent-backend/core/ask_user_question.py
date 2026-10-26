@@ -78,11 +78,18 @@ async def wait_for_answer(
     *,
     poll_interval_seconds: float = 1.0,
     cancel_reason: Any = None,
+    deadline: Any = None,
+    on_timeout: Any = None,
 ) -> list[dict[str, Any]] | None:
-    """Poll MySQL for the user's answer; return the answers list."""
+    """Poll MySQL for the user's answer; return the answers list.
+
+    Past ``deadline`` ``on_timeout`` records the recommended answers once; the
+    loop then returns whichever answer was persisted first.
+    """
     from core.topic_task_store import get_topic_task_store
 
     store = get_topic_task_store()
+    timed_out = False
     while True:
         reason = await _read_cancel_reason(cancel_reason)
         if reason == "user_cancel":
@@ -101,6 +108,14 @@ async def wait_for_answer(
         else:
             if answers is not None:
                 return answers
+        if not timed_out and on_timeout is not None and deadline is not None and deadline.expired:
+            try:
+                on_timeout()
+                timed_out = True
+                continue
+            except Exception:
+                # Retried next poll: a blip in MySQL must not leave the run waiting forever.
+                logger.warning("ask_user wait: timeout policy failed task_id=%s", task_id, exc_info=True)
         await asyncio.sleep(max(0.1, float(poll_interval_seconds)))
 
 

@@ -15,7 +15,7 @@
 export const PROTOCOL_VERSION = 1;
 
 /** Frames the control plane sends to this Cell. */
-export type InboundFrameType = "cell.init" | "run.cancel" | "cell.shutdown";
+export type InboundFrameType = "cell.init" | "run.cancel" | "cell.shutdown" | "interaction.resolved";
 /** Frames this Cell sends to the control plane. */
 export type OutboundFrameType =
   | "cell.ready"
@@ -25,6 +25,9 @@ export type OutboundFrameType =
   // renders just to avoid being mistaken for a stall.
   | "run.heartbeat"
   | "run.settled"
+  // A tool needs the user: {request_id, kind: "question" | "plan", payload}.
+  // The control plane answers with interaction.resolved {request_id, result}.
+  | "interaction.request"
   | "protocol.error";
 
 export interface ProtocolFrame<T = Record<string, unknown>> {
@@ -119,6 +122,10 @@ export interface CellInitPayload {
     bash_timeout_seconds: number;
   };
   governance_settings?: GovernanceSettings;
+  /** "plan" adds ExitPlanMode and holds plan_denied_tools until the plan is approved. */
+  permission_mode?: string;
+  /** Bare tool names (MCP prefix stripped) refused before plan approval. */
+  plan_denied_tools?: string[];
 }
 
 export function makeFrame<T extends Record<string, unknown>>(

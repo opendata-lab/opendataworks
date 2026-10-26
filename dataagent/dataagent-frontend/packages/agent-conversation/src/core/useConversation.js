@@ -426,7 +426,8 @@ export function useConversation({ transport, generation, emit, settings }) {
           for (const block of blocks) {
             if (block.requestId === requestId) {
               block._submitFailed = Date.now()
-              if (kind === 'permission' || block.type === 'permission_request') {
+              // A plan's summary is the plan itself; its card shows the failure on its own.
+              if ((kind === 'permission' || block.type === 'permission_request') && block.risk_level !== 'plan') {
                 if ((block.decision || 'pending') === 'pending') {
                   const summaryText = block.summary || ''
                   if (!summaryText.includes('[提交失败，请重试]')) {

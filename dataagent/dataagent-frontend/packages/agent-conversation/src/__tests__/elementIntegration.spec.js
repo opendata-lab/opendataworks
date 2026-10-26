@@ -513,26 +513,19 @@ describe('waiting states have a way out', () => {
     await el.sendMessage('画图')
     await settle(30)
 
-    const opt = el.shadowRoot.querySelector('.v2-q-opt')
+    // A single-choice question is answered by the pick itself.
+    const opt = el.shadowRoot.querySelector('.dac-q-opt')
     expect(opt).toBeTruthy()
     opt.click()
-    await settle(10)
-
-    const submitBtn = el.shadowRoot.querySelector('.v2-q-submit')
-    expect(submitBtn).toBeTruthy()
-    expect(submitBtn.disabled).toBe(false)
-
-    // First submit fails
-    submitBtn.click()
     await settle(30)
 
     expect(transport.submitInteraction).toHaveBeenCalledTimes(1)
-    expect(submitBtn.disabled).toBe(false)
-    expect(el.shadowRoot.querySelector('.v2-q-failed-hint').textContent).toContain('提交失败，请重试')
+    expect(el.shadowRoot.querySelector('.dac-q-failed').textContent).toContain('提交失败，请重试')
+    const retry = el.shadowRoot.querySelector('.dac-q-opt')
+    expect(retry.disabled).toBe(false)
 
-    // Retry submit
     shouldFail = false
-    submitBtn.click()
+    retry.click()
     await settle(30)
 
     expect(transport.submitInteraction).toHaveBeenCalledTimes(2)
@@ -577,14 +570,13 @@ describe('waiting states have a way out', () => {
     expect(permBtn.disabled).toBe(true)
     permBtn.click()
 
-    const qOption = el.shadowRoot.querySelector('.v2-q-opt')
+    const qOption = el.shadowRoot.querySelector('.dac-q-opt')
     expect(qOption).toBeTruthy()
     expect(qOption.disabled).toBe(true)
     qOption.click()
-    const qBtn = el.shadowRoot.querySelector('.v2-q-submit')
-    expect(qBtn).toBeTruthy()
-    expect(qBtn.disabled).toBe(true)
-    qBtn.click()
+    const qSkip = el.shadowRoot.querySelector('.dac-q-skip')
+    expect(qSkip.disabled).toBe(true)
+    qSkip.click()
     await settle()
 
     expect(transport.submitInteraction).not.toHaveBeenCalled()
@@ -594,7 +586,7 @@ describe('waiting states have a way out', () => {
 })
 
 describe('tool rendering and activity cues', () => {
-  it('suppresses raw AskUserQuestion tool_use block and only renders QuestionCard', async () => {
+  it('suppresses raw AskUserQuestion and ExitPlanMode tool rows beside their cards', async () => {
     const transport = makeTransport({
       loadConversation: async () => ({
         messages: [
@@ -609,6 +601,12 @@ describe('tool rendering and activity cues', () => {
                   id: 'tu-ask',
                   name: 'AskUserQuestion',
                   input: { questions: [] }
+                },
+                {
+                  type: 'tool_use',
+                  id: 'tu-plan',
+                  name: 'ExitPlanMode',
+                  input: { plan: '# 计划' }
                 },
                 {
                   type: 'tool_use',
@@ -638,7 +636,7 @@ describe('tool rendering and activity cues', () => {
     expect(toolOutputs[0].textContent).toContain('run_sql')
 
     // Question card should be rendered
-    expect(el.shadowRoot.querySelector('.v2-q-card')).toBeTruthy()
+    expect(el.shadowRoot.querySelector('.dac-q-card')).toBeTruthy()
     el.remove()
   })
 

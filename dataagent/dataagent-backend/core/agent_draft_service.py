@@ -20,7 +20,7 @@ class DraftConflict(ValueError):
 
 def configuration(profile: dict[str, Any]) -> dict[str, Any]:
     keys = ("agent_id", "name", "description", "system_prompt", "allowed_tools",
-            "mcp_server_ids", "skill_folders", "max_turns", "env_vars", "data_scope",
+            "mcp_server_ids", "skill_folders", "max_turns", "plan_timeout_action", "env_vars", "data_scope",
             "visibility", "preset_questions", "is_default", "is_builtin")
     return {key: profile.get(key, [] if key == "preset_questions" else None) for key in keys}
 

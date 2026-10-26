@@ -3,7 +3,7 @@ Pydantic 数据模型
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -546,6 +546,7 @@ class AgentProfileBase(BaseModel):
     mcp_server_ids: Optional[List[str]] = None
     skill_folders: Optional[List[str]] = None
     max_turns: Optional[int] = None
+    plan_timeout_action: Optional[Literal["park", "approve"]] = None
     env_vars: Optional[Dict[str, str]] = None
     data_scope: Optional[Dict[str, Any]] = None
     visibility: Optional[Dict[str, Any]] = None
@@ -606,6 +607,7 @@ class AgentProfile(BaseModel):
     mcp_server_ids: List[str] = Field(default_factory=list)
     skill_folders: List[str] = Field(default_factory=list)
     max_turns: int = 0
+    plan_timeout_action: str = "park"
     env_vars: Dict[str, str] = Field(default_factory=dict)
     data_scope: Dict[str, Any] = Field(default_factory=lambda: {"allowed_scopes": []})
     visibility: Dict[str, Any] = Field(
@@ -629,6 +631,7 @@ class AgentReadableProfile(BaseModel):
     mcp_server_ids: List[str] = Field(default_factory=list)
     skill_folders: List[str] = Field(default_factory=list)
     max_turns: int = 0
+    plan_timeout_action: str = "park"
     data_scope: Dict[str, Any] = Field(default_factory=lambda: {"allowed_scopes": []})
     visibility_mode: str = "all"
     preset_questions: List[str] = Field(default_factory=list)

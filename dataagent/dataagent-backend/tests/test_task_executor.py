@@ -15,7 +15,7 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 from config import get_settings, update_settings
-from core import task_executor
+from core import task_executor, user_interaction
 
 
 class _RecordingWriter:
@@ -93,6 +93,8 @@ def _build_gate(monkeypatch, decision, *, mode="default"):
         return decision
 
     monkeypatch.setattr(task_executor, "wait_for_decision", fake_wait)
+    # Plan approval waits through the shared interaction module.
+    monkeypatch.setattr(user_interaction, "wait_for_decision", fake_wait)
     cb = task_executor._build_can_use_tool_callback(
         sdk_writer=writer,
         store=store,
@@ -259,7 +261,7 @@ def _build_ask_gate(monkeypatch, answers, *, mode="default"):
     async def fake_answer(task_id, request_id, *, cancel_reason=None, **kw):
         return answers
 
-    monkeypatch.setattr(task_executor, "wait_for_answer", fake_answer)
+    monkeypatch.setattr(user_interaction, "wait_for_answer", fake_answer)
     cb = task_executor._build_can_use_tool_callback(
         sdk_writer=writer,
         store=store,

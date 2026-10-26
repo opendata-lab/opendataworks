@@ -46,7 +46,7 @@
             @rendered="$emit('rendered')"
           />
           <ToolOutput
-            v-else-if="block.type === 'tool_use' && !isAskUserQuestionBlock(block)"
+            v-else-if="block.type === 'tool_use' && !isCardToolBlock(block)"
             :tool="toolFor(block)"
             :file-url-resolver="fileUrl"
           />
@@ -171,7 +171,10 @@ const errorOf = (message) => {
   return ''
 }
 
-const isAskUserQuestionBlock = (block) => String(block?.name || '') === 'AskUserQuestion'
+// These tools surface as their own cards (question / plan); a raw tool row
+// beside the card would only repeat it.
+const CARD_TOOLS = new Set(['AskUserQuestion', 'ExitPlanMode'])
+const isCardToolBlock = (block) => CARD_TOOLS.has(String(block?.name || '').split('__').pop())
 
 const isBlockActivelyProgressing = (block) => {
   if (!block) return false

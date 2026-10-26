@@ -21,9 +21,10 @@ from core.ask_user_question import (
     ASK_USER_QUESTION_TOOL_NAME,
     is_ask_user_question_tool,
     to_sdk_answer_input,
-    wait_for_answer,
 )
 from core.permission_gate import (
+    PLAN_DENIED_BUILTIN_TOOLS,
+    WRITE_TOOL_NAMES,
     is_exit_plan_mode,
     is_high_risk_tool,
     is_write_tool,
@@ -33,6 +34,10 @@ from core.permission_gate import (
     strip_card_annotations,
 )
 from core.permission_wait import wait_for_decision
+from core.interaction_policy import plan_deadline, question_deadline
+
+PLAN_MODE_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "plan_mode.md"
+from core.user_interaction import ask_questions, plan_rejection_message, request_plan_approval
 from core.agent_runtime import (
     _build_allowed_tools,
     _build_portal_mcp_servers,
@@ -579,23 +584,20 @@ async def _handle_ask_user_question(
 
     request_id = str(getattr(context, "tool_use_id", "") or "").strip() or uuid.uuid4().hex
     try:
-        sdk_writer.append_question_request(request_id=request_id, questions=questions)
-        store.set_task_status(task_id, "waiting_input")
+        answers = await ask_questions(
+            writer=sdk_writer,
+            store=store,
+            task_id=task_id,
+            request_id=request_id,
+            questions=questions,
+            deadline=question_deadline(get_settings()),
+            cancel_reason=cancel_reason,
+        )
+    except (TaskCancelledError, RunnerStoppedError):
+        raise
     except Exception:
         logger.exception("ask_user: failed to record question request task_id=%s", task_id)
         return _allow_result(tool_input)
-
-    answers = await wait_for_answer(
-        task_id,
-        request_id,
-        cancel_reason=cancel_reason,
-    )
-    answers = answers or []
-    try:
-        store.set_task_status(task_id, "running")
-    except Exception:
-        logger.exception("ask_user: failed to restore running status task_id=%s", task_id)
-
     return _allow_result(to_sdk_answer_input(questions, answers))
 
 
@@ -606,6 +608,7 @@ def _build_can_use_tool_callback(
     task_id: str,
     permission_mode: str,
     cancel_reason: Callable[[], Awaitable[Any] | Any] | None,
+    agent_snapshot: dict[str, Any] | None = None,
 ):
     """Build the SDK can_use_tool callback enforcing session permission policy.
 
@@ -665,20 +668,27 @@ def _build_can_use_tool_callback(
         # a plan card (risk_level="plan"); no plan file is involved.
         if is_exit_plan_mode(tool_name):
             plan_text = str(tool_input.get("plan") or tool_input.get("summary") or "").strip()
-            decision = await _wait_decision(
-                request_id=uuid.uuid4().hex,
-                tool_name=tool_name,
-                risk_level="plan",
-                title="请确认执行计划",
-                summary=plan_text,
-                payload_preview={"plan": plan_text},
-            )
+            try:
+                decision, note = await request_plan_approval(
+                    writer=sdk_writer,
+                    store=store,
+                    task_id=task_id,
+                    request_id=uuid.uuid4().hex,
+                    plan=plan_text,
+                    deadline=plan_deadline(get_settings(), agent_snapshot),
+                    cancel_reason=cancel_reason,
+                )
+            except (TaskCancelledError, RunnerStoppedError):
+                raise
+            except Exception:
+                logger.exception("can_use_tool: failed to record plan request task_id=%s", task_id)
+                decision, note = "deny", ""
             if decision == "allow":
                 post_mode = post_plan_mode()
                 state["mode"] = post_mode
                 update = _set_mode_permission_update(post_mode)
                 return _allow_result(tool_input, updated_permissions=[update] if update else None)
-            return _deny_result("用户未批准该计划，请继续完善后再申请执行。")
+            return _deny_result(plan_rejection_message(note))
 
         effective_mode = state["mode"]
         # For write tools the skill may attach card-annotation keys (title/summary)
@@ -918,6 +928,13 @@ async def _execute_task_stream_via_pi_runtime(
 
     cfg = get_settings()
     writer = PiEventWriter(get_topic_task_store(), params.task_id, params.topic_id)
+    requested_mode = params.permission_mode
+    if requested_mode is None:
+        requested_mode = (agent_snapshot or {}).get("permission_mode")
+    permission_mode = normalize_permission_mode(requested_mode)
+    if permission_mode == "plan":
+        # Claude Code brings its own plan-mode instructions; Pi needs them said.
+        system_prompt = f"{system_prompt}\n\n{PLAN_MODE_PROMPT_PATH.read_text(encoding='utf-8').strip()}"
 
     # Session continuity differs by engine. The SDK resumes an engine-level
     # session and is therefore handed only the new question; Pi has no such
@@ -1003,9 +1020,36 @@ async def _execute_task_stream_via_pi_runtime(
         governance_settings=build_governance_settings(cfg, provider_env),
         max_output_tokens=max_output_tokens,
         context_window=context_window,
+        permission_mode=permission_mode,
+        plan_denied_tools=sorted(WRITE_TOOL_NAMES | PLAN_DENIED_BUILTIN_TOOLS) if permission_mode == "plan" else [],
     )
 
-    outcome = await execute_pi_run(ctx, writer=writer, cancel_reason=cancel_reason)
+    store = get_topic_task_store()
+
+    async def ask_user(kind: str, request_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if kind == "question":
+            answers = await ask_questions(
+                writer=writer,
+                store=store,
+                task_id=params.task_id,
+                request_id=request_id,
+                questions=payload.get("questions") if isinstance(payload.get("questions"), list) else [],
+                deadline=question_deadline(cfg),
+                cancel_reason=cancel_reason,
+            )
+            return {"answers": answers}
+        decision, note = await request_plan_approval(
+            writer=writer,
+            store=store,
+            task_id=params.task_id,
+            request_id=request_id,
+            plan=str(payload.get("plan") or "").strip(),
+            deadline=plan_deadline(cfg, agent_snapshot),
+            cancel_reason=cancel_reason,
+        )
+        return {"decision": decision, "message": "" if decision == "allow" else plan_rejection_message(note)}
+
+    outcome = await execute_pi_run(ctx, writer=writer, cancel_reason=cancel_reason, interaction_handler=ask_user)
 
     # session_id must be task-scoped, not topic-scoped. It is read back as the
     # next turn's resume_session_id, and a topic-level constant would make the
@@ -1206,6 +1250,7 @@ async def _execute_task_stream_local(
             task_id=params.task_id,
             permission_mode=logical_permission_mode,
             cancel_reason=_cancel_reason,
+            agent_snapshot=agent_snapshot,
         )
 
     options_kwargs = dict(

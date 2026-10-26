@@ -10,11 +10,13 @@
 import { CellChannel, logDiagnostic } from "./protocol/channel.js";
 import { Cell } from "./kernel/cell.js";
 import { resolveRuntimeModel } from "./providers/stream-fn-resolver.js";
+import { InteractionBroker } from "./interaction/interaction-broker.js";
 import type { CellInitPayload, ProtocolFrame } from "./protocol/frames.js";
 
 function bootstrap(): void {
   const channel = new CellChannel(process.stdin, process.stdout);
   const cell = new Cell(resolveRuntimeModel);
+  const broker = new InteractionBroker((payload) => channel.send("interaction.request", payload));
   let running = false;
 
   channel.onFrame(async (frame: ProtocolFrame) => {
@@ -35,7 +37,8 @@ function bootstrap(): void {
             },
             (detail) => {
               channel.send("run.heartbeat", detail);
-            }
+            },
+            broker
           );
           channel.send("run.settled", result as unknown as Record<string, unknown>);
         } finally {
@@ -49,6 +52,13 @@ function bootstrap(): void {
           channel.close();
           await channel.flush();
           process.exit(0);
+        }
+        return;
+      }
+      case "interaction.resolved": {
+        const payload = frame.payload as { request_id?: string; result?: Record<string, unknown> };
+        if (!broker.resolve(String(payload?.request_id ?? ""), payload?.result ?? {})) {
+          logDiagnostic(`interaction.resolved for unknown request ${String(payload?.request_id ?? "")}`);
         }
         return;
       }

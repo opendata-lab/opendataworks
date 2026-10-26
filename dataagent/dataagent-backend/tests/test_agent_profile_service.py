@@ -318,6 +318,7 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
             "mcp_server_ids": ["portal"],
             "skill_folders": ["opendataworks-business-knowledge"],
             "max_turns": 8,
+            "plan_timeout_action": "park",
             "env_vars": {"AGENT_SCENE": "quality"},
             "data_scope": {
                 "allowed_scopes": [
@@ -340,6 +341,7 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
         "mcp_server_ids": ["portal"],
         "skill_folders": ["opendataworks-business-knowledge"],
         "max_turns": 8,
+        "plan_timeout_action": "park",
         "env_vars": {"AGENT_SCENE": "quality"},
         "data_scope": {
             "allowed_scopes": [
@@ -349,3 +351,29 @@ def test_build_agent_snapshot_keeps_runtime_fields_without_timestamps():
         "is_default": False,
         "is_builtin": False,
     }
+
+
+def test_plan_timeout_action_defaults_to_park_and_reaches_the_snapshot():
+    payload = agent_profile_service.normalize_agent_profile_payload(
+        {"name": "建模助手"},
+        available_skill_folders=set(),
+        available_mcp_server_ids=set(),
+    )
+    assert payload["plan_timeout_action"] == "park"
+
+    approving = agent_profile_service.normalize_agent_profile_payload(
+        {"name": "建模助手", "plan_timeout_action": "approve"},
+        available_skill_folders=set(),
+        available_mcp_server_ids=set(),
+    )
+    snapshot = agent_profile_service.build_agent_snapshot({**approving, "agent_id": "agent-1"})
+    assert snapshot["plan_timeout_action"] == "approve"
+
+
+def test_plan_timeout_action_rejects_unknown_values():
+    with pytest.raises(ValueError, match="plan_timeout_action"):
+        agent_profile_service.normalize_agent_profile_payload(
+            {"name": "建模助手", "plan_timeout_action": "deny"},
+            available_skill_folders=set(),
+            available_mcp_server_ids=set(),
+        )

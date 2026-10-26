@@ -51,6 +51,21 @@
       />
     <div class="dac-composer-footer" part="footer controls">
       <div class="dac-composer-actions" part="actions">
+        <button
+          v-if="planModeEnabled"
+          type="button"
+          class="dac-picker dac-plan-toggle"
+          :class="{ 'is-on': planOn }"
+          part="plan-toggle"
+          data-control="plan-mode"
+          :aria-pressed="planOn"
+          :disabled="disabled"
+          :title="planOn ? '计划模式：先出计划，确认后再执行' : '计划模式已关闭'"
+          @click="planOn = !planOn"
+        >
+          <svg class="dac-picker-icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8a4.4 4.4 0 0 0-2.6 8c.4.3.6.7.6 1.2v.5h4v-.5c0-.5.2-.9.6-1.2A4.4 4.4 0 0 0 8 1.8zM6.2 13.2h3.6M6.8 14.7h2.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" /></svg>
+          <span class="dac-picker-label">计划</span>
+        </button>
         <label v-if="shows('permissionMode') && permissionModes.length" class="dac-picker dac-permission-picker" part="permission-picker" title="权限模式">
           <span class="dac-perm-dot" :class="`is-${permissionMode}`" aria-hidden="true" />
           <span class="dac-picker-label">{{ permissionModeLabel }}</span>
@@ -215,6 +230,14 @@ const providerId = ref('')
 const model = ref('')
 const permissionMode = ref('')
 
+// The plan switch is the `plan` permission mode with its own control: hosts
+// that only want "plan or not" declare it without exposing the full picker.
+const planModeEnabled = computed(() => Boolean(props.config?.planMode?.enabled))
+const planOn = ref(false)
+watch(() => [planModeEnabled.value, props.config?.planMode?.default], ([enabled, initial]) => {
+  planOn.value = Boolean(enabled && initial)
+}, { immediate: true })
+
 // `provider_id::model` is the same composite key the existing dropdown uses; a
 // <select> cannot hold two values, and reusing the separator keeps host code
 // that already parses it working.
@@ -231,6 +254,10 @@ const settings = computed(() => {
   if (providerId.value) value.provider_id = providerId.value
   if (model.value) value.model = model.value
   if (permissionMode.value) value.permission_mode = permissionMode.value
+  if (planModeEnabled.value) {
+    if (planOn.value) value.permission_mode = 'plan'
+    else if (!value.permission_mode || value.permission_mode === 'plan') value.permission_mode = 'default'
+  }
   return value
 })
 
@@ -528,6 +555,13 @@ const onKeydown = (event) => {
 }
 .dac-picker-select:disabled { cursor: not-allowed; }
 .dac-permission-picker { gap: 6px; }
+.dac-plan-toggle { gap: 4px; border: none; background: transparent; font: inherit; }
+.dac-plan-toggle { border-radius: 999px; padding: 4px 10px; }
+.dac-plan-toggle.is-on {
+  background: var(--dac-plan-on-bg, #f2f3f5);
+  color: var(--dac-plan-on-color, #1f2329);
+}
+.dac-plan-toggle:disabled { cursor: not-allowed; opacity: 0.6; }
 /* The mode is legible at a glance from the dot alone, as it was before. */
 .dac-perm-dot {
   width: 8px;

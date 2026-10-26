@@ -342,7 +342,12 @@
                   type="number"
                   min="0"
                   max="200"
-                /><template v-if="canManage"
+                /><label class="field-label" for="plan-timeout"
+                  >计划等待超时后</label
+                ><select id="plan-timeout" v-model="form.plan_timeout_action">
+                  <option value="park">继续等待用户确认</option>
+                  <option value="approve">自动执行计划</option>
+                </select><template v-if="canManage"
                   ><label class="field-label" for="env-vars"
                     >环境变量 JSON</label
                   ><textarea
@@ -618,6 +623,7 @@ const form = reactive({
   mcp_server_ids: [],
   skill_folders: [],
   max_turns: 0,
+  plan_timeout_action: "park",
   env_vars: {},
   data_scope: { allowed_scopes: [] },
   visibility: { mode: "all", allowed_users: [], allowed_groups: [] },
@@ -794,6 +800,7 @@ function applyAgent(agent) {
       ...(agent.visibility || {}),
     },
     env_vars: agent.env_vars || {},
+    plan_timeout_action: agent.plan_timeout_action || "park",
     data_scope: agent.data_scope || { allowed_scopes: [] },
     preset_questions: [
       agent.preset_questions?.[0] || "",
@@ -845,6 +852,7 @@ function buildPayload() {
     mcp_server_ids: [...form.mcp_server_ids],
     skill_folders: [...form.skill_folders],
     max_turns: Number(form.max_turns || 0),
+    plan_timeout_action: form.plan_timeout_action || "park",
     env_vars: env,
     data_scope: {
       allowed_scopes: scopeSelection.value

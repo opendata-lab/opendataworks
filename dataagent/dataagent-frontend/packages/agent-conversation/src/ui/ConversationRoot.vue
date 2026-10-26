@@ -147,12 +147,12 @@ const conversation = useConversation({
 
 // Without these the two waiting states have no exit: a run parked on
 // waiting_permission renders a card nobody can answer, and stays parked.
-const onDecide = ({ taskId, requestId, decision }) =>
+const onDecide = ({ taskId, requestId, decision, note }) =>
   conversation.submitInteraction({
     taskId: taskId || conversation.run.value?.taskId,
     kind: 'permission',
     requestId,
-    payload: { decision },
+    payload: note ? { decision, note } : { decision },
   })
 
 const onAnswer = ({ taskId, requestId, answers }) =>

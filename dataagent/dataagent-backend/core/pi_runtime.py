@@ -14,7 +14,16 @@ same table the SDK path writes to.
 Protocol (newline-delimited JSON, one frame per line):
 
   Gateway -> Cell   ``cell.init`` (once)   ``run.cancel``   ``cell.shutdown``
+                    ``interaction.resolved``
   Cell -> Gateway   ``cell.ready``   ``run.event``   ``run.settled``   ``protocol.error``
+                    ``interaction.request``
+
+``interaction.request`` ({request_id, kind: question|plan, payload}) parks the
+run on the user: the gateway records the card, waits on MySQL and answers with
+``interaction.resolved`` ({request_id, result}). The run's total and idle
+timers stand still while it waits — a person deciding is not a stalled run —
+but the loop keeps reading frames and polling cancel, so a dead Cell or a
+cancel is still noticed.
 
 Every frame is ``{"protocol_version": 1, "type": ..., "payload": {...}}``. The
 payload of ``run.event`` *is* the neutral AgentEvent — not a wrapper around it.
@@ -47,6 +56,9 @@ HANDSHAKE_TIMEOUT_SECONDS = 10.0
 CANCEL_POLL_INTERVAL_SECONDS = 1.0
 
 TERMINAL_EVENT_TYPES = frozenset({"run.completed", "run.failed", "run.cancelled", "run.suspended"})
+
+
+InteractionHandler = Callable[[str, str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 class PiRuntimeUnavailable(RuntimeError):
@@ -82,6 +94,9 @@ class PiRunContext:
     max_output_tokens: int | None = None
     # The model's context window; None lets governance_settings.max_context_tokens decide.
     context_window: int | None = None
+    # "plan" exposes ExitPlanMode and holds plan_denied_tools until the plan is approved.
+    permission_mode: str = "default"
+    plan_denied_tools: list[str] = field(default_factory=list)
     # Context governance, assembled by core.context_governance so the wire
     # contract has one producer. Field names mirror ``governance_settings`` in
     # ``src/protocol/frames.ts``; a rename on either side has to move in
@@ -130,6 +145,8 @@ class PiRunContext:
                 "bash_timeout_seconds": self.bash_timeout_seconds,
             },
             "governance_settings": dict(self.governance_settings),
+            "permission_mode": self.permission_mode,
+            "plan_denied_tools": list(self.plan_denied_tools),
         }
 
 
@@ -306,10 +323,14 @@ async def execute_pi_run(
     cancel_reason: Callable[[], Awaitable[Any]] | None = None,
     cell_command: list[str] | None = None,
     child_env: dict[str, str] | None = None,
+    interaction_handler: InteractionHandler | None = None,
 ) -> PiRunOutcome:
     """Run one turn on a Pi Cell and return its outcome.
 
     ``writer`` receives every neutral event (a :class:`PiEventWriter`).
+    ``interaction_handler(kind, request_id, payload)`` asks the user and returns
+    the result sent back to the Cell; without one an interaction fails as a tool
+    error the model can see.
     ``cell_command`` is injectable so a contract test can drive a stub Cell over
     the real protocol instead of mocking the channel away.
     """
@@ -341,13 +362,35 @@ async def execute_pi_run(
     terminal: PiRunOutcome | None = None
     cancel_sent = False
     cancel_deadline: float | None = None
+    # The user-facing wait runs beside the frame loop, so a Cell that dies or a
+    # cancel that lands while a person decides is still noticed.
+    pending: asyncio.Task[dict[str, Any] | None] | None = None
+    pending_request_id = ""
+    waited_from = 0.0
 
     try:
         await channel.send("cell.init", ctx.to_init_payload())
 
         while True:
             now = time.monotonic()
-            if now >= deadline:
+            if pending is not None:
+                if pending.done():
+                    result = pending.result()
+                    pending = None
+                    # The clock stood still while a person decided.
+                    deadline += now - waited_from
+                    last_activity = now
+                    if result is not None:
+                        await channel.send(
+                            "interaction.resolved", {"request_id": pending_request_id, "result": result}
+                        )
+                    elif not cancel_sent:
+                        cancel_sent = True
+                        cancel_deadline = now + CANCEL_GRACE_SECONDS
+                        await channel.send("run.cancel", {"reason": "user_cancel"})
+                else:
+                    last_activity = now
+            if pending is None and now >= deadline:
                 terminal = PiRunOutcome(
                     terminal_status="failed",
                     answer="".join(answer_parts),
@@ -386,6 +429,10 @@ async def execute_pi_run(
                 reason = await cancel_reason()
                 if reason:
                     cancel_sent = True
+                    if pending is not None:
+                        # Cancel is not an answer: the Cell aborts the waiting tool itself.
+                        pending.cancel()
+                        pending = None
                     cancel_deadline = time.monotonic() + CANCEL_GRACE_SECONDS
                     await channel.send("run.cancel", {"reason": str(reason)})
 
@@ -393,7 +440,7 @@ async def execute_pi_run(
             # while the Cell is quiet.
             budget = min(
                 CANCEL_POLL_INTERVAL_SECONDS,
-                max(0.05, deadline - now),
+                max(0.05, deadline - now) if pending is None else CANCEL_POLL_INTERVAL_SECONDS,
                 # Keep the grace period accurate rather than rounding it up to
                 # the next poll tick.
                 max(0.05, cancel_deadline - now) if cancel_deadline is not None else CANCEL_POLL_INTERVAL_SECONDS,
@@ -438,6 +485,20 @@ async def execute_pi_run(
                         event_type, event_payload, "".join(answer_parts), usage, highest_sequence
                     )
                     break
+
+            elif ftype == "interaction.request":
+                request_id = str(payload.get("request_id") or "")
+                if pending is not None or cancel_sent:
+                    await channel.send(
+                        "interaction.resolved",
+                        {"request_id": request_id, "result": {"error": "已有一个待用户回答的请求"}},
+                    )
+                else:
+                    waited_from = time.monotonic()
+                    pending_request_id = request_id
+                    pending = asyncio.create_task(
+                        _resolve_interaction(interaction_handler, payload, ctx.task_id)
+                    )
 
             elif ftype == "cell.ready":
                 logger.info("pi_cell.ready task_id=%s manifest=%s", ctx.task_id, payload.get("manifest"))
@@ -492,6 +553,8 @@ async def execute_pi_run(
         return terminal
 
     finally:
+        if pending is not None:
+            pending.cancel()
         await channel.send("cell.shutdown", {})
         await _terminate(process, ctx.task_id)
         stderr_task.cancel()
@@ -499,6 +562,30 @@ async def execute_pi_run(
             await stderr_task
         except (asyncio.CancelledError, Exception):  # noqa: B014 - cleanup must not raise
             pass
+
+
+async def _resolve_interaction(
+    handler: InteractionHandler | None, frame: dict[str, Any], task_id: str
+) -> dict[str, Any] | None:
+    """Ask the user; any failure becomes an error result rather than a stuck Cell.
+
+    ``None`` means the run was cancelled: nothing is sent back, the run loop's
+    ``run.cancel`` ends the waiting tool.
+    """
+    from core.task_control import RunnerStoppedError, TaskCancelledError
+
+    kind = str(frame.get("kind") or "")
+    request_id = str(frame.get("request_id") or "")
+    payload = frame.get("payload") if isinstance(frame.get("payload"), dict) else {}
+    if handler is None or not request_id or kind not in {"question", "plan"}:
+        return {"error": "当前运行不支持向用户提问或提交计划"}
+    try:
+        return await handler(kind, request_id, payload)
+    except (TaskCancelledError, RunnerStoppedError):
+        return None
+    except Exception:
+        logger.exception("pi_cell.interaction_failed task_id=%s kind=%s", task_id, kind)
+        return {"error": "记录交互失败，请直接在回答中向用户说明"}
 
 
 def _outcome_from_terminal_event(
