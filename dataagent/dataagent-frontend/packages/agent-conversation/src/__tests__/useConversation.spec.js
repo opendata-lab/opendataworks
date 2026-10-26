@@ -212,21 +212,34 @@ describe('streaming', () => {
     ])
   })
 
-  it('reports an interrupted stream without completing the run', async () => {
+  it('reconnects an interrupted stream quietly and never completes the run', async () => {
     // An interruption must never look like completion: the run is still going.
+    // A reconnect usually loses nothing, so it is not reported as an error.
+    vi.useFakeTimers()
+    let calls = 0
     const { api, events } = setup(makeTransport({
       streamEvents: async function* () {
-        yield { type: 'event', seqId: 1, event: {} }
+        calls += 1
+        yield { type: 'event', seqId: calls, event: {} }
         throw new StreamInterrupted()
       }
     }))
 
     await api.send('go')
     await settle()
+    expect(named(events, 'error')).toHaveLength(0)
+    expect(named(events, 'complete')).toHaveLength(0)
 
+    // Only once every retry has failed does the host hear about it.
+    for (const delay of [1000, 2000, 4000]) {
+      await vi.advanceTimersByTimeAsync(delay)
+      await settle()
+    }
+    expect(calls).toBe(4)
     expect(named(events, 'error')[0].detail.code).toBe('stream_interrupted')
     expect(named(events, 'complete')).toHaveLength(0)
     api.stopStream()
+    vi.useRealTimers()
   })
 })
 

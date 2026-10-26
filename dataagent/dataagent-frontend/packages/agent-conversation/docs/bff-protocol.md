@@ -67,10 +67,14 @@ data: {"task_id":"t-1","status":"finished","detail":"","metadata":{"mode":"model
 
 - `agent-event` — one runtime event. `seq_id` drives resumption via `after_id`.
 - `done` — **required**. The client only treats a run as finished when it sees
-  this frame. An EOF without one is reported as an interruption and triggers
-  reconnection, because at the byte level a dropped connection and a completed
-  run are indistinguishable. Getting this wrong makes hosts refresh business
-  data while a run is still in flight.
+  this frame. An EOF without one is treated as an interruption: the client
+  reconnects quietly and only reports `stream_interrupted` after its retries
+  fail, because at the byte level a dropped connection and a completed run are
+  indistinguishable. Getting this wrong makes hosts refresh business data while
+  a run is still in flight.
+- A stream ends with `done` for **its own task**, even when a newer run has
+  taken over the conversation. The client closes that task's turn and keeps the
+  newer run; cutting the stream instead shows the user an interruption.
 - `: ping` — keep-alive, ignored.
 
 Send `done` **after** any server-side work that the host will observe. If
