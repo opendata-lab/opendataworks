@@ -77,7 +77,9 @@ opendataagent/
 
 ### 3. 通用内置 Skill
 
-DataAgent 只保留不依赖 OpenDataWorks 的 Skill：`chart-visualization`、`report-generation`、`entity-extraction`、`ontology-discovery`、`semantic-grounding`（迁移时逐个检查，凡引用 `portal_*`、`odw_*`、OpenDataWorks 或平台环境变量的内容必须删掉或改为通用表述；无法通用化的 Skill 归入 `odw-skills/`）。
+DataAgent 只保留不依赖 OpenDataWorks 的 Skill：`chart-visualization`、`report-generation`（迁移时检查，凡引用 `portal_*`、`odw_*`、OpenDataWorks 或平台环境变量的内容必须删掉或改为通用表述）。
+
+`entity-extraction`、`ontology-discovery`、`semantic-grounding` 属于 `ontograph` 项目（源码在 `ontograph/integrations/dataagent/skills/`），只是本地复制到了 `dataagent/.claude/skills/`、未被 git 跟踪，不是 DataAgent 内置 Skill，不迁移；需要时从 ontograph 导入。
 
 `opendataworks-platform-tools` 中不属于平台访问的脚本（`build_chart_spec.py`、`format_answer.py`、`generate_report.py`）合入 `chart-visualization` / `report-generation`，其余迁入 `odw-skills/`。
 

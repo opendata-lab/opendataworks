@@ -19,9 +19,7 @@
 |---|---|
 | chart-visualization | 受控；独立标准库脚本，不取数、不依赖平台/MCP；保留 |
 | report-generation | 受控；处理已有行数据，依赖 pandas/openpyxl；保留 |
-| entity-extraction | `git ls-files` 无文件；不迁本地目录，转独立仓库 TODO |
-| ontology-discovery | `git ls-files` 无文件；不迁本地目录，转独立仓库 TODO |
-| semantic-grounding | 来源仓库无受控文件；不从其他项目补入 |
+| entity-extraction / ontology-discovery / semantic-grounding | 属于 ontograph 项目（`ontograph/integrations/dataagent/skills/`），在本仓库只是未受控的本地副本，不是 DataAgent 内置 Skill；不迁移 |
 
 `build_chart_spec.py` 已在 chart-visualization，`format_answer.py` / `generate_report.py` 已在 report-generation；无需重复合并。五个专属 Skill 留在 `odw-skills/`；直连脚本和对应测试删除，文档改为 MCP。
 
