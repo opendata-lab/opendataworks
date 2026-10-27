@@ -31,12 +31,7 @@ PLATFORMS="linux/amd64,linux/arm64"
 PUSH=false
 BUILD_FRONTEND=true
 BUILD_BACKEND=true
-BUILD_DATAAGENT_FRONTEND=true
-BUILD_DATAAGENT_BACKEND=true
-BUILD_DATAAGENT_RUNNER=true
-BUILD_DATAAGENT_EVALS_BUILTIN=true
-BUILD_DATAAGENT_EVALS_DEEPEVAL=true
-BUILD_PORTAL_MCP=true
+BUILD_ODW_MCP_SERVER=true
 
 usage() {
     echo "用法: $0 [选项]"
@@ -49,19 +44,13 @@ usage() {
     echo "  --push                  构建后推送到 Docker Hub"
     echo "  --no-frontend           跳过前端镜像构建"
     echo "  --no-backend            跳过后端镜像构建"
-    echo "  --no-dataagent-frontend 跳过 DataAgent 前端镜像构建"
-    echo "  --no-dataagent-backend  跳过 DataAgent 后端镜像构建"
-    echo "  --no-dataagent-runner   跳过 DataAgent Runner 镜像构建"
-    echo "  --no-dataagent-evals-builtin  跳过 DataAgent builtin 评测镜像构建"
-    echo "  --no-dataagent-evals-deepeval  跳过 DataAgent DeepEval 评测镜像构建"
-    echo "  --no-portal-mcp         跳过 Portal MCP 镜像构建"
+    echo "  --no-odw-mcp-server         跳过 ODW MCP Server 镜像构建"
     echo "  --platform PLATFORMS    目标平台 (默认: linux/amd64,linux/arm64)"
     echo "  -h, --help              显示此帮助信息"
     echo ""
     echo "示例:"
     echo "  $0 -u myuser -p mytoken --push"
     echo "  $0 -u myuser -p mytoken -v v1.5.0 --push"
-    echo "  $0 -u myuser -p mytoken --no-dataagent-backend --push"
     echo ""
     exit 1
 }
@@ -97,28 +86,8 @@ while [[ $# -gt 0 ]]; do
             BUILD_BACKEND=false
             shift
             ;;
-        --no-dataagent-frontend)
-            BUILD_DATAAGENT_FRONTEND=false
-            shift
-            ;;
-        --no-dataagent-backend)
-            BUILD_DATAAGENT_BACKEND=false
-            shift
-            ;;
-        --no-dataagent-runner)
-            BUILD_DATAAGENT_RUNNER=false
-            shift
-            ;;
-        --no-dataagent-evals-builtin)
-            BUILD_DATAAGENT_EVALS_BUILTIN=false
-            shift
-            ;;
-        --no-dataagent-evals-deepeval)
-            BUILD_DATAAGENT_EVALS_DEEPEVAL=false
-            shift
-            ;;
-        --no-portal-mcp)
-            BUILD_PORTAL_MCP=false
+        --no-odw-mcp-server)
+            BUILD_ODW_MCP_SERVER=false
             shift
             ;;
         --platform)
@@ -193,12 +162,7 @@ fi
 # 定义镜像名称
 FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-frontend"
 BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-backend"
-DATAAGENT_FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-frontend"
-DATAAGENT_BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-backend"
-DATAAGENT_RUNNER_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-runner"
-DATAAGENT_EVALS_BUILTIN_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-evals-builtin"
-DATAAGENT_EVALS_DEEPEVAL_IMAGE="$DEFAULT_NAMESPACE/opendataworks-dataagent-evals-deepeval"
-PORTAL_MCP_IMAGE="$DEFAULT_NAMESPACE/opendataworks-portal-mcp"
+ODW_MCP_SERVER_IMAGE="$DEFAULT_NAMESPACE/opendataworks-odw-mcp-server"
 
 # 构建参数
 BUILD_ARGS="--platform=$PLATFORMS"
@@ -231,12 +195,7 @@ echo "命名空间:   $DEFAULT_NAMESPACE"
 echo "推送镜像:   $PUSH"
 echo "构建前端:   $BUILD_FRONTEND"
 echo "构建后端:   $BUILD_BACKEND"
-echo "构建 DataAgent 前端: $BUILD_DATAAGENT_FRONTEND"
-echo "构建 DataAgent 后端: $BUILD_DATAAGENT_BACKEND"
-echo "构建 DataAgent Runner: $BUILD_DATAAGENT_RUNNER"
-echo "构建 DataAgent builtin 评测: $BUILD_DATAAGENT_EVALS_BUILTIN"
-echo "构建 DataAgent DeepEval 评测: $BUILD_DATAAGENT_EVALS_DEEPEVAL"
-echo "构建 Portal MCP: $BUILD_PORTAL_MCP"
+echo "构建 ODW MCP Server: $BUILD_ODW_MCP_SERVER"
 [ -n "${PIP_INDEX_URL:-}" ] && echo "Pip 镜像源: $PIP_INDEX_URL"
 echo "========================================="
 echo ""
@@ -288,122 +247,27 @@ if [ "$BUILD_BACKEND" = true ]; then
 fi
 
 # 构建 DataAgent 前端镜像
-if [ "$BUILD_DATAAGENT_FRONTEND" = true ]; then
-    echo -e "${YELLOW}📦 构建 DataAgent 前端镜像...${NC}"
-    echo "镜像: $DATAAGENT_FRONTEND_IMAGE:$VERSION"
-    echo "平台: $PLATFORMS"
-
-    cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS \
-        -t $DATAAGENT_FRONTEND_IMAGE:$VERSION \
-        -t $DATAAGENT_FRONTEND_IMAGE:latest \
-        --file dataagent/dataagent-frontend/Dockerfile \
-        . ; then
-        echo -e "${GREEN}✅ DataAgent 前端镜像构建成功${NC}"
-        ((SUCCESSFUL_BUILDS++))
-    else
-        echo -e "${RED}❌ DataAgent 前端镜像构建失败${NC}"
-    fi
-    ((TOTAL_BUILDS++))
-    echo ""
-fi
 
 # 构建 DataAgent 后端镜像
-if [ "$BUILD_DATAAGENT_BACKEND" = true ]; then
-    echo -e "${YELLOW}📦 构建 DataAgent 后端镜像...${NC}"
-    echo "镜像: $DATAAGENT_BACKEND_IMAGE:$VERSION"
+
+
+
+
+if [ "$BUILD_ODW_MCP_SERVER" = true ]; then
+    echo -e "${YELLOW}📦 构建 ODW MCP Server 镜像...${NC}"
+    echo "镜像: $ODW_MCP_SERVER_IMAGE:$VERSION"
     echo "平台: $PLATFORMS"
 
     cd "$REPO_ROOT"
     if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
-        -t $DATAAGENT_BACKEND_IMAGE:$VERSION \
-        -t $DATAAGENT_BACKEND_IMAGE:latest \
-        --file dataagent/dataagent-backend/Dockerfile \
+        -t $ODW_MCP_SERVER_IMAGE:$VERSION \
+        -t $ODW_MCP_SERVER_IMAGE:latest \
+        --file odw-mcp-servers/opendataworks/Dockerfile \
         . ; then
-        echo -e "${GREEN}✅ DataAgent 后端镜像构建成功${NC}"
+        echo -e "${GREEN}✅ ODW MCP Server 镜像构建成功${NC}"
         ((SUCCESSFUL_BUILDS++))
     else
-        echo -e "${RED}❌ DataAgent 后端镜像构建失败${NC}"
-    fi
-    ((TOTAL_BUILDS++))
-    echo ""
-fi
-
-if [ "$BUILD_DATAAGENT_RUNNER" = true ]; then
-    echo -e "${YELLOW}📦 构建 DataAgent Runner 镜像...${NC}"
-    echo "镜像: $DATAAGENT_RUNNER_IMAGE:$VERSION"
-    echo "平台: $PLATFORMS"
-
-    cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
-        -t $DATAAGENT_RUNNER_IMAGE:$VERSION \
-        -t $DATAAGENT_RUNNER_IMAGE:latest \
-        --file dataagent/dataagent-backend/Dockerfile.runner \
-        . ; then
-        echo -e "${GREEN}✅ DataAgent Runner 镜像构建成功${NC}"
-        ((SUCCESSFUL_BUILDS++))
-    else
-        echo -e "${RED}❌ DataAgent Runner 镜像构建失败${NC}"
-    fi
-    ((TOTAL_BUILDS++))
-    echo ""
-fi
-
-if [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ]; then
-    echo -e "${YELLOW}📦 构建 DataAgent DeepEval 评测镜像...${NC}"
-    echo "镜像: $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
-    echo "平台: $PLATFORMS"
-
-    cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
-        -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION \
-        -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE:latest \
-        --file tools/dataagent-evals/deepeval/Dockerfile \
-        . ; then
-        echo -e "${GREEN}✅ DataAgent DeepEval 评测镜像构建成功${NC}"
-        ((SUCCESSFUL_BUILDS++))
-    else
-        echo -e "${RED}❌ DataAgent DeepEval 评测镜像构建失败${NC}"
-    fi
-    ((TOTAL_BUILDS++))
-    echo ""
-fi
-
-if [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ]; then
-    echo -e "${YELLOW}📦 构建 DataAgent builtin 评测镜像...${NC}"
-    echo "镜像: $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
-    echo "平台: $PLATFORMS"
-
-    cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS \
-        -t $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION \
-        -t $DATAAGENT_EVALS_BUILTIN_IMAGE:latest \
-        --file tools/dataagent-evals/builtin/Dockerfile \
-        . ; then
-        echo -e "${GREEN}✅ DataAgent builtin 评测镜像构建成功${NC}"
-        ((SUCCESSFUL_BUILDS++))
-    else
-        echo -e "${RED}❌ DataAgent builtin 评测镜像构建失败${NC}"
-    fi
-    ((TOTAL_BUILDS++))
-    echo ""
-fi
-
-if [ "$BUILD_PORTAL_MCP" = true ]; then
-    echo -e "${YELLOW}📦 构建 Portal MCP 镜像...${NC}"
-    echo "镜像: $PORTAL_MCP_IMAGE:$VERSION"
-    echo "平台: $PLATFORMS"
-
-    cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
-        -t $PORTAL_MCP_IMAGE:$VERSION \
-        -t $PORTAL_MCP_IMAGE:latest \
-        --file dataagent/portal-mcp/Dockerfile \
-        . ; then
-        echo -e "${GREEN}✅ Portal MCP 镜像构建成功${NC}"
-        ((SUCCESSFUL_BUILDS++))
-    else
-        echo -e "${RED}❌ Portal MCP 镜像构建失败${NC}"
+        echo -e "${RED}❌ ODW MCP Server 镜像构建失败${NC}"
     fi
     ((TOTAL_BUILDS++))
     echo ""
@@ -424,22 +288,12 @@ if [ $SUCCESSFUL_BUILDS -eq $TOTAL_BUILDS ]; then
         echo "✅ 镜像已推送到 Docker Hub:"
         [ "$BUILD_FRONTEND" = true ] && echo "  - $FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_BACKEND" = true ] && echo "  - $BACKEND_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_FRONTEND" = true ] && echo "  - $DATAAGENT_FRONTEND_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_BACKEND" = true ] && echo "  - $DATAAGENT_BACKEND_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_RUNNER" = true ] && echo "  - $DATAAGENT_RUNNER_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ] && echo "  - $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ] && echo "  - $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
-        [ "$BUILD_PORTAL_MCP" = true ] && echo "  - $PORTAL_MCP_IMAGE:$VERSION"
+        [ "$BUILD_ODW_MCP_SERVER" = true ] && echo "  - $ODW_MCP_SERVER_IMAGE:$VERSION"
         echo ""
         echo "📝 拉取镜像命令:"
         [ "$BUILD_FRONTEND" = true ] && echo "  docker pull $FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_BACKEND" = true ] && echo "  docker pull $BACKEND_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_FRONTEND" = true ] && echo "  docker pull $DATAAGENT_FRONTEND_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_BACKEND" = true ] && echo "  docker pull $DATAAGENT_BACKEND_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_RUNNER" = true ] && echo "  docker pull $DATAAGENT_RUNNER_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_EVALS_BUILTIN" = true ] && echo "  docker pull $DATAAGENT_EVALS_BUILTIN_IMAGE:$VERSION"
-        [ "$BUILD_DATAAGENT_EVALS_DEEPEVAL" = true ] && echo "  docker pull $DATAAGENT_EVALS_DEEPEVAL_IMAGE:$VERSION"
-        [ "$BUILD_PORTAL_MCP" = true ] && echo "  docker pull $PORTAL_MCP_IMAGE:$VERSION"
+        [ "$BUILD_ODW_MCP_SERVER" = true ] && echo "  docker pull $ODW_MCP_SERVER_IMAGE:$VERSION"
     else
         echo "ℹ️  镜像已构建到本地 Docker 镜像仓库"
         echo ""

@@ -40,21 +40,21 @@ mvn -f pom.xml -pl backend -am spring-boot:run
 
 ## 第三步：启动 DataAgent
 
-DataAgent 的 `config.py` 使用相对路径 `.env`，因此本地启动时必须先进入 `dataagent/dataagent-backend` 目录。如果从仓库根目录或其他目录直接运行 `uvicorn`，可能读不到本地 `.env`，并回退到容器默认路径 `/dataagent_runtime`；该路径在 macOS 本地根文件系统上不可写，会导致会话创建后报 `Errno 30: Read-only file system`。
+DataAgent 的 `config.py` 使用相对路径 `.env`，因此本地启动时必须先进入 `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend` 目录。如果从仓库根目录或其他目录直接运行 `uvicorn`，可能读不到本地 `.env`，并回退到容器默认路径 `/dataagent_runtime`；该路径在 macOS 本地根文件系统上不可写，会导致会话创建后报 `Errno 30: Read-only file system`。
 
 本地 `.env` 至少需要使用可写的运行时目录，并指向仓库内的 Skills：
 
 ```dotenv
 DATAAGENT_RUNTIME_ROOT=/tmp/dataagent_runtime
 DATAAGENT_HOST_ROOT=/tmp/dataagent_runtime
-SKILLS_ROOT_DIR=<仓库绝对路径>/dataagent/.claude/skills
+SKILLS_ROOT_DIR=<仓库绝对路径>/odw-skills
 ```
 
 使用项目虚拟环境启动：
 
 ```bash
 # 先在仓库根目录执行
-cd dataagent/dataagent-backend
+cd ../opendataagent/dataagent-backend
 
 ./.venv-py313/bin/python -c "import fastapi, uvicorn, alembic, pymysql, anyio, claude_agent_sdk"
 ./.venv-py313/bin/alembic upgrade head
@@ -95,7 +95,7 @@ npm run dev
 | “Access denied for user 'opendataworks'” | 确认数据库用户/密码已创建；`mysql -uopendataworks -popendataworks123 opendataworks -e "SHOW TABLES;"` |
 | 调度接口 500 | 检查后端日志；确认系统管理 -> Dolphin 配置（URL/token/Project）正确且 OpenAPI 可访问 |
 | 前端跨域 | 检查 `frontend/vite.config.js` 中 `server.proxy` 是否指向正确的 backend / dataagent 地址 |
-| DataAgent 会话报 `/dataagent_runtime` 只读 | 确认从 `dataagent/dataagent-backend` 目录启动，并检查 `.env` 中 `DATAAGENT_RUNTIME_ROOT` / `DATAAGENT_HOST_ROOT` 指向本地可写目录 |
+| DataAgent 会话报 `/dataagent_runtime` 只读 | 确认从 `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend` 目录启动，并检查 `.env` 中 `DATAAGENT_RUNTIME_ROOT` / `DATAAGENT_HOST_ROOT` 指向本地可写目录 |
 | 示例数据缺失 | 确认 Flyway 迁移已完成；如需演示数据可根据业务手工插入 |
 | Doris 集群不可用 | 在 `doris_cluster` 表中配置 FE 地址，并在 Portal 中标记 `is_default=1` |
 

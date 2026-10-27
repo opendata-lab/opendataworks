@@ -84,23 +84,6 @@ normalize_path() {
     fi
 }
 
-resolve_dataagent_skills_dir() {
-    local configured
-    configured="$(read_env_value "DATAAGENT_SKILLS_DIR" "$ENV_FILE")"
-    if [ -z "$configured" ]; then
-        configured="../dataagent/.claude/skills"
-    fi
-
-    if [[ "$configured" = /* ]]; then
-        printf '%s\n' "$configured"
-        return 0
-    fi
-
-    local absolute_path
-    absolute_path="$(normalize_path "$DEPLOY_DIR/$configured")"
-    printf '%s\n' "$absolute_path"
-}
-
 resolve_dataagent_host_root() {
     # 解析 DataAgent 持久化运行时根目录的宿主机绝对路径。
     #
@@ -122,44 +105,6 @@ resolve_dataagent_host_root() {
     fi
 
     normalize_path "$DEPLOY_DIR/$configured"
-}
-
-ensure_dataagent_cli_executable() {
-    local skills_dir
-    skills_dir="$(resolve_dataagent_skills_dir)"
-
-    if [ ! -d "$skills_dir" ]; then
-        return 0
-    fi
-
-    # 统一 skills 目录 owner 为容器运行时用户，避免 bin/ 等子目录残留 root:root
-    local runtime_uid
-    local runtime_gid
-    runtime_uid="$(read_env_value "DATAAGENT_RUNTIME_UID" "$ENV_FILE")"
-    runtime_gid="$(read_env_value "DATAAGENT_RUNTIME_GID" "$ENV_FILE")"
-    runtime_uid="${runtime_uid:-1000}"
-    runtime_gid="${runtime_gid:-1000}"
-    chown -R "${runtime_uid}:${runtime_gid}" "$skills_dir" 2>/dev/null || true
-
-    # 确保目录可遍历、文件可读
-    chmod -R a+rX "$skills_dir" 2>/dev/null || true
-
-    local cli_path="$skills_dir/dataagent-nl2sql/bin/odw-cli"
-
-    if [ ! -f "$cli_path" ]; then
-        return 0
-    fi
-
-    if [ -x "$cli_path" ]; then
-        return 0
-    fi
-
-    if chmod +x "$cli_path" 2>/dev/null; then
-        echo "🔧 已修复 DataAgent runtime CLI 执行权限: $cli_path"
-    else
-        echo "⚠️  警告: 无法自动修复 DataAgent runtime CLI 执行权限: $cli_path"
-        echo "   智能问数 metadata 链路会退回 sh 执行，但建议仍在宿主机保留 +x 权限。"
-    fi
 }
 
 if [ ! -f "$COMPOSE_FILE" ]; then
@@ -214,7 +159,6 @@ fi
 echo "🚀 启动 OpenDataWorks 服务..."
 echo ""
 
-ensure_dataagent_cli_executable
 
 # 预建日志收集目录（log-collector sidecar 把各服务日志实时写到这里）。
 # 先建好宿主机目录，避免 Docker 以 root 自动创建后产生属主困惑。
@@ -268,7 +212,7 @@ echo "  智能问数: http://localhost:8081/intelligent-query"
 echo "  DataAgent 前端: http://localhost:8901/chat"
 echo "  后端: http://localhost:8080"
 echo "  DataAgent 后端: http://localhost:8900"
-echo "  Portal MCP: http://localhost:8801/mcp"
+echo "  ODW MCP Server: http://localhost:8801/mcp"
 echo "  MySQL: localhost:3306"
 echo ""
 echo "📋 常用命令："

@@ -12,7 +12,7 @@
   custom_sso_user_info.py.example）。
 - 其他运行时配置：`DATAAGENT_SETTINGS = {"<config.py Settings 字段>": 值}`，
   启动时统一应用（如超时/并发档位），字段名见
-  `dataagent/dataagent-backend/config.py`。
+  独立 opendataagent 仓库的 `dataagent-backend/config.py`。
 
 使用方式（不要直接改本文件，升级时会被覆盖）：
 1. 拷贝 `dataagent_config_docker.py.example` 为 `dataagent_config_docker.py`

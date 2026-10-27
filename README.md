@@ -113,7 +113,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 
 - `backend/`：主业务后端（Java · Spring Boot），元数据、工作流、血缘、平台 API；依赖库模块 `odw-auth`（统一鉴权）与 `backend-agent-api`（面向 Agent 的只读元数据接口契约）。三者由根 `pom.xml` 统一构建。
 - `frontend/`：主门户 Web 前端（Vue 3 · Vite），智能问数页内嵌 DataAgent Widget。
-- `dataagent/`：Python NL2SQL 智能问数后端（FastAPI · Claude Agent SDK），主门户集成链路。
+- DataAgent：Python 智能体平台源码已迁往 [opendataagent](https://github.com/MingkeVan/opendataagent)。本仓库通过镜像编排、普通 MCP 与 Skill 导入接入。
 - `opendataagent/`：独立的 Go Agent 平台，**独立部署、与主门户编排解耦**（详见 [双 Agent 平台共存说明](docs/handbook/parallel-agent-platforms.md)）。
 - `skills/`：两套 Agent 运行时共享的技能源目录，运行时挂载、不打包进镜像。
 - `deploy/`：主门户 Docker Compose 编排与环境模板（不含 `opendataagent`）。

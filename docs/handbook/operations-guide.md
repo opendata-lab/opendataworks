@@ -22,7 +22,7 @@ bash scripts/start.sh
 
 - MySQL 卷：`mysql-data`
 - 后端日志卷：`backend-logs`
-- Compose 服务：`mysql`、`redis`、`backend`、`frontend`、`dataagent-frontend`、`dataagent-backend`、`portal-mcp`
+- Compose 服务：`mysql`、`redis`、`backend`、`frontend`、`dataagent-frontend`、`dataagent-backend`、`odw-mcp-server`
 - 根 `deploy/` 仍然承载主门户与现有智能问数主链，不包含 `opendataagent`
 - **数据库自动初始化**：MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建数据库和用户。`opendataworks` 用户供后端使用，`dataagent` 用户默认供 DataAgent 使用。无需手动创建数据库。表结构由后端服务的 Flyway 自动创建。
 - 环境变量重点：
@@ -49,7 +49,7 @@ bash ../scripts/start.sh
 - Server 默认端口：`18900`
 - MySQL 默认端口：`13306`
 - 共享平台 skill 源码来自根目录 `skills/`，由 `OPENDATAAGENT_SHARED_SKILLS_PATH` 控制挂载路径
-- OpenDataWorks 平台 skill 通过 `odw-cli` 调 Java agent API，不依赖 `portal-mcp`
+- OpenDataWorks 平台 Skill 通过 `odw-mcp-server` 访问 Java agent API；在独立 DataAgent 中显式导入并绑定
 - `opendataagent` 启动脚本会固定使用 Compose project `opendataagent`，避免与根 OpenDataWorks 部署因目录名同为 `deploy` 而互相识别为 orphan container。
 - 如需手工执行 Compose，请使用 `docker compose --project-name opendataagent --env-file .env up -d --build`。
 - 如果两套部署曾经都用默认 project `deploy` 启动，请在维护窗口分别停掉旧容器后重启；不要只对其中一套部署执行 `--remove-orphans`。
@@ -112,8 +112,8 @@ server {
 | --- | --- | --- |
 | Backend | `application.yml` | DB、Dolphin/Dinky、日志、CORS |
 | Frontend | `frontend/nginx.conf` | 反向代理 `/api/` 至 `backend:8080/api/`，仅代理 `/dataagent/widget/` 至 `dataagent-frontend:80/widget/`（内嵌 Agent问答 widget bundle），并代理 `/api/v1/dataagent/`、`/api/v1/nl2sql-admin/`、`/api/v1/nl2sql/` 至 `dataagent-backend:8900`；DataAgent 完整前端经 `dataagent-frontend`（:8901）的 `/chat` 等页面路径直接访问 |
-| DataAgent Frontend | `dataagent/dataagent-frontend` | 智能问数独立前端、管理页与 Widget bundle |
-| DataAgent Backend | `dataagent/dataagent-backend` | 智能问数 API、Skills 管理、NL2SQL 会话服务 |
+| DataAgent Frontend | `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend` | 智能问数独立前端、管理页与 Widget bundle |
+| DataAgent Backend | `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend` | 智能问数 API、Skills 管理、NL2SQL 会话服务 |
 | Opendataagent | `opendataagent/deploy/.env.example` | 独立 agent 平台的端口、数据库和管理员令牌 |
 | Compose | `deploy/docker-compose.prod.yml` | 镜像/tag/端口/卷，主前端经 widget 内嵌 Agent问答，DataAgent 完整前端发布在 `dataagent-frontend`（:8901） |
 
@@ -126,7 +126,7 @@ server {
 ## 镜像构建与大小控制
 
 - 构建脚本：`scripts/build/build-multiarch.sh`，支持多架构 `linux/amd64,linux/arm64`。
-- 根部署产物：`opendataworks-backend`, `opendataworks-frontend`, `opendataworks-dataagent-frontend`, `opendataworks-dataagent-backend`, `opendataworks-dataagent-runner`, `opendataworks-portal-mcp`。
+- 根部署产物：`opendataworks-backend`, `opendataworks-frontend`, `opendataworks-dataagent-frontend`, `opendataworks-dataagent-backend`, `opendataworks-dataagent-runner`, `opendataworks-odw-mcp-server`。
 - `opendataagent` 镜像与 release 由 `opendataagent/scripts/*` 单独构建。
 - 构建前确保 `frontend/dist`、`backend/target` 已存在，否则脚本会自动触发构建。
 

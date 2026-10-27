@@ -11,7 +11,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
   beforeEach(() => {
     document.head.innerHTML = ''
     document.body.innerHTML = ''
-    delete window.OpenDataWorksWidget
+    delete window.DataAgentWidget
     delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
     routeState.query = {}
   })
@@ -26,9 +26,9 @@ describe('IntelligentQueryRemoteEmbed', () => {
 
     const script = document.querySelector('script[data-odw-dataagent-widget-script]')
     expect(script).toBeTruthy()
-    expect(script.src).toBe('http://localhost:3000/dataagent/widget/opendataworks-widget.bundle.js')
+    expect(script.src).toBe('http://localhost:3000/dataagent/widget/dataagent-widget.bundle.js')
 
-    window.OpenDataWorksWidget = { installWidget }
+    window.DataAgentWidget = { installWidget }
     script.dispatchEvent(new Event('load'))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -46,7 +46,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
   it('opens the transferred topic and follows changes to the menu route', async () => {
     routeState.query = { topicId: 'topic-current' }
     const selectConversation = vi.fn(), newConversation = vi.fn(), destroy = vi.fn()
-    window.OpenDataWorksWidget = { installWidget: vi.fn(() => ({ selectConversation, newConversation, destroy })) }
+    window.DataAgentWidget = { installWidget: vi.fn(() => ({ selectConversation, newConversation, destroy })) }
     const wrapper = mount(IntelligentQueryRemoteEmbed)
     await flushPromises()
     expect(selectConversation).toHaveBeenLastCalledWith('topic-current')
@@ -65,7 +65,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
     const selectConversation = vi.fn(), destroy = vi.fn()
     const wrapper = mount(IntelligentQueryRemoteEmbed)
     routeState.query = { topicId: 'topic-latest' }
-    window.OpenDataWorksWidget = { installWidget: vi.fn(() => ({ selectConversation, destroy })) }
+    window.DataAgentWidget = { installWidget: vi.fn(() => ({ selectConversation, destroy })) }
     document.querySelector('script[data-odw-dataagent-widget-script]').dispatchEvent(new Event('load'))
     await flushPromises()
     expect(selectConversation).toHaveBeenCalledTimes(1)

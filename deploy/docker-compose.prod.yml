@@ -3,13 +3,8 @@ x-dataagent-environment: &dataagent-environment
   MYSQL_HOST: mysql
   MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
   MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
-  MYSQL_DATABASE: ${MYSQL_DATABASE:-opendataworks}
+  MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
   SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
-  ODW_BACKEND_BASE_URL: http://backend:8080/api/v1/ai
-  ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-  DATAAGENT_PORTAL_MCP_BASE_URL: http://portal-mcp:8801${PORTAL_MCP_MOUNT_PATH:-/mcp}/
-  DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-  DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
   SKILLS_ROOT_DIR: /app/.claude/skills
 
 # 统一容器日志驱动：json-file + 轮转。
@@ -158,13 +153,14 @@ services:
       - -c
       - |
         set -e
-        mkdir -p /dataagent_runtime
-        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /dataagent_runtime
-        chmod -R u+rwX /dataagent_runtime
+        mkdir -p /dataagent_runtime /app/.claude/skills
+        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /dataagent_runtime /app/.claude/skills
+        chmod -R u+rwX /dataagent_runtime /app/.claude/skills
     networks:
       - opendataworks-network
     volumes:
       - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
+      - dataagent-skills:/app/.claude/skills
 
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
@@ -173,12 +169,11 @@ services:
     logging: *default-logging
     restart: always
     user: "${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}"
-    env_file:
-      - ./.env
     environment:
       <<: *dataagent-environment
       REDIS_HOST: redis
       DATAAGENT_SANDBOX_RUNNER_URL: http://dataagent-sandbox-runner:8910
+      DATAAGENT_SANDBOX_MODE: ${DATAAGENT_SANDBOX_MODE:-}
       DATAAGENT_CONFIG: /app/docker/dataagent/dataagent_config.py
     ports:
       - "8900:8900"
@@ -201,7 +196,7 @@ services:
       start_period: 60s
     volumes:
       - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
-      - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
+      - dataagent-skills:/app/.claude/skills
       # DataAgent 外置配置目录（基础配置 + 用户覆盖/扩展模块，见目录内注释）：
       - ./docker/dataagent:/app/docker/dataagent:ro
 
@@ -212,8 +207,6 @@ services:
     logging: *default-logging
     restart: always
     user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
-    env_file:
-      - ./.env
     environment:
       <<: *dataagent-environment
       DATAAGENT_HOST_ROOT: ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}
@@ -237,20 +230,20 @@ services:
       start_period: 30s
     volumes:
       - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
-      - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
+      - dataagent-skills:/app/.claude/skills
       - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
 
-  portal-mcp:
-    image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:1.5.0}
-    container_name: opendataworks-portal-mcp
+  odw-mcp-server:
+    image: ${OPENDATAWORKS_ODW_MCP_SERVER_IMAGE:-mikefan2019/opendataworks-odw-mcp-server:1.5.0}
+    container_name: opendataworks-odw-mcp-server
     logging: *default-logging
     restart: always
     env_file:
       - ./.env
     environment:
-      PORTAL_MCP_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+      ODW_MCP_SERVER_FRONTDOOR_TOKEN: ${ODW_MCP_SERVER_TOKEN:-odw-odw-mcp-server-token}
+      ODW_MCP_SERVER_FRONTDOOR_TOKEN_HEADER_NAME: ${ODW_MCP_SERVER_TOKEN_HEADER_NAME:-X-ODW-MCP-Token}
     ports:
       - "8801:8801"
     depends_on:
@@ -267,7 +260,7 @@ services:
 
   # 日志收集 sidecar：复用 runner 镜像自带的 docker CLI，只读挂 docker socket，
   # 对每个目标容器实时 `docker logs --follow` 写到宿主机 deploy/logs/<container>.log。
-  # 只收集应用服务（backend / dataagent-backend / sandbox-runner / portal-mcp），无需改业务镜像、无各服务挂卷权限问题。
+  # 只收集应用服务（backend / dataagent-backend / sandbox-runner / odw-mcp-server），无需改业务镜像、无各服务挂卷权限问题。
   # 不收集 mysql/redis 基础设施与两个 nginx 前端；如需可在 .env 用 LOG_COLLECTOR_CONTAINERS 增减。
   # task child 日志由 runner 另行落盘在 <HOST_ROOT>/<topic>/logs/。
   log-collector:
@@ -278,7 +271,7 @@ services:
     user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
     environment:
       # 目标容器列表（仅应用服务），可在 .env 覆盖 LOG_COLLECTOR_CONTAINERS 增减
-      LOG_COLLECTOR_CONTAINERS: ${LOG_COLLECTOR_CONTAINERS:-opendataworks-backend opendataworks-dataagent-backend opendataworks-dataagent-sandbox-runner opendataworks-portal-mcp}
+      LOG_COLLECTOR_CONTAINERS: ${LOG_COLLECTOR_CONTAINERS:-opendataworks-backend opendataworks-dataagent-backend opendataworks-dataagent-sandbox-runner opendataworks-odw-mcp-server}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -312,6 +305,8 @@ networks:
           gateway: ${OPENDATAWORKS_PROD_GATEWAY:-10.71.0.1}
 
 volumes:
+  dataagent-skills:
+    driver: local
   mysql-data:
     driver: local
   backend-logs:

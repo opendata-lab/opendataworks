@@ -31,12 +31,7 @@ echo ""
 # 定义镜像名称和版本
 FRONTEND_IMAGE="opendataworks-frontend:latest"
 BACKEND_IMAGE="opendataworks-backend:latest"
-DATAAGENT_FRONTEND_IMAGE="opendataworks-dataagent-frontend:latest"
-DATAAGENT_BACKEND_IMAGE="opendataworks-dataagent-backend:latest"
-DATAAGENT_RUNNER_IMAGE="opendataworks-dataagent-runner:latest"
-DATAAGENT_EVALS_BUILTIN_IMAGE="opendataworks-dataagent-evals-builtin:latest"
-DATAAGENT_EVALS_DEEPEVAL_IMAGE="opendataworks-dataagent-evals-deepeval:latest"
-PORTAL_MCP_IMAGE="opendataworks-portal-mcp:latest"
+ODW_MCP_SERVER_IMAGE="opendataworks-odw-mcp-server:latest"
 REDIS_IMAGE="redis:7.2-alpine"
 
 # 创建输出目录
@@ -65,56 +60,13 @@ $CONTAINER_CMD build --platform linux/amd64 -t $BACKEND_IMAGE \
 echo "✅ 后端镜像构建完成"
 echo ""
 
-echo "📦 步骤 3/8: 构建 DataAgent 前端镜像 (AMD64 架构)..."
+echo "📦 步骤 8/8: 构建 ODW MCP Server 镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_FRONTEND_IMAGE \
-  -f dataagent/dataagent-frontend/Dockerfile \
-  .
-echo "✅ DataAgent 前端镜像构建完成"
-echo ""
-
-echo "📦 步骤 4/8: 构建 DataAgent 后端镜像 (AMD64 架构)..."
-cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_BACKEND_IMAGE \
+$CONTAINER_CMD build --platform linux/amd64 -t $ODW_MCP_SERVER_IMAGE \
   "${PIP_BUILD_ARGS[@]}" \
-  -f dataagent/dataagent-backend/Dockerfile \
+  -f odw-mcp-servers/opendataworks/Dockerfile \
   .
-echo "✅ DataAgent 后端镜像构建完成"
-echo ""
-
-echo "📦 步骤 5/8: 构建 DataAgent Runner 镜像 (AMD64 架构)..."
-cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_RUNNER_IMAGE \
-  "${PIP_BUILD_ARGS[@]}" \
-  -f dataagent/dataagent-backend/Dockerfile.runner \
-  .
-echo "✅ DataAgent Runner 镜像构建完成"
-echo ""
-
-echo "📦 步骤 6/8: 构建 DataAgent builtin 评测镜像 (AMD64 架构)..."
-cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_BUILTIN_IMAGE \
-  -f tools/dataagent-evals/builtin/Dockerfile \
-  .
-echo "✅ DataAgent builtin 评测镜像构建完成"
-echo ""
-
-echo "📦 步骤 7/8: 构建 DataAgent DeepEval 评测镜像 (AMD64 架构)..."
-cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $DATAAGENT_EVALS_DEEPEVAL_IMAGE \
-  "${PIP_BUILD_ARGS[@]}" \
-  -f tools/dataagent-evals/deepeval/Dockerfile \
-  .
-echo "✅ DataAgent DeepEval 评测镜像构建完成"
-echo ""
-
-echo "📦 步骤 8/8: 构建 Portal MCP 镜像 (AMD64 架构)..."
-cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $PORTAL_MCP_IMAGE \
-  "${PIP_BUILD_ARGS[@]}" \
-  -f dataagent/portal-mcp/Dockerfile \
-  .
-echo "✅ Portal MCP 镜像构建完成"
+echo "✅ ODW MCP Server 镜像构建完成"
 echo ""
 
 echo "📦 拉取 Redis 运行时镜像..."
@@ -127,12 +79,7 @@ echo "📦 导出镜像为去重合并归档 all-images.tar ..."
 ALL_IMAGES=(
     "$FRONTEND_IMAGE"
     "$BACKEND_IMAGE"
-    "$DATAAGENT_FRONTEND_IMAGE"
-    "$DATAAGENT_BACKEND_IMAGE"
-    "$DATAAGENT_RUNNER_IMAGE"
-    "$DATAAGENT_EVALS_BUILTIN_IMAGE"
-    "$DATAAGENT_EVALS_DEEPEVAL_IMAGE"
-    "$PORTAL_MCP_IMAGE"
+    "$ODW_MCP_SERVER_IMAGE"
     "$REDIS_IMAGE"
 )
 if [ "$CONTAINER_CMD" = "podman" ]; then
@@ -154,12 +101,7 @@ echo ""
 echo "镜像清单："
 echo "  ✓ $FRONTEND_IMAGE"
 echo "  ✓ $BACKEND_IMAGE"
-echo "  ✓ $DATAAGENT_FRONTEND_IMAGE"
-echo "  ✓ $DATAAGENT_BACKEND_IMAGE"
-echo "  ✓ $DATAAGENT_RUNNER_IMAGE"
-echo "  ✓ $DATAAGENT_EVALS_BUILTIN_IMAGE"
-echo "  ✓ $DATAAGENT_EVALS_DEEPEVAL_IMAGE"
-echo "  ✓ $PORTAL_MCP_IMAGE"
+echo "  ✓ $ODW_MCP_SERVER_IMAGE"
 echo "  ✓ $REDIS_IMAGE"
 echo ""
 echo "📝 下一步："

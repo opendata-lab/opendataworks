@@ -3,7 +3,7 @@ FROM node:20.19-alpine AS builder
 
 WORKDIR /app
 
-ARG VITE_DATAAGENT_WIDGET_JS_URL=/dataagent/widget/opendataworks-widget.bundle.js
+ARG VITE_DATAAGENT_WIDGET_JS_URL=/dataagent/widget/dataagent-widget.bundle.js
 ENV VITE_DATAAGENT_WIDGET_JS_URL=${VITE_DATAAGENT_WIDGET_JS_URL}
 
 # 复制 package 文件

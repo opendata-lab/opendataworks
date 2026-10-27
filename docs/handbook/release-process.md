@@ -31,9 +31,9 @@
 | `backend/pom.xml` | 后端模块版本，如 `<version>1.0.0</version>` |
 | `frontend/package.json` | 前端版本，如 `"version": "1.0.0"` |
 | `frontend/package-lock.json` | 锁文件顶层版本，如 `"version": "1.0.0"` |
-| `dataagent/dataagent-frontend/package.json` | DataAgent 前端版本，如 `"version": "1.0.0"` |
-| `dataagent/dataagent-frontend/package-lock.json` | DataAgent 前端锁文件顶层版本，如 `"version": "1.0.0"` |
-| `dataagent/dataagent-backend/main.py` | DataAgent 对外暴露版本，如 `version="1.0.0"` |
+| `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend/package.json` | DataAgent 前端版本，如 `"version": "1.0.0"` |
+| `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend/package-lock.json` | DataAgent 前端锁文件顶层版本，如 `"version": "1.0.0"` |
+| `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend/main.py` | DataAgent 对外暴露版本，如 `version="1.0.0"` |
 | `opendataagent/VERSION` | 独立 `opendataagent` 发布版本，如 `1.0.0` |
 | `opendataagent/web/package.json` | `opendataagent` Web 版本，如 `"version": "1.0.0"` |
 | `opendataagent/web/package-lock.json` | `opendataagent` Web 锁文件顶层版本，如 `"version": "1.0.0"` |
@@ -42,7 +42,7 @@
 
 | 文件 | 说明 |
 |------|------|
-| `deploy/docker-compose.prod.yml` | 更新 frontend、backend、dataagent-frontend、dataagent-backend、dataagent-runner、portal-mcp 六个正式镜像默认 tag，例如 `${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.0.0}` |
+| `deploy/docker-compose.prod.yml` | 更新 frontend、backend、dataagent-frontend、dataagent-backend、dataagent-runner、odw-mcp-server 六个正式镜像默认 tag，例如 `${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.0.0}` |
 | `deploy/.env.example` | 更新离线部署时的镜像变量示例 |
 | `opendataagent/deploy/docker-compose.yml` | 更新 `opendataagent-server` 与 `opendataagent-web` 默认 tag |
 | `opendataagent/deploy/.env.example` | 更新独立 `opendataagent` 部署版本示例 |
@@ -62,7 +62,7 @@
 # 前端构建
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use
 cd frontend && npm run build
-cd ../dataagent/dataagent-frontend && npm run build && npm run build:widget
+cd ../opendataagent/dataagent-frontend && npm run build && npm run build:widget
 
 # 后端构建
 cd ../../ && mvn -pl backend -am clean package -DskipTests
@@ -87,7 +87,7 @@ git push origin v1.0.0
 
 工作流将依次执行：
 
-1. **构建并推送 Docker 镜像**：`mikefan2019/opendataworks-frontend`、`mikefan2019/opendataworks-backend`、`mikefan2019/opendataworks-dataagent-frontend`、`mikefan2019/opendataworks-dataagent-backend`、`mikefan2019/opendataworks-dataagent-runner`、`mikefan2019/opendataworks-portal-mcp`、`mikefan2019/opendataagent-server`、`mikefan2019/opendataagent-web`，打上版本 tag
+1. **构建并推送 Docker 镜像**：`mikefan2019/opendataworks-frontend`、`mikefan2019/opendataworks-backend`、`mikefan2019/opendataworks-dataagent-frontend`、`mikefan2019/opendataworks-dataagent-backend`、`mikefan2019/opendataworks-dataagent-runner`、`mikefan2019/opendataworks-odw-mcp-server`、`mikefan2019/opendataagent-server`、`mikefan2019/opendataagent-web`，打上版本 tag
 2. **生成离线部署包**：调用 `scripts/create-offline-package.sh --tag 1.0.0`
 3. **生成 Opendataagent 离线部署包**：调用 `opendataagent/scripts/create-offline-package.sh --tag 1.0.0`
 4. **创建 GitHub Release**：上传两份离线包为 Release 附件，并自动生成 Release Notes（含提交记录）
@@ -133,7 +133,7 @@ Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL
    docker pull mikefan2019/opendataworks-dataagent-frontend:1.0.0
    docker pull mikefan2019/opendataworks-dataagent-backend:1.0.0
    docker pull mikefan2019/opendataworks-dataagent-runner:1.0.0
-   docker pull mikefan2019/opendataworks-portal-mcp:1.0.0
+   docker pull mikefan2019/opendataworks-odw-mcp-server:1.0.0
    docker pull mikefan2019/opendataagent-server:1.0.0
    docker pull mikefan2019/opendataagent-web:1.0.0
    ```

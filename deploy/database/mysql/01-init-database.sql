@@ -24,7 +24,6 @@ CREATE USER IF NOT EXISTS 'dataagent'@'%' IDENTIFIED BY 'dataagent123';
 
 -- 授予权限
 GRANT ALL PRIVILEGES ON `opendataworks`.* TO 'opendataworks'@'%';
-GRANT SELECT ON `opendataworks`.* TO 'dataagent'@'%';
 GRANT ALL PRIVILEGES ON `dataagent`.* TO 'dataagent'@'%';
 
 -- 刷新权限

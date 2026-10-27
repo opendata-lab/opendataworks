@@ -46,7 +46,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
    * 前端 UI: `http://<服务器IP>:8081`
    * 后端 API: `http://<服务器IP>:8080/api`
    * DataAgent: `http://<服务器IP>:8900/api/v1/nl2sql/health`
-   * Portal MCP: `http://<服务器IP>:8801/health`
+   * ODW MCP Server: `http://<服务器IP>:8801/health`
 
 ---
 

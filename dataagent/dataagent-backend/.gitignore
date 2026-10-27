@@ -1,8 +1,0 @@
-__pycache__/
-**/__pycache__/
-*.pyc
-.venv/
-.venv-*/
-venv/
-.env
-.runtime/

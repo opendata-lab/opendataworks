@@ -24,8 +24,8 @@
          │ Java agent API        │ HTTP/SSE
          │ 只读平台能力          │
 ┌────────▼───────────┐  ┌────────▼───────────────┐
-│ Portal MCP         │  │ DataAgent Backend       │
-│ dataagent/portal-mcp│ │ Python / Claude SDK     │
+│ ODW MCP Server         │  │ DataAgent Backend       │
+│ odw-mcp-servers/opendataworks│ │ Python / Claude SDK     │
 └────────────────────┘  │ 现有智能问数主链        │
                         └────────┬───────────────┘
                                  │
@@ -45,11 +45,11 @@
 | --- | --- | --- | --- |
 | `backend` | `com.onedata.portal` | 表/字段/任务 CRUD、血缘生成、巡检、执行记录、调用 DolphinScheduler OpenAPI | `/api/v1/tables`, `/api/v1/tasks`, `/api/v1/lineage`, `/api/v1/dolphin/...` |
 | `frontend` | `src/views/*` | 门户界面、交互校验、日志展示、血缘 ECharts、通过远程 JS 嵌入智能问数 widget | `/dashboard`, `/workflows`, `/lineage`, `/intelligent-query` |
-| `dataagent-frontend` | `dataagent/dataagent-frontend` | DataAgent 独立管理工作台、智能问数问答页、floating/inline widget bundle | `/chat`, `/skills`, `/agents`, `/models`, `/widget-access`, `/widget/opendataworks-widget.bundle.js` |
-| `dataagent-backend` | `dataagent/dataagent-backend` | 现有智能问数主链，负责 NL2SQL 会话、Skills 同步、问答流式响应与 SQL 执行 | `/api/v1/nl2sql/...`, `/api/v1/dataagent/...` |
+| `dataagent-frontend` | `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend` | DataAgent 独立管理工作台、智能问数问答页、floating/inline widget bundle | `/chat`, `/skills`, `/agents`, `/models`, `/widget-access`, `/widget/dataagent-widget.bundle.js` |
+| `dataagent-backend` | `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend` | 现有智能问数主链，负责 NL2SQL 会话、Skills 同步、问答流式响应与 SQL 执行 | `/api/v1/nl2sql/...`, `/api/v1/dataagent/...` |
 | `opendataagent` | `opendataagent/server`, `opendataagent/web` | 独立通用 agent 平台，负责 Skill、MCP、通用对话与模型配置 | `/api/v1/agent/...`, `/api/v1/settings/agent`, Web `18080` |
 | `skills/` | `skills/platform/*`, `skills/generic/*` | 共享 skill 源码目录，主要服务 `opendataagent` | 通过构建/启动镜像加载 |
-| `portal-mcp` | `dataagent/portal-mcp` | 现有兼容型 MCP 服务，继续保留，但不是共享平台 skill 主链 | `/health`, `/mcp` |
+| `odw-mcp-server` | `odw-mcp-servers/opendataworks` | OpenDataWorks 平台 MCP，作为 DataAgent 普通外部服务接入 | `/health`, `/mcp` |
 | `redis` | Compose 依赖 | DataAgent 任务协调、租约与调度锁 | 内部依赖，无对外 HTTP 接口 |
 | Dinky / Flink | 外部预留能力 | 未来流任务执行引擎 | 当前仓库未内置模块 |
 | `DolphinScheduler` | 外部集群 | 接收 Portal 提交的工作流/实例并运行 | OpenAPI `/projects/...` |
@@ -62,7 +62,7 @@
 4. **执行反馈**：Portal 通过 OpenAPI 查询实例状态/日志 → 写入 `task_execution_log`，并刷新血缘/统计。
 5. **巡检治理**：`inspection_rule` 定义命名/Owner/统计规则 → 定期生成 `inspection_record` + `inspection_issue` → 前端提示整改。
 6. **并行智能体**：
-   - 现有智能问数前端由 `dataagent-frontend` 构建，主前端通过远程 `OpenDataWorksWidget` JS 接入；运行时继续走 `dataagent-backend + dataagent/.claude/skills/dataagent-nl2sql`
+   - 现有智能问数前端由 `dataagent-frontend` 构建，主前端通过远程 `DataAgentWidget` JS 接入；运行时继续走 `dataagent-backend + odw-skills/dataagent-nl2sql`
    - `opendataagent` 走独立 Go runtime，并在构建或启动时镜像根 `skills/`
 
 ## 运行态观察点
@@ -74,11 +74,11 @@
 | Backend | 8080 | `/api/v1/health` | `docker volume backend-logs` 或 `backend/logs/` |
 | DolphinScheduler | 12345 (示例) | `/dolphinscheduler` 登录页或 OpenAPI `/projects` | 外部集群日志 |
 | Frontend | 80（容器）/ 8081（compose）/ 3000（Vite dev） | `/`、`/intelligent-query` | Nginx 日志或 `frontend/dist` |
-| DataAgent Frontend | 80（容器）/ 8901（compose）/ 3001（Vite dev） | `/`（跳转 `/chat`）、`/widget/opendataworks-widget.bundle.js` | Nginx 日志或 `dataagent/dataagent-frontend/dist` |
-| DataAgent Backend | 8900 | `/api/v1/nl2sql/health` | 容器日志或 `dataagent/dataagent-backend` |
+| DataAgent Frontend | 80（容器）/ 8901（compose）/ 3001（Vite dev） | `/`（跳转 `/chat`）、`/widget/dataagent-widget.bundle.js` | Nginx 日志或 `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend/dist` |
+| DataAgent Backend | 8900 | `/api/v1/nl2sql/health` | 容器日志或 `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend` |
 | Opendataagent Web | 18080 | `/` | 容器日志或 `opendataagent/web` |
 | Opendataagent Server | 18900 | `/api/v1/agent/health` | 容器日志或 `opendataagent/server` |
-| Portal MCP | 8801 | `/health` | 容器日志或 `dataagent/portal-mcp` |
+| ODW MCP Server | 8801 | `/health` | 容器日志或 `odw-mcp-servers/opendataworks` |
 
 ## 技术栈
 
@@ -92,5 +92,5 @@
 
 - **抽象层**：DolphinScheduler 适配服务隔离了后端与调度引擎；未来扩展其它调度器时可复用与 Portal 的契约。
 - **数据一致性**：所有任务/表/血缘信息以 MySQL 为准，DolphinScheduler/Dinky 视为从端，因此必须由 Portal 创建/更新。
-- **配置集中化**：统一放在 `deploy/.env`, `backend/src/main/resources/application*.yml`, `frontend/.env.*`, `dataagent/dataagent-frontend/.env.*`，并在 `operations-guide.md` 里列出需要修改的变量。
+- **配置集中化**：统一放在 `deploy/.env`, `backend/src/main/resources/application*.yml`, `frontend/.env.*`, `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend/.env.*`，并在 `operations-guide.md` 里列出需要修改的变量。
 - **智能体双轨**：现有智能问数与 `opendataagent` 长期并行，二者技术栈、运行时与技能来源不同，不能假设会在短期内合并。

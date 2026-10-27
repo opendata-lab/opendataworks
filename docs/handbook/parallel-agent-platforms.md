@@ -10,7 +10,7 @@
 | 定位 | 当前主门户集成的 NL2SQL 智能问数后端 | 独立的 Agent 平台（独立部署、独立 MySQL） |
 | 部署 | 根 `deploy/docker-compose.{dev,prod}.yml` | `opendataagent/deploy/docker-compose.yml`（独立栈） |
 | 前端入口 | 主前端 `/intelligent-query` 内嵌 Widget | 自带 `opendataagent/web` 控制台 |
-| 默认端口 | backend 8900 / frontend 8901 / sandbox 8910 / portal-mcp 8801 | web 18080 / api 18900 / mysql 13306 |
+| 默认端口 | backend 8900 / frontend 8901 / sandbox 8910 / odw-mcp-server 8801 | web 18080 / api 18900 / mysql 13306 |
 | 技能来源 | 运行时挂载共享 `skills/` | 运行时挂载共享 `skills/`（只读） |
 
 ## 边界要点

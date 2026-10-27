@@ -8,7 +8,7 @@ OpenDataWorks 提供嵌入式智能问数 Widget，通过单个 `<script>` 标�
 
 ```html
 <script
-  src="https://your-server/widget/opendataworks-widget.bundle.js"
+  src="https://your-server/widget/dataagent-widget.bundle.js"
   data-website-id="my-site"
   data-agent-id="agent-001"
   data-api-base-url="https://your-backend"
@@ -48,7 +48,7 @@ Widget 会自动初始化并在页面右下角显示悬浮按钮。生产接入�
 
 ```html
 <script
-  src="https://your-server/widget/opendataworks-widget.bundle.js"
+  src="https://your-server/widget/dataagent-widget.bundle.js"
   data-website-id="my-site"
   data-agent-id="agent-001"
   data-api-base-url="https://your-backend"
@@ -70,7 +70,7 @@ Widget 直接渲染到指定 DOM 容器中，成为页面布局的一部分。�
 
 <!-- 2. 加载 Widget -->
 <script
-  src="https://your-server/widget/opendataworks-widget.bundle.js"
+  src="https://your-server/widget/dataagent-widget.bundle.js"
   data-website-id="my-site"
   data-agent-id="agent-001"
   data-api-base-url="https://your-backend"
@@ -88,7 +88,7 @@ Widget 直接渲染到指定 DOM 容器中，成为页面布局的一部分。�
 
 ## JavaScript API
 
-Widget 加载后会在 `window` 上暴露 `OpenDataWorksWidget` 控制器对象，支持多实例管理。
+Widget 加载后会在 `window` 上暴露 `DataAgentWidget` 控制器对象，支持多实例管理。
 
 ### 右上角全屏入口
 
@@ -98,7 +98,7 @@ Widget 加载后会在 `window` 上暴露 `OpenDataWorksWidget` 控制器对象�
 
 ```html
 <script
-  src="https://your-server/widget/opendataworks-widget.bundle.js"
+  src="https://your-server/widget/dataagent-widget.bundle.js"
   data-website-id="my-site"
   data-agent-id="agent-001"
   data-api-base-url="https://your-backend"
@@ -115,7 +115,7 @@ Widget 加载后会在 `window` 上暴露 `OpenDataWorksWidget` 控制器对象�
 ```javascript
 import { isNavigationFailure, NavigationFailureType } from 'vue-router'
 
-const widget = window.OpenDataWorksWidget.installWidget({
+const widget = window.DataAgentWidget.installWidget({
   websiteId: 'my-site',
   agentId: 'agent-001',
   userId: currentUser.id,
@@ -139,7 +139,7 @@ widget.on('fullscreen', (context) => console.log('全屏入口点击', context))
 示例中的 `router` 和 `currentUser` 使用父应用已有对象，调用 `installWidget` 前应等待 bundle 加载完成。菜单页安装内嵌实例后，可以这样接收会话（容器 `widget-container` 需已存在）：
 
 ```javascript
-const inlineWidget = window.OpenDataWorksWidget.installWidget({
+const inlineWidget = window.DataAgentWidget.installWidget({
   websiteId: 'my-site',
   agentId: 'agent-001',
   userId: currentUser.id,
@@ -163,7 +163,7 @@ OpenDataWorks 主应用已接入这一流程：悬浮小窗点击后进入 `/int
 ### 面板控制
 
 ```javascript
-const widget = window.OpenDataWorksWidget
+const widget = window.DataAgentWidget
 
 // 打开对话面板
 widget.open()
@@ -184,7 +184,7 @@ widget.isOpen() // → boolean
 
 ```javascript
 // 使用自己安装的实例，避免全局 API 指向其他页面的最后一个实例
-const widget = window.OpenDataWorksWidget.installWidget({
+const widget = window.DataAgentWidget.installWidget({
   websiteId: 'my-site', userId: 'current-user-id', agentId: 'agent-001',
   apiBaseUrl: 'https://your-backend', displayMode: 'floating'
 })
@@ -302,9 +302,9 @@ widget.destroy()
 
 Widget 请求会携带以下特殊请求头：
 
-- `X-ODW-Client: widget`
-- `X-ODW-Website-Id: <website-id>`
-- `X-ODW-User-Id: <user-id>` 或 `X-ODW-Visitor-Id: <visitor-id>`
+- `X-DataAgent-Client: widget`
+- `X-DataAgent-Website-Id: <website-id>`
+- `X-DataAgent-User-Id: <user-id>` 或 `X-DataAgent-Visitor-Id: <visitor-id>`
 
 允许接入的站点白名单在管理后台「智能问数 → Widget 接入」设置页配置，确保只有受信任的站点可以接入：
 
@@ -326,9 +326,9 @@ Widget 请求会携带以下特殊请求头：
 Widget 需要单独构建：
 
 ```bash
-cd dataagent/dataagent-frontend
+cd https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use
-npm run build:widget   # 产出 dist/widget/opendataworks-widget.bundle.js
+npm run build:widget   # 产出 dist/widget/dataagent-widget.bundle.js
 ```
 
 将 `dist/widget/` 中的 bundle 和 `style.css` 一起部署到 Web 服务器；新增全屏入口后需重新构建并更新产物。Nginx 配置示例：

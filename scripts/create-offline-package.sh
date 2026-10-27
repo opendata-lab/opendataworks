@@ -116,12 +116,10 @@ mkdir -p "$PACKAGE_ROOT"
 # 定义包内目录结构
 PACKAGED_DEPLOY_DIR="$PACKAGE_ROOT/deploy"
 PACKAGED_SCRIPTS_DIR="$PACKAGE_ROOT/scripts"
-PACKAGED_DATAAGENT_RUNTIME_DIR="$PACKAGED_DEPLOY_DIR/dataagent-runtime"
 DEPLOY_IMAGE_DIR="$PACKAGED_DEPLOY_DIR/docker-images"
 
 mkdir -p "$PACKAGED_DEPLOY_DIR"
 mkdir -p "$PACKAGED_SCRIPTS_DIR"
-mkdir -p "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills"
 mkdir -p "$DEPLOY_IMAGE_DIR"
 
 # 1. 复制 deploy/ 下的内容
@@ -135,24 +133,6 @@ tar -C "$REPO_ROOT/deploy" \
 # 2. 复制 scripts/ 下的内容 (excluding build/ which is for dev)
 log "Copying scripts/ content to package scripts/"
 tar -C "$REPO_ROOT/scripts" --exclude='build' -cf - . | tar -C "$PACKAGED_SCRIPTS_DIR" -xf -
-
-# 评测工具源码由 scripts/create-evals-offline-package.sh 打入独立附加包。
-
-# 3. 复制 bundled Skills；供应商/模型配置由目标环境 registry 管理。
-if [[ -d "$REPO_ROOT/dataagent/.claude/skills" ]]; then
-    log "Copying DataAgent editable skills"
-    tar -C "$REPO_ROOT/dataagent/.claude/skills" --exclude='*-assistant' -cf - . | tar -C "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills" -xf -
-fi
-
-# 离线部署包必须保证 skills 目录树对容器内非 root 用户（uid 1000）可访问：
-# - 所有目录至少 755（a+rX 中 X 只对目录和已有 x 的文件生效）
-# - 所有文件至少可读（a+r）
-# - odw-cli 需要执行权限
-chmod -R a+rX "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills"
-if [[ -f "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills/opendataworks-platform-tools/bin/odw-cli" ]]; then
-    chmod +x "$PACKAGED_DATAAGENT_RUNTIME_DIR/skills/opendataworks-platform-tools/bin/odw-cli"
-    log "Ensured skills directory permissions and odw-cli execute bit for offline package"
-fi
 
 # 4. 清理旧的 tar 包（如果不知何故被复制了）
 rm -f "$DEPLOY_IMAGE_DIR/"*.tar 2>/dev/null || true
@@ -200,13 +180,8 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=.*|OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_PORTAL_MCP_IMAGE=.*|OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}|" \
-        -e "s|^DATAAGENT_SKILLS_DIR=.*|DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills|" \
+        -e "s|^# *OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
         -e "s|^# *DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
         -e "s|^DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
         "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
@@ -221,14 +196,8 @@ rewrite_offline_env_file() {
         echo "OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_EVALS_BUILTIN_IMAGE=opendataworks-dataagent-evals-builtin:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_EVALS_DEEPEVAL_IMAGE=opendataworks-dataagent-evals-deepeval:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_PORTAL_MCP_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_PORTAL_MCP_IMAGE=opendataworks-portal-mcp:${PARSER_TAG}" >> "$env_file"
-    grep -q '^DATAAGENT_SKILLS_DIR=' "$env_file" 2>/dev/null || \
-        echo "DATAAGENT_SKILLS_DIR=./dataagent-runtime/skills" >> "$env_file"
+    grep -q '^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=' "$env_file" 2>/dev/null || \
+        echo "OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}" >> "$env_file"
     # 离线包默认开启 sandbox 容器模式（每个 task 由 sandbox runner 启动独立 child 容器执行），
     # 源码部署仍以 .env.example 中的空值（关闭）为默认，二者不混淆。
     grep -q '^DATAAGENT_SANDBOX_MODE=' "$env_file" 2>/dev/null || \
@@ -294,14 +263,13 @@ compute_checksums() {
 OP_TAG="$PARSER_TAG"
 
 # 评测镜像（evals-builtin / evals-deepeval）默认不随服务启动，且 deepeval 依赖很重，
-# 已拆分到独立附加包 scripts/create-evals-offline-package.sh，不再打入主离线包。
 MAIN_IMAGES=(
     "opendataworks-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-frontend:${OP_TAG}|opendataworks-frontend:${OP_TAG}"
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
     "opendataworks-dataagent-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-frontend:${OP_TAG}|opendataworks-dataagent-frontend:${OP_TAG}"
     "opendataworks-dataagent-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-backend:${OP_TAG}|opendataworks-dataagent-backend:${OP_TAG}"
     "opendataworks-dataagent-runner.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-runner:${OP_TAG}|opendataworks-dataagent-runner:${OP_TAG}"
-    "opendataworks-portal-mcp.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-portal-mcp:${OP_TAG}|opendataworks-portal-mcp:${OP_TAG}"
+    "opendataworks-odw-mcp-server.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-odw-mcp-server:${OP_TAG}|opendataworks-odw-mcp-server:${OP_TAG}"
 )
 
 EXTRA_IMAGES=(
@@ -379,4 +347,3 @@ fi
 log "Offline deployment package ready: $OUTPUT_PATH"
 log "Included manifest: $PACKAGE_NAME/deploy/docker-images/manifest.json"
 log "Image checksums: $PACKAGE_NAME/deploy/docker-images/checksums.sha256"
-log "Evaluation images are shipped separately; build with scripts/create-evals-offline-package.sh"

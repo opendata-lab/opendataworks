@@ -50,7 +50,7 @@ describe('Layout', () => {
     routeState.query = {}
     document.head.innerHTML = ''
     document.body.innerHTML = ''
-    delete window.OpenDataWorksWidget
+    delete window.DataAgentWidget
     delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
     scheduleRouteWarmup.mockClear()
     preloadRouteComponents.mockClear()
@@ -80,9 +80,9 @@ describe('Layout', () => {
 
     const script = document.querySelector('script[data-odw-dataagent-widget-script]')
     expect(script).toBeTruthy()
-    expect(script.src).toBe('http://localhost:3000/dataagent/widget/opendataworks-widget.bundle.js')
+    expect(script.src).toBe('http://localhost:3000/dataagent/widget/dataagent-widget.bundle.js')
 
-    window.OpenDataWorksWidget = { installWidget }
+    window.DataAgentWidget = { installWidget }
     script.dispatchEvent(new Event('load'))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
@@ -130,7 +130,7 @@ describe('Layout', () => {
       }
     })
     await wrapper.find('.portal-page-content .ai-assistant-trigger').trigger('click')
-    window.OpenDataWorksWidget = { installWidget, open: globalOpen }
+    window.DataAgentWidget = { installWidget, open: globalOpen }
     document.querySelector('script[data-odw-dataagent-widget-script]').dispatchEvent(new Event('load'))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(installWidget).toHaveBeenCalledTimes(1)
