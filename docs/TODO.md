@@ -44,6 +44,10 @@
 
 暂无。
 
+## 门户内嵌问数的用户身份
+
+- **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份，例如门户 nginx 用 `auth_request` 向后端取当前用户并写入请求头、DataAgent 只信任带内部令牌的请求。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
+
 ## 已完成
 
 ### 主体数据库账号映射（原数据库账号映射与用户授权管理）

@@ -1,4 +1,5 @@
 import { settingsApi } from '@/api/settings'
+import { useAuthStore } from '@/stores/auth'
 
 const SCRIPT_URL = import.meta.env.VITE_DATAAGENT_WIDGET_JS_URL || '/dataagent/widget/dataagent-widget.bundle.js'
 const SCRIPT_ATTR = 'data-odw-dataagent-widget-script'
@@ -52,4 +53,13 @@ export async function loadQueryAgentId() {
   const agentId = String(settings?.queryAgentId || '').trim()
   if (!agentId) throw new Error(QUERY_AGENT_MISSING_MESSAGE)
   return agentId
+}
+
+// 门户在 DataAgent「Widget 接入」中登记的站点标识，管理员需把门户来源加入该站点的允许来源。
+export const PORTAL_WIDGET_SITE_ID = 'opendataworks-portal'
+
+// 门户内嵌时由门户上报当前用户（local:<用户名> 或 <来源>:<external_id>），DataAgent 据此选择数据库账号。
+export function portalWidgetIdentity() {
+  const userId = String(useAuthStore().currentUser?.agentUserId || '').trim()
+  return userId ? { websiteId: PORTAL_WIDGET_SITE_ID, userId } : { websiteId: PORTAL_WIDGET_SITE_ID }
 }

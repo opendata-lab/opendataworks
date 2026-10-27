@@ -110,7 +110,7 @@ DataAgent 对每个 HTTP MCP 调用都附加执行身份，不区分是哪个 MC
 - `X-Agent-User-Id`：带来源前缀的登录用户（`local:<用户名>` / `<provider>:<sub>`），沿用 `auth_user_id`；
 - `X-Agent-Id`：当前智能体 ID。
 
-这两个头由 DataAgent 后端从会话填写，不来自模型参数。MCP 自身的访问凭证（OpenDataWorks 的前门 token）是 MCP 记录里管理员配置的普通 header，DataAgent 不理解其含义。OpenDataWorks 只在前门 token 校验通过后才信任这两个身份头，这与现行实现一致。
+这两个头由 DataAgent 后端从会话填写，不来自模型参数。会话的用户来源有两种：DataAgent 独立前端用 DataAgent 自己的登录；宿主（如门户）内嵌 widget 时，采信宿主上报的 `X-DataAgent-User-Id`，门户从 `/auth/me` 的 `agentUserId` 取值（2026-10-27 用户决定：先简单化，接受浏览器可篡改的风险，记入 TODO）。MCP 自身的访问凭证（OpenDataWorks 的前门 token）是 MCP 记录里管理员配置的普通 header，DataAgent 不理解其含义。OpenDataWorks 只在前门 token 校验通过后才信任这两个身份头，这与现行实现一致。
 
 ### 6. 已有数据的一步迁移
 

@@ -94,6 +94,7 @@ describe('Layout', () => {
       displayMode: 'floating',
       position: 'bottom-right',
       agentId: 'agent_query',
+      websiteId: 'opendataworks-portal',
       apiBaseUrl: ''
     }))
 

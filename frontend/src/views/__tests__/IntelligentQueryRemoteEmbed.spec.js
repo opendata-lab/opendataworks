@@ -1,6 +1,8 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { reactive } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 
 import IntelligentQueryRemoteEmbed from '../IntelligentQueryRemoteEmbed.vue'
 
@@ -18,6 +20,8 @@ describe('IntelligentQueryRemoteEmbed', () => {
     delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
     routeState.query = {}
     getAgentSettings.mockReset().mockResolvedValue({ queryAgentId: 'agent_query' })
+    setActivePinia(createPinia())
+    useAuthStore().currentUser = { username: 'alice', agentUserId: 'local:alice' }
   })
 
   it('loads the remote DataAgent widget script and installs inline mode into the page container', async () => {
@@ -40,6 +44,8 @@ describe('IntelligentQueryRemoteEmbed', () => {
       displayMode: 'inline',
       containerId: 'odw-dataagent-inline-widget',
       agentId: 'agent_query',
+      websiteId: 'opendataworks-portal',
+      userId: 'local:alice',
       apiBaseUrl: ''
     }))
 

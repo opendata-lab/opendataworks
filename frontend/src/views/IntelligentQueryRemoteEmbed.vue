@@ -8,7 +8,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { QUERY_AGENT_MISSING_MESSAGE, loadDataAgentWidgetScript, loadQueryAgentId } from '@/utils/dataagentWidgetLoader'
+import { QUERY_AGENT_MISSING_MESSAGE, loadDataAgentWidgetScript, loadQueryAgentId, portalWidgetIdentity } from '@/utils/dataagentWidgetLoader'
 
 const INLINE_CONTAINER_ID = 'odw-dataagent-inline-widget'
 
@@ -27,6 +27,7 @@ const installInlineWidget = async () => {
       projectName: '智能问数',
       projectColor: '#3B82F6',
       agentId,
+      ...portalWidgetIdentity(),
       apiBaseUrl: '',
     })
     if (typeof route.query.topicId === 'string' && route.query.topicId) {

@@ -137,7 +137,7 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 升级前备份平台库和 DataAgent 会话库（DataAgent 侧为 Alembic `20261026_000029`），检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
 
 1. DBA 为每个要用的数据源预建人的账号和各智能体的只读账号（只授所需对象的 SELECT/USAGE 等读取权限）。平台仅测试连接，不自动分析 GRANT；智能体只读性由 DBA 保证。Doris 使用 `Select_priv`，不依赖驱动只读事务。
-2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。主门户问数也必须已有 DataAgent 的真实登录会话；widget 自报用户 ID 和认证关闭时的聊天不能访问数据库。
+2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。门户内嵌问数时由门户上报当前用户（`/auth/me` 的 `agentUserId`），DataAgent 以该用户执行，不再要求单独登录 DataAgent；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
 3. 管理员在数据源页“账号映射”选择人（平台 `sys_user.id`）或智能体（agent_id），登记数据库用户名/密码并测试连接。读接口不回传密码；编辑留空保留密码。数据源原账号只用于同步和运维，不用于主体查询。人用自己的映射浏览目录、查询、写入和结构编辑；能做什么由数据库 GRANT 决定。
 4. backend 的 `AGENT_API_SERVICE_TOKEN` 与 odw-mcp-server 的 `ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN` 保持一致，Java agent API 仍限私网。可信 Python 后端填写 `X-Agent-User-Id`（`local:<用户名>` / `<provider>:<sub>`）和 `X-Agent-Id`。每次访问都必须有用户；会话里的定时消息以会话所有者身份执行。不要由反向代理、浏览器或模型拼装这些身份头。
 5. 服务令牌和数据库密码不能注入模型 Bash 环境。DataAgent 通过 MCP 配置的普通前门 token header 访问；MCP 添加服务令牌，DataAgent 后端填写身份头。删除智能体“数据范围”配置及旧范围头；元数据和查询分别取两个数据库账号的可见对象交集和执行权限交集。
@@ -196,6 +196,9 @@ DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 
 1. 按 opendataagent 的 `deploy/README.md` 部署 DataAgent。从旧版本（DataAgent 跟随本目录部署）升级时，按其中“从 OpenDataWorks 内置部署迁移”导出旧 `dataagent` 库和 Skill 卷；本目录升级不会删除这些数据。
    迁移需在升级本目录之前读取旧容器的 Skill 挂载；完成后再升级本目录，并用 `up -d --remove-orphans` 清掉旧的 `opendataworks-dataagent-*` 容器。
 2. 门户内嵌 widget：编辑 `docker/nginx/frontend.conf`，把 DataAgent 转发段中的 `<DataAgent 主机>` 改成实际地址并取消注释，重启 `frontend`。未接入 DataAgent 时保持注释，门户其他功能不受影响。
+   在 DataAgent「Widget 接入」中登记站点 `opendataworks-portal`，允许来源填门户的访问地址（如 `https://portal.example.com`）。
+   门户 widget 以该站点身份上报当前用户：本地登录为 `local:<用户名>`，第三方登录为 `<来源>:<external_id>`；DataAgent 按此用户选择数据库账号。
+   注意：这个用户标识来自浏览器，登录门户的用户可以篡改它冒充他人，按冒充对象的数据库账号权限查数。只在可信内网使用，并保证 DataAgent 的 8900 端口不对外暴露（风险已记入 `docs/TODO.md`）。
 3. 管理员在 DataAgent 新增普通 HTTP MCP：URL 为 `http://<OpenDataWorks 主机>:8801/mcp/`，header 填 `X-ODW-MCP-Token: <前门 token>`。工具名统一为 `odw_*`。
 4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
    在门户「配置管理 → 智能助手」把「智能问数助手」选为这个智能体；未选择时，门户问数页会提示先配置，不会自动挑选。

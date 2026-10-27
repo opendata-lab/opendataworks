@@ -57,7 +57,7 @@ public class AuthController {
         String token = jwtService.issue(context);
         response.addHeader(HttpHeaders.SET_COOKIE, buildSessionCookie(token, properties.getJwt().getTtl().getSeconds()));
         log.info("User logged in: {}", user.getUsername());
-        return ApiResponse.success(toUserInfo(context, user.getNickname()));
+        return ApiResponse.success(toUserInfo(context, user));
     }
 
     @PostMapping("/logout")
@@ -72,7 +72,7 @@ public class AuthController {
         SysUser user = parseUserId(context.getUserId()) != null
                 ? sysUserService.findById(parseUserId(context.getUserId()))
                 : null;
-        return ApiResponse.success(toUserInfo(context, user != null ? user.getNickname() : null));
+        return ApiResponse.success(toUserInfo(context, user));
     }
 
     @PostMapping("/password")
@@ -102,14 +102,29 @@ public class AuthController {
         }
     }
 
-    private Map<String, Object> toUserInfo(UserContext context, String nickname) {
+    private Map<String, Object> toUserInfo(UserContext context, SysUser user) {
+        String nickname = user != null ? user.getNickname() : null;
         Map<String, Object> info = new LinkedHashMap<>();
         info.put("userId", context.getUserId());
         info.put("username", context.getUsername());
         info.put("nickname", nickname != null ? nickname : context.getUsername());
         info.put("role", context.getRole());
         info.put("authSource", context.getAuthSource());
+        info.put("agentUserId", agentUserId(context, user));
         return info;
+    }
+
+    /**
+     * 门户内嵌 DataAgent 时上报的用户标识，与 agent API 解析主体的规则一致：
+     * 本地登录为 {@code local:<用户名>}，第三方登录为 {@code <来源>:<external_id>}。
+     */
+    static String agentUserId(UserContext context, SysUser user) {
+        String source = context.getAuthSource();
+        if (source == null || source.isEmpty() || UserContext.AUTH_SOURCE_LOCAL.equals(source)) {
+            return "local:" + context.getUsername();
+        }
+        String externalId = user != null ? user.getExternalId() : null;
+        return externalId == null || externalId.isEmpty() ? "" : source + ":" + externalId;
     }
 
     private String buildSessionCookie(String value, long maxAgeSeconds) {

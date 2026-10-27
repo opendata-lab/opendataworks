@@ -179,3 +179,24 @@ opendataworks：
 - opendataagent pytest 881 通过（新增 `tests/test_deploy_scripts.py` 4 项：项目名固定且无 `pull_policy`、离线包内容与改写后的 compose 解析、加载器不覆盖已有 `.env`、`start.sh` 把相对运行时目录展开为绝对路径）；`compose config` 通过；全部脚本 `bash -n` 通过；workflow YAML 可解析。
 - opendataworks 根测试 10 通过；VitePress 构建通过（Node 20.19.0，站点声明 Node 24，本机未安装）。
 - 未验证：离线包与 `start.sh` 只用伪造的 docker / docker-compose 验证，未用真实 `oda-*` 镜像在无外网机器上完整跑过（镜像尚未发布）；旧数据迁移步骤未在真实旧部署上演练。两项已记入 opendataagent `docs/TODO.md`。
+
+## 推送前审查（2026-10-27 追加）
+
+codex 只读审查两个分支，报告 3 项 High、9 项 Medium，均核实成立并处理：
+
+| 问题 | 处理 |
+| --- | --- |
+| 门户固定使用已不再创建的 `agent_opendataworks` | 「配置管理 → 智能助手」新增「智能问数助手」（`query.agent_id`）；菜单页和悬浮窗读取它，未配置时提示，不自动挑选 |
+| 迁移步骤复制了不存在的 Skill 卷 | 改为从旧容器实际挂载的宿主目录复制，跳过随旧仓库发布、需从 `odw-skills/` 重新导入的 Skill |
+| 跨机器时门户内无法登录 DataAgent | 用户决定先简单化：门户 `/auth/me` 返回 `agentUserId`，widget 以站点 `opendataworks-portal` 上报；DataAgent 对 widget 会话以上报用户执行。浏览器可篡改的风险已写入部署文档与两边 TODO |
+| widget 样式选择器仍匹配 `example-widget` | 改为 `dataagent-widget`，补程序化安装的样式测试 |
+| 评测参考 SQL 调用已删除的接口 | 需定参考结果来源，记入 opendataagent TODO |
+| 评测只认示例工具名 | 识别任意 `mcp__<server>__*query_readonly` |
+| 离线安装器相对路径叠加 | 两边 `load-package-and-start.sh` 先把包目录转绝对路径 |
+| 本体 Skill 使用仓库相对路径 | 改为 `"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/..."` |
+| 离线升级不更新镜像 tag | 两边加载器把包内 `*_IMAGE` 写入已有 `.env`，其余配置不动 |
+| 本地导出遗漏日志收集镜像 | `build-images.sh` 加入 docker CLI，并补上原本就缺的 mysql |
+| 导入旧库未等 MySQL 初始化 | 等日志出现 3306 端口就绪行后再导入 |
+| 迁移依赖离线包外的 alpine | 改用本部署 `dataagent-home-init` 服务复制 |
+
+验证：opendataagent pytest 884 通过；widget 90 通过；opendataworks 根测试 11 通过、`odw-skills` 87 通过、主前端 420 通过；backend 620 个用例仅既有 7 个 DolphinScheduler 环境用例失败，新增 `AgentSettingsControllerTest`（3）与 `AuthControllerAgentUserIdTest`（3）通过。
