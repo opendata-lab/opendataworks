@@ -34,7 +34,7 @@
 
 OpenDataWorks is an open-source data platform portal for teams that need one place to manage metadata, orchestrate data workflows, analyze lineage, and ask data questions with natural language.
 
-It brings the core pieces of a modern data platform into a deployable full-stack application: a Java backend, a Vue frontend, a Python DataAgent service for intelligent query, and Docker Compose assets for local and production environments.
+It brings the core pieces of a modern data platform into a deployable full-stack application: a Java backend, a Vue frontend, an MCP server for agents, and Docker Compose assets for local and production environments.
 
 ## Why OpenDataWorks
 
@@ -42,7 +42,7 @@ It brings the core pieces of a modern data platform into a deployable full-stack
 - **Workflow orchestration**: configure batch and streaming jobs visually, with deep DolphinScheduler integration.
 - **Lineage analysis**: parse SQL lineage automatically and explore upstream/downstream relationships in an interactive graph.
 - **Intelligent query**: use natural language to generate SQL, execute analysis, and review results from the main portal.
-- **Ready to deploy**: run the frontend, backend, DataAgent backend, Redis, MySQL, and Portal MCP from the provided Docker Compose setup.
+- **Ready to deploy**: run the frontend, backend, Redis, MySQL, and the ODW MCP Server from the provided Docker Compose setup. The DataAgent behind intelligent query is deployed separately from [opendataagent](https://github.com/MingkeVan/opendataagent).
 
 ## Feature Highlights
 
@@ -82,7 +82,7 @@ Browse catalogs, write SQL, and inspect table metadata in one workspace.
 
 ### Start the Development Environment
 
-Use the development Docker Compose profile to start the frontend, backend, DataAgent backend, Redis, MySQL, and Portal MCP together:
+Use the development Docker Compose profile to start the frontend, backend, Redis, MySQL, and the ODW MCP Server together (DataAgent is deployed separately; see "接入 DataAgent" in the [deployment guide](deploy/README.md)):
 
 ```bash
 # 1. Prepare configuration
@@ -97,8 +97,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 # Access points
 # Frontend: http://localhost:8081
 # Backend: http://localhost:8080/api
-# DataAgent Backend: http://localhost:8900
-# Portal MCP: http://localhost:8801/mcp
+# ODW MCP Server: http://localhost:8801/mcp
 ```
 
 ### Production and Offline Deployment

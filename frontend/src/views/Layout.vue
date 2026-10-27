@@ -86,7 +86,7 @@ import { ElMessage } from 'element-plus'
 import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound, User, ArrowDown } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
-import { loadDataAgentWidgetScript } from '@/utils/dataagentWidgetLoader'
+import { loadDataAgentWidgetScript, loadQueryAgentId, portalWidgetIdentity } from '@/utils/dataagentWidgetLoader'
 import AiAssistantTrigger from '@/components/AiAssistantTrigger.vue'
 import { FLOATING_WIDGET_KEY } from '@/utils/floatingWidget'
 import { useAuthStore } from '@/stores/auth'
@@ -254,14 +254,15 @@ const widgetLayoutStyle = computed(() => {
 const installFloatingWidget = () => {
   if (_widgetInstallPromise) return _widgetInstallPromise
   _widgetInstallPromise = (async () => {
-    const widget = await loadDataAgentWidgetScript()
+    const [widget, agentId] = await Promise.all([loadDataAgentWidgetScript(), loadQueryAgentId()])
     if (_layoutUnmounted) throw new Error('页面已关闭')
     _widgetCtrl = widget.installWidget({
       displayMode: 'floating',
       position: 'bottom-right',
       projectName: '智能助手',
       projectColor: '#3B82F6',
-      agentId: 'agent_opendataworks',
+      agentId,
+      ...portalWidgetIdentity(),
       apiBaseUrl: '',
       onFullscreen: async ({ topicId }) => {
         const failure = await router.push({

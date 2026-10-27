@@ -62,7 +62,7 @@ Filter 默认放行以下路径（Ant 风格，匹配去掉 context-path 后的�
 - `/v1/ai/**`（Agent API，自有 `X-Agent-Service-Token` 服务令牌机制）
 - `/actuator/health`、`/error`
 
-dataagent-backend（`/api/v1/nl2sql*`、`/api/v1/dataagent`）当前不经主后端转发，本期不受会话校验影响；widget 的 `X-ODW-*` 机制保持现状。
+dataagent-backend（`/api/v1/nl2sql*`、`/api/v1/dataagent`）当前不经主后端转发，本期不受会话校验影响；widget 的 `X-DataAgent-*` 机制保持现状。
 
 ## 5. 会话令牌契约（为 dataagent 复用预留）
 

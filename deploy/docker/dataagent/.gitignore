@@ -1,7 +1,0 @@
-# 本目录整体挂载进 dataagent-backend 容器，用户在这里放配置覆盖与
-# 自定义扩展模块。默认忽略一切用户文件，只保留仓库自带的基础配置与示例
-# （Superset docker/pythonpath_dev 同款做法）。
-*
-!.gitignore
-!dataagent_config.py
-!*.example

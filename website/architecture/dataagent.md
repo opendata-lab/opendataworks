@@ -1,57 +1,28 @@
-# 智能查询架构
+# 智能查询接入
 
-## 系统组成
+「智能查询」由 DataAgent 提供。DataAgent 是独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent) 中的通用智能体平台，单独部署，可以和 OpenDataWorks 不在同一台机器上。它的内部架构、会话 API 与 Widget SDK 见：
+
+- [DataAgent 架构](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/architecture.md)
+- [DataAgent 会话 API](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/api.md)
+- [Widget 嵌入](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/widget.md)
+- [DataAgent 部署](https://github.com/MingkeVan/opendataagent/blob/main/deploy/README.md)
+
+## 两边如何连接
 
 ```
-前端 (SSE)
-    │
-    ▼
-DataAgent Backend (FastAPI :8900)
-    ├── API Layer        ← 会话/任务/消息 REST API
-    ├── Task Coordinator ← 异步任务调度
-    ├── NL2SQL Agent     ← Claude Agent SDK
-    └── Session Store    ← MySQL (dataagent schema)
-    │
-    ├── Redis            ← 任务队列
-    └── MySQL            ← 会话与消息持久化
+浏览器 ──► OpenDataWorks 门户 nginx ──► DataAgent（/dataagent/widget/、/api/v1/nl2sql/ 等）
+                                           │
+                                           │ HTTP MCP：X-ODW-MCP-Token + X-Agent-User-Id / X-Agent-Id
+                                           ▼
+                                   odw-mcp-server :8801 ──► backend-agent-api ──► 数据源
 ```
 
-## 核心流程
+- **门户内嵌**：主前端「智能查询」页加载 DataAgent 的 widget。widget 脚本和 DataAgent API 经门户 nginx 转发，
+  转发规则写在 `deploy/docker/nginx/frontend.conf`（默认注释，填 DataAgent 地址后启用）。
+- **平台能力**：DataAgent 通过普通 HTTP MCP 连接 `odw-mcp-server`，调用 `odw_*` 工具查询元数据、执行只读 SQL、
+  管理任务与工作流。平台专属知识与操作指南在仓库 `odw-skills/` 中，用 DataAgent 的 Skill 导入使用。
+- **身份与权限**：DataAgent 在每次 MCP 调用中带上登录用户（`local:<用户名>` 或 `<provider>:<sub>`）和智能体 ID。
+  平台把人和智能体分别映射到数据源上的数据库账号：先用人的账号 `EXPLAIN`，再用智能体的账号执行，
+  能访问的数据是两者权限的交集，没有映射即拒绝。
 
-### 同步问答
-
-1. 用户发送消息 → `POST /api/v1/nl2sql/topics/{id}/messages`
-2. 创建异步任务 → Task Coordinator 接管
-3. Agent 执行 NL2SQL → 生成 SQL、执行查询
-4. SSE 流式返回结果 → 前端实时渲染
-
-### 异步任务
-
-1. 请求接受 → 返回 `task_id`
-2. Coordinator 拾取任务 → 状态 `waiting → running`
-3. Agent 执行 → 事件流持久化
-4. 完成 → 状态 `success/failed`，消息写入会话
-
-## 会话管理
-
-- **Topic** — 一个对话主题，包含多条消息
-- **Message** — 用户或助手的单条消息
-- **Task** — 一次 Agent 执行的生命周期
-
-## 数据存储
-
-| 表 | Schema | 说明 |
-|----|--------|------|
-| `da_topics` | dataagent | 会话主题 |
-| `da_messages` | dataagent | 消息记录 |
-| `da_tasks` | dataagent | 任务状态 |
-| `da_task_events` | dataagent | 任务事件流 |
-| `da_agent_settings` | dataagent | Agent 配置 |
-
-## 部署模式
-
-DataAgent Backend 作为独立服务部署：
-
-- 端口：8900
-- 依赖：MySQL（会话存储）、Redis（任务协调）
-- Task Coordinator 内嵌于 `main.py`，无需单独启动 worker
+具体步骤见仓库 `deploy/README.md` 的「接入 DataAgent」。

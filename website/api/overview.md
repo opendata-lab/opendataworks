@@ -19,9 +19,9 @@ OpenDataWorks 提供 RESTful API 用于与平台交互。
 - [工作流 API](/api/workflow) — 任务创建、执行、监控
 - [认证 API](/api/authentication) — 用户认证与权限
 
-### 智能查询 API（:8900）
+### 智能查询 API
 
-- [智能查询 API](/api/intelligent-query) — NL2SQL 会话、消息、任务
+智能查询由独立部署的 DataAgent 提供，其会话、消息与任务接口见 [opendataagent 会话 API](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/api.md)。
 
 ## 通用响应格式
 

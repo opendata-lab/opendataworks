@@ -45,8 +45,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 3. **服务状态验证**：
    * 前端 UI: `http://<服务器IP>:8081`
    * 后端 API: `http://<服务器IP>:8080/api`
-   * DataAgent: `http://<服务器IP>:8900/api/v1/nl2sql/health`
-   * Portal MCP: `http://<服务器IP>:8801/health`
+   * ODW MCP Server: `http://<服务器IP>:8801/health`
 
 ---
 
@@ -76,12 +75,6 @@ CREATE DATABASE opendataworks
 -- 2. 创建专用账号
 CREATE USER 'opendataworks'@'%' IDENTIFIED BY 'opendataworks123';
 GRANT ALL PRIVILEGES ON opendataworks.* TO 'opendataworks'@'%';
-
--- 3. 创建 DataAgent 辅助数据库 (用于会话存储)
-CREATE DATABASE dataagent
-  DEFAULT CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-GRANT ALL PRIVILEGES ON dataagent.* TO 'opendataworks'@'%';
 
 FLUSH PRIVILEGES;
 ```

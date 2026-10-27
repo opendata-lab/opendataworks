@@ -1,8 +1,0 @@
-dataagent-backend/.env
-dataagent-backend/.pytest_cache
-dataagent-backend/.venv
-dataagent-backend/__pycache__
-dataagent-backend/**/*.pyc
-dataagent-web/.vite
-dataagent-web/dist
-dataagent-web/node_modules

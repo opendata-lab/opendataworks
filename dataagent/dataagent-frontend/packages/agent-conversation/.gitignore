@@ -1,7 +1,0 @@
-dist/
-bench/.scratch/
-node_modules/
-*.tgz
-examples/react/dist/
-examples/react/node_modules/
-examples/react/package-lock.json

@@ -1,20 +1,6 @@
-# 只保留跨服务接线；任务、调度、缓存等默认值由应用代码维护。
-x-dataagent-environment: &dataagent-environment
-  MYSQL_HOST: mysql
-  MYSQL_USER: ${DATAAGENT_MYSQL_USER:-dataagent}
-  MYSQL_PASSWORD: ${DATAAGENT_MYSQL_PASSWORD:-dataagent123}
-  MYSQL_DATABASE: ${MYSQL_DATABASE:-opendataworks}
-  SESSION_MYSQL_DATABASE: ${DATAAGENT_SESSION_MYSQL_DATABASE:-dataagent}
-  ODW_BACKEND_BASE_URL: http://backend:8080/api/v1/ai
-  ODW_AGENT_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-  DATAAGENT_PORTAL_MCP_BASE_URL: http://portal-mcp:8801${PORTAL_MCP_MOUNT_PATH:-/mcp}/
-  DATAAGENT_PORTAL_MCP_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-  DATAAGENT_PORTAL_MCP_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
-  SKILLS_ROOT_DIR: /app/.claude/skills
-
 services:
-  # Note: opendataagent is intentionally deployed via opendataagent/deploy/docker-compose.yml
-  # and is not part of the root portal compose stack.
+  # DataAgent 不在本 Compose 中，由 opendataagent 仓库的 deploy/docker-compose.yml 单独部署；
+  # 门户内嵌 widget 所需的转发写在 ./docker/nginx/frontend.conf，按实际地址启用。
   # MySQL 数据库
   mysql:
     image: mysql:8.0
@@ -95,137 +81,26 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-      dataagent-frontend:
-        condition: service_healthy
-    # nginx 配置默认使用镜像内构建版本；如需宿主机管理（Superset docker/nginx 同款），
-    # 取消下面挂载的注释并按需修改 ./docker/nginx/ 下的对应 conf。
-    # volumes:
-    #   - ./docker/nginx/frontend.conf:/etc/nginx/conf.d/default.conf:ro
+    # nginx 配置由宿主机管理：DataAgent widget 与 API 的转发在该文件中按实际地址启用。
+    volumes:
+      - ./docker/nginx/frontend.conf:/etc/nginx/conf.d/default.conf:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  dataagent-frontend:
-    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/opendataworks-dataagent-frontend:latest}
+  odw-mcp-server:
+    image: ${OPENDATAWORKS_ODW_MCP_SERVER_IMAGE:-mikefan2019/opendataworks-odw-mcp-server:latest}
     pull_policy: always
-    container_name: opendataworks-dataagent-frontend
-    restart: always
-    ports:
-      - "8901:80"
-    depends_on:
-      dataagent-backend:
-        condition: service_healthy
-    # nginx 配置默认使用镜像内构建版本；如需宿主机管理（Superset docker/nginx 同款），
-    # 取消下面挂载的注释并按需修改 ./docker/nginx/ 下的对应 conf。
-    # volumes:
-    #   - ./docker/nginx/dataagent-frontend.conf:/etc/nginx/conf.d/default.conf:ro
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /dataagent_runtime 报 permission denied）
-  dataagent-home-init:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
-    pull_policy: always
-    container_name: opendataworks-dataagent-home-init
-    user: "0:0"
-    restart: "no"
-    command:
-      - sh
-      - -c
-      - |
-        set -e
-        mkdir -p /dataagent_runtime
-        chown -R ${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000} /dataagent_runtime
-        chmod -R u+rwX /dataagent_runtime
-    volumes:
-      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
-
-  # DataAgent 后端服务（NL2SQL）
-  dataagent-backend:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
-    pull_policy: always
-    container_name: opendataworks-dataagent-backend
-    restart: always
-    env_file:
-      - ./.env
-    user: "${DATAAGENT_RUNTIME_UID:-1000}:${DATAAGENT_RUNTIME_GID:-1000}"
-    environment:
-      <<: *dataagent-environment
-      REDIS_HOST: redis
-      DATAAGENT_SANDBOX_RUNNER_URL: http://dataagent-sandbox-runner:8910
-      DATAAGENT_CONFIG: /app/docker/dataagent/dataagent_config.py
-    ports:
-      - "8900:8900"
-    depends_on:
-      dataagent-home-init:
-        condition: service_completed_successfully
-      mysql:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      dataagent-sandbox-runner:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8900/api/v1/nl2sql/health').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
-    volumes:
-      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
-      - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
-      # DataAgent 外置配置目录（基础配置 + 用户覆盖/扩展模块，见目录内注释）：
-      - ./docker/dataagent:/app/docker/dataagent:ro
-
-  # DataAgent 沙箱 Runner（内部服务）
-  dataagent-sandbox-runner:
-    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
-    pull_policy: always
-    container_name: opendataworks-dataagent-sandbox-runner
-    restart: always
-    env_file:
-      - ./.env
-    user: "${DATAAGENT_RUNNER_UID:-0}:${DATAAGENT_RUNNER_GID:-0}"
-    environment:
-      <<: *dataagent-environment
-      DATAAGENT_HOST_ROOT: ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}
-      DATAAGENT_RUNTIME_UID: ${DATAAGENT_RUNTIME_UID:-1000}
-      DATAAGENT_RUNTIME_GID: ${DATAAGENT_RUNTIME_GID:-1000}
-      DATAAGENT_SANDBOX_MODE: ""
-      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
-      DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
-    depends_on:
-      dataagent-home-init:
-        condition: service_completed_successfully
-      mysql:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8910/').read()"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    volumes:
-      - ${DATAAGENT_HOST_ROOT:-/dataagent_runtime}:/dataagent_runtime
-      - ${DATAAGENT_SKILLS_DIR:-../dataagent/.claude/skills}:/app/.claude/skills
-      - ${DATAAGENT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
-
-  portal-mcp:
-    image: ${OPENDATAWORKS_PORTAL_MCP_IMAGE:-mikefan2019/opendataworks-portal-mcp:latest}
-    pull_policy: always
-    container_name: opendataworks-portal-mcp
+    container_name: opendataworks-odw-mcp-server
     restart: always
     env_file:
       - ./.env
     environment:
-      PORTAL_MCP_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      PORTAL_MCP_FRONTDOOR_TOKEN: ${PORTAL_MCP_TOKEN:-odw-portal-mcp-token}
-      PORTAL_MCP_FRONTDOOR_TOKEN_HEADER_NAME: ${PORTAL_MCP_TOKEN_HEADER_NAME:-X-Portal-MCP-Token}
+      ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+      ODW_MCP_SERVER_FRONTDOOR_TOKEN: ${ODW_MCP_SERVER_TOKEN:-odw-odw-mcp-server-token}
+      ODW_MCP_SERVER_FRONTDOOR_TOKEN_HEADER_NAME: ${ODW_MCP_SERVER_TOKEN_HEADER_NAME:-X-ODW-MCP-Token}
     ports:
       - "8801:8801"
     depends_on:

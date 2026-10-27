@@ -11,8 +11,8 @@
               │               │               │
               ▼               ▼               ▼
 ┌───────────────────┐ ┌─────────────┐ ┌─────────────────┐
-│   前端应用         │ │  Portal MCP │ │  DataAgent      │
-│   Vue 3 + Vite    │ │  SSE/MCP    │ │  FastAPI        │
+│   前端应用         │ │  ODW MCP Server │ │  DataAgent      │
+│   Vue 3 + Vite    │ │  SSE/MCP    │ │  独立部署       │
 │   :3000 (dev)     │ │  :8801      │ │  :8900          │
 └───────────────────┘ └─────────────┘ └─────────────────┘
               │               │               │
@@ -38,7 +38,7 @@
 |------|------|------|
 | 主后端 | `backend/` | 元数据、工作流、血缘、平台 API |
 | 前端 | `frontend/` | Web 应用 UI |
-| 智能查询 | `dataagent/dataagent-backend/` | NL2SQL、会话管理、Agent 运行时 |
+| 智能查询 | 独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent) | NL2SQL、会话管理、Agent 运行时（单独部署） |
 | 部署 | `deploy/` | Docker Compose、环境模板 |
 
 ## 技术选型

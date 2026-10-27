@@ -39,10 +39,10 @@ frontend/src/
 
 ## API 代理
 
-开发环境通过 Vite proxy 转发请求：
+开发环境通过 Vite proxy 转发请求（生产环境由门户 nginx 转发，DataAgent 部分见 [智能查询接入](/architecture/dataagent)）：
 
-- `/api/v1/nl2sql/*` → DataAgent Backend (:8900)
-- `/api/v1/dataagent/*` → DataAgent Backend (:8900)
+- `/api/v1/nl2sql/*` → 本地启动的 DataAgent (:8900)
+- `/api/v1/dataagent/*` → 本地启动的 DataAgent (:8900)
 - `/api/*` → 主后端 (:8080)
 
 ## 状态管理

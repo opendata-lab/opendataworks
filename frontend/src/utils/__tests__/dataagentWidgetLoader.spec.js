@@ -3,7 +3,7 @@ import { loadDataAgentWidgetScript } from '../dataagentWidgetLoader'
 
 afterEach(() => {
   document.querySelectorAll('[data-odw-dataagent-widget-script]').forEach(el => el.remove())
-  delete window.OpenDataWorksWidget
+  delete window.DataAgentWidget
   delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
 })
 
@@ -15,7 +15,7 @@ it('shares concurrent loads and allows a new user attempt after an error', async
   await expect(first).rejects.toThrow('Failed to load')
   expect(script.isConnected).toBe(false)
   const retry = loadDataAgentWidgetScript()
-  window.OpenDataWorksWidget = { installWidget: vi.fn() }
+  window.DataAgentWidget = { installWidget: vi.fn() }
   document.querySelector('[data-odw-dataagent-widget-script]').dispatchEvent(new Event('load'))
-  await expect(retry).resolves.toBe(window.OpenDataWorksWidget)
+  await expect(retry).resolves.toBe(window.DataAgentWidget)
 })

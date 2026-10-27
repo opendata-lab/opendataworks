@@ -10,22 +10,15 @@ CREATE DATABASE IF NOT EXISTS `opendataworks`
   DEFAULT CHARACTER SET utf8mb4 
   COLLATE utf8mb4_unicode_ci;
 
-CREATE DATABASE IF NOT EXISTS `dataagent`
-  DEFAULT CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-
 -- 使用数据库
 USE `opendataworks`;
 
 -- 如果用户不存在则创建（虽然环境变量会创建，但这里确保权限正确）
 -- 注意：CREATE USER IF NOT EXISTS 在 MySQL 8.0+ 中可用
 CREATE USER IF NOT EXISTS 'opendataworks'@'%' IDENTIFIED BY 'opendataworks123';
-CREATE USER IF NOT EXISTS 'dataagent'@'%' IDENTIFIED BY 'dataagent123';
 
 -- 授予权限
 GRANT ALL PRIVILEGES ON `opendataworks`.* TO 'opendataworks'@'%';
-GRANT SELECT ON `opendataworks`.* TO 'dataagent'@'%';
-GRANT ALL PRIVILEGES ON `dataagent`.* TO 'dataagent'@'%';
 
 -- 刷新权限
 FLUSH PRIVILEGES;

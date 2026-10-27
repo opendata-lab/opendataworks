@@ -124,7 +124,7 @@ export const settingsApi = {
         })
     },
 
-    // 智能助手设置（当前仅：智能元数据使用的助手）
+    // 智能助手设置：门户智能问数与智能元数据各自使用的助手
     getAgentSettings() {
         return request({
             url: '/v1/settings/agent',

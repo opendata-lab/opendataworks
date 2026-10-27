@@ -41,7 +41,7 @@ logging:
 
 ## 前端配置
 
-前端配置文件位于 `frontend/vite.config.js`。
+前端配置文件位于 `frontend/vite.config.js`。开发环境下 `/api/v1/dataagent`、`/api/v1/nl2sql` 代理到本地启动的 DataAgent（见 [智能查询接入](/architecture/dataagent)）。
 
 ### 代理配置
 
@@ -78,10 +78,9 @@ MYSQL_DATABASE=opendataworks
 MYSQL_USER=opendataworks
 MYSQL_PASSWORD=opendataworks123
 
-# 服务端口
-BACKEND_PORT=8080
-FRONTEND_PORT=8081
-DATAAGENT_PORT=8900
+# Agent 接入
+AGENT_API_SERVICE_TOKEN=odw-agent-service-token
+ODW_MCP_SERVER_TOKEN=odw-odw-mcp-server-token
 ```
 
 ::: tip

@@ -15,6 +15,9 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRouter: () => ({ push: routerPush })
 }))
 
+const getAgentSettings = vi.hoisted(() => vi.fn())
+vi.mock('@/api/settings', () => ({ settingsApi: { getAgentSettings } }))
+
 vi.mock('@/demo/runtime', () => ({
   isDemoMode: false
 }))
@@ -50,11 +53,12 @@ describe('Layout', () => {
     routeState.query = {}
     document.head.innerHTML = ''
     document.body.innerHTML = ''
-    delete window.OpenDataWorksWidget
+    delete window.DataAgentWidget
     delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
     scheduleRouteWarmup.mockClear()
     preloadRouteComponents.mockClear()
     routerPush.mockReset().mockResolvedValue(undefined)
+    getAgentSettings.mockReset().mockResolvedValue({ queryAgentId: 'agent_query' })
   })
 
   it('renames the intelligent query menu entry to 智能问数', () => {
@@ -80,16 +84,17 @@ describe('Layout', () => {
 
     const script = document.querySelector('script[data-odw-dataagent-widget-script]')
     expect(script).toBeTruthy()
-    expect(script.src).toBe('http://localhost:3000/dataagent/widget/opendataworks-widget.bundle.js')
+    expect(script.src).toBe('http://localhost:3000/dataagent/widget/dataagent-widget.bundle.js')
 
-    window.OpenDataWorksWidget = { installWidget }
+    window.DataAgentWidget = { installWidget }
     script.dispatchEvent(new Event('load'))
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({
       displayMode: 'floating',
       position: 'bottom-right',
-      agentId: 'agent_opendataworks',
+      agentId: 'agent_query',
+      websiteId: 'opendataworks-portal',
       apiBaseUrl: ''
     }))
 
@@ -130,7 +135,7 @@ describe('Layout', () => {
       }
     })
     await wrapper.find('.portal-page-content .ai-assistant-trigger').trigger('click')
-    window.OpenDataWorksWidget = { installWidget, open: globalOpen }
+    window.DataAgentWidget = { installWidget, open: globalOpen }
     document.querySelector('script[data-odw-dataagent-widget-script]').dispatchEvent(new Event('load'))
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(installWidget).toHaveBeenCalledTimes(1)
