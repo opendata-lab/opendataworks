@@ -211,7 +211,7 @@ Use this method for isolated environments without internet access. You will use 
    - DataAgent backend/runner 额外持久化宿主目录 `DATAAGENT_HOST_ROOT`（默认 `/dataagent_runtime`），compose 挂载到容器内固定运行时根 `/dataagent_runtime`。topic 根目录默认位于 `/dataagent_runtime/<topic_id>/`，agent cwd 位于 `workspace/`，Claude SDK session 文件位于同一 topic 下的 `home/.claude/projects/<sanitized-cwd>/`；同一 topic 多轮复用该目录，不同 topic 不共享 `.claude` 状态
    - `DATAAGENT_HOST_ROOT` 可在 `.env` 中改成任意自定义宿主机目录：绝对路径直接生效；相对路径按 `deploy/` 解析，`scripts/start.sh` 会在启动 compose 前统一展开成宿主机绝对路径并 `export`，保证 backend 卷挂载与 sandbox runner 反查的 child bind 源指向同一目录。若不经 `start.sh` 直接运行 `docker compose`，请填写绝对路径，否则 runner 会把相对路径误解析成容器内 `/app/<rel>` 导致 child bind 源错位
    - `dataagent-home-init` 是一次性 init 服务（以 root 运行），在 backend/runner 启动前确保 `DATAAGENT_HOST_ROOT` 对应的 `/dataagent_runtime` bind mount 存在，并把属主改成 `DATAAGENT_RUNTIME_UID/GID`。这避免了 Docker 把缺失的 bind mount 宿主目录默认建成 `root:root 755`、导致非 root 的 `dataagent-backend` 写 `/dataagent_runtime` 时报 `permission denied` 的问题；属主修好后，每个 topic 的具体 skill 目录仍由运行时按需在各自 topic 工作区下创建，init 不预设任何按 skill 划分的目录；若改了 `DATAAGENT_RUNTIME_UID/GID`，该 init 服务会自动按新值修正属主
-   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `opendataworks-dataagent-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/mnt/workspace`
+   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `oda-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/mnt/workspace`
    - task child 内部路径与 backend/runner 服务路径分离：`/mnt/workspace` 是当前 task workspace 和 project skills 目录，`/mnt/home` 是 Claude HOME，`/tmp` 只用于临时 scratch；child 不注入 `DATAAGENT_WORKSPACE_DIR`、`DATAAGENT_WORKSPACE_PREPARED`，也不暴露共享运行时根
    - 每个 task child 容器都是一次性容器，runner 使用 `--rm` 启动；正常结束自动删除，取消或异常时 runner 会 kill child，并在启动时清理带 `dataagent.sandbox.managed_by=dataagent-sandbox-runner` 标签的遗留 child 容器
    - `DATAAGENT_DOCKER_SOCKET` 只挂到 `dataagent-sandbox-runner`，不会挂到 task child 容器；runner 默认用 `DATAAGENT_RUNNER_UID/GID=0:0` 访问 Docker socket，child task 仍用 `DATAAGENT_RUNTIME_UID/GID` 运行；若手动删除 `DATAAGENT_HOST_ROOT`，Claude SDK 本地 session 文件和 topic 工作区都会被清空，此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
@@ -333,7 +333,7 @@ docker-compose -f docker-compose.prod.yml logs -f backend
 
 ## DataAgent 独立仓库接入（一次切换）
 
-DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 构建，镜像名保持不变；本仓库只编排镜像。
+DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 构建，镜像为 `oda-frontend`、`oda-backend`、`oda-runner`；本仓库只编排镜像。
 
 1. 先发布新 DataAgent 镜像，再同时更新本仓库 MCP 与主前端。widget 使用 `DataAgentWidget` 和 `dataagent-widget.bundle.js`，客户端头为 `X-DataAgent-*`。
 2. 启动 `odw-mcp-server`，配置 `ODW_MCP_SERVER_BACKEND_BASE_URL`、`ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN` 和 `ODW_MCP_SERVER_FRONTDOOR_TOKEN`。

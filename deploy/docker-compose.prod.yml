@@ -120,7 +120,7 @@ services:
       retries: 3
 
   dataagent-frontend:
-    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/opendataworks-dataagent-frontend:1.5.0}
+    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/oda-frontend:1.5.0}
     container_name: opendataworks-dataagent-frontend
     logging: *default-logging
     restart: always
@@ -143,7 +143,7 @@ services:
 
   # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /dataagent_runtime 报 permission denied）
   dataagent-home-init:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.5.0}
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/oda-backend:1.5.0}
     container_name: opendataworks-dataagent-home-init
     logging: *default-logging
     user: "0:0"
@@ -164,7 +164,7 @@ services:
 
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:1.5.0}
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/oda-backend:1.5.0}
     container_name: opendataworks-dataagent-backend
     logging: *default-logging
     restart: always
@@ -202,7 +202,7 @@ services:
 
   # DataAgent 沙箱 Runner（内部服务）
   dataagent-sandbox-runner:
-    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.5.0}
+    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/oda-runner:1.5.0}
     container_name: opendataworks-dataagent-sandbox-runner
     logging: *default-logging
     restart: always
@@ -213,7 +213,7 @@ services:
       DATAAGENT_RUNTIME_UID: ${DATAAGENT_RUNTIME_UID:-1000}
       DATAAGENT_RUNTIME_GID: ${DATAAGENT_RUNTIME_GID:-1000}
       DATAAGENT_SANDBOX_MODE: ""
-      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.5.0}
+      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/oda-runner:1.5.0}
       DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
     depends_on:
       dataagent-home-init:
@@ -264,7 +264,7 @@ services:
   # 不收集 mysql/redis 基础设施与两个 nginx 前端；如需可在 .env 用 LOG_COLLECTOR_CONTAINERS 增减。
   # task child 日志由 runner 另行落盘在 <HOST_ROOT>/<topic>/logs/。
   log-collector:
-    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:1.5.0}
+    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/oda-runner:1.5.0}
     container_name: opendataworks-log-collector
     logging: *default-logging
     restart: always

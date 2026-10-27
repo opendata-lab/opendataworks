@@ -11,7 +11,7 @@
 - Python 包、工具、服务、变量与 token 头统一为 odw 名称；所有 23 个 MCP 工具保留 annotations，建表标为高风险。普通 token header 由管理员配置，DataAgent 不解释其业务含义。
 - 会话来源一步切为 `web`，widget 为 `DataAgentWidget` / `dataagent-widget.bundle.js` / `X-DataAgent-*`。主门户同步消费新名称。
 - DataAgent 有独立 compose、配置、构建 workflow、SDK workflow、规则和 TODO。OpenDataWorks 只编排其原名镜像，移除 DataAgent 的平台凭据、MCP 依赖及源码挂载；独立镜像带通用 Skill，`dataagent-skills` 命名卷持久化 Skill，home-init 修正属主。部署指南列出普通 MCP、导入并启用 Skill、绑定智能体及主体账号映射步骤。
-- 未改本仓库 Go 产品线 `opendataagent/` 和根 `skills/`；未做 Plugin、租户/API Key/白名单或旧名兼容；DataAgent 镜像名保持不变。SDK npm 名称沿用原包契约。
+- 未改本仓库 Go 产品线 `opendataagent/` 和根 `skills/`；未做 Plugin、租户/API Key/白名单或旧名兼容；镜像随后改为 `oda-*`，npm 包改为 `@opendataagent/*`（见文末“改名”节）。
 
 ## 通用 Skill 逐项检查
 
@@ -120,3 +120,16 @@ DataAgent 核心 Python、Pi、前端、prompts、通用 Skill 中无 OpenDataWo
 临时 Java/MCP/DataAgent 进程已停止，运行时导入的 Skill 已删除；临时 MySQL 容器及匿名卷、五个临时 schema 和临时数据库账号一并删除。清理了本次 Redis task key、topic 工作区、模型探测临时凭据文件和 Pi 基线副本；未清空已有 Redis，未停止或删除既有容器。Python venv 和本地 Node 依赖保留，均被忽略。
 
 两仓库仅在指定 feature 分支本地提交，不 push、不合并 main。最终提交与文件计数见交付回复。
+
+## 改名（2026-10-27 追加）
+
+opendataagent 中剩余的 opendataworks 名称一次性改掉，不保留旧名：
+
+- 镜像：`opendataworks-dataagent-frontend/backend/runner/evals-builtin/evals-deepeval/evals-opik` → `oda-frontend/backend/runner/evals-builtin/evals-deepeval/evals-opik`；opendataagent 内镜像与离线包变量改为 `ODA_*`。opendataworks 的 compose、`.env.example`、离线打包与加载脚本只改默认镜像，变量名 `OPENDATAWORKS_DATAAGENT_*_IMAGE` 与容器名不变。
+- npm 包（均未发布）：`@opendataagent/agent-conversation`、`@opendataagent/dataagent-runtime-pi`、`dataagent-frontend`；lockfile 用 `npm install --package-lock-only` 重新生成。
+- contracts `$id` 统一为 `https://opendataagent/contracts/...`；投影样例的 skill 名改为 `example-business-knowledge`。
+- 有意保留：历史 Alembic 迁移及其测试中的 `agent_opendataworks`、Pi README 中已删除镜像的历史说明、`docs/` 中指向来源仓库的链接。
+
+验证：opendataagent pytest 877 通过；前端 748 通过、既有 `ToolOutputRenderer` 10 项失败；`build`、`build:widget`、`test:sdk`、`build:sdk` 通过；Pi 183 通过、既有 Bash 时序用例 1 项失败，build 通过；两边 compose `config` 通过；opendataworks 部署契约测试 13 通过。
+
+上线注意：`oda-*` 镜像在 Docker Hub 上还不存在。opendataworks prod compose 默认 `oda-*:1.5.0`，发布前需由 opendataagent 先构建并推送对应 tag。以 `@opendataagent` scope 发布 npm 包前需先在 npm 上拥有该 scope。

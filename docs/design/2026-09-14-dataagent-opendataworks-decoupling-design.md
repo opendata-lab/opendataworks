@@ -73,7 +73,7 @@ opendataagent/
 
 覆盖方式：在 `opendataagent` 的 `main` 上用一个提交删除原有全部文件并放入新内容，保留该仓库原有历史；DataAgent 自身的历史保留在 `opendataworks`。`dataagent_runtime/` 下的本地 topic 目录是运行产物，不迁移。
 
-镜像名保持 `opendataworks-dataagent-frontend/backend/runner` 不变，避免与 `opendataworks/opendataagent/` 的 `opendataagent-server/web` 冲突，也不需要改现有部署变量。
+镜像统一以 `oda-` 开头：`oda-frontend`、`oda-backend`、`oda-runner`、`oda-evals-builtin`、`oda-evals-deepeval`，镜像变量为 `ODA_*_IMAGE`，避免与 `opendataworks/opendataagent/` 的 `opendataagent-server/web` 混淆。npm 包改为 `@opendataagent/agent-conversation`、`@opendataagent/dataagent-runtime-pi`（均未发布过），contracts 的 `$id` 前缀改为 `https://opendataagent/contracts/`。opendataworks 的 compose 变量名 `OPENDATAWORKS_DATAAGENT_*_IMAGE` 属于本仓库，保持不变，只改默认镜像。
 
 ### 3. 通用内置 Skill
 
@@ -140,7 +140,7 @@ OpenDataWorks 专属 Skill 平移到 `opendataworks/odw-skills/<原目录名>/`�
 `opendataagent`：
 
 - 自带 `deploy/docker-compose.yml`（mysql、redis、dataagent-backend、sandbox-runner、frontend），不含任何 OpenDataWorks 服务或 `ODW_*` / `PORTAL_MCP_*` 变量；
-- 自带镜像构建 workflow，镜像名不变。
+- 自带镜像构建 workflow，构建 `oda-*` 镜像。
 
 `opendataworks`：
 

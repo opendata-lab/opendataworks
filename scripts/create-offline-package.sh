@@ -174,12 +174,12 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_BACKEND_IMAGE=.*|OPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=opendataworks-dataagent-frontend:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=opendataworks-dataagent-frontend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}|" \
+        -e "s|^# *OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=oda-frontend:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=oda-frontend:${PARSER_TAG}|" \
+        -e "s|^# *OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=oda-backend:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=oda-backend:${PARSER_TAG}|" \
+        -e "s|^# *OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:${PARSER_TAG}|" \
+        -e "s|^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
         -e "s|^# *DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
@@ -191,11 +191,11 @@ rewrite_offline_env_file() {
     grep -q '^OPENDATAWORKS_FRONTEND_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=opendataworks-dataagent-frontend:${PARSER_TAG}" >> "$env_file"
+        echo "OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=oda-frontend:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=opendataworks-dataagent-backend:${PARSER_TAG}" >> "$env_file"
+        echo "OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=oda-backend:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:${PARSER_TAG}" >> "$env_file"
+        echo "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}" >> "$env_file"
     # 离线包默认开启 sandbox 容器模式（每个 task 由 sandbox runner 启动独立 child 容器执行），
@@ -266,9 +266,9 @@ OP_TAG="$PARSER_TAG"
 MAIN_IMAGES=(
     "opendataworks-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-frontend:${OP_TAG}|opendataworks-frontend:${OP_TAG}"
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
-    "opendataworks-dataagent-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-frontend:${OP_TAG}|opendataworks-dataagent-frontend:${OP_TAG}"
-    "opendataworks-dataagent-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-backend:${OP_TAG}|opendataworks-dataagent-backend:${OP_TAG}"
-    "opendataworks-dataagent-runner.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-dataagent-runner:${OP_TAG}|opendataworks-dataagent-runner:${OP_TAG}"
+    "oda-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/oda-frontend:${OP_TAG}|oda-frontend:${OP_TAG}"
+    "oda-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/oda-backend:${OP_TAG}|oda-backend:${OP_TAG}"
+    "oda-runner.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/oda-runner:${OP_TAG}|oda-runner:${OP_TAG}"
     "opendataworks-odw-mcp-server.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-odw-mcp-server:${OP_TAG}|opendataworks-odw-mcp-server:${OP_TAG}"
 )
 

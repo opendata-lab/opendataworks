@@ -103,7 +103,7 @@ services:
       retries: 3
 
   dataagent-frontend:
-    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/opendataworks-dataagent-frontend:latest}
+    image: ${OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE:-mikefan2019/oda-frontend:latest}
     pull_policy: always
     container_name: opendataworks-dataagent-frontend
     restart: always
@@ -124,7 +124,7 @@ services:
 
   # DataAgent 持久化目录初始化（以 root 预创建并修正属主，避免非 root 容器写 /dataagent_runtime 报 permission denied）
   dataagent-home-init:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/oda-backend:latest}
     pull_policy: always
     container_name: opendataworks-dataagent-home-init
     user: "0:0"
@@ -143,7 +143,7 @@ services:
 
   # DataAgent 后端服务（NL2SQL）
   dataagent-backend:
-    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/opendataworks-dataagent-backend:latest}
+    image: ${OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE:-mikefan2019/oda-backend:latest}
     pull_policy: always
     container_name: opendataworks-dataagent-backend
     restart: always
@@ -179,7 +179,7 @@ services:
 
   # DataAgent 沙箱 Runner（内部服务）
   dataagent-sandbox-runner:
-    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
+    image: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/oda-runner:latest}
     pull_policy: always
     container_name: opendataworks-dataagent-sandbox-runner
     restart: always
@@ -190,7 +190,7 @@ services:
       DATAAGENT_RUNTIME_UID: ${DATAAGENT_RUNTIME_UID:-1000}
       DATAAGENT_RUNTIME_GID: ${DATAAGENT_RUNTIME_GID:-1000}
       DATAAGENT_SANDBOX_MODE: ""
-      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/opendataworks-dataagent-runner:latest}
+      DATAAGENT_SANDBOX_IMAGE: ${OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE:-mikefan2019/oda-runner:latest}
       DATAAGENT_SANDBOX_NETWORK: container:opendataworks-dataagent-sandbox-runner
     depends_on:
       dataagent-home-init:

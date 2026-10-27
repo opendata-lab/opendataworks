@@ -16,7 +16,7 @@
 - 从 `opendataworks/dataagent/` 平移 `dataagent-backend`、`dataagent-frontend`、`dataagent-runtime-pi`、`contracts`、`.claude/skills`、`README.md` 到仓库根；不带 `portal-mcp`、`dataagent_runtime/`、`node_modules`、虚拟环境和构建产物。
 - 平移 `tools/dataagent-evals/`、根 `tests/test_*dataagent*` 与 `tests/test_deepeval_packaging_hooks.py`，修正其中的相对路径。
 - 新建 `deploy/`：`docker-compose.yml`（mysql、redis、dataagent-home-init、dataagent-backend、dataagent-sandbox-runner、dataagent-frontend、log-collector 视原 compose 需要）、`.env.example`、`docker/dataagent/*` 配置示例、`docker/nginx/dataagent-frontend.conf`、MySQL 初始化脚本中 `dataagent` schema 与用户部分。不含 OpenDataWorks 服务和变量。
-- 新建 `.github/workflows/docker-build.yml`，构建 `opendataworks-dataagent-frontend/backend/runner` 与两个评测镜像，Dockerfile 路径改为新位置。
+- 新建 `.github/workflows/docker-build.yml`，构建 `oda-frontend/backend/runner` 与 `oda-evals-builtin/deepeval` 镜像，Dockerfile 路径改为新位置。
 - 新建 `AGENTS.md`（`CLAUDE.md` 用 `@AGENTS.md` 引用）：从 opendataworks `AGENTS.md` 带过来通用 Working Rules、Design & Plan Workflow、Backlog、Verification Expectations 中适用部分，以及全部 Intelligent Query 附录；路径改为新布局，删除 OpenDataWorks 相关的冒烟前提（`MYSQL_DATABASE=opendataworks`、`agent_opendataworks`、portal-mcp）。
 - 新建 `docs/TODO.md`，承接 opendataworks `docs/TODO.md` 中只属于 DataAgent 的条目（定时消息完善、`ToolOutputRenderer` 既有失败、未跟踪本地 skill 目录等），并新增 Plugin 打包与导入条目。
 - `.gitignore`、`.nvmrc`、`.python-version` 按 DataAgent 实际需要重写。

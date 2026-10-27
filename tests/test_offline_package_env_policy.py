@@ -138,7 +138,7 @@ def test_generated_offline_archive_contains_template_but_not_runtime_env(
             assert "DATAAGENT_LLM_JSON_FILE" not in template
             assert "DATAAGENT_SANDBOX_MODE=container" in template
             assert "DATAAGENT_SKILLS_DIR=" not in template
-            assert "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=opendataworks-dataagent-runner:env-policy-test" in template
+            assert "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:env-policy-test" in template
             assert not any(str(path).endswith("/dataagent-runtime/settings.json") for path in package_paths)
             # Validate the rewritten artifact, not just the source template. No
             # daemon or service startup is needed for Compose interpolation.
