@@ -1,3 +1,5 @@
+import { settingsApi } from '@/api/settings'
+
 const SCRIPT_URL = import.meta.env.VITE_DATAAGENT_WIDGET_JS_URL || '/dataagent/widget/dataagent-widget.bundle.js'
 const SCRIPT_ATTR = 'data-odw-dataagent-widget-script'
 
@@ -40,4 +42,14 @@ export function loadDataAgentWidgetScript() {
   })
 
   return window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
+}
+
+export const QUERY_AGENT_MISSING_MESSAGE = '尚未配置智能问数助手，请在「配置管理 → 智能助手」中选择'
+
+// 门户问数使用的助手由管理员在「智能助手」设置中选择；DataAgent 没有固定的平台助手 ID。
+export async function loadQueryAgentId() {
+  const settings = await settingsApi.getAgentSettings()
+  const agentId = String(settings?.queryAgentId || '').trim()
+  if (!agentId) throw new Error(QUERY_AGENT_MISSING_MESSAGE)
+  return agentId
 }

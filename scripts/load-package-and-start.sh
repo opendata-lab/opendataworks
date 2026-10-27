@@ -104,6 +104,9 @@ if [[ -z "${PACKAGE_DIR:-}" ]]; then
     die "failed to determine package directory"
 fi
 
+# 后面会 cd 进包目录再调用其中的脚本，先换成绝对路径，相对路径（含默认的解压目录）才不会叠加。
+PACKAGE_DIR="$(cd "$PACKAGE_DIR" && pwd)"
+
 SCRIPTS_DIR="$PACKAGE_DIR/scripts"
 ASSETS_DIR="$PACKAGE_DIR/deploy"
 
@@ -124,6 +127,18 @@ if [[ "$AUTO_COPY_ENV" = true ]]; then
         cp "$ASSETS_DIR/.env.example" "$ASSETS_DIR/.env"
         log "Review $ASSETS_DIR/.env and review database credentials, JWT secret and service tokens"
     fi
+fi
+
+# 镜像 tag 属于离线包本身：升级时把已有 .env 中的 *_IMAGE 换成本包的值，其他配置保持不变。
+if [[ -f "$ASSETS_DIR/.env" && -f "$ASSETS_DIR/.env.example" ]]; then
+    while IFS= read -r image_line; do
+        image_key="${image_line%%=*}"
+        if grep -q "^${image_key}=" "$ASSETS_DIR/.env"; then
+            sed "s|^${image_key}=.*|${image_line}|" "$ASSETS_DIR/.env" > "$ASSETS_DIR/.env.tmp" && mv "$ASSETS_DIR/.env.tmp" "$ASSETS_DIR/.env"
+        else
+            echo "$image_line" >> "$ASSETS_DIR/.env"
+        fi
+    done < <(grep -E '^[A-Z0-9_]+_IMAGE=' "$ASSETS_DIR/.env.example" || true)
 fi
 
 if [[ "$DO_START" = true ]]; then

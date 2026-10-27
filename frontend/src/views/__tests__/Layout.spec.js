@@ -15,6 +15,9 @@ vi.mock('vue-router', async (importOriginal) => ({
   useRouter: () => ({ push: routerPush })
 }))
 
+const getAgentSettings = vi.hoisted(() => vi.fn())
+vi.mock('@/api/settings', () => ({ settingsApi: { getAgentSettings } }))
+
 vi.mock('@/demo/runtime', () => ({
   isDemoMode: false
 }))
@@ -55,6 +58,7 @@ describe('Layout', () => {
     scheduleRouteWarmup.mockClear()
     preloadRouteComponents.mockClear()
     routerPush.mockReset().mockResolvedValue(undefined)
+    getAgentSettings.mockReset().mockResolvedValue({ queryAgentId: 'agent_query' })
   })
 
   it('renames the intelligent query menu entry to 智能问数', () => {
@@ -89,7 +93,7 @@ describe('Layout', () => {
     expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({
       displayMode: 'floating',
       position: 'bottom-right',
-      agentId: 'agent_opendataworks',
+      agentId: 'agent_query',
       apiBaseUrl: ''
     }))
 

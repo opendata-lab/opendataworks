@@ -8,7 +8,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { loadDataAgentWidgetScript } from '@/utils/dataagentWidgetLoader'
+import { QUERY_AGENT_MISSING_MESSAGE, loadDataAgentWidgetScript, loadQueryAgentId } from '@/utils/dataagentWidgetLoader'
 
 const INLINE_CONTAINER_ID = 'odw-dataagent-inline-widget'
 
@@ -19,14 +19,14 @@ let unmounted = false
 
 const installInlineWidget = async () => {
   try {
-    const widget = await loadDataAgentWidgetScript()
+    const [widget, agentId] = await Promise.all([loadDataAgentWidgetScript(), loadQueryAgentId()])
     if (unmounted) return
     widgetController = widget.installWidget({
       displayMode: 'inline',
       containerId: INLINE_CONTAINER_ID,
       projectName: '智能问数',
       projectColor: '#3B82F6',
-      agentId: 'agent_opendataworks',
+      agentId,
       apiBaseUrl: '',
     })
     if (typeof route.query.topicId === 'string' && route.query.topicId) {
@@ -34,7 +34,9 @@ const installInlineWidget = async () => {
     }
   } catch (error) {
     console.warn('[OpenDataWorks] failed to install inline DataAgent widget:', error)
-    errorText.value = '智能问数加载失败，请检查 DataAgent 前端地址配置。'
+    errorText.value = error?.message === QUERY_AGENT_MISSING_MESSAGE
+      ? QUERY_AGENT_MISSING_MESSAGE
+      : '智能问数加载失败，请检查 DataAgent 转发配置。'
   }
 }
 

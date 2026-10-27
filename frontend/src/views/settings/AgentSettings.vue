@@ -10,10 +10,10 @@
         <template #title>{{ alert.text }}</template>
       </el-alert>
 
-      <SettingsRow label="智能元数据助手" description="用于生成表与字段描述">
+      <SettingsRow v-for="field in FIELDS" :key="field.key" :label="field.label" :description="field.description">
         <div class="agent-field">
           <el-select
-            v-model="metadataAgentId"
+            v-model="form[field.key]"
             class="agent-select"
             clearable
             filterable
@@ -32,7 +32,7 @@
               </div>
             </el-option>
           </el-select>
-          <el-tag :type="statusTag.type" size="small" effect="plain">{{ statusTag.text }}</el-tag>
+          <el-tag :type="statusTag(field.key).type" size="small" effect="plain">{{ statusTag(field.key).text }}</el-tag>
         </div>
       </SettingsRow>
     </SettingsSection>
@@ -40,7 +40,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { settingsApi } from '@/api/settings'
@@ -49,28 +49,29 @@ import { isDemoMode, showDemoReadonlyMessage } from '@/demo/runtime'
 import SettingsSection from './components/SettingsSection.vue'
 import SettingsRow from './components/SettingsRow.vue'
 
+const FIELDS = [
+  { key: 'queryAgentId', label: '智能问数助手', description: '门户「智能问数」菜单页与悬浮窗使用' },
+  { key: 'metadataAgentId', label: '智能元数据助手', description: '用于生成表与字段描述' }
+]
+
 const loading = ref(false)
 const saving = ref(false)
 const agents = ref([])
 const agentsError = ref('')
-const metadataAgentId = ref('')
-const savedAgentId = ref('')
+const form = reactive({ queryAgentId: '', metadataAgentId: '' })
+const saved = reactive({ queryAgentId: '', metadataAgentId: '' })
 
-const dirty = computed(() => metadataAgentId.value !== savedAgentId.value)
+const dirty = computed(() => FIELDS.some(({ key }) => form[key] !== saved[key]))
 
 // 已保存的助手可能因为被删除或可见范围收紧而不在清单里，需要显式提示而不是静默失效
-const savedMissing = computed(
-  () =>
-    !!savedAgentId.value &&
-    agents.value.length > 0 &&
-    !agents.value.some((agent) => agent.agent_id === savedAgentId.value)
-)
+const isMissing = (key) =>
+  !!saved[key] && agents.value.length > 0 && !agents.value.some((agent) => agent.agent_id === saved[key])
 
-const statusTag = computed(() => {
-  if (!savedAgentId.value) return { type: 'info', text: '未配置' }
-  if (savedMissing.value) return { type: 'danger', text: '助手不可用' }
+const statusTag = (key) => {
+  if (!saved[key]) return { type: 'info', text: '未配置' }
+  if (isMissing(key)) return { type: 'danger', text: '助手不可用' }
   return { type: 'success', text: '已生效' }
-})
+}
 
 const alert = computed(() => {
   if (agentsError.value) {
@@ -79,14 +80,23 @@ const alert = computed(() => {
   if (!agents.value.length) {
     return { type: 'warning', text: '没有可用的助手，请先在智能问数中创建助手，或检查助手的可见范围设置' }
   }
-  if (savedMissing.value) {
-    return { type: 'error', text: `已保存的助手 ${savedAgentId.value} 不在当前可用清单中，请重新选择并保存` }
+  const missing = FIELDS.filter(({ key }) => isMissing(key))
+  if (missing.length) {
+    return { type: 'error', text: `${missing.map(({ label }) => label).join('、')}已保存的助手不在当前可用清单中，请重新选择并保存` }
   }
-  if (!savedAgentId.value) {
-    return { type: 'info', text: '尚未配置助手，「智能元数据」会提示先来此处选择' }
+  const unset = FIELDS.filter(({ key }) => !saved[key])
+  if (unset.length) {
+    return { type: 'info', text: `尚未配置${unset.map(({ label }) => label).join('、')}，对应功能会提示先来此处选择` }
   }
   return null
 })
+
+const applySaved = (settings) => {
+  for (const { key } of FIELDS) {
+    saved[key] = String(settings?.[key] || '')
+    form[key] = saved[key]
+  }
+}
 
 const load = async () => {
   loading.value = true
@@ -100,8 +110,7 @@ const load = async () => {
       settingsApi.getAgentSettings().catch(() => ({}))
     ])
     agents.value = Array.isArray(agentList) ? agentList.filter((item) => item?.agent_id) : []
-    savedAgentId.value = String(settings?.metadataAgentId || '')
-    metadataAgentId.value = savedAgentId.value
+    applySaved(settings)
   } finally {
     loading.value = false
   }
@@ -114,9 +123,8 @@ const save = async () => {
   }
   saving.value = true
   try {
-    const result = await settingsApi.updateAgentSettings({ metadataAgentId: metadataAgentId.value || '' })
-    savedAgentId.value = String(result?.metadataAgentId ?? metadataAgentId.value ?? '')
-    metadataAgentId.value = savedAgentId.value
+    const payload = Object.fromEntries(FIELDS.map(({ key }) => [key, form[key] || '']))
+    applySaved(await settingsApi.updateAgentSettings(payload))
     ElMessage.success('已保存')
   } catch (error) {
     ElMessage.error(error?.message || '保存失败')

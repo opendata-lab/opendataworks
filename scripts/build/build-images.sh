@@ -32,7 +32,9 @@ echo ""
 FRONTEND_IMAGE="opendataworks-frontend:latest"
 BACKEND_IMAGE="opendataworks-backend:latest"
 ODW_MCP_SERVER_IMAGE="opendataworks-odw-mcp-server:latest"
+MYSQL_IMAGE="mysql:8.0"
 REDIS_IMAGE="redis:7.2-alpine"
+LOG_COLLECTOR_IMAGE="docker:27.5.1-cli"
 
 # 创建输出目录
 OUTPUT_DIR="$REPO_ROOT/deploy/docker-images"
@@ -69,9 +71,11 @@ $CONTAINER_CMD build --platform linux/amd64 -t $ODW_MCP_SERVER_IMAGE \
 echo "✅ ODW MCP Server 镜像构建完成"
 echo ""
 
-echo "📦 拉取 Redis 运行时镜像..."
-$CONTAINER_CMD pull --platform linux/amd64 $REDIS_IMAGE
-echo "✅ Redis 镜像拉取完成"
+echo "📦 拉取 MySQL、Redis 与日志收集运行时镜像..."
+for image in $MYSQL_IMAGE $REDIS_IMAGE $LOG_COLLECTOR_IMAGE; do
+    $CONTAINER_CMD pull --platform linux/amd64 "$image"
+done
+echo "✅ 运行时镜像拉取完成"
 echo ""
 
 echo "📦 导出镜像为去重合并归档 all-images.tar ..."
@@ -80,7 +84,9 @@ ALL_IMAGES=(
     "$FRONTEND_IMAGE"
     "$BACKEND_IMAGE"
     "$ODW_MCP_SERVER_IMAGE"
+    "$MYSQL_IMAGE"
     "$REDIS_IMAGE"
+    "$LOG_COLLECTOR_IMAGE"
 )
 if [ "$CONTAINER_CMD" = "podman" ]; then
     $CONTAINER_CMD save --multi-image-archive -o "$OUTPUT_DIR/all-images.tar" "${ALL_IMAGES[@]}"

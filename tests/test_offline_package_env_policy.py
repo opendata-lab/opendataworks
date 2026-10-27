@@ -57,6 +57,26 @@ def test_offline_loader_preserves_existing_runtime_env(tmp_path: Path):
     assert (deploy_dir / ".env").read_text(encoding="utf-8") == "KEEP_EXISTING_CONFIG=true\n"
 
 
+def test_offline_upgrade_takes_image_tags_from_the_package(tmp_path: Path):
+    package_dir = tmp_path / "package"
+    deploy_dir = package_dir / "deploy"
+    (deploy_dir / "docker-images").mkdir(parents=True)
+    (package_dir / "scripts").mkdir()
+    (package_dir / "scripts" / "load-images.sh").write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
+    (deploy_dir / ".env").write_text(
+        "MYSQL_PASSWORD=secret\nOPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:1.0.0\n", encoding="utf-8")
+    (deploy_dir / ".env.example").write_text(
+        "MYSQL_PASSWORD=opendataworks123\nOPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:1.1.0\n", encoding="utf-8")
+
+    subprocess.run(
+        ["bash", str(REPO_ROOT / "scripts" / "load-package-and-start.sh"), "--package", str(package_dir), "--no-start"],
+        cwd=REPO_ROOT, check=True, capture_output=True, text=True,
+    )
+
+    assert (deploy_dir / ".env").read_text(encoding="utf-8") == (
+        "MYSQL_PASSWORD=secret\nOPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:1.1.0\n")
+
+
 def test_generated_offline_archive_contains_template_but_not_runtime_env(tmp_path: Path):
     if shutil.which("xz") is None:
         pytest.skip("xz is required to exercise the main offline packager")

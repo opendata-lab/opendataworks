@@ -6,6 +6,9 @@ import IntelligentQueryRemoteEmbed from '../IntelligentQueryRemoteEmbed.vue'
 
 const routeState = reactive({ query: {} })
 vi.mock('vue-router', () => ({ useRoute: () => routeState }))
+const getAgentSettings = vi.hoisted(() => vi.fn())
+vi.mock('@/api/settings', () => ({ settingsApi: { getAgentSettings } }))
+
 
 describe('IntelligentQueryRemoteEmbed', () => {
   beforeEach(() => {
@@ -14,6 +17,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
     delete window.DataAgentWidget
     delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
     routeState.query = {}
+    getAgentSettings.mockReset().mockResolvedValue({ queryAgentId: 'agent_query' })
   })
 
   it('loads the remote DataAgent widget script and installs inline mode into the page container', async () => {
@@ -35,7 +39,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
     expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({
       displayMode: 'inline',
       containerId: 'odw-dataagent-inline-widget',
-      agentId: 'agent_opendataworks',
+      agentId: 'agent_query',
       apiBaseUrl: ''
     }))
 
@@ -70,6 +74,17 @@ describe('IntelligentQueryRemoteEmbed', () => {
     await flushPromises()
     expect(selectConversation).toHaveBeenCalledTimes(1)
     expect(selectConversation).toHaveBeenCalledWith('topic-latest')
+    wrapper.unmount()
+  })
+
+  it('asks for the query assistant to be configured instead of guessing one', async () => {
+    getAgentSettings.mockResolvedValue({ queryAgentId: '' })
+    const installWidget = vi.fn()
+    window.DataAgentWidget = { installWidget }
+    const wrapper = mount(IntelligentQueryRemoteEmbed)
+    await flushPromises()
+    expect(installWidget).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('尚未配置智能问数助手')
     wrapper.unmount()
   })
 })

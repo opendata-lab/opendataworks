@@ -44,10 +44,10 @@ tools: [Read, Bash, Glob, Grep, LS]
 2. 用 [`scripts/lookup_ontology.py`](scripts/lookup_ontology.py) 查询本技能的建模元模型，确认应该创建哪些对象、关系和 `relation_kind`：
 
 ```bash
-python3 odw-skills/ontology-modeling-assistant/scripts/lookup_ontology.py --query 上传文档
-python3 odw-skills/ontology-modeling-assistant/scripts/lookup_ontology.py --object domain_entity --include properties,functions
-python3 odw-skills/ontology-modeling-assistant/scripts/lookup_ontology.py --relation term_maps_to_table_column
-python3 odw-skills/ontology-modeling-assistant/scripts/validate_ontology.py --path odw-skills/ontology-modeling-assistant/assets/ontology.json
+"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/ontology-modeling-assistant/scripts/lookup_ontology.py" --query 上传文档
+"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/ontology-modeling-assistant/scripts/lookup_ontology.py" --object domain_entity --include properties,functions
+"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/ontology-modeling-assistant/scripts/lookup_ontology.py" --relation term_maps_to_table_column
+"$DATAAGENT_PYTHON_BIN" "${SKILLS_ROOT_DIR}/ontology-modeling-assistant/scripts/validate_ontology.py" --path "${SKILLS_ROOT_DIR}/ontology-modeling-assistant/assets/ontology.json"
 ```
 
 3. 按 `scripts/ontology_schema.py` 的 Pydantic 模型和 `FIELD_DICTIONARY` 生成目标领域的 `assets/ontology.json`。

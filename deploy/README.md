@@ -194,10 +194,11 @@ DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 
 本仓库不编排它。两边可以在不同机器上，下文 `<DataAgent 主机>`、`<OpenDataWorks 主机>` 填对方可访问的地址。
 
 1. 按 opendataagent 的 `deploy/README.md` 部署 DataAgent。从旧版本（DataAgent 跟随本目录部署）升级时，按其中“从 OpenDataWorks 内置部署迁移”导出旧 `dataagent` 库和 Skill 卷；本目录升级不会删除这些数据。
-   升级本目录时用 `up -d --remove-orphans` 清掉旧的 `opendataworks-dataagent-*` 容器。
+   迁移需在升级本目录之前读取旧容器的 Skill 挂载；完成后再升级本目录，并用 `up -d --remove-orphans` 清掉旧的 `opendataworks-dataagent-*` 容器。
 2. 门户内嵌 widget：编辑 `docker/nginx/frontend.conf`，把 DataAgent 转发段中的 `<DataAgent 主机>` 改成实际地址并取消注释，重启 `frontend`。未接入 DataAgent 时保持注释，门户其他功能不受影响。
 3. 管理员在 DataAgent 新增普通 HTTP MCP：URL 为 `http://<OpenDataWorks 主机>:8801/mcp/`，header 填 `X-ODW-MCP-Token: <前门 token>`。工具名统一为 `odw_*`。
 4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
+   在门户「配置管理 → 智能助手」把「智能问数助手」选为这个智能体；未选择时，门户问数页会提示先配置，不会自动挑选。
 5. 在 OpenDataWorks 为带来源前缀的人（例如 `local:alice`）和智能体 ID 配置数据库账号映射。前门 token 校验通过后，MCP 将 DataAgent 后端填写的 `X-Agent-User-Id`、`X-Agent-Id` 和服务令牌转发给 backend-agent-api；缺映射时拒绝访问。
 6. DataAgent 的 Alembic `20261027_000031` 把旧的平台 MCP / 内置智能体转为普通可编辑记录；管理员更新其中的 MCP 地址、token 头和提示词中的工具名。
 
