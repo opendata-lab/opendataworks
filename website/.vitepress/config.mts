@@ -28,7 +28,7 @@ const docsSidebar = [
           { text: '总体架构', link: '/architecture/overview' },
           { text: '后端架构', link: '/architecture/backend' },
           { text: '前端架构', link: '/architecture/frontend' },
-          { text: '智能查询架构', link: '/architecture/dataagent' },
+          { text: '智能查询接入', link: '/architecture/dataagent' },
         ],
       },
       { text: '产品概念', link: '/guide/features' },
@@ -42,7 +42,6 @@ const docsSidebar = [
       { text: '任务调度', link: '/guide/workflow' },
       { text: '数据血缘', link: '/guide/lineage' },
       { text: '智能查询', link: '/guide/intelligent-query' },
-      { text: 'Widget 嵌入', link: '/guide/widget' },
     ],
   },
   {
@@ -53,7 +52,6 @@ const docsSidebar = [
       { text: '认证', link: '/api/authentication' },
       { text: '元数据 API', link: '/api/metadata' },
       { text: '工作流 API', link: '/api/workflow' },
-      { text: '智能查询 API', link: '/api/intelligent-query' },
     ],
   },
   {

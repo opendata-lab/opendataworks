@@ -158,3 +158,24 @@ opendataagent：
 - `nginx:1.30.3-alpine` 下 `nginx -t`：宿主机配置（注释状态）、镜像内置配置、以及把示例填上地址并取消注释后的配置均通过。
 - opendataagent `compose config` 解析出项目名 `opendataagent`、卷 `opendataagent_mysql-data`、端口 8900/8901/3326/6389。
 - 未验证：迁移步骤未在真实旧部署上演练；跨机器的 widget 转发与 MCP 访问未实测；opendataagent 尚无启动、日志导出与离线包脚本（已记入其 TODO）。
+
+## 部署脚本与文档归位（2026-10-27 追加）
+
+opendataagent：
+
+- 新增 `scripts/start.sh`（相对 `DATAAGENT_HOST_ROOT` 按 `deploy/` 展开为绝对路径后启动）、`stop.sh`、`restart.sh`、`dump-logs.sh`（服务日志 + task child 日志）、`create-offline-package.sh`、`load-images.sh`、`load-package-and-start.sh` 与 `lib/container-runtime.sh`，均由原 OpenDataWorks 版本改写。
+- 离线包 `oda-deployment-*.tar.xz`：oda-frontend/backend/runner、mysql、redis、docker CLI 去重存为单个归档；`.env.example` 的 `ODA_*_IMAGE` 改写为本地镜像名，不带运行时 `.env`，不带评测脚本。
+- compose 删除全部 `pull_policy: always`（离线环境无法拉取），新增 `log-collector`；`.env.example` 补可选项；`.gitignore` 忽略 `deploy/logs/`、`deploy/docker-images/`。
+- CI 新增 tag 发版任务：生成离线包与校验和并上传 GitHub Release。
+- 文档：`deploy/README.md` 补脚本、离线部署与日志章节；新增 `docs/handbook/architecture.md`、`api.md`（按现有路由重写，原站点文档的 `/events/stream` 与请求体字段已过时）、`widget.md`（去掉对具体宿主的描述）。
+
+opendataworks：
+
+- 修复 `docker-build.yml` 两个发版任务中删除评测包时残留的续行参数（会作为独立命令执行导致发版失败）。
+- website：`architecture/dataagent.md` 改为「智能查询接入」；删除 `api/intelligent-query.md`、`guide/widget.md` 及侧栏入口；概览、简介、配置、前端架构、智能查询使用页标明 DataAgent 单独部署并链接 opendataagent 文档。
+
+验证：
+
+- opendataagent pytest 881 通过（新增 `tests/test_deploy_scripts.py` 4 项：项目名固定且无 `pull_policy`、离线包内容与改写后的 compose 解析、加载器不覆盖已有 `.env`、`start.sh` 把相对运行时目录展开为绝对路径）；`compose config` 通过；全部脚本 `bash -n` 通过；workflow YAML 可解析。
+- opendataworks 根测试 10 通过；VitePress 构建通过（Node 20.19.0，站点声明 Node 24，本机未安装）。
+- 未验证：离线包与 `start.sh` 只用伪造的 docker / docker-compose 验证，未用真实 `oda-*` 镜像在无外网机器上完整跑过（镜像尚未发布）；旧数据迁移步骤未在真实旧部署上演练。两项已记入 opendataagent `docs/TODO.md`。

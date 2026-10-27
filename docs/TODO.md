@@ -42,7 +42,7 @@
 
 ## 测试与工程卫生
 
-- **website 中的 DataAgent 页面**：`website/architecture/dataagent.md`、`website/architecture/frontend.md`、`website/guide/configuration.md`、`website/guide/introduction.md` 仍按 DataAgent 内置于本仓库的方式描述其内部结构与配置。需要把 DataAgent 内部说明移到 opendataagent，本站只保留“接入 DataAgent”。来源：2026-10-27 拆分复核。
+暂无。
 
 ## 已完成
 
@@ -68,6 +68,10 @@
 ### DataAgent 运行时、插件和前端待办已迁出
 
 2026-10-27：上游 DataAgent 专属待办已迁往 opendataagent docs/TODO.md；含定时消息、运行时升级、ToolOutputRenderer 既有 10 项失败。见[迁移验证报告](reports/2026-10-27-dataagent-opendataworks-decoupling-verification.md)。
+
+### website 中的 DataAgent 内部文档已移出
+
+2026-10-27：智能查询架构、会话 API 与 Widget SDK 文档移到 opendataagent `docs/handbook/`（API 按现有路由重写）；本站 `architecture/dataagent.md` 改为「智能查询接入」，删除 `api/intelligent-query.md` 与 `guide/widget.md`，其余页面标明 DataAgent 单独部署。VitePress 构建通过。见[迁移验证报告](reports/2026-10-27-dataagent-opendataworks-decoupling-verification.md)。
 
 ### Go 版 opendataagent、根 skills 与 Gitee 发布同步已删除
 

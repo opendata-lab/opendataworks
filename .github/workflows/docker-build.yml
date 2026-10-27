@@ -122,9 +122,6 @@ jobs:
             --output "opendataworks-deployment-${VERSION}.tar.xz" \
             --platform linux/amd64
           echo "PACKAGE_PATH=opendataworks-deployment-${VERSION}.tar.xz" >> $GITHUB_ENV
-            --namespace "${{ secrets.DOCKER_USERNAME }}" \
-            --tag "$VERSION" \
-            --platform linux/amd64
           echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Generate checksum
@@ -192,9 +189,6 @@ jobs:
             --output "opendataworks-deployment-${RELEASE_TAG}.tar.xz" \
             --platform linux/amd64
           echo "PACKAGE_PATH=opendataworks-deployment-${RELEASE_TAG}.tar.xz" >> $GITHUB_ENV
-            --namespace "${{ secrets.DOCKER_USERNAME }}" \
-            --tag "${IMAGE_TAG}" \
-            --platform linux/amd64
 
       - name: Generate checksum
         run: |
