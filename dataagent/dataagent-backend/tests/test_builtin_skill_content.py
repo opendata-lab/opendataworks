@@ -526,8 +526,6 @@ def test_generic_presentation_skills_are_free_of_platform_coupling():
         "portal",
         "odw-cli",
         "DATAAGENT_PLATFORM_SKILL_ROOT",
-        "DATAAGENT_DATA_SCOPE_JSON",
-        "X-Agent-Data-Scope",
     ]
     for root in (CHART_SKILL_ROOT, REPORT_SKILL_ROOT):
         snapshot = _skill_text_snapshot(root)

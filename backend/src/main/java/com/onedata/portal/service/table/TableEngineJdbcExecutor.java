@@ -2,15 +2,14 @@ package com.onedata.portal.service.table;
 
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import com.onedata.portal.util.DatasourceType;
-import com.onedata.portal.util.JdbcUrlParts;
+import com.onedata.portal.service.DorisConnectionService;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 
@@ -23,37 +22,27 @@ import java.sql.Statement;
 public class TableEngineJdbcExecutor {
 
     private final DorisClusterMapper dorisClusterMapper;
+    private final DorisConnectionService connectionService;
 
-    public void execute(Long datasourceId, String database, String sql, DatasourceType expectedType) {
+    public void execute(Long datasourceId, String database, String sql, String expectedType) {
         DorisCluster datasource = resolveDatasource(datasourceId, expectedType);
         try (Connection connection = getConnection(datasource, database);
                 Statement statement = connection.createStatement()) {
             log.info("Executing SQL on {} datasource {} (db={}): {}",
-                    expectedType.name(), datasource.getClusterName(), database, abbreviate(sql));
+                    expectedType, datasource.getClusterName(), database, abbreviate(sql));
             statement.execute(sql);
         } catch (SQLException e) {
             log.error("Failed to execute SQL on {} datasource {} (db={})",
-                    expectedType.name(), datasource.getClusterName(), database, e);
-            throw new RuntimeException("执行 " + expectedType.name() + " SQL 失败: " + e.getMessage(), e);
+                    expectedType, datasource.getClusterName(), database, e);
+            throw new RuntimeException("执行 " + expectedType + " SQL 失败: " + e.getMessage(), e);
         }
     }
 
     private Connection getConnection(DorisCluster datasource, String database) throws SQLException {
-        String url = buildJdbcUrl(datasource, database);
-        String username = datasource.getUsername();
-        String password = datasource.getPassword() == null ? "" : datasource.getPassword();
-        return DriverManager.getConnection(url, username, password);
+        return connectionService.getConnection(datasource.getId(), database);
     }
 
-    private String buildJdbcUrl(DorisCluster datasource, String database) {
-        String targetDb = StringUtils.hasText(database) ? database : "information_schema";
-        return String.format(
-                "jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true",
-                JdbcUrlParts.requireHost(datasource.getFeHost()), datasource.getFePort(),
-                JdbcUrlParts.requireDatabase(targetDb));
-    }
-
-    private DorisCluster resolveDatasource(Long datasourceId, DatasourceType expectedType) {
+    private DorisCluster resolveDatasource(Long datasourceId, String expectedType) {
         if (datasourceId == null) {
             throw new RuntimeException("请指定数据源");
         }
@@ -61,9 +50,9 @@ public class TableEngineJdbcExecutor {
         if (datasource == null) {
             throw new RuntimeException("数据源不存在: " + datasourceId);
         }
-        DatasourceType actualType = DatasourceType.from(datasource.getSourceType());
-        if (actualType != expectedType) {
-            throw new RuntimeException("数据源类型不匹配，期望 " + expectedType.name() + "，实际 " + actualType.name());
+        String actualType = DatasourceAdapterRegistry.normalize(datasource.getSourceType());
+        if (!actualType.equals(DatasourceAdapterRegistry.normalize(expectedType))) {
+            throw new RuntimeException("数据源类型不匹配，期望 " + expectedType + "，实际 " + actualType);
         }
         return datasource;
     }

@@ -1,3 +1,4 @@
+import { definition } from '@/utils/__tests__/datasourceFixtures'
 import { describe, it, expect } from 'vitest'
 import { buildFieldPayload, isFieldChanged, isOnlyCommentChanged, isMysqlPrimaryKeyLocked } from '../fieldEdit'
 
@@ -51,10 +52,10 @@ describe('isOnlyCommentChanged', () => {
 
 describe('MySQL primary key editing', () => {
   it('locks existing physical fields, but permits draft and new fields', () => {
-    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', isSynced: 1 }, { id: 1 })).toBe(true)
-    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', isSynced: 0 }, { id: 1 })).toBe(false)
-    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', isSynced: 1 }, { id: null })).toBe(false)
-    expect(isMysqlPrimaryKeyLocked({ sourceType: 'DORIS', isSynced: 1 }, { id: 1 })).toBe(false)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 }, { id: 1 })).toBe(true)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 0 }, { id: 1 })).toBe(false)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'MYSQL', typeDefinition: definition('MYSQL'), isSynced: 1 }, { id: null })).toBe(false)
+    expect(isMysqlPrimaryKeyLocked({ sourceType: 'DORIS', typeDefinition: definition('DORIS'), isSynced: 1 }, { id: 1 })).toBe(true)
   })
 })
 

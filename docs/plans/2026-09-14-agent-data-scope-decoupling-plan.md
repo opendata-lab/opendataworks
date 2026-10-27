@@ -1,5 +1,7 @@
 # DataAgent 数据范围解耦与通用智能体定位实施计划
 
+> 历史方案：账号与范围规则已被 [2026-10-26 主体映射设计](../design/2026-10-26-dataagent-datasource-identity-design.md)替换；旧接口与范围配置已删除，不作为部署或开发依据。
+
 **日期:** 2026-09-14
 **主题:** agent-data-scope-decoupling
 **对应设计文档:** `docs/design/2026-09-14-agent-data-scope-decoupling-design.md`

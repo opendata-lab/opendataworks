@@ -1,12 +1,16 @@
 package com.onedata.portal.service;
 
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.entity.MetadataSyncHistory;
+import com.onedata.portal.service.DatasourceAdapterFixtures;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDateTime;
@@ -34,6 +38,10 @@ class DataTableMetadataSyncServiceTest {
 
     @Mock
     private DataTableService dataTableService;
+
+    @Spy
+    private DatasourceAdapterRegistry adapterRegistry =
+            DatasourceAdapterFixtures.registry(new DorisJdbcProperties());
 
     @InjectMocks
     private DataTableMetadataSyncService service;

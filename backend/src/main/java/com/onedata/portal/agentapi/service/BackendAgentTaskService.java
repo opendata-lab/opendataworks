@@ -2,7 +2,6 @@ package com.onedata.portal.agentapi.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.dto.AgentTaskUpsertRequest;
-import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.entity.DataTask;
 import com.onedata.portal.exception.BusinessException;
 import com.onedata.portal.service.DataTaskService;
@@ -29,7 +28,6 @@ public class BackendAgentTaskService implements AgentTaskService {
     @Override
     public Object createTask(AgentTaskUpsertRequest request, String operator) {
         DataTask task = toTask(request);
-        validateDataScope(task);
         applyAuditDefaults(task, operator, true);
         return dataTaskService.create(
                 task,
@@ -55,7 +53,6 @@ public class BackendAgentTaskService implements AgentTaskService {
                 task.setWorkflowId(existing.getWorkflowId());
             }
         }
-        validateDataScope(task);
         applyAuditDefaults(task, operator, false);
         // 血缘列表原样下传，不做 null -> emptyList 转换：
         // null 表示"本次未提供该侧血缘，保留原值"，一旦转成空列表就等于静默清空。
@@ -100,9 +97,5 @@ public class BackendAgentTaskService implements AgentTaskService {
         }
     }
 
-    private void validateDataScope(DataTask task) {
-        if (task != null) {
-            AgentDataScopeContext.requireDatabaseNameAllowedIfPresent(task.getDatasourceName());
-        }
-    }
+
 }

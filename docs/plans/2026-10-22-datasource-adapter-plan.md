@@ -1,8 +1,8 @@
 # 数据源适配器实施计划
 
-日期：2026-10-22。状态：**待评审，未开始实施**。
+日期：2026-10-22。状态：**阶段一、二已实施；阶段三、Java 阶段四及连接字段扩展已实施（2026-10-26，验证见报告）**。
 
-设计：[数据源适配器架构](../design/2026-10-22-datasource-adapter-design.md)。本轮只交付方案，不继续代码改造。
+设计：[数据源适配器架构](../design/2026-10-22-datasource-adapter-design.md)。本轮续作阶段三与 Java 阶段四；Python 与外置加载继续独立后续实施。
 
 ## 阶段一：基础接入适配器
 
@@ -13,10 +13,10 @@
 5. `DorisMetadataSyncService` 消费统一 DTO，保留差异、版本和同步历史编排，剥离由 adapter 负责的目录过滤；未知统计不覆盖已知数据。
 6. 若实施连接扩展字段，检查最新 Flyway 后分配新迁移，增加可空 `connection_options`；原 Doris/MySQL/PG 配置无需改写。
 7. 增加测试专用新 type 适配器，验证基础扩展无需中央枚举或业务服务变更。
-8. 新增 driver 模块：外置目录/manifest、驱动描述、Java/依赖检查、Driver 实例加载及 driverId 绑定。数据源新增可空 driver_id，版本号在实施时分配；现有数据源由明确升级配置绑定驱动，禁止隐式使用平台驱动或最新版。
-9. 调整用户数据源 JDBC 驱动的打包/部署方式：独立目录挂载，应用启动加载；不增加每个厂商驱动的主程序 runtime 依赖。平台元数据库驱动独立处理，第一阶段保留现状；若也外置，另验证 Spring/Hikari/Flyway 的启动加载顺序与发行包布局。
+8. 新增 driver 模块声明 driverClass 并报告可用/缺失，执行前检查；保留未来 driverId、manifest、Java/依赖检查和独立 ClassLoader 的边界。完整外置加载记入 TODO；阶段一不增加 driver_id 或连接扩展字段。本轮阶段三以 V53 实施连接选项，driver_id 仍留待后续。
+9. 保留 backend/pom.xml 中 Doris/MySQL/PostgreSQL 内置驱动及平台元数据库启动布局。外置目录仅用于新增 JDBC 数据库或显式覆盖版本，后续实施；升级不准备目录、不做旧源版本绑定迁移。
 
-主要文件：`backend/src/main/java/com/onedata/portal/service/datasource/`、`DorisConnectionService`、`DorisClusterService`、`DorisMetadataSyncService`、配置 DTO/controller、`backend/pom.xml`、必要 Flyway 与 Java 契约测试。
+主要文件：`backend/src/main/java/com/onedata/portal/service/datasource/`、`DorisConnectionService`、`DorisClusterService`、`DorisMetadataSyncService`、配置 DTO/controller、新鲜度能力校验及 Java 契约测试。阶段一、二不需要修改 pom 或 Flyway；本轮阶段三增加 V53，不改 pom。
 
 ## 阶段二：前端消费描述
 
@@ -25,20 +25,26 @@
 3. 默认 SELECT/预览由后端 dialect 生成；编辑器高亮按描述使用已支持方言，未知方言采用标准 SQL。保留用户已编辑的 SQL。
 4. 以能力、对象约束及权限决定 DDL/编辑/备份可用性；后端仍验证能力。无法导出 DDL 不影响表结构和基本信息。
 5. 增加虚拟新类型描述的组件回归，证明不用添加新类型分支。
-6. 表单增加 driverId 选择和驱动缺失/不兼容提示；第一阶段仅从已挂载驱动包选择，不包含网页上传或 Maven 自动下载。
+6. 表单展示描述中的内置驱动可用/缺失状态；缺失时禁用保存/连接并说明原因。本轮不提供尚未实现的 driverId 选择，外置加载与选择器作为后续项。
 
 主要文件：`frontend/src/api/doris.js`、`DataSourceManagement.vue`、Data Studio catalog/tab/query composables、`DataStudioRightPanel*`、`SqlEditor.vue` 及相关测试。保持 Vue/Element Plus 当前布局，不引入视觉重构。
 
-## 阶段三：物理编辑扩展（独立可选）
+## 阶段三：连接、物理编辑与配置扩展（2026-10-26）
 
-复用 `TableEngineHandler` 并连接到 capability 校验。原 MySQL 主键限制、Doris 分桶/副本等规则必须保留。新增某数据库编辑能力时实现对应 handler 与真实 DDL 测试；不要求每个基础适配器同时支持物理变更。
+1. 新增统一连接工厂；DorisConnectionService 保留凭据映射，TableEngineJdbcExecutor 委托门面；所有 URL/驱动校验/会话初始化通过适配器，保持 URL 安全校验。
+2. handler/registry 统一归一化字符串，移除枚举及服务调用点；编辑能力门禁与原有主键/物理规则保持。
+3. 定义能力目录并拒绝未知能力，补全缺省拒绝；前后端将 dorisProperties 改为 engineProperties，前端新增基线名称校验。
+4. 审计备份、inspection、同步、审计服务与 DolphinScheduler 类型分支；用实际能力替换，记录保留的外部产品协议默认值。
+5. 检查当前最大 V52 后增加 V53 可空 connection_options；实现声明字段白名单、值校验、密码脱敏和更新保留、动态表单。TEST_DB 验证保存到取连接完整链路，内置源无需新增字段。
+6. 在适配器构造时缓存描述、方言与元数据读取器。
 
-## 阶段四：DataAgent 入口统一（单独验收）
+## 阶段四：Java agent API 统一（2026-10-26）
 
-1. 审计 `AgentJdbcExecutor`、`BackendAgentMetadataService`、Python resolver 及技能实际执行路径。
-2. Java agent API 复用基础适配器，保留 scope、只读校验和超时；Python 消费明确类型与统一工具，删除 MySQL/Doris 二选一推断。
-3. 更新 Java agent API DTO、Python 工具契约和对应技能说明；保持共享 runtime 与数据库/技能无关。
-4. 按仓库规则启动 MySQL、Redis、DataAgent、portal MCP 与必要前端，使用真实 provider 的真实 NL2SQL 请求验证任务、事件、消息持久化与渲染。没有全流程结果不能标为智能查询适配完成。
+1. AgentJdbcExecutor 复用连接工厂，保留只读、schema、maxRows、timeout；不移动/放松只读语句、数据范围和凭据授权校验。
+2. 描述增加 agentEngine，BackendAgentMetadataService 从注册表读取；resolution 透传非任意参数形式的受控连接选项。
+3. 将 PostgreSQL 参考 DDL 放入适配器参考结构 SPI，保持 ddlExport 不支持。
+4. 运行 agent、映射、编辑、注册表契约回归；真实 PG 集成含 agent 只读查询。
+5. Python resolver/tool 与真实模型 NL2SQL 不在本轮；Python 保留 TODO，真实模型因账号欠费记录未验证，不宣称全链路完成。
 
 ## 验证门槛
 
@@ -47,17 +53,25 @@
 - 真实 PostgreSQL：独立容器和平台 MySQL 测试 schema，实际 HTTP 走配置 → 连接 → 同步 → 历史 → 表基本信息/字段 → analyze/execute → 查询历史。补充真实浏览器操作验证新表单、字段面板和查询结果。
 - 真实 MySQL/Doris：按可用环境运行原功能冒烟；环境不可用时单独列出缺失覆盖，不以 mock 代替真实执行宣称通过。
 - 扩展性：新增测试适配器仅带驱动/私有实现/测试即可被全链路识别；前端不得新增类型列表或引擎判断。
-- 驱动：外置 JDBC 单包/多依赖包、缺失/错误类/JDK不兼容/校验错误、明确版本绑定及双版本隔离；验证平台元数据库连接和 Flyway 不受影响。更换挂载驱动并重启无需重新打包应用。
+- 驱动：本轮验证内置驱动可用/缺失及错误类报告、旧配置兼容。外置包、Java/校验和、双版本隔离与版本选择留待外置加载独立验收。
 - 文档：更新数据源接入说明和能力矩阵、验证报告，确保描述与已实现能力一致。
 
 ## 发布与回退
 
-阶段一、二作为一个兼容发布：先准备外部驱动目录、manifest 和现有源的版本绑定，再发布后端（可空配置字段迁移、描述 API、旧 API 门面），后前端。阶段三、四独立发布和验收。
+阶段一、二（历史发布）无 schema 或驱动版本迁移。本轮阶段三/Java 阶段四先运行 V53 可空列迁移，再协调部署后端与前端，以同步切换 engineProperties 能力名。保留内置驱动和旧配置 API，旧三种配置无需补值或绑定版本。
 
-回退前关闭新引擎自动同步和查询入口，保留新增可空列及原有配置，回退应用版本。保持旧三种数据源的字段和类型值不变，不做配置破坏性转换。
-
-外置驱动目录、manifest 与原驱动包一并保留；回退时恢复明确的版本绑定和相应启动布局，不能仅回退数据库字段后依赖 classpath 偶然选中旧驱动。
+回退应用与前端时保留 connection_options 列，不执行破坏性 down migration；暂停旧版本无法识别的新适配器配置。三个内置源仍用原字段，驱动依赖与启动布局不变。外置加载的 manifest、绑定与包回退留待后续独立验收。
 
 ## 当前状态
 
-适配器改造未实施；未新增运行依赖或平台 schema。用户要求先出方案后，已撤回未接入的适配器草稿并停止/清理临时 HTTP 测试实例。之前 PostgreSQL 修改、验证记录及查询页局部修复不属于此架构方案的已实施成果。
+阶段一、二已完成；阶段三与 Java 阶段四代码及本轮验证已完成，既有环境失败和未覆盖项见报告，Python 与外置驱动加载未纳入本轮。真实 Doris、DolphinScheduler 和真实模型环境缺口保留在 TODO。不新增 Maven 子模块。验证结果见 [验证报告](../reports/2026-10-25-datasource-adapter-verification.md)。
+
+## 本轮验证、发布与回退增补（2026-10-26）
+
+- 定向测试后使用临时 central mirror settings 执行 `mvn -s <settings> -o -q -pl backend -am test`，逐项确认七个已知 DolphinScheduler 失败且无新增；记录各模块 Tests/Failures/Errors/Skipped。
+- Podman 临时 PG 使用非 55440 端口，设置 ODW_POSTGRES_TEST_PORT 跑 PostgresqlDatasourceIntegrationTest，完成清理。
+- 仅独立 MySQL schema：从零跑 V1..V53；另建 V52 带数据 schema 的副本跑 V53，验证旧字段与数据不变，最后清理。
+- 启动隔离配置的 Java backend，通过真实 HTTP 在 PG/MySQL 验证 agent 查询、写语句拒绝、越界引用拒绝及结构编辑能力允许/拒绝。
+- 前端 nvm use 后 test/build，不重新 install；补充能力名与后端基线一致性、额外字段控件回归。
+- 升级先加可空列，前后端协调发布能力重命名；回退保留列并停止旧应用不支持的新类型。内置驱动不变，未配置外置目录仍无需任何准备。
+- 更新既有报告的 2026-10-26 章节、TODO 已完成与剩余事项；不 commit、不 push。

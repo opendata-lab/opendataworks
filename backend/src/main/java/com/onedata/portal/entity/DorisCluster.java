@@ -1,16 +1,28 @@
 package com.onedata.portal.entity;
 
-import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableLogic;
+import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
+import com.onedata.portal.service.datasource.model.DatasourceTypeDefinition;
 import lombok.Data;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /**
  * Doris 集群配置实体
  */
 @Data
-@TableName("doris_cluster")
+@TableName(value = "doris_cluster", autoResultMap = true)
 public class DorisCluster {
 
     @TableId(type = IdType.AUTO)
@@ -23,8 +35,35 @@ public class DorisCluster {
      */
     private String sourceType;
 
+    @TableField(exist = false)
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    private DatasourceTypeDefinition typeDefinition;
+
     /** PostgreSQL 连接数据库；其内的 schema 使用现有 dbName 表示。 */
     private String databaseName;
+
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    @JsonIgnore
+    private Map<String, Object> connectionOptions;
+
+    @JsonProperty("connectionOptions")
+    public void setConnectionOptions(Map<String, Object> options) {
+        this.connectionOptions = options;
+    }
+
+    @JsonGetter("connectionOptions")
+    public Map<String, Object> visibleConnectionOptions() {
+        Map<String, Object> visible = new LinkedHashMap<>();
+        if (connectionOptions != null && typeDefinition != null) {
+            for (DatasourceDescriptor.ConnectionField field
+                    : typeDefinition.getDescriptor().getConnectionFields()) {
+                if (!"password".equals(field.getControl()) && connectionOptions.containsKey(field.getKey())) {
+                    visible.put(field.getKey(), connectionOptions.get(field.getKey()));
+                }
+            }
+        }
+        return visible;
+    }
 
     private String feHost;
 

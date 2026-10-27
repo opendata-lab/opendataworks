@@ -15,7 +15,7 @@ from starlette.routing import Mount, Route
 
 from .backend_client import BackendApiClient
 from .config import Settings, load_settings
-from .scope_context import set_data_scope_header, set_operator_header
+from .identity_context import set_identity_headers, set_operator_header
 from .service import PortalToolService
 
 
@@ -321,13 +321,16 @@ class FrontDoorTokenMiddleware:
             await _send_json(scope, receive, send, 401, {"success": False, "message": "portal mcp token 无效"})
             return
 
-        reset_scope = set_data_scope_header(headers.get("x-agent-data-scope", ""))
+        reset_identity = set_identity_headers({
+            "X-Agent-User-Id": headers.get("x-agent-user-id", ""),
+            "X-Agent-Id": headers.get("x-agent-id", ""),
+        })
         reset_operator = set_operator_header(headers.get("x-agent-operator", ""))
         try:
             await self.app(scope, receive, send)
         finally:
             reset_operator()
-            reset_scope()
+            reset_identity()
 
 
 def build_mcp_server(service: PortalToolService) -> FastMCP:

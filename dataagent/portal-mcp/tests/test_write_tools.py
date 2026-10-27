@@ -166,14 +166,14 @@ async def test_create_table_service_methods_delegate_to_backend():
 
 def test_operator_contextvar_propagates_into_request_headers(monkeypatch):
     # The backend client must attach X-Agent-Operator when the contextvar is set.
-    from portal_mcp import scope_context
+    from portal_mcp import identity_context
 
-    reset = scope_context.set_operator_header("agent:topic-1")
+    reset = identity_context.set_operator_header("agent:topic-1")
     try:
-        assert scope_context.get_operator_header() == "agent:topic-1"
+        assert identity_context.get_operator_header() == "agent:topic-1"
     finally:
         reset()
-    assert scope_context.get_operator_header() == ""
+    assert identity_context.get_operator_header() == ""
 
 
 async def _call_tool(mcp, name, arguments):

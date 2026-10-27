@@ -1,149 +1,61 @@
 package com.onedata.portal.service;
 
-import com.onedata.auth.context.UserContext;
-import com.onedata.auth.context.UserContextHolder;
-import com.onedata.portal.dto.DorisCredential;
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 
 import java.sql.Connection;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.when;
 
-/**
- * DorisConnectionService用户上下文集成测试
- * 测试DorisConnectionService是否正确使用UserContextHolder和UserMappingService
- */
-@SpringBootTest
 class DorisConnectionServiceUserContextTest {
-
-    @Autowired
-    private DorisConnectionService dorisConnectionService;
-
-    @MockBean
-    private UserMappingService userMappingService;
-
-    @MockBean
-    private DorisClusterMapper dorisClusterMapper;
-
-    private DorisCluster testCluster;
+    private final DatasourceSubjectAccountService accounts = mock(DatasourceSubjectAccountService.class);
+    private final DorisClusterMapper clusters = mock(DorisClusterMapper.class);
+    private DorisConnectionService service;
 
     @BeforeEach
     void setUp() {
-        // 创建测试集群
-        testCluster = new DorisCluster();
-        testCluster.setId(1L);
-        testCluster.setClusterName("test-cluster");
-        testCluster.setFeHost("localhost");
-        testCluster.setFePort(9030);
-        testCluster.setUsername("admin");
-        testCluster.setPassword("admin123");
-        testCluster.setIsDefault(1);
-        testCluster.setStatus("active");
-
-        // Mock集群查询
-        when(dorisClusterMapper.selectById(1L)).thenReturn(testCluster);
-    }
-
-    @AfterEach
-    void tearDown() {
-        UserContextHolder.clear();
+        DorisCluster cluster = new DorisCluster();
+        cluster.setId(1L);
+        cluster.setSourceType("MYSQL");
+        when(clusters.selectById(1L)).thenReturn(cluster);
+        DorisJdbcProperties properties = new DorisJdbcProperties();
+        service = new DorisConnectionService(clusters, properties, accounts,
+                DatasourceAdapterFixtures.registry(properties));
     }
 
     @Test
-    void testGetConnectionWithUserContext() throws Exception {
-        // 设置用户上下文
-        UserContext userContext = new UserContext("user123", "testuser", "user", "local");
-        UserContextHolder.setContext(userContext);
-
-        // Mock用户映射服务返回用户凭据
-        DorisCredential userCredential = new DorisCredential("readonly_user", "readonly_pass");
-        when(userMappingService.getDorisCredential("user123", 1L, "test_db"))
-                .thenReturn(userCredential);
-
-        // 注意：实际连接会失败因为没有真实的Doris，但我们可以验证调用
-        try {
-            dorisConnectionService.getConnection(1L, "test_db");
-        } catch (Exception e) {
-            // 预期会失败，因为没有真实的Doris服务器
-            // 但我们可以验证UserMappingService被调用了
-        }
-
-        // 验证UserMappingService被调用
-        verify(userMappingService, times(1))
-                .getDorisCredential("user123", 1L, "test_db");
+    void usesCurrentPlatformUserIdEvenWithoutNamespace() throws Exception {
+        Connection mapped = mock(Connection.class);
+        when(accounts.currentUserId()).thenReturn("17");
+        when(accounts.open(1L, "USER", "17", null, false)).thenReturn(mapped);
+        assertSame(mapped, service.getConnection(1L));
+        verify(accounts).open(1L, "USER", "17", null, false);
     }
 
     @Test
-    void testGetConnectionWithoutUserContext() throws Exception {
-        // 不设置用户上下文
-
-        // 调用getConnection
-        try {
-            dorisConnectionService.getConnection(1L, "test_db");
-        } catch (Exception e) {
-            // 预期会失败，因为没有真实的Doris服务器
-        }
-
-        // 验证UserMappingService没有被调用
-        verify(userMappingService, never())
-                .getDorisCredential(anyString(), anyLong(), anyString());
+    void missingMappingNeverUsesSourceCredentials() throws Exception {
+        when(accounts.currentUserId()).thenReturn("17");
+        when(accounts.open(1L, "USER", "17", "sales", false))
+                .thenThrow(new IllegalArgumentException("未配置用户的数据源账号映射"));
+        assertThrows(IllegalArgumentException.class, () -> service.getConnection(1L, "sales"));
+        verify(accounts).currentUserId();
+        verify(accounts).open(1L, "USER", "17", "sales", false);
+        verifyNoMoreInteractions(accounts);
     }
 
     @Test
-    void testGetConnectionRejectsDeniedMappingInsteadOfFallingBack() throws Exception {
-        UserContext userContext = new UserContext("user456", "anotheruser", "user", "local");
-        UserContextHolder.setContext(userContext);
-
-        // 该库登记了映射账号但用户未授权：必须拒绝，不能退回数据源账号
-        when(userMappingService.getDorisCredential("user456", 1L, "test_db"))
-                .thenThrow(new RuntimeException("用户没有访问数据库 test_db 的权限"));
-
-        RuntimeException error = assertThrows(RuntimeException.class,
-                () -> dorisConnectionService.getConnection(1L, "test_db"));
-        assertTrue(error.getMessage().contains("没有访问数据库"));
-    }
-
-    @Test
-    void testGetConnectionUsesClusterCredentialWhenNoMappedAccount() throws Exception {
-        UserContext userContext = new UserContext("user456", "anotheruser", "user", "local");
-        UserContextHolder.setContext(userContext);
-
-        // 该库未登记映射账号：使用数据源账号，映射服务只被询问一次
-        when(userMappingService.getDorisCredential("user456", 1L, "test_db")).thenReturn(null);
-
-        try {
-            dorisConnectionService.getConnection(1L, "test_db");
-        } catch (Exception e) {
-            // 没有真实的 Doris 服务器，连接本身会失败
-            assertFalse(e.getMessage() != null && e.getMessage().contains("没有访问数据库"));
-        }
-        verify(userMappingService, times(1)).getDorisCredential("user456", 1L, "test_db");
-    }
-
-    @Test
-    void testGetConnectionWithoutDatabaseUsesClusterCredential() throws Exception {
-        // 设置用户上下文
-        UserContext userContext = new UserContext("user789", "thirduser", "user", "local");
-        UserContextHolder.setContext(userContext);
-
-        // 调用getConnection但不指定数据库
-        try {
-            dorisConnectionService.getConnection(1L, null);
-        } catch (Exception e) {
-            // 预期会失败，因为没有真实的Doris服务器
-        }
-
-        // 验证UserMappingService没有被调用（因为没有指定数据库）
-        verify(userMappingService, never())
-                .getDorisCredential(anyString(), anyLong(), anyString());
+    void anonymousContextCannotUseSourceCredentials() {
+        when(accounts.currentUserId()).thenThrow(new IllegalArgumentException("请登录后访问数据源"));
+        assertThrows(IllegalArgumentException.class, () -> service.getConnection(1L));
+        verify(accounts).currentUserId();
+        verifyNoMoreInteractions(accounts);
     }
 }

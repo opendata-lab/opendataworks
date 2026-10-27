@@ -1,3 +1,4 @@
+import { definition } from '@/utils/__tests__/datasourceFixtures'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { reactive, ref } from 'vue'
 
@@ -38,7 +39,7 @@ function setup(overrides = {}) {
     createDrawerVisible: ref(false),
     taskDrawerRef,
     router,
-    isDorisTable: vi.fn(() => true),
+    hasEngineProperties: vi.fn(() => true),
     isPlatformMetadataMissing: vi.fn(() => false),
     warnPlatformMetadataMissing: vi.fn(() => false),
     tableStore: reactive({}),
@@ -58,14 +59,14 @@ describe('useTableActions', () => {
 
   it('loadDdl loads by id when present, by name otherwise, and tracks loading', async () => {
     const { api, tabStates } = setup()
-    tabStates.t1 = { table: { id: 5, sourceId: 's1', dbName: 'db', tableName: 't' }, ddl: '', ddlLoading: false }
+    tabStates.t1 = { table: { id: 5, sourceId: 's1', typeDefinition: definition('MYSQL'), dbName: 'db', tableName: 't' }, ddl: '', ddlLoading: false }
     tableApi.getTableDdl.mockResolvedValue('CREATE TABLE t')
     await api.loadDdl('t1')
     expect(tableApi.getTableDdl).toHaveBeenCalledWith(5, 's1')
     expect(tabStates.t1.ddl).toBe('CREATE TABLE t')
     expect(tabStates.t1.ddlLoading).toBe(false)
 
-    tabStates.t2 = { table: { sourceId: 's1', dbName: 'db', tableName: 't2' }, ddl: '', ddlLoading: false }
+    tabStates.t2 = { table: { sourceId: 's1', typeDefinition: definition('MYSQL'), dbName: 'db', tableName: 't2' }, ddl: '', ddlLoading: false }
     tableApi.getTableDdlByName.mockResolvedValue('CREATE TABLE t2')
     await api.loadDdl('t2')
     expect(tableApi.getTableDdlByName).toHaveBeenCalledWith('s1', 'db', 't2')
@@ -73,7 +74,7 @@ describe('useTableActions', () => {
 
   it('loadDdl surfaces API failure via ElMessage and resets loading', async () => {
     const { api, tabStates } = setup()
-    tabStates.t1 = { table: { id: 5, sourceId: 's1', dbName: 'db', tableName: 't' }, ddl: '', ddlLoading: false }
+    tabStates.t1 = { table: { id: 5, sourceId: 's1', typeDefinition: definition('MYSQL'), dbName: 'db', tableName: 't' }, ddl: '', ddlLoading: false }
     tableApi.getTableDdl.mockRejectedValue(new Error('boom'))
     await api.loadDdl('t1')
     expect(ElMessage.error).toHaveBeenCalled()

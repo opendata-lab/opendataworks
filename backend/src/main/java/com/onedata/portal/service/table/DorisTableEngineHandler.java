@@ -5,7 +5,6 @@ import com.onedata.portal.dto.TableCreateRequest;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.service.DorisConnectionService;
-import com.onedata.portal.util.DatasourceType;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.util.CollectionUtils;
@@ -29,8 +28,8 @@ public class DorisTableEngineHandler implements TableEngineHandler {
     private final DorisConnectionService dorisConnectionService;
 
     @Override
-    public DatasourceType sourceType() {
-        return DatasourceType.DORIS;
+    public String sourceType() {
+        return "DORIS";
     }
 
     @Override

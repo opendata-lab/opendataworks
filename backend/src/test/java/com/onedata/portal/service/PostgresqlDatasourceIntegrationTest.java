@@ -5,9 +5,9 @@ import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.service.AgentJdbcExecutor;
 import com.onedata.portal.config.DorisJdbcProperties;
-import com.onedata.portal.dto.DorisCredential;
 import com.onedata.portal.entity.DorisCluster;
 import com.onedata.portal.mapper.DorisClusterMapper;
+import com.onedata.portal.service.datasource.core.DatasourceConnectionFactory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +15,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
 import java.sql.Connection;
 import java.sql.Statement;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -26,7 +28,7 @@ import static org.mockito.Mockito.*;
 @EnabledIfEnvironmentVariable(named = "ODW_POSTGRES_TEST_PORT", matches = "[0-9]+")
 class PostgresqlDatasourceIntegrationTest {
     private DorisConnectionService service;
-    private UserMappingService userMapping;
+    private DatasourceSubjectAccountService userMapping;
     private String schema;
     private DorisCluster cluster;
 
@@ -43,12 +45,19 @@ class PostgresqlDatasourceIntegrationTest {
         cluster.setPassword("odw_smoke_password");
         DorisClusterMapper mapper = mock(DorisClusterMapper.class);
         when(mapper.selectById(1L)).thenReturn(cluster);
-        userMapping = mock(UserMappingService.class);
+        userMapping = mock(DatasourceSubjectAccountService.class);
         // Leave MySQL URL unconfigured and charset enabled: neither may be used for PostgreSQL.
         DorisJdbcProperties properties = new DorisJdbcProperties();
         properties.setSessionCharsetEnabled(true);
         properties.setSessionCharset("utf8mb4");
-        service = new DorisConnectionService(mapper, properties, userMapping);
+        service = new DorisConnectionService(mapper, properties, userMapping, DatasourceAdapterFixtures.registry(properties));
+        when(userMapping.currentUserId()).thenReturn("user");
+        org.mockito.Mockito.lenient().when(userMapping.open(org.mockito.ArgumentMatchers.eq(1L),
+                org.mockito.ArgumentMatchers.eq("USER"), org.mockito.ArgumentMatchers.eq("user"),
+                org.mockito.ArgumentMatchers.nullable(String.class), org.mockito.ArgumentMatchers.eq(false)))
+                .thenAnswer(invocation -> new DatasourceConnectionFactory(DatasourceAdapterFixtures.registry(properties))
+                        .open("POSTGRESQL", com.onedata.portal.service.datasource.model.ConnectionConfig.from(cluster),
+                                invocation.getArgument(3), cluster.getUsername(), cluster.getPassword(), false));
         try (Connection c = service.getConnection(1L); Statement s = c.createStatement()) {
             s.execute("CREATE SCHEMA " + schema);
             s.execute("CREATE TABLE " + schema + ".orders (id bigint PRIMARY KEY, amount numeric(18,2) DEFAULT 0, "
@@ -102,8 +111,10 @@ class PostgresqlDatasourceIntegrationTest {
             s.execute("GRANT SELECT ON " + schema + ".orders TO " + role);
         }
         try {
-            when(userMapping.getDorisCredential("user", 1L, schema))
-                    .thenReturn(new DorisCredential(role, "odw_smoke_password"));
+            when(userMapping.open(1L, "USER", "user", schema, false)).thenAnswer(invocation ->
+                    new DatasourceConnectionFactory(DatasourceAdapterFixtures.registry(new DorisJdbcProperties()))
+                            .open("POSTGRESQL", com.onedata.portal.service.datasource.model.ConnectionConfig.from(cluster),
+                                    schema, role, "odw_smoke_password", false));
             UserContextHolder.setContext(new UserContext("user", "user", "admin", "local"));
             try (Connection c = service.getConnection(1L, schema);
                     Statement s = c.createStatement();
@@ -130,19 +141,21 @@ class PostgresqlDatasourceIntegrationTest {
         datasource.setPort(cluster.getFePort());
         datasource.setUser("postgres");
         datasource.setPassword("odw_smoke_password");
-        AgentJdbcExecutor executor = new AgentJdbcExecutor(new DorisJdbcProperties());
+        AgentJdbcExecutor executor = new AgentJdbcExecutor(DatasourceAdapterFixtures.registry(new DorisJdbcProperties()),
+                new DatasourceConnectionFactory(
+                        DatasourceAdapterFixtures.registry(new DorisJdbcProperties())));
 
         AgentJdbcExecutor.QueryExecutionResult result =
                 executor.executeReadOnlyQuery(datasource, "SELECT note, labels FROM orders", 10, 10);
         assertEquals("ok", result.getRows().get(0).get("note"));
-        assertEquals(java.util.Arrays.asList("a", "b"), result.getRows().get(0).get("labels"));
+        assertEquals(Arrays.asList("a", "b"), result.getRows().get(0).get("labels"));
         AgentJdbcExecutor.QueryExecutionResult limited =
                 executor.executeReadOnlyQuery(datasource, "SELECT g FROM generate_series(1, 50) g", 3, 10);
         assertEquals(3, limited.getRowCount());
         assertTrue(limited.isHasMore());
         RuntimeException writeError = assertThrows(RuntimeException.class,
                 () -> executor.executeReadOnlyQuery(datasource, "SELECT 1; DELETE FROM orders", 10, 10));
-        assertTrue(writeError.getMessage().contains("read-only"));
+        assertTrue(writeError.getMessage().contains("智能体账号"));
 
         String ddl = executor.fetchTableDdl(datasource, schema, "orders", 10);
         assertTrue(ddl.contains("\"amount\" numeric(18,2)"));
@@ -194,9 +207,9 @@ class PostgresqlDatasourceIntegrationTest {
         Map<String, Object> row = service.previewTableData(1L, schema, "orders", 10).get(0);
         assertEquals("quoted", row.get("odd\"column"));
         // Arrays come back as plain lists that survive the closed connection, not a live PgArray.
-        assertEquals(java.util.Arrays.asList("a", "b"), row.get("labels"));
+        assertEquals(Arrays.asList("a", "b"), row.get("labels"));
         assertEquals("quoted", service.profileColumnValues(1L, schema, "orders",
-                java.util.Collections.singletonList("odd\"column"), 5).get(0).getValues().get(0).getValue());
+                Collections.singletonList("odd\"column"), 5).get(0).getValues().get(0).getValue());
     }
 
     @Test
@@ -221,6 +234,22 @@ class PostgresqlDatasourceIntegrationTest {
                 s.execute("DROP OWNED BY " + role);
                 s.execute("DROP ROLE " + role);
             }
+        }
+    }
+
+    @Test
+    void sameNamedTablesAndQuotedSchemasStayIsolated() throws Exception {
+        String other = schema + "_other";
+        try (Connection c = service.getConnection(1L); Statement statement = c.createStatement()) {
+            statement.execute("CREATE SCHEMA " + other);
+            try {
+                statement.execute("CREATE TABLE " + other + ".orders (note text)");
+                statement.execute("INSERT INTO " + other + ".orders VALUES ('other schema')");
+                assertEquals("other schema", service.previewTableData(1L, other, "orders", 1).get(0).get("note"));
+                assertEquals("ok", service.previewTableData(1L, schema, "orders", 1).get(0).get("note"));
+                assertEquals(1, service.getColumnsInTable(1L, other, "orders").size());
+                assertEquals(5, service.getColumnsInTable(1L, schema, "orders").size());
+            } finally { statement.execute("DROP SCHEMA " + other + " CASCADE"); }
         }
     }
 

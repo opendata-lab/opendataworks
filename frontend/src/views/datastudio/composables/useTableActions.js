@@ -1,3 +1,4 @@
+import { capabilityReason } from '@/utils/datasourceTypes'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { tableApi } from '@/api/table'
 import { getObjectSourceId } from '../objectSource'
@@ -15,7 +16,7 @@ export function useTableActions({
   taskDrawerRef,
   router,
   // 组件内判定助手
-  isDorisTable,
+  hasEngineProperties,
   isPlatformMetadataMissing,
   warnPlatformMetadataMissing,
   // useCatalogTree
@@ -75,16 +76,16 @@ export function useTableActions({
       return
     }
     const sourceId = getObjectSourceId(table, clusterId.value)
-    const dorisTable = isDorisTable(table)
-    if (dorisTable && !sourceId) {
+    const engineProperties = hasEngineProperties(table)
+    if (engineProperties && !sourceId) {
       ElMessage.warning('请选择 Doris 集群')
       return
     }
 
     try {
       const rawName = String(table.tableName || '').trim()
-      const expectedName = dorisTable ? (rawName.includes('.') ? rawName.split('.').pop() : rawName) : rawName
-      const message = dorisTable
+      const expectedName = engineProperties ? (rawName.includes('.') ? rawName.split('.').pop() : rawName) : rawName
+      const message = engineProperties
         ? `确定要删除表 “${table.tableName}” 吗？删除后将重命名为 deprecated_时间戳，数据不会丢失。`
         : `确定要删除表 “${table.tableName}” 吗？将仅删除平台元数据记录。`
       const { value } = await ElMessageBox.prompt(
@@ -104,7 +105,7 @@ export function useTableActions({
         }
       )
       const confirmTableName = String(value || '').trim()
-      if (dorisTable) {
+      if (engineProperties) {
         await tableApi.softDelete(table.id, sourceId, confirmTableName)
       } else {
         await tableApi.delete(table.id, confirmTableName)
@@ -213,6 +214,8 @@ export function useTableActions({
   const loadDdl = async (tabId) => {
     const state = tabStates[tabId]
     if (!state?.table) return
+    const blocked = capabilityReason(state.table.typeDefinition, 'ddlExport')
+    if (blocked) { state.ddlError = blocked; return }
     const sourceId = getObjectSourceId(state.table, clusterId.value)
     if (!sourceId) {
       ElMessage.warning('请选择数据源')

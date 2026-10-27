@@ -24,8 +24,8 @@
 - 表与库发现：`inspect_metadata.py`（或 `mcp__portal__portal_search_tables`）。
 - 字段与结构发现：`get_table_ddl.py`（或 `mcp__portal__portal_get_table_ddl`）。
 - 禁止用 `SHOW TABLES` / `SHOW DATABASES` / `SHOW COLUMNS` 等 SHOW 语句，或查询 `information_schema`、`performance_schema`、`mysql`、`sys` 等系统库来发现元数据。
-- 原因：数据范围生效时，后端无法对 SHOW 做范围校验（报 `Finding tables from ShowTablesStatement is not supported`），系统库也不在授权范围（报 `数据范围限制: SQL 引用了未授权 schema`）。
-- 这两类失败都**不可重试**：是用错工具，不是可改写的 SQL。`run_sql.py` / `portal_query_readonly` 执行后会把后端报错原样回传（`result_state=failed`、`retryable=false`），收到上述报错就立刻改用元数据/DDL 工具，不要换库换表反复试探。
+- 原因：发现工具按人和智能体的数据库账号取可见对象/字段交集，返回适合模型使用的元数据；查询通道只做只读守卫和双账号权限检查，不再解析 SQL 的表引用做授权。缺映射或数据库拒绝时应说明原因，不要换身份重试。
+- `run_sql.py` / `portal_query_readonly` 返回缺映射或无权限时，说明拒绝原因，不要换身份或反复执行相同 SQL；元数据发现改用元数据/DDL 工具。
 
 ## portal-mcp 首选工具
 

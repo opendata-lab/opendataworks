@@ -12,7 +12,7 @@ if str(SERVICE_ROOT) not in sys.path:
 
 from portal_mcp.backend_client import BackendApiClient, BackendApiError
 from portal_mcp.config import Settings
-from portal_mcp.scope_context import set_data_scope_header
+from portal_mcp.identity_context import set_identity_headers
 
 
 def _settings() -> Settings:
@@ -110,16 +110,17 @@ async def test_backend_client_maps_request_error(monkeypatch):
 
 
 @pytest.mark.anyio
-async def test_backend_client_forwards_agent_data_scope_header(monkeypatch):
+async def test_backend_client_forwards_trusted_identity_headers(monkeypatch):
     fake_client = _FakeAsyncClient(response=_response(200, json_payload={"ok": True}))
     monkeypatch.setattr(
         "portal_mcp.backend_client.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
-    reset = set_data_scope_header("encoded-scope")
+    reset = set_identity_headers({"X-Agent-User-Id": "local:alice", "X-Agent-Id": "agent-a"})
     try:
         await BackendApiClient(_settings()).inspect(database="dw")
     finally:
         reset()
 
-    assert fake_client.last_kwargs["headers"]["X-Agent-Data-Scope"] == "encoded-scope"
+    assert fake_client.last_kwargs["headers"]["X-Agent-User-Id"] == "local:alice"
+    assert fake_client.last_kwargs["headers"]["X-Agent-Id"] == "agent-a"

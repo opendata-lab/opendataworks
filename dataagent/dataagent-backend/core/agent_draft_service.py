@@ -20,7 +20,7 @@ class DraftConflict(ValueError):
 
 def configuration(profile: dict[str, Any]) -> dict[str, Any]:
     keys = ("agent_id", "name", "description", "system_prompt", "allowed_tools",
-            "mcp_server_ids", "skill_folders", "max_turns", "plan_timeout_action", "env_vars", "data_scope",
+            "mcp_server_ids", "skill_folders", "max_turns", "plan_timeout_action", "env_vars",
             "visibility", "preset_questions", "is_default", "is_builtin")
     return {key: profile.get(key, [] if key == "preset_questions" else None) for key in keys}
 
@@ -108,7 +108,7 @@ class AgentDraftStore:
                     item = self._result(self._read(cur, agent_id))
                     result.append({key: item[key] for key in (
                         "agent_id", "name", "description", "allowed_tools", "mcp_server_ids",
-                        "skill_folders", "data_scope", "is_default", "is_builtin",
+                        "skill_folders", "is_default", "is_builtin",
                         "revision", "published_version", "has_changes")} |
                         {"visibility_mode": (item.get("visibility") or {}).get("mode", "all")})
                 return result

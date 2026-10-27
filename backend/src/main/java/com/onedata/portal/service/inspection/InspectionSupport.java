@@ -11,6 +11,7 @@ import com.onedata.portal.entity.InspectionRule;
 import com.onedata.portal.mapper.DataLineageMapper;
 import com.onedata.portal.mapper.InspectionIssueMapper;
 import com.onedata.portal.service.DorisClusterService;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -39,6 +40,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class InspectionSupport {
 
+    private final DatasourceAdapterRegistry adapterRegistry;
     private final InspectionIssueMapper inspectionIssueMapper;
     private final DataLineageMapper dataLineageMapper;
     private final DorisClusterService dorisClusterService;
@@ -248,7 +250,7 @@ public class InspectionSupport {
             if (cluster == null || cluster.getId() == null) {
                 continue;
             }
-            if ("DORIS".equalsIgnoreCase(cluster.getSourceType())) {
+            if (adapterRegistry.require(cluster.getSourceType()).descriptor().supports("tabletInspection")) {
                 dorisClusterIds.add(cluster.getId());
             }
         }

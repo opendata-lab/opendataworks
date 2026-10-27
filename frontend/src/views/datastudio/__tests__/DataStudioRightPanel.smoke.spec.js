@@ -70,7 +70,7 @@ const buildCtx = () => {
     businessDomainOptions: ref([]),
     getMetaDataDomainOptions: () => [],
     handleMetaBusinessDomainChange: fn(),
-    isDorisTable: () => true,
+    hasEngineProperties: () => true,
     structureEditBlockedReason: () => '',
     isPlatformMetadataMissing: () => false,
     isAggregateTable: () => false,
@@ -427,7 +427,7 @@ describe('DataStudioRightPanel mount smoke', () => {
 
   it('PostgreSQL 表的字段编辑和删表禁用并说明原因，表信息仍可编辑', () => {
     const ctx = buildCtx()
-    ctx.isDorisTable = () => false
+    ctx.hasEngineProperties = () => false
     ctx.structureEditBlockedReason = () => 'PostgreSQL 暂不支持在线修改表结构，请在数据库中修改后重新同步元数据'
     const mountPanel = () =>
       shallowMount(DataStudioRightPanel, {
@@ -512,7 +512,7 @@ describe('DataStudioRightPanel mount smoke', () => {
     ctx.tabStates.t1.table.sourceId = ''
     wrapper = mountPanel()
     expect(wrapper.find('[data-test="action-edit"]').attributes('disabled')).toBeDefined()
-    expect(wrapper.find('[data-tip="请选择 Doris 集群后再操作"]').exists()).toBe(true)
+    expect(wrapper.find('[data-tip="请选择数据源后再操作"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

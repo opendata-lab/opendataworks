@@ -1,6 +1,7 @@
 package com.onedata.portal.agentapi.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.onedata.portal.agentapi.identity.AgentIdentityContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -26,6 +27,7 @@ public class AgentApiAuthInterceptor implements HandlerInterceptor {
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        AgentIdentityContext.clear();
         if (HttpMethod.OPTIONS.matches(request.getMethod())) {
             return true;
         }
@@ -49,7 +51,19 @@ public class AgentApiAuthInterceptor implements HandlerInterceptor {
             return false;
         }
 
+        try {
+            AgentIdentityContext.set(request.getHeader(AgentIdentityContext.USER_HEADER),
+                    request.getHeader(AgentIdentityContext.AGENT_HEADER));
+        } catch (IllegalArgumentException e) {
+            writeError(response, HttpServletResponse.SC_UNAUTHORIZED, e.getMessage());
+            return false;
+        }
         return true;
+    }
+
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) {
+        AgentIdentityContext.clear();
     }
 
     private void writeError(HttpServletResponse response, int status, String message) throws Exception {

@@ -169,10 +169,8 @@ def _origin_allowed(origin: str, allowed_origins: list[str]) -> bool:
 def _request_context(request: Request) -> dict[str, str]:
     client = _clean_header(request.headers.get("X-ODW-Client"), 32).lower()
     if client != "widget":
-        # 三分支客户端语义（docs/design/2026-07-01-dataagent-auth-design.md 3.2）：
-        # dataagent 独立 SPA（显式标记）在 auth 启用时消费会话 Cookie/Bearer；
-        # 其他无标记客户端（含门户嵌入页）永不消费 cookie，保持匿名 portal 池。
-        if client == "dataagent" and is_auth_enabled():
+        # 两个现有前端均消费 DataAgent 自己验证的会话，不从前端身份头取用户。
+        if is_auth_enabled():
             identity = resolve_identity(request)
             if identity is None:
                 raise HTTPException(status_code=401, detail="Not authenticated")
@@ -552,8 +550,6 @@ async def api_create_task(payload: CreateTaskRequest, request: Request):
             execution_mode=payload.execution_mode,
             agent_id=payload.agent_id,
             source_queue_id=payload.source_queue_id,
-            source_schedule_id=payload.source_schedule_id,
-            source_schedule_log_id=payload.source_schedule_log_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -990,10 +986,19 @@ async def api_execute_readonly_query(http_request: Request, request: ExecuteQuer
     if not database:
         raise HTTPException(status_code=400, detail="database 不能为空")
 
-    data_scope_header: str | None = None
+    user_id = str(context.get("auth_user_id") or "")
+    if not is_auth_enabled() or not user_id:
+        raise HTTPException(status_code=401, detail="数据库访问需要登录用户")
+    agent_id = ""
     topic_id = str(request.topic_id or "").strip()
     if topic_id:
-        data_scope_header = _resolve_topic_data_scope_header(topic_id, context=context)
+        topic = _get_store().get_topic(topic_id, context=context)
+        if not topic:
+            raise HTTPException(status_code=404, detail="Topic not found")
+        agent_id = str(topic.get("agent_id") or "")
+
+    if not agent_id:
+        raise HTTPException(status_code=400, detail="请选择有效的智能体会话")
 
     try:
         return await execute_readonly_query(
@@ -1002,26 +1007,13 @@ async def api_execute_readonly_query(http_request: Request, request: ExecuteQuer
             engine=request.engine,
             limit=request.limit,
             timeout_seconds=request.timeout_seconds,
-            data_scope_header=data_scope_header,
+            user_id=user_id,
+            agent_id=agent_id,
         )
     except QueryProxyConfigError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except QueryProxyUpstreamError as exc:
         raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
-
-
-def _resolve_topic_data_scope_header(topic_id: str, *, context: dict[str, str]) -> str:
-    from core.data_scope import encode_scope_header, normalize_data_scope
-
-    store = _get_store()
-    topic = store.get_topic(topic_id, context=context)
-    if not topic:
-        raise HTTPException(status_code=404, detail="Topic not found")
-    snapshot = topic.get("agent_snapshot") or {}
-    scope = normalize_data_scope(snapshot.get("data_scope") or {})
-    if not scope.get("allowed_scopes"):
-        return ""
-    return encode_scope_header(scope)
 
 
 router.include_router(topic_router)

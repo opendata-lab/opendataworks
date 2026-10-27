@@ -20,9 +20,15 @@ from core.readonly_query_proxy import (
     QueryProxyUpstreamError,
     clamp_limit,
     clamp_timeout_seconds,
-    execute_readonly_query,
+    execute_readonly_query as upstream_execute_readonly_query,
 )
 from main import app
+
+
+async def execute_readonly_query(*args, **kwargs):
+    kwargs.setdefault("user_id", "local:alice")
+    kwargs.setdefault("agent_id", "agent-a")
+    return await upstream_execute_readonly_query(*args, **kwargs)
 
 
 PROXY_ENV = {
@@ -36,9 +42,6 @@ def configure_proxy_env(monkeypatch, env=PROXY_ENV):
         "ODW_BACKEND_BASE_URL",
         "ODW_AGENT_SERVICE_TOKEN",
         "ODW_AGENT_SERVICE_TOKEN_HEADER_NAME",
-        "ODW_AGENT_DATA_SCOPE_HEADER",
-        "DATAAGENT_DATA_SCOPE_HEADER",
-        "DATAAGENT_DATA_SCOPE_JSON",
     ):
         monkeypatch.delenv(key, raising=False)
     for key, value in env.items():
@@ -147,40 +150,7 @@ class TestExecuteReadonlyQuery:
         await execute_readonly_query("SELECT 1", "demo")
         assert captured["url"] == "http://backend:8080/api/v1/ai/query/read"
 
-    @pytest.mark.anyio
-    async def test_data_scope_header_from_json(self, monkeypatch):
-        configure_proxy_env(monkeypatch)
-        monkeypatch.setenv(
-            "DATAAGENT_DATA_SCOPE_JSON",
-            '{"allowed_scopes": [{"database": "demo", "source_type": "MYSQL"}]}',
-        )
-        captured = {}
 
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["scope"] = request.headers.get("X-Agent-Data-Scope")
-            return upstream_ok(request)
-
-        install_upstream(monkeypatch, handler)
-        await execute_readonly_query("SELECT 1", "demo")
-        assert captured["scope"]
-        # base64url 无填充
-        assert "=" not in captured["scope"]
-        decoded = base64.urlsafe_b64decode(captured["scope"] + "=" * (-len(captured["scope"]) % 4))
-        assert b"demo" in decoded
-
-    @pytest.mark.anyio
-    async def test_data_scope_header_prefers_precomputed_value(self, monkeypatch):
-        configure_proxy_env(monkeypatch)
-        monkeypatch.setenv("ODW_AGENT_DATA_SCOPE_HEADER", "precomputed-scope-token")
-        captured = {}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["scope"] = request.headers.get("X-Agent-Data-Scope")
-            return upstream_ok(request)
-
-        install_upstream(monkeypatch, handler)
-        await execute_readonly_query("SELECT 1", "demo")
-        assert captured["scope"] == "precomputed-scope-token"
 
     @pytest.mark.anyio
     async def test_empty_result_state(self, monkeypatch):
@@ -197,40 +167,7 @@ class TestExecuteReadonlyQuery:
         assert result["result_state"] == "empty_result"
         assert result["rows"] == []
 
-    @pytest.mark.anyio
-    async def test_explicit_data_scope_header_overrides_env(self, monkeypatch):
-        configure_proxy_env(monkeypatch, env={
-            **PROXY_ENV,
-            "DATAAGENT_DATA_SCOPE_JSON": json.dumps({"allowed_scopes": [{"database": "env_db", "source_type": "MYSQL", "cluster_id": 1}]}),
-        })
-        captured = {}
 
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["scope_header"] = request.headers.get("X-Agent-Data-Scope", "")
-            return httpx.Response(200, json={"rows": [{"x": 1}], "row_count": 1, "has_more": False})
-
-        install_upstream(monkeypatch, handler)
-        explicit_scope = base64.urlsafe_b64encode(
-            json.dumps({"allowed_scopes": [{"cluster_id": 2, "database": "override_db", "source_type": "DORIS"}]}).encode()
-        ).decode().rstrip("=")
-        await execute_readonly_query("SELECT 1", "demo", data_scope_header=explicit_scope)
-        assert captured["scope_header"] == explicit_scope
-
-    @pytest.mark.anyio
-    async def test_explicit_empty_data_scope_header_does_not_fallback_to_env(self, monkeypatch):
-        configure_proxy_env(monkeypatch, env={
-            **PROXY_ENV,
-            "DATAAGENT_DATA_SCOPE_JSON": json.dumps({"allowed_scopes": [{"database": "env_db", "source_type": "MYSQL", "cluster_id": 1}]}),
-        })
-        captured = {}
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["scope_header"] = request.headers.get("X-Agent-Data-Scope")
-            return httpx.Response(200, json={"rows": [{"x": 1}], "row_count": 1, "has_more": False})
-
-        install_upstream(monkeypatch, handler)
-        await execute_readonly_query("SELECT 1", "demo", data_scope_header="")
-        assert captured["scope_header"] is None
 
     @pytest.mark.anyio
     async def test_missing_config_raises(self, monkeypatch):
@@ -243,13 +180,13 @@ class TestExecuteReadonlyQuery:
         configure_proxy_env(monkeypatch)
 
         def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(403, json={"message": "数据范围不允许访问该库"})
+            return httpx.Response(403, json={"message": "智能体账号无权访问所请求对象"})
 
         install_upstream(monkeypatch, handler)
         with pytest.raises(QueryProxyUpstreamError) as exc_info:
             await execute_readonly_query("SELECT 1", "forbidden_db")
         assert exc_info.value.status_code == 403
-        assert "数据范围" in str(exc_info.value)
+        assert "无权访问" in str(exc_info.value)
 
     @pytest.mark.anyio
     async def test_upstream_5xx_maps_to_502(self, monkeypatch):
@@ -277,6 +214,18 @@ class TestExecuteReadonlyQuery:
 
 
 class TestExecuteQueryRoute:
+    @pytest.fixture(autouse=True)
+    def logged_in_context(self, monkeypatch):
+        import api.routes as routes
+        monkeypatch.setattr(routes, "is_auth_enabled", lambda: True)
+        monkeypatch.setattr(routes, "_request_context", lambda request: {
+            "source": "portal", "website_id": "", "external_user_id": "", "visitor_id": "",
+            "auth_user_id": "local:alice"})
+        class Store:
+            def get_topic(self, topic_id, context=None):
+                return {"agent_id": "agent-a"}
+        monkeypatch.setattr(routes, "_get_store", lambda: Store())
+
     def test_execute_route_success(self, monkeypatch):
         configure_proxy_env(monkeypatch)
         install_upstream(monkeypatch, upstream_ok)
@@ -284,7 +233,7 @@ class TestExecuteQueryRoute:
         client = TestClient(app)
         response = client.post(
             "/api/v1/nl2sql/query/execute",
-            json={"sql": "SELECT 1", "database": "demo", "limit": 50},
+            json={"sql": "SELECT 1", "database": "demo", "topic_id": "t-123", "limit": 50},
         )
         assert response.status_code == 200
         payload = response.json()
@@ -296,7 +245,7 @@ class TestExecuteQueryRoute:
         client = TestClient(app)
         response = client.post(
             "/api/v1/nl2sql/query/execute",
-            json={"sql": "   ", "database": "demo"},
+            json={"sql": "   ", "database": "demo", "topic_id": "t-123"},
         )
         assert response.status_code == 400
 
@@ -314,57 +263,10 @@ class TestExecuteQueryRoute:
         client = TestClient(app)
         response = client.post(
             "/api/v1/nl2sql/query/execute",
-            json={"sql": "SELECT 1", "database": "demo"},
+            json={"sql": "SELECT 1", "database": "demo", "topic_id": "t-123"},
         )
         assert response.status_code == 503
 
-    def test_execute_route_passes_topic_scope(self, monkeypatch):
-        configure_proxy_env(monkeypatch)
-        captured = {}
-        contexts = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            captured["scope_header"] = request.headers.get("X-Agent-Data-Scope", "")
-            body = json.loads(request.content.decode("utf-8"))
-            return httpx.Response(200, json={
-                "rows": [{"x": 1}], "row_count": 1, "has_more": False,
-                "database": body["database"], "sql": body["sql"],
-            })
-
-        install_upstream(monkeypatch, handler)
-
-        fake_scope = {"allowed_scopes": [{"cluster_id": 1, "database": "scoped_db", "source_type": "MYSQL"}]}
-        fake_topic = {
-            "topic_id": "t-123",
-            "agent_snapshot": {"data_scope": fake_scope},
-        }
-
-        class FakeStore:
-            def get_topic(self, topic_id, context=None):
-                contexts.append(context)
-                if topic_id == "t-123" and context and context.get("source") == "portal":
-                    return fake_topic
-                return None
-
-        import api.routes as routes_mod
-        monkeypatch.setattr(routes_mod, "_get_store", lambda: FakeStore())
-
-        client = TestClient(app)
-        response = client.post(
-            "/api/v1/nl2sql/query/execute",
-            json={"sql": "SELECT 1", "database": "demo", "topic_id": "t-123"},
-        )
-        assert response.status_code == 200
-        assert captured["scope_header"]
-        decoded = base64.urlsafe_b64decode(captured["scope_header"] + "==").decode()
-        scope = json.loads(decoded)
-        assert scope["allowed_scopes"][0]["database"] == "scoped_db"
-        assert contexts == [{
-            "source": "portal",
-            "website_id": "",
-            "external_user_id": "",
-            "visitor_id": "",
-        }]
 
     def test_execute_route_rejects_topic_outside_request_context(self, monkeypatch):
         configure_proxy_env(monkeypatch)
@@ -400,10 +302,11 @@ class TestExecuteQueryRoute:
         assert response.status_code == 404
         assert not upstream_called
         assert contexts == [{
-            "source": "widget",
-            "website_id": "site-a",
-            "external_user_id": "user-a",
+            "source": "portal",
+            "website_id": "",
+            "external_user_id": "",
             "visitor_id": "",
+            "auth_user_id": "local:alice",
         }]
 
     def test_execute_route_upstream_failure_maps_status(self, monkeypatch):
@@ -416,7 +319,15 @@ class TestExecuteQueryRoute:
         client = TestClient(app)
         response = client.post(
             "/api/v1/nl2sql/query/execute",
-            json={"sql": "DELETE FROM t", "database": "demo"},
+            json={"sql": "DELETE FROM t", "database": "demo", "topic_id": "t-123"},
         )
         assert response.status_code == 400
         assert "只读" in response.json()["detail"]
+
+
+def test_anonymous_query_never_reaches_backend(monkeypatch):
+    import api.routes as routes
+    monkeypatch.setattr(routes, "_request_context", lambda request: {"source": "portal"})
+    monkeypatch.setattr(routes, "is_auth_enabled", lambda: False)
+    response = TestClient(app).post("/api/v1/nl2sql/query/execute", json={"sql": "SELECT 1", "database": "demo"})
+    assert response.status_code == 401

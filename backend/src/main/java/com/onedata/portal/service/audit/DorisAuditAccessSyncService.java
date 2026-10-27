@@ -13,6 +13,7 @@ import com.onedata.portal.mapper.TableAccessDailyMapper;
 import com.onedata.portal.mapper.TableAccessUserDailyMapper;
 import com.onedata.portal.service.DorisConnectionService;
 import com.onedata.portal.service.TableAccessSummaryCache;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -31,6 +32,7 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -46,6 +48,7 @@ public class DorisAuditAccessSyncService {
 
     private static final long MAX_CLUSTER_RUN_MILLIS = 60_000L;
 
+    private final DatasourceAdapterRegistry adapterRegistry;
     private final DorisAuditAccessSyncProperties properties;
     private final DorisConnectionService dorisConnectionService;
     private final DorisClusterMapper dorisClusterMapper;
@@ -62,13 +65,11 @@ public class DorisAuditAccessSyncService {
         List<DorisCluster> clusters = dorisClusterMapper.selectList(
                 new LambdaQueryWrapper<DorisCluster>()
                         .eq(DorisCluster::getStatus, "active")
-                        .and(wrapper -> wrapper.isNull(DorisCluster::getSourceType)
-                                .or()
-                                .eq(DorisCluster::getSourceType, "DORIS"))
                         .orderByDesc(DorisCluster::getIsDefault)
                         .orderByAsc(DorisCluster::getId));
         for (DorisCluster cluster : clusters) {
-            if (!hasManagedTables(cluster.getId())) {
+            if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("auditAccess")
+                    || !hasManagedTables(cluster.getId())) {
                 continue;
             }
             syncCluster(cluster);
@@ -76,6 +77,7 @@ public class DorisAuditAccessSyncService {
     }
 
     public void syncCluster(DorisCluster cluster) {
+        adapterRegistry.requireCapability(cluster.getSourceType(), "auditAccess");
         Long clusterId = cluster.getId();
         long startedAt = System.currentTimeMillis();
         String auditSourceName = null;
@@ -407,8 +409,8 @@ public class DorisAuditAccessSyncService {
         if (value instanceof LocalDateTime) {
             return (LocalDateTime) value;
         }
-        if (value instanceof java.util.Date) {
-            return new Timestamp(((java.util.Date) value).getTime()).toLocalDateTime();
+        if (value instanceof Date) {
+            return new Timestamp(((Date) value).getTime()).toLocalDateTime();
         }
         if (value != null) {
             try {

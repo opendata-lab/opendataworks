@@ -2,7 +2,6 @@ package com.onedata.portal.agentapi.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.dto.AgentTableCreateRequest;
-import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.dto.TableCreateRequest;
 import com.onedata.portal.service.TableCreateService;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +36,7 @@ public class BackendAgentTableService implements AgentTableService {
 
     private TableCreateRequest toDomain(AgentTableCreateRequest request, String operator) {
         TableCreateRequest domain = objectMapper.convertValue(request, TableCreateRequest.class);
-        AgentDataScopeContext.requireDatabaseNameAllowedIfPresent(domain.getDbName());
+
         if (StringUtils.hasText(operator) && !StringUtils.hasText(domain.getOwner())) {
             domain.setOwner(operator);
         }

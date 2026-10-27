@@ -18,7 +18,6 @@ from core.provider_runtime import build_provider_env as _build_provider_env
 from core.provider_runtime import safe_base_url_for_log as _safe_base_url_for_log
 from core.agent_profile_service import normalize_permission_mode
 from core.permission_gate import WRITE_TOOL_NAMES, plan_denies_tool, requires_confirmation
-from core.data_scope import normalize_data_scope
 from core.mcp_admin_service import resolve_runtime_mcp_servers
 from core.skill_admin_service import resolve_enabled_skill_runtime, resolve_runtime_provider_selection
 from core.skill_discovery import (
@@ -545,25 +544,6 @@ def _build_system_prompt(
     custom_prompt = str((agent_snapshot or {}).get("system_prompt") or "").strip()
     if custom_prompt:
         lines.extend(["", "# 智能体系统提示词", custom_prompt])
-    data_scope = normalize_data_scope((agent_snapshot or {}).get("data_scope") or {})
-    scope_items = data_scope.get("allowed_scopes", [])
-    if scope_items:
-        lines.extend([
-            "",
-            "# 已授权数据范围",
-            "- 当前智能体配置了以下已授权数据库访问范围，未授权范围禁止访问：",
-        ])
-        for item in scope_items:
-            cluster_text = "null" if item.get("cluster_id") is None else str(item.get("cluster_id"))
-            lines.append(
-                f"- cluster_id={cluster_text}, source_type={item.get('source_type') or ''}, database={item.get('database') or ''}"
-            )
-    else:
-        lines.extend([
-            "",
-            "# 数据范围说明",
-            "- 当前未配置特定数据范围限制（默认不限制）。可通过当前已启用的各类工具与 MCP 正常访问元数据、查询数据与日志，严禁以此为由拒绝用户请求或阻塞分析流程。",
-        ])
     if database_hint:
         lines.append(f"- 用户显式提供的 database hint: {database_hint}")
     return "\n".join(lines)
@@ -676,8 +656,7 @@ def _build_runtime_env(
     Inherits the current process env, overlays ``provider_env`` (provider/model
     credentials and base URL), and exposes the skill-agnostic invocation contract
     (``DATAAGENT_PYTHON_BIN``/``SKILLS_ROOT_DIR``) plus per-run knobs derived
-    from ``cfg`` and ``params`` (query limit, SQL read timeout, enabled skills,
-    data scope). No direct DB connection settings are exposed here — those stay at
+    from ``cfg`` and ``params`` (query limit, SQL read timeout, enabled skills). No direct DB connection settings are exposed here — those stay at
     the deploy/skill layer. See AGENTS.md "Intelligent Query module rules".
     """
     python_bin = Path(sys.executable).absolute()
@@ -712,11 +691,6 @@ def _build_runtime_env(
             "SKILLS_ROOT_DIR": str(_skills_dir_from(skills_root)),
             "DATAAGENT_ENABLED_SKILLS": ",".join(enabled_folders),
             "DATAAGENT_ENABLED_SKILL_ROOTS": json.dumps(enabled_roots, ensure_ascii=False),
-            "DATAAGENT_DATA_SCOPE_JSON": json.dumps(
-                normalize_data_scope((getattr(params, "agent_snapshot", None) or {}).get("data_scope") or {}),
-                ensure_ascii=False,
-                sort_keys=True,
-            ),
             "VIRTUAL_ENV": str(python_bin.parent.parent),
             "PATH": runtime_path,
             "TZ": str(os.getenv("TZ") or "Asia/Shanghai"),
@@ -727,6 +701,16 @@ def _build_runtime_env(
         agent_env = dict((getattr(params, "agent_snapshot", None) or {}).get("env_vars") or {})
     if isinstance(agent_env, dict):
         runtime_env.update({str(key): str(value) for key, value in agent_env.items()})
+    for key in list(runtime_env):
+        if key in {"ODW_AGENT_SERVICE_TOKEN", "PORTAL_MCP_BACKEND_SERVICE_TOKEN", "PORTAL_MCP_FRONTDOOR_TOKEN",
+                   "DATAAGENT_PORTAL_MCP_TOKEN", "AGENT_API_SERVICE_TOKEN", "DORIS_PASSWORD",
+                   "ODW_MYSQL_PASSWORD", "ODW_DORIS_PASSWORD", "MYSQL_PASSWORD",
+                   "SESSION_MYSQL_PASSWORD", "SPRING_DATASOURCE_PASSWORD"}:
+            # SDK/Pi 合并父进程环境，必须显式清空才能阻止继承服务凭据。
+            runtime_env[key] = ""
+    from core.tool_http_channel import channel_url
+    if channel_url():
+        runtime_env["ODW_BACKEND_BASE_URL"] = channel_url()
     # Keep the portal-selected MCP timeout deterministic. MCP_TOOL_TIMEOUT is
     # process-wide (other MCP servers in this CLI would inherit it); Claude Code
     # 2.1.142+ uses it for both the overall call and the HTTP/SSE per-request fetch

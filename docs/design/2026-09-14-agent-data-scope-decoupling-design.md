@@ -1,5 +1,7 @@
 # DataAgent 数据范围解耦与通用智能体定位设计
 
+> 历史方案：账号与范围规则已被 [2026-10-26 主体映射设计](../design/2026-10-26-dataagent-datasource-identity-design.md)替换；旧接口与范围配置已删除，不作为部署或开发依据。
+
 **日期:** 2026-09-14
 **主题:** agent-data-scope-decoupling
 **目标:** 修复 DataAgent 在未配置数据范围时阻断元数据、数据和日志访问的问题，明确数据范围仅针对 OpenDataWorks 平台 Portal MCP，调整智能体定位为支持多 MCP 协同的通用数据与分析智能体。

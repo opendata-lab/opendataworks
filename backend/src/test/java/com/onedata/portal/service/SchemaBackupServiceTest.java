@@ -1,12 +1,13 @@
 package com.onedata.portal.service;
 
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.entity.SchemaBackupConfig;
 import com.onedata.portal.mapper.SchemaBackupConfigMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.time.LocalDateTime;
 
@@ -30,6 +31,7 @@ class SchemaBackupServiceTest {
     @BeforeEach
     void setUp() {
         schemaBackupService = new SchemaBackupService(
+                DatasourceAdapterFixtures.registry(new DorisJdbcProperties()),
                 schemaBackupConfigMapper,
                 dorisClusterService,
                 dorisConnectionService,

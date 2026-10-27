@@ -1,5 +1,7 @@
 # Agent Data Scope Implementation Plan
 
+> 历史方案：账号与范围规则已被 [2026-10-26 主体映射设计](../design/2026-10-26-dataagent-datasource-identity-design.md)替换；旧接口与范围配置已删除，不作为部署或开发依据。
+
 **Goal:** Enforce per-agent datasource/schema authorization across DataAgent local tools, Portal MCP, Java Agent API metadata, and read-only query paths.
 
 ## Tasks

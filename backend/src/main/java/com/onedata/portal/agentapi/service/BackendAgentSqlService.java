@@ -1,7 +1,6 @@
 package com.onedata.portal.agentapi.service;
 
 import com.onedata.portal.agentapi.dto.AgentSqlAnalyzeRequest;
-import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.dto.SqlAnalyzeRequest;
 import com.onedata.portal.service.DataQueryService;
 import lombok.RequiredArgsConstructor;
@@ -20,7 +19,6 @@ public class BackendAgentSqlService implements AgentSqlService {
 
     @Override
     public Object analyze(AgentSqlAnalyzeRequest request) {
-        AgentDataScopeContext.requireDatabaseNameAllowedIfPresent(request.getDatabase());
         SqlAnalyzeRequest delegate = new SqlAnalyzeRequest();
         delegate.setSql(request.getSql());
         delegate.setDatabase(request.getDatabase());

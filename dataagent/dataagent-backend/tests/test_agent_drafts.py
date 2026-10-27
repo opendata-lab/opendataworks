@@ -56,6 +56,7 @@ def test_management_save_requires_revision_and_reports_conflict(monkeypatch):
     response = client.put('/api/v1/dataagent/agents/a', json={'name': 'new'})
     assert response.status_code == 422
     monkeypatch.setattr(admin_routes, 'list_documents', lambda: [])
+    monkeypatch.setattr(admin_routes, 'skill_folders_from_documents', lambda _: [])
     def conflict(*args):
         raise DraftConflict('草稿已更新')
     monkeypatch.setattr(admin_routes.agent_drafts, 'save', conflict)

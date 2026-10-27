@@ -1,3 +1,4 @@
+import { definition } from '@/utils/__tests__/datasourceFixtures'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { reactive, ref } from 'vue'
@@ -15,13 +16,14 @@ describe('primary key controls', () => {
     ['', 1, [true, true, false]], // 旧缓存从连接配置恢复类型
     ['MYSQL', 0, [false, false, false]],
     ['DORIS', 1, [true, true, true]],
+    ['DORIS', 0, [true, true, true]],
   ])('%s synced=%s applies row-specific primary edit permissions', async (sourceType, isSynced, disabled) => {
     vi.stubGlobal('ResizeObserver', Observer)
     const rows = reactive([{ id: 1, fieldName: 'id', isPrimary: 1 }, { id: 2, fieldName: 'name', isPrimary: 0 }, { id: null, fieldName: 'new_key', isPrimary: 0 }])
     const ctx = {
-      activeTab: ref('t1'), tabStates: reactive({ t1: { table: { sourceType, isSynced }, fieldsEditing: true } }),
+      activeTab: ref('t1'), tabStates: reactive({ t1: { table: { sourceType, typeDefinition: definition(sourceType || 'MYSQL'), isSynced }, fieldsEditing: true } }),
       getTableSourceType: () => sourceType || 'MYSQL',
-      isDorisTable: () => sourceType === 'DORIS', structureEditBlockedReason: () => (sourceType === 'POSTGRESQL' ? 'PostgreSQL 暂不支持在线修改表结构' : ''), isAggregateTable: () => false,
+      hasEngineProperties: () => sourceType === 'DORIS', structureEditBlockedReason: () => (sourceType === 'POSTGRESQL' ? 'PostgreSQL 暂不支持在线修改表结构' : ''), isAggregateTable: () => false,
       getFieldRows: () => rows, addField: vi.fn(), removeField: vi.fn(), generateMetadata: vi.fn(),
     }
     wrapper = mount(Columns, { global: { plugins: [ElementPlus], provide: { dataStudioCtx: ctx } } })

@@ -3,7 +3,7 @@ import { createApp, ref, nextTick } from 'vue'
 
 vi.mock('element-plus', () => ({ ElMessage: { warning: vi.fn(), error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/api/table', () => ({ tableApi: {} }))
-vi.mock('@/api/doris', () => ({ dorisClusterApi: { testConnection: vi.fn().mockResolvedValue({}) } }))
+vi.mock('@/api/doris', () => ({ dorisClusterApi: { testConnection: vi.fn().mockResolvedValue(true) } }))
 
 import { useCatalogTree } from '../composables/useCatalogTree'
 

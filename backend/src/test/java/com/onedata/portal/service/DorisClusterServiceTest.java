@@ -15,7 +15,7 @@ class DorisClusterServiceTest {
     @BeforeEach
     void setUp() {
         mapper = mock(DorisClusterMapper.class);
-        service = new DorisClusterService(mapper);
+        service = new DorisClusterService(mapper, DatasourceAdapterFixtures.registry(new com.onedata.portal.config.DorisJdbcProperties()));
     }
 
     private DorisCluster datasource() {

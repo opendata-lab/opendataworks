@@ -35,7 +35,7 @@ class DorisConnectionServiceTest {
     private DorisClusterMapper dorisClusterMapper;
 
     @Mock
-    private UserMappingService userMappingService;
+    private DatasourceSubjectAccountService userMappingService;
 
     @Mock
     private Connection connection;
@@ -56,7 +56,12 @@ class DorisConnectionServiceTest {
         dorisJdbcProperties.setDefaultDatabase("information_schema");
         dorisJdbcProperties.setSessionCharsetEnabled(false);
 
-        dorisConnectionService = new DorisConnectionService(dorisClusterMapper, dorisJdbcProperties, userMappingService);
+        dorisConnectionService = new DorisConnectionService(dorisClusterMapper, dorisJdbcProperties, userMappingService, DatasourceAdapterFixtures.registry(dorisJdbcProperties));
+        org.mockito.Mockito.lenient().when(userMappingService.currentUserId()).thenReturn("1");
+        org.mockito.Mockito.lenient().when(userMappingService.open(org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.eq("USER"), org.mockito.ArgumentMatchers.eq("1"),
+                org.mockito.ArgumentMatchers.nullable(String.class), org.mockito.ArgumentMatchers.eq(false)))
+                .thenReturn(connection);
 
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);

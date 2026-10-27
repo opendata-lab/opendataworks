@@ -83,6 +83,12 @@ public class DorisClusterController {
     }
 
     @RequireAuth
+    @GetMapping("/{id}/default-query")
+    public Result<String> defaultQuery(@PathVariable Long id, @RequestParam String database, @RequestParam String tableName) {
+        return Result.success(dorisConnectionService.defaultQuery(id, database, tableName));
+    }
+
+    @RequireAuth
     @GetMapping("/{id}/databases")
     public Result<List<String>> listDatabases(@PathVariable Long id) {
         return Result.success(dorisConnectionService.getAllDatabases(id));

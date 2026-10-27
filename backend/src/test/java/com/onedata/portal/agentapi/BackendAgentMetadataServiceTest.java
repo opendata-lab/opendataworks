@@ -5,9 +5,9 @@ import com.onedata.portal.agentapi.dto.AgentInspectResponse;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteRequest;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteResponse;
 import com.onedata.portal.agentapi.dto.AgentTableDdlResponse;
-import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.agentapi.service.AgentJdbcExecutor;
 import com.onedata.portal.agentapi.service.BackendAgentMetadataService;
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.dto.TableFreshnessRequest;
 import com.onedata.portal.entity.BusinessDomain;
 import com.onedata.portal.entity.DataDomain;
@@ -15,23 +15,23 @@ import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataLineage;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
-import com.onedata.portal.entity.DorisDbUser;
 import com.onedata.portal.mapper.BusinessDomainMapper;
 import com.onedata.portal.mapper.DataDomainMapper;
 import com.onedata.portal.mapper.DataFieldMapper;
 import com.onedata.portal.mapper.DataLineageMapper;
 import com.onedata.portal.mapper.DataTableMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import com.onedata.portal.mapper.DorisDbUserMapper;
 import com.onedata.portal.service.DataTableService;
+import com.onedata.portal.service.DatasourceAdapterFixtures;
 import com.onedata.portal.service.LineageService;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.freshness.TableFreshnessService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -65,13 +65,10 @@ class BackendAgentMetadataServiceTest {
     private DorisClusterMapper dorisClusterMapper;
 
     @Mock
-    private DorisDbUserMapper dorisDbUserMapper;
+    private com.onedata.portal.agentapi.service.AgentDatasourceAccessService datasourceAccess;
 
     @Mock
     private LineageService lineageService;
-
-    @Mock
-    private DataSourceProperties dataSourceProperties;
 
     @Mock
     private AgentJdbcExecutor agentJdbcExecutor;
@@ -88,23 +85,30 @@ class BackendAgentMetadataServiceTest {
     @Mock
     private DataDomainMapper dataDomainMapper;
 
+    @Spy
+    private DatasourceAdapterRegistry adapterRegistry =
+            DatasourceAdapterFixtures.registry(new DorisJdbcProperties());
+
     @InjectMocks
     private BackendAgentMetadataService backendAgentMetadataService;
 
+    @org.junit.jupiter.api.BeforeEach
+    void liveVisibility() {
+        org.mockito.Mockito.lenient().when(datasourceAccess.isVisible(any(), any(), any())).thenReturn(true);
+        org.mockito.Mockito.lenient().when(datasourceAccess.isColumnVisible(any(), any(), any(), any())).thenReturn(true);
+        org.mockito.Mockito.lenient().doAnswer(invocation -> {
+            AgentDatasourceResolution result = invocation.getArgument(0);
+            result.setUser("POSTGRESQL".equals(result.getSourceType()) ? "pg_reader" : "readonly_user");
+            result.setPassword("readonly_pass");
+            return null;
+        }).when(datasourceAccess).applyCredentials(any());
+    }
+
     @Test
-    void resolveDatasourceReturnsPlatformMysqlForPlatformSchema() {
-        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks?serverTimezone=Asia/Shanghai");
-        when(dataSourceProperties.getUsername()).thenReturn("platform_user");
-        when(dataSourceProperties.getPassword()).thenReturn("platform_pass");
-
-        AgentDatasourceResolution result = backendAgentMetadataService.resolveDatasource("opendataworks", null);
-
-        assertEquals("mysql", result.getEngine());
-        assertEquals("mysql", result.getHost());
-        assertEquals(Integer.valueOf(3306), result.getPort());
-        assertEquals("platform_user", result.getUser());
-        assertEquals("platform_pass", result.getPassword());
-        assertEquals("platform_runtime", result.getResolvedBy());
+    void platformDatabaseHasNoImplicitRuntimeDatasource() {
+        when(dataTableMapper.selectList(any())).thenReturn(Collections.emptyList());
+        assertThrows(IllegalArgumentException.class,
+                () -> backendAgentMetadataService.resolveDatasource("opendataworks", null));
     }
 
     @Test
@@ -124,23 +128,15 @@ class BackendAgentMetadataServiceTest {
         cluster.setUsername("cluster_user");
         cluster.setPassword("cluster_pass");
 
-        DorisDbUser readonlyUser = new DorisDbUser();
-        readonlyUser.setClusterId(12L);
-        readonlyUser.setDatabaseName("doris_ods");
-        readonlyUser.setReadonlyUsername("readonly_user");
-        readonlyUser.setReadonlyPassword("readonly_pass");
-
-        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
         when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(table));
         when(dorisClusterMapper.selectById(12L)).thenReturn(cluster);
-        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.singletonList(readonlyUser));
 
         AgentDatasourceResolution result = backendAgentMetadataService.resolveDatasource("doris_ods", "doris");
 
         assertEquals("doris", result.getEngine());
         assertEquals("readonly_user", result.getUser());
         assertEquals("readonly_pass", result.getPassword());
-        assertEquals("readonly_user", result.getResolvedBy());
+        assertEquals("subject_mapping", result.getResolvedBy());
     }
 
     @Test
@@ -160,16 +156,8 @@ class BackendAgentMetadataServiceTest {
         cluster.setUsername("cluster_user");
         cluster.setPassword("cluster_pass");
 
-        DorisDbUser readonlyUser = new DorisDbUser();
-        readonlyUser.setClusterId(21L);
-        readonlyUser.setDatabaseName("public");
-        readonlyUser.setReadonlyUsername("pg_reader");
-        readonlyUser.setReadonlyPassword("pg_reader_pass");
-
-        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
         when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(table));
         when(dorisClusterMapper.selectById(21L)).thenReturn(cluster);
-        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.singletonList(readonlyUser));
 
         AgentDatasourceResolution result = backendAgentMetadataService.resolveDatasource("public", "postgresql");
 
@@ -178,41 +166,9 @@ class BackendAgentMetadataServiceTest {
         assertEquals("sales", result.getConnectionDatabase());
         assertEquals(Integer.valueOf(5432), result.getPort());
         assertEquals("pg_reader", result.getUser());
-        assertEquals("readonly_user", result.getResolvedBy());
+        assertEquals("subject_mapping", result.getResolvedBy());
         assertThrows(IllegalArgumentException.class,
                 () -> backendAgentMetadataService.resolveDatasource("public", "doris"));
-    }
-
-    @Test
-    void resolveDatasourceNarrowsSameNamedSchemasByAgentDataScope() {
-        // 两个 PostgreSQL 数据源都有 public：数据范围只授权了 21，就应定位到 21 而不是报冲突
-        DataTable first = new DataTable();
-        first.setClusterId(21L);
-        DataTable second = new DataTable();
-        second.setClusterId(22L);
-
-        DorisCluster cluster = new DorisCluster();
-        cluster.setId(21L);
-        cluster.setClusterName("pg-a");
-        cluster.setSourceType("POSTGRESQL");
-        cluster.setDatabaseName("sales");
-        cluster.setFeHost("pg-host");
-        cluster.setUsername("cluster_user");
-
-        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
-        when(dataTableMapper.selectList(any())).thenReturn(Arrays.asList(first, second));
-        when(dorisClusterMapper.selectById(21L)).thenReturn(cluster);
-        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.emptyList());
-
-        AgentDataScopeContext.setEncodedScope(
-                "eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MjEsImRhdGFiYXNlIjoicHVibGljIiwic291cmNlX3R5cGUiOiJQT1NUR1JFU1FMIn1dfQ");
-        try {
-            AgentDatasourceResolution result = backendAgentMetadataService.resolveDatasource("public", null);
-            assertEquals(Long.valueOf(21L), result.getClusterId());
-            assertEquals("postgresql", result.getEngine());
-        } finally {
-            AgentDataScopeContext.clear();
-        }
     }
 
     @Test
@@ -226,7 +182,6 @@ class BackendAgentMetadataServiceTest {
         second.setDbName("ods");
         second.setStatus("active");
 
-        when(dataSourceProperties.getUrl()).thenReturn("jdbc:mysql://mysql:3306/opendataworks");
         when(dataTableMapper.selectList(any())).thenReturn(Arrays.asList(first, second));
 
         IllegalArgumentException exception = assertThrows(
@@ -261,6 +216,7 @@ class BackendAgentMetadataServiceTest {
 
         DataTable downstream = new DataTable();
         downstream.setId(9L);
+        downstream.setClusterId(3L);
         downstream.setDbName("doris_ads");
         downstream.setTableName("ads_sales_summary_di");
 
@@ -290,6 +246,7 @@ class BackendAgentMetadataServiceTest {
 
         DataTable fieldMatched = new DataTable();
         fieldMatched.setId(22L);
+        fieldMatched.setClusterId(3L);
         fieldMatched.setDbName("z_sales");
         fieldMatched.setTableName("sales_detail");
         fieldMatched.setTableComment("销售明细");
@@ -331,15 +288,8 @@ class BackendAgentMetadataServiceTest {
         cluster.setUsername("cluster_user");
         cluster.setPassword("cluster_pass");
 
-        DorisDbUser readonlyUser = new DorisDbUser();
-        readonlyUser.setClusterId(12L);
-        readonlyUser.setDatabaseName("doris_ods");
-        readonlyUser.setReadonlyUsername("readonly_user");
-        readonlyUser.setReadonlyPassword("readonly_pass");
-
         when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(table));
         when(dorisClusterMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(cluster));
-        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.singletonList(readonlyUser));
 
         List<Map<String, Object>> rows = backendAgentMetadataService.exportDatasource(null);
 
@@ -347,7 +297,7 @@ class BackendAgentMetadataServiceTest {
         Map<String, Object> row = rows.get(0);
         assertEquals("doris", row.get("engine"));
         assertEquals("cluster-a", row.get("cluster_name"));
-        assertEquals("readonly_user", row.get("resolved_by"));
+        assertEquals("subject_mapping", row.get("resolved_by"));
         assertTrue(!row.containsKey("fe_host"));
         assertTrue(!row.containsKey("password"));
         assertTrue(!row.containsKey("readonly_password"));
@@ -378,16 +328,10 @@ class BackendAgentMetadataServiceTest {
         cluster.setUsername("cluster_user");
         cluster.setPassword("cluster_pass");
 
-        DorisDbUser readonlyUser = new DorisDbUser();
-        readonlyUser.setClusterId(12L);
-        readonlyUser.setDatabaseName("doris_ods");
-        readonlyUser.setReadonlyUsername("readonly_user");
-        readonlyUser.setReadonlyPassword("readonly_pass");
-
+        when(dataTableMapper.selectBatchIds(any())).thenReturn(Collections.singletonList(table));
         when(dataTableMapper.selectList(any())).thenReturn(Collections.singletonList(table));
         when(dataFieldMapper.selectList(any())).thenReturn(Collections.singletonList(field));
         when(dorisClusterMapper.selectById(12L)).thenReturn(cluster);
-        when(dorisDbUserMapper.selectList(any())).thenReturn(Collections.singletonList(readonlyUser));
         when(agentJdbcExecutor.fetchTableDdl(any(), any(), any(), anyInt())).thenReturn("CREATE TABLE ads_sales_di (...)");
 
         AgentTableDdlResponse response = backendAgentMetadataService.ddl("doris_ods", "ads_sales_di", null);

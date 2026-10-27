@@ -1,6 +1,7 @@
 package com.onedata.portal.service;
 
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
@@ -11,12 +12,15 @@ import com.onedata.portal.mapper.DataTableMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.mapper.TableStatisticsHistoryMapper;
 import com.onedata.portal.mapper.TableTaskRelationMapper;
+import com.onedata.portal.service.DatasourceAdapterFixtures;
+import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.sql.Timestamp;
@@ -65,11 +69,17 @@ class DorisMetadataSyncServiceTest {
     @Mock
     private TableMetadataVersionService tableMetadataVersionService;
 
+    @Spy
+    private DatasourceAdapterRegistry adapterRegistry =
+            DatasourceAdapterFixtures.registry(new DorisJdbcProperties());
+
     @InjectMocks
     private DorisMetadataSyncService service;
 
     @BeforeEach
     void setUp() {
+        lenient().when(dorisConnectionService.withSystemAccount(any()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<?>) invocation.getArgument(0)).get());
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);
         cluster.setSourceType("DORIS");

@@ -1,3 +1,4 @@
+import { dorisClusterApi } from '@/api/doris'
 import { reactive } from 'vue'
 import { tableApi } from '@/api/table'
 import { lineageApi } from '@/api/lineage'
@@ -157,7 +158,11 @@ export function useStudioTabs({
     }
     const resolvedSourceType = String(payload.sourceType || getDatasourceById(sourceId)?.sourceType || '').toUpperCase()
     const resolvedDb = payload.dbName || payload.databaseName || payload.database || dbFallback || ''
-    payload = { ...payload, dbName: resolvedDb, sourceId, sourceType: resolvedSourceType }
+    payload = { ...payload, dbName: resolvedDb, sourceId, sourceType: resolvedSourceType,
+      typeDefinition: payload.typeDefinition || getDatasourceById(sourceId)?.typeDefinition }
+    if (!payload.defaultQuery && sourceId && resolvedDb && payload.tableName) {
+      payload.defaultQuery = await dorisClusterApi.defaultQuery(sourceId, resolvedDb, payload.tableName)
+    }
     const key = getTableKey(payload, resolvedDb, sourceId)
     if (!key) return
 
@@ -225,7 +230,12 @@ export function useStudioTabs({
     if (!state?.table) return
     if (state.dataLoading || state.dataLoaded) return
 
+    state.table.typeDefinition = getDatasourceById(state.table.sourceId || clusterId.value)?.typeDefinition || state.table.typeDefinition
     state.dataLoading = true
+    if (!state.table.defaultQuery && state.table.sourceId && state.table.dbName && state.table.tableName) {
+      try { state.table.defaultQuery = await dorisClusterApi.defaultQuery(state.table.sourceId, state.table.dbName, state.table.tableName) }
+      catch (error) { state.defaultQueryError = error.message || '默认 SQL 加载失败' }
+    }
     if (!state.table.id && state.table.dbName && state.table.tableName) {
       try {
         const sourceId = state.table.sourceId || clusterId.value

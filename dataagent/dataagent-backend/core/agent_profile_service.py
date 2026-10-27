@@ -12,7 +12,6 @@ import pymysql
 from config import get_settings
 from core.mcp_admin_service import available_mcp_servers as list_available_mcp_servers
 from core.agent_visibility import normalize_agent_visibility
-from core.data_scope import normalize_data_scope
 from core.interaction_policy import PLAN_TIMEOUT_ACTIONS, normalize_plan_timeout_action
 
 DEFAULT_AGENT_ID = "agent_default"
@@ -226,7 +225,6 @@ def normalize_agent_profile_payload(
         data.get("plan_timeout_action", base.get("plan_timeout_action") or "park")
     )
     env_vars = _validate_env_vars(data.get("env_vars", base.get("env_vars") or {}))
-    data_scope = normalize_data_scope(data.get("data_scope", base.get("data_scope") or {}))
     visibility = normalize_agent_visibility(
         data.get("visibility", base.get("visibility") or {}), strict=True
     )
@@ -243,7 +241,6 @@ def normalize_agent_profile_payload(
         "max_turns": max_turns,
         "plan_timeout_action": plan_timeout_action,
         "env_vars": env_vars,
-        "data_scope": data_scope,
         "visibility": visibility,
         "preset_questions": preset_questions,
     }
@@ -261,7 +258,6 @@ def build_agent_snapshot(profile: dict[str, Any]) -> dict[str, Any]:
         "max_turns": int(profile.get("max_turns") or 0),
         "plan_timeout_action": normalize_plan_timeout_action(profile.get("plan_timeout_action")),
         "env_vars": _validate_env_vars(profile.get("env_vars") or {}),
-        "data_scope": normalize_data_scope(profile.get("data_scope") or {}),
         "is_default": bool(profile.get("is_default")),
         "is_builtin": bool(profile.get("is_builtin")),
     }
@@ -307,7 +303,6 @@ def default_agent_payload() -> dict[str, Any]:
         ],
         "max_turns": 0,
         "env_vars": {},
-        "data_scope": {"allowed_scopes": []},
         "is_default": True,
         "is_builtin": True,
     }
@@ -335,7 +330,6 @@ def opendataworks_agent_payload() -> dict[str, Any]:
         ],
         "max_turns": 0,
         "env_vars": {},
-        "data_scope": {"allowed_scopes": []},
         "is_default": False,
         "is_builtin": True,
     }
@@ -352,7 +346,6 @@ def ontology_modeling_agent_payload() -> dict[str, Any]:
         "skill_folders": ["ontology-modeling-assistant"],
         "max_turns": 0,
         "env_vars": {},
-        "data_scope": {"allowed_scopes": []},
         "preset_questions": [
             "帮我根据上传文档和候选表创建一个业务域本体 Skill",
             "把这些业务术语、表字段和指标口径整理成本体 JSON",
@@ -414,7 +407,6 @@ class AgentProfileStore:
             "max_turns": int(row.get("max_turns") or 0),
             "plan_timeout_action": normalize_plan_timeout_action(row.get("plan_timeout_action")),
             "env_vars": _validate_env_vars(_safe_json_load(row.get("env_vars_json"), {})),
-            "data_scope": normalize_data_scope(_safe_json_load(row.get("data_scope_json"), {})),
             "visibility": normalize_agent_visibility(_safe_json_load(row.get("visibility_json"), {})),
             "preset_questions": _validate_preset_questions(_safe_json_load(row.get("preset_questions_json"), [])),
             "is_default": bool(row.get("is_default")),
@@ -433,7 +425,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, plan_timeout_action, env_vars_json, data_scope_json, visibility_json,
+                           max_turns, plan_timeout_action, env_vars_json, visibility_json,
                            preset_questions_json,
                            is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
@@ -454,7 +446,7 @@ class AgentProfileStore:
                     """
                     SELECT agent_id, name, description, system_prompt,
                            allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                           max_turns, plan_timeout_action, env_vars_json, data_scope_json, visibility_json,
+                           max_turns, plan_timeout_action, env_vars_json, visibility_json,
                            preset_questions_json,
                            is_default, is_builtin, created_at, updated_at
                     FROM da_agent_profile
@@ -480,10 +472,10 @@ class AgentProfileStore:
             INSERT INTO da_agent_profile (
                 agent_id, name, description, system_prompt,
                 allowed_tools_json, mcp_server_ids_json, skill_folders_json,
-                max_turns, plan_timeout_action, env_vars_json, data_scope_json, visibility_json,
+                max_turns, plan_timeout_action, env_vars_json, visibility_json,
                 preset_questions_json,
                 is_default, is_builtin
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON DUPLICATE KEY UPDATE
                 name = VALUES(name),
                 description = VALUES(description),
@@ -494,7 +486,6 @@ class AgentProfileStore:
                 max_turns = VALUES(max_turns),
                 plan_timeout_action = VALUES(plan_timeout_action),
                 env_vars_json = VALUES(env_vars_json),
-                data_scope_json = VALUES(data_scope_json),
                 visibility_json = VALUES(visibility_json),
                 preset_questions_json = VALUES(preset_questions_json),
                 is_default = VALUES(is_default),
@@ -512,7 +503,6 @@ class AgentProfileStore:
                 int(profile.get("max_turns") or 0),
                 normalize_plan_timeout_action(profile.get("plan_timeout_action")),
                 _json_dump(_validate_env_vars(profile.get("env_vars") or {})),
-                _json_dump(normalize_data_scope(profile.get("data_scope") or {})),
                 _json_dump(normalize_agent_visibility(profile.get("visibility") or {})),
                 _json_dump(_validate_preset_questions(profile.get("preset_questions") or [])),
                 1 if is_default else 0,
@@ -740,74 +730,3 @@ def skill_folders_from_documents(skill_documents: list[dict[str, Any]]) -> set[s
         if folder:
             folders.add(folder)
     return folders
-
-
-def list_data_scope_options() -> list[dict[str, Any]]:
-    cfg = get_settings()
-    metadata_schema = str(cfg.mysql_database or "opendataworks").strip() or "opendataworks"
-    rows: list[dict[str, Any]] = []
-    conn = pymysql.connect(
-        host=cfg.mysql_host,
-        port=cfg.mysql_port,
-        user=cfg.mysql_user,
-        password=cfg.mysql_password,
-        database=metadata_schema,
-        charset="utf8mb4",
-        cursorclass=pymysql.cursors.DictCursor,
-    )
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT
-                    dt.cluster_id,
-                    COALESCE(dc.cluster_name, '') AS cluster_name,
-                    COALESCE(NULLIF(dc.source_type, ''), 'DORIS') AS source_type,
-                    dt.db_name AS database_name
-                FROM `{metadata_schema}`.`data_table` dt
-                LEFT JOIN `{metadata_schema}`.`doris_cluster` dc
-                    ON dc.id = dt.cluster_id
-                WHERE dt.deleted = 0
-                  AND (dt.status IS NULL OR dt.status <> 'deprecated')
-                  AND dt.db_name IS NOT NULL
-                  AND dt.db_name <> ''
-                GROUP BY dt.cluster_id, dc.cluster_name, dc.source_type, dt.db_name
-                ORDER BY dc.cluster_name ASC, dt.db_name ASC
-                """
-            )
-            rows.extend(dict(item) for item in (cur.fetchall() or []))
-    finally:
-        conn.close()
-
-    platform_database = str(cfg.mysql_database or "").strip()
-    if platform_database:
-        rows.append(
-            {
-                "cluster_id": None,
-                "cluster_name": "platform-mysql",
-                "source_type": "MYSQL",
-                "database_name": platform_database,
-            }
-        )
-
-    result: list[dict[str, Any]] = []
-    seen: set[tuple[int | None, str]] = set()
-    for row in rows:
-        database = str(row.get("database_name") or row.get("database") or "").strip()
-        if not database:
-            continue
-        cluster_id = row.get("cluster_id")
-        cluster_id = int(cluster_id) if cluster_id not in (None, "") else None
-        key = (cluster_id, database)
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(
-            {
-                "cluster_id": cluster_id,
-                "cluster_name": str(row.get("cluster_name") or ""),
-                "source_type": str(row.get("source_type") or "").upper(),
-                "database": database,
-            }
-        )
-    return result

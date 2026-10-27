@@ -55,6 +55,7 @@ export function useCatalogTree({
       name: source.clusterName || source.name || `DataSource ${source.id}`,
       sourceId: String(source.id),
       sourceType: source.sourceType,
+      typeDefinition: source.typeDefinition,
       status: source.status,
       leaf: false
     }))
@@ -87,7 +88,8 @@ export function useCatalogTree({
 
     const task = (async () => {
       try {
-        await dorisClusterApi.testConnection(sourceId)
+        const connected = await dorisClusterApi.testConnection(sourceId)
+        if (connected !== true) throw new Error('连接失败')
         activatedSources[key] = true
         return true
       } catch {
@@ -193,8 +195,8 @@ export function useCatalogTree({
         activeSchema[key] = schemaStore[key][0]
       }
       return true
-    } catch {
-      ElMessage.error('加载数据库列表失败')
+    } catch (error) {
+      ElMessage.error(error.message || '加载数据库列表失败')
       return false
     } finally {
       schemaLoading[key] = false
@@ -225,6 +227,7 @@ export function useCatalogTree({
           ...item,
           sourceId: sourceKey,
           sourceType,
+          typeDefinition: getDatasourceById(sourceKey)?.typeDefinition,
           dbName: database,
           tableName,
           tableType: item.tableType || item.TABLE_TYPE || '',
@@ -259,8 +262,8 @@ export function useCatalogTree({
         refreshObjectGroupChildrenInTree(sourceId, database, 'view')
       }
       return true
-    } catch {
-      ElMessage.error('加载表列表失败')
+    } catch (error) {
+      ElMessage.error(error.message || '加载表列表失败')
       return false
     } finally {
       tableLoading[loadingKey] = false
@@ -440,10 +443,7 @@ export function useCatalogTree({
   }
 
   const getDatasourceIconUrl = (sourceType) => {
-    const type = String(sourceType || '').toUpperCase()
-    if (type === 'MYSQL') return '/datasource-icons/mysql.svg'
-    if (type === 'DORIS') return '/datasource-icons/doris.svg'
-    return ''
+    return dataSources.value.find(source => source.sourceType === sourceType)?.typeDefinition?.iconUrl || ''
   }
 
   const buildTableNode = (table, sourceId, schemaName) => {

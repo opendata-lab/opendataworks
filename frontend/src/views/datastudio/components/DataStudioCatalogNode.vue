@@ -47,8 +47,8 @@
       <span v-else class="node-name">{{ data.name }}</span>
 
       <div v-if="data.type === 'datasource'" class="node-right">
-        <el-tag size="small" class="source-type" :type="data.sourceType === 'MYSQL' ? 'success' : 'warning'">
-          {{ data.sourceType || 'DORIS' }}
+        <el-tag size="small" class="source-type" type="info">
+          {{ data.typeDefinition?.label || data.sourceType || '未知类型' }}
         </el-tag>
         <el-tooltip content="刷新数据源" placement="top">
           <el-icon
@@ -138,7 +138,7 @@ const {
   getDownstreamCount,
 } = ctx
 const getNodeTitle = (data) => {
-  if (data.type === 'datasource') return `数据源连接：${data.name}（${data.sourceType || 'DORIS'}）`
+  if (data.type === 'datasource') return `数据源连接：${data.name}（${data.typeDefinition?.label || data.sourceType || '未知类型'}）`
   if (data.type !== 'table') return data.name
   const table = data.table
   return [

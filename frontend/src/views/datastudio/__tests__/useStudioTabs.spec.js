@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { reactive, ref } from 'vue'
 
+vi.mock('@/api/doris', () => ({ dorisClusterApi: { defaultQuery: vi.fn().mockResolvedValue('SELECT generated_by_backend') } }))
+
 vi.mock('@/api/table', () => ({
   tableApi: {
     getById: vi.fn(),

@@ -9,11 +9,11 @@
     </div>
 
     <el-alert
-      v-if="cluster?.sourceType && String(cluster.sourceType).toUpperCase() !== 'DORIS'"
+      v-if="backupBlockedReason"
       type="warning"
       :closable="false"
       show-icon
-      title="当前数据源不是 DORIS，暂不支持 schema 快照备份"
+      :title="backupBlockedReason"
       style="margin-bottom: 12px"
     />
 
@@ -23,7 +23,7 @@
       border
       size="small"
       style="width: 100%"
-      :empty-text="cluster?.sourceType === 'DORIS' ? '暂无 schema 或请刷新后重试' : '仅 DORIS 数据源支持备份管理'"
+      :empty-text="backupBlockedReason || '暂无 schema 或请刷新后重试'"
     >
       <el-table-column prop="schemaName" label="Schema" min-width="180" />
 
@@ -197,7 +197,8 @@
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
+import { capabilityReason } from '@/utils/datasourceTypes'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { dorisClusterApi } from '@/api/doris'
@@ -209,6 +210,8 @@ const props = defineProps({
     required: true
   }
 })
+
+const backupBlockedReason = computed(() => capabilityReason(props.cluster?.typeDefinition, 'backup'))
 
 const loading = ref(false)
 const schemaBackups = ref([])
@@ -272,7 +275,7 @@ const formatBucketPath = row => {
 
 const loadSchemaBackups = async () => {
   if (!props.cluster?.id) return
-  if (String(props.cluster?.sourceType || '').toUpperCase() !== 'DORIS') {
+  if (backupBlockedReason.value) {
     schemaBackups.value = []
     return
   }

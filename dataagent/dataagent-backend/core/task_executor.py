@@ -116,6 +116,7 @@ class TaskExecutionInput:
     sql_write_timeout_seconds: int | None = None
     execution_mode: str = "background"
     agent_snapshot: dict[str, Any] | None = None
+    auth_user_id: str = ""
     permission_mode: str | None = None
     # Internal control-plane -> child contract, not a public request override.
     runtime_limits: dict[str, int] | None = None
@@ -1081,7 +1082,7 @@ async def _execute_task_stream_via_pi_runtime(
     )
 
 
-async def _execute_task_stream_local(
+async def _execute_task_stream_local_impl(
     params: TaskExecutionInput,
     *,
     emit: Callable[[dict[str, Any]], Awaitable[None] | None],
@@ -1136,7 +1137,9 @@ async def _execute_task_stream_local(
     )
     runtime_env = _build_runtime_env(cfg, env_payload, params, skill_runtime)
     for key, value in runtime_env.items():
-        os.environ[key] = value
+        if not key.startswith(("ODW_", "PORTAL_MCP_", "DATAAGENT_PORTAL_MCP_",
+                               "AGENT_API_", "MYSQL_", "SESSION_MYSQL_", "DORIS_")):
+            os.environ[key] = value
 
     enabled_folders = skill_runtime.get("enabled_folders") or []
     workspace_dir = str(prepared_workspace_dir or "").strip()
@@ -1511,3 +1514,24 @@ async def _execute_task_stream_local(
         bool(result.session_id),
     )
     return result
+
+
+async def _execute_task_stream_local(
+    params: TaskExecutionInput,
+    *,
+    emit: Callable[[dict[str, Any]], Awaitable[None] | None],
+    is_cancel_requested: Callable[[], Awaitable[Any] | Any] | None = None,
+    prepared_workspace_dir: str | Path | None = None,
+) -> TaskExecutionResult:
+    from core.agent_identity import _identity, set_execution_identity
+    from core.tool_http_channel import ToolHttpChannel
+    # 沙箱子进程也直接调用此入口，身份与工具通道必须在执行进程内创建。
+    token = set_execution_identity(params)
+    try:
+        with ToolHttpChannel():
+            return await _execute_task_stream_local_impl(
+                params, emit=emit, is_cancel_requested=is_cancel_requested,
+                prepared_workspace_dir=prepared_workspace_dir,
+            )
+    finally:
+        _identity.reset(token)

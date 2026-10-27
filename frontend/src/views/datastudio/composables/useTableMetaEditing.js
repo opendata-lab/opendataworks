@@ -15,7 +15,7 @@ export function useTableMetaEditing({
   tableRefs,
   tableStore,
   getTableKey,
-  isDorisTable,
+  hasEngineProperties,
   getTableSourceType,
   isAggregateTable,
   warnPlatformMetadataMissing,
@@ -62,7 +62,7 @@ export function useTableMetaEditing({
   }
 
   const ensureClusterSelected = (table) => {
-    if (isDorisTable(table) && !getObjectSourceId(table, clusterId.value)) {
+    if (hasEngineProperties(table) && !getObjectSourceId(table, clusterId.value)) {
       ElMessage.warning('请选择 Doris 集群')
       return false
     }
@@ -319,7 +319,7 @@ export function useTableMetaEditing({
         return
       }
     }
-    if (isDorisTable(state.table)) {
+    if (state.table?.typeDefinition && !state.table.typeDefinition.capabilities?.newPrimaryKeyEdit?.supported) {
       const primaryChanged = updateList.some((row) => {
         const original = originalMap.get(row.id)
         return Number(row.isPrimary ?? 0) !== Number(original?.isPrimary ?? 0)

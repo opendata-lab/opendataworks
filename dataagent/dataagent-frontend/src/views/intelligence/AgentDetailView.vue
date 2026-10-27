@@ -257,31 +257,7 @@
               <details class="config-section advanced-details">
                 <summary>
                   <h3><Icon name="database" />数据与权限</h3>
-                  <span class="detail-value"
-                    >{{
-                      scopeSelection.length
-                        ? `${scopeSelection.length} 个 Schema`
-                        : "默认范围"
-                    }}<Icon name="chevron" class="small"
-                  /></span>
                 </summary>
-                <label class="field-label" for="data-scope">数据范围</label
-                ><el-select
-                  id="data-scope"
-                  v-model="scopeSelection"
-                  multiple
-                  filterable
-                  collapse-tags
-                  collapse-tags-tooltip
-                  :disabled="!canManage || publishing"
-                  placeholder="默认数据范围"
-                  style="width: 100%"
-                  ><el-option
-                    v-for="(scope, key) in scopeOptionByKey"
-                    :key="key"
-                    :value="key"
-                    :label="scopeLabel(scope)"
-                /></el-select>
                 <template v-if="canManage"
                   ><label class="field-label" for="visibility">可见范围</label
                   ><select id="visibility" v-model="form.visibility.mode">
@@ -625,7 +601,6 @@ const form = reactive({
   max_turns: 0,
   plan_timeout_action: "park",
   env_vars: {},
-  data_scope: { allowed_scopes: [] },
   visibility: { mode: "all", allowed_users: [], allowed_groups: [] },
   preset_questions: ["", "", ""],
   is_default: false,
@@ -639,8 +614,6 @@ const draft = reactive({
 });
 const builtinPrompt = ref(""),
   envVarsText = ref("{}"),
-  dataScopeOptions = ref([]),
-  scopeSelection = ref([]),
   baseline = ref("");
 const capabilities = reactive({ tools: [], skills: [], mcp_servers: [] });
 const activeResourcePicker = ref("");
@@ -682,24 +655,10 @@ const visibilityLabel = computed(
       form.visibility.mode
     ],
 );
-const scopeKey = (scope) =>
-  `${scope?.cluster_id ?? "platform"}::${scope?.database || ""}`;
-const scopeLabel = (scope) =>
-  `${scope.cluster_name || (scope.cluster_id == null ? "platform-mysql" : `cluster_id=${scope.cluster_id}`)} / ${scope.source_type || "-"} / ${scope.database}`;
-const scopeOptionByKey = computed(() => {
-  const options = Object.fromEntries(
-    dataScopeOptions.value.map((scope) => [scopeKey(scope), scope]),
-  );
-  for (const scope of form.data_scope?.allowed_scopes || []) {
-    options[scopeKey(scope)] ||= scope;
-  }
-  return options;
-});
 const editorState = () =>
   JSON.stringify({
     form,
     env: envVarsText.value,
-    scopes: scopeSelection.value,
   });
 const dirty = computed(
   () => !!baseline.value && editorState() !== baseline.value,
@@ -801,7 +760,6 @@ function applyAgent(agent) {
     },
     env_vars: agent.env_vars || {},
     plan_timeout_action: agent.plan_timeout_action || "park",
-    data_scope: agent.data_scope || { allowed_scopes: [] },
     preset_questions: [
       agent.preset_questions?.[0] || "",
       agent.preset_questions?.[1] || "",
@@ -820,7 +778,6 @@ function applyAgent(agent) {
   ])
     delete form[key];
   envVarsText.value = JSON.stringify(form.env_vars, null, 2);
-  scopeSelection.value = (form.data_scope.allowed_scopes || []).map(scopeKey);
   syncDraft(agent);
   baseline.value = editorState();
 }
@@ -854,16 +811,6 @@ function buildPayload() {
     max_turns: Number(form.max_turns || 0),
     plan_timeout_action: form.plan_timeout_action || "park",
     env_vars: env,
-    data_scope: {
-      allowed_scopes: scopeSelection.value
-        .map((k) => scopeOptionByKey.value[k])
-        .filter(Boolean)
-        .map((s) => ({
-          cluster_id: s.cluster_id ?? null,
-          source_type: s.source_type || "",
-          database: s.database || "",
-        })),
-    },
     visibility: {
       ...form.visibility,
       allowed_users: form.visibility.allowed_users
@@ -915,19 +862,17 @@ async function loadDetail() {
       ...(canManage.value
         ? [
             dataagentApi.getAgentCapabilities(),
-            dataagentApi.listDataScopeOptions(),
             api.runtimeApi.getConfig(),
           ]
         : []),
     ]);
     if (generation !== loadGeneration) return;
-    const [agent, prompt, caps, scopes, runtime] = results;
+    const [agent, prompt, caps, runtime] = results;
     builtinPrompt.value = prompt.content;
     if (canManage.value) {
       Object.assign(capabilities, caps);
-      dataScopeOptions.value = scopes;
       runtimeConfig.value = runtime;
-    } else dataScopeOptions.value = agent.data_scope?.allowed_scopes || [];
+    }
     applyAgent(agent);
     if (canManage.value && agent.preview_topic_id) {
       previewRevision.value = agent.revision;
