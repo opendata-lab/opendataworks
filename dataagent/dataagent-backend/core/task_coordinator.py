@@ -199,6 +199,7 @@ class TaskCoordinator:
                         sql_read_timeout_seconds=int(task.get("sql_read_timeout_seconds") or 0),
                         sql_write_timeout_seconds=int(task.get("sql_write_timeout_seconds") or 0),
                         agent_snapshot=task.get("agent_snapshot"),
+                        auth_user_id=str((self.store.get_topic(topic_id) or {}).get("auth_user_id") or ""),
                         # Deliberately read the topic's current permission mode at
                         # execution time (latest-mode-wins), not a submission-time
                         # snapshot: a single-user topic should honor the user's most

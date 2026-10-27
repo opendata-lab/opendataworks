@@ -1,6 +1,6 @@
 """助手可见范围：归一化与后端强制判定。
 
-可见性存储在 ``da_agent_profile.visibility_json``，结构与 ``data_scope_json``
+可见性存储在 ``da_agent_profile.visibility_json``
 一样走"归一化 JSON 列"模式：
 
     {"mode": "all|authenticated|selected", "allowed_users": [...], "allowed_groups": []}

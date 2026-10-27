@@ -40,9 +40,9 @@
       "entity": "Doris 数据源",
       "tables": [
         "doris_cluster",
-        "doris_database_users"
+        "datasource_subject_account"
       ],
-      "description": "记录 Doris/MySQL 数据源元信息以及数据库级只读/读写账号。"
+      "description": "记录数据源及主体账号映射；智能体账号由 DBA 授予只读权限。"
     }
   ],
   "object_types": [
@@ -1160,51 +1160,48 @@
     },
     {
       "id": "platform_database_user",
-      "name": "数据库级账号配置",
-      "description": "数据库级只读/读写账号配置，只用于平台路由和权限，不应在回答中暴露密码。",
+      "name": "主体数据库账号映射",
+      "description": "人或智能体在数据源上的账号映射，权限由数据库 GRANT 决定。",
       "aliases": [
         "只读账号",
         "读写账号",
         "数据库账号"
       ],
       "identity_keys": [
-        "cluster_id",
-        "database_name"
+        "source_id",
+        "subject_type",
+        "subject_id"
       ],
       "physical_sources": [
         {
-          "table": "opendataworks.doris_database_users",
+          "table": "opendataworks.datasource_subject_account",
           "role": "primary"
         }
       ],
       "properties": [
         {
           "column": "id",
-          "meaning": "账号配置 ID。"
+          "meaning": "映射 ID。"
         },
         {
-          "column": "cluster_id",
+          "column": "source_id",
           "meaning": "数据源 ID。"
         },
         {
-          "column": "database_name",
-          "meaning": "数据库名。"
+          "column": "subject_type",
+          "meaning": "USER 或 AGENT。"
         },
         {
-          "column": "readonly_username",
-          "meaning": "只读用户名，回答时不要暴露。"
+          "column": "subject_id",
+          "meaning": "平台用户 ID 或智能体 ID。"
         },
         {
-          "column": "readonly_password",
-          "meaning": "只读用户密码，禁止暴露。"
+          "column": "username",
+          "meaning": "数据库用户名。"
         },
         {
-          "column": "readwrite_username",
-          "meaning": "读写用户名，回答时不要暴露。"
-        },
-        {
-          "column": "readwrite_password",
-          "meaning": "读写用户密码，禁止暴露。"
+          "column": "password",
+          "meaning": "数据库密码，禁止读取或展示。"
         }
       ]
     }
@@ -1514,7 +1511,7 @@
     },
     {
       "id": "sensitive_datasource_fields",
-      "description": "doris_cluster.password、doris_database_users.readonly_password、doris_database_users.readwrite_password 等敏感字段只用于平台内部路由，不应在回答中展示。"
+      "description": "doris_cluster.password、datasource_subject_account.password 等敏感字段只用于平台内部路由，不应在回答中展示。"
     }
   ]
 }

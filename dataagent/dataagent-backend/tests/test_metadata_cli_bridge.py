@@ -158,29 +158,6 @@ def test_query_readonly_uses_backend_cli(monkeypatch):
     assert result["duration_ms"] == 12
 
 
-def test_call_metadata_cli_exports_runtime_data_scope_header(monkeypatch):
-    runtime = _load_runtime_module()
-    _bind_existing_cli(monkeypatch, runtime)
-    captured = {}
-    monkeypatch.setenv(
-        "DATAAGENT_DATA_SCOPE_JSON",
-        '{"allowed_scopes":[{"cluster_id":3,"source_type":"DORIS","database":"ads_user"}]}',
-    )
-    monkeypatch.delenv("ODW_AGENT_DATA_SCOPE_HEADER", raising=False)
-
-    def fake_run(command, check, capture_output, text, env=None):
-        captured["scope_header"] = (env or {}).get("ODW_AGENT_DATA_SCOPE_HEADER")
-        return SimpleNamespace(returncode=0, stdout='{"kind":"ok"}', stderr="")
-
-    monkeypatch.setattr(runtime.subprocess, "run", fake_run)
-
-    runtime.call_metadata_cli("query-readonly", database="ads_user", sql="SELECT 1")
-
-    assert (
-        captured["scope_header"]
-        == "eyJhbGxvd2VkX3Njb3BlcyI6W3siY2x1c3Rlcl9pZCI6MywiZGF0YWJhc2UiOiJhZHNfdXNlciIsInNvdXJjZV90eXBlIjoiRE9SSVMifV19"
-    )
-    assert os.environ.get("ODW_AGENT_DATA_SCOPE_HEADER") is None
 
 
 def test_call_metadata_cli_rejects_invalid_json(monkeypatch):

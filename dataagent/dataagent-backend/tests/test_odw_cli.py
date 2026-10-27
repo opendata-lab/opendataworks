@@ -199,29 +199,6 @@ def test_odw_cli_query_readonly_omits_for_export_when_not_requested(tmp_path: Pa
     assert "for_export" not in payload
 
 
-def test_odw_cli_query_readonly_forwards_agent_data_scope_header(tmp_path: Path):
-    env = _base_env(tmp_path, "http://backend:8080/api/v1/ai")
-    env["ODW_AGENT_DATA_SCOPE_HEADER"] = "encoded-scope"
-
-    completed = subprocess.run(
-        [
-            "sh",
-            str(ODW_CLI),
-            "query-readonly",
-            "--database",
-            "ads_user",
-            "--sql",
-            "SELECT 1",
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        env=env,
-    )
-
-    assert completed.returncode == 0
-    args = (tmp_path / "curl-args.txt").read_text(encoding="utf-8").splitlines()
-    assert "X-Agent-Data-Scope: encoded-scope" in args
 
 
 def test_odw_cli_ddl_uses_metadata_ddl_endpoint(tmp_path: Path):

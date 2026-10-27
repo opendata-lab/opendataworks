@@ -10,7 +10,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from config import get_settings
-from core.data_scope import encode_scope_header
+from core.agent_identity import current_headers
 from core.pi_runtime import resolve_mcp_probe_command
 from core.runtime_registry_store import get_runtime_registry_store
 
@@ -388,9 +388,7 @@ def resolve_runtime_mcp_servers(
             continue
         headers = dict(row.get("headers") or {})
         if server_id == PORTAL_MCP_SERVER_ID and agent_snapshot is not None:
-            scope_header = encode_scope_header((agent_snapshot or {}).get("data_scope") or {})
-            if scope_header:
-                headers["X-Agent-Data-Scope"] = scope_header
+            headers.update(current_headers())
         url = str(row.get("url") or "")
         if server_id == PORTAL_MCP_SERVER_ID:
             url = url.rstrip("/") + "/"

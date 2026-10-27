@@ -34,7 +34,7 @@
 
 | type | 说明 |
 |---|---|
-| `sql` | 执行模板化只读 SQL。通过 `opendataworks-platform-tools` 的 `run_sql.py` 走后端只读查询链路，继承其只读校验、数据范围校验与失败归因。 |
+| `sql` | 执行模板化只读 SQL。通过 `opendataworks-platform-tools` 的 `run_sql.py` 走后端只读查询链路，继承其只读校验、数据库账号权限校验与失败归因。 |
 
 字段：`database`（必填）、`sql`（必填）、`engine`（`mysql`/`doris`，可选）、
 `predicates`（谓词片段声明，可选）、`limit`（可选，默认取 `DATAAGENT_QUERY_LIMIT`）。
@@ -103,7 +103,7 @@
 | `{{! expr }}` | 标识符片段 | 原样拼接，因此只接受合法标识符（列名、别名），或参数 `values` 枚举中的取值。其余一律拒绝。 |
 | `{{? name }}` | 谓词片段 | 引用本节点 `predicates` 里的同名谓词。 |
 
-绑定后的 SQL 仍然会经过 `run_sql.py` 的只读校验和后端数据范围校验。这几层是纵深防御，
+绑定后的 SQL 仍然会经过 `run_sql.py` 的只读校验和后端的数据库账号权限校验。这几层是纵深防御，
 任何一层都不替代另一层。
 
 ## 谓词 DSL

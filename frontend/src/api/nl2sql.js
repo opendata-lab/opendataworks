@@ -8,11 +8,8 @@ import axios from 'axios'
 //   套用会把正常响应误判为失败。
 // - 这里直接返回 response.data，HTTP 错误原样抛给调用方处理。
 //
-// 请求来源语义：不携带 `X-ODW-Client` 头 → 后端按 portal（匿名）来源处理，无需站点白名单。
-// 注意 agent_id 不能省略：省略时后端回落到 DEFAULT_AGENT_ID，若该助手的可见范围是
-// authenticated/selected，匿名调用会被 `agent_visible_to` 拦下并返回 400 "agent not found"。
-// 因此需先取 /dataagent/agents 目录——它对匿名调用用同一套可见性过滤，
-// 返回的即是建话题时会被接受的助手集合。
+// 两端沿用 DataAgent 登录会话；数据库调用由后端填写可信用户与智能体身份。
+// 没有已验证的 DataAgent 登录会话时，数据库访问明确拒绝。
 //
 // baseURL 取 /api/v1，覆盖 /nl2sql/* 与 /dataagent/*：两者在 vite 代理与 nginx 中
 // 都有独立 location 指向 dataagent-backend:8900，不会落到 Java 后端的 /api 规则。

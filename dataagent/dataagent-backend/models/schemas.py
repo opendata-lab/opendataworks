@@ -104,8 +104,6 @@ class CreateTaskRequest(BaseModel):
     database: Optional[str] = None
     execution_mode: Optional[str] = None
     source_queue_id: Optional[str] = None
-    source_schedule_id: Optional[str] = None
-    source_schedule_log_id: Optional[str] = None
 
 
 class ExecuteQueryRequest(BaseModel):
@@ -547,7 +545,6 @@ class AgentProfileBase(BaseModel):
     skill_folders: Optional[List[str]] = None
     max_turns: Optional[int] = None
     env_vars: Optional[Dict[str, str]] = None
-    data_scope: Optional[Dict[str, Any]] = None
     visibility: Optional[Dict[str, Any]] = None
     preset_questions: Optional[List[str]] = None
 
@@ -590,13 +587,6 @@ class AgentCapabilitiesResponse(BaseModel):
     skills: List[AgentSkillCapability] = Field(default_factory=list)
 
 
-class AgentDataScopeOption(BaseModel):
-    cluster_id: Optional[int] = None
-    cluster_name: str = ""
-    source_type: str = ""
-    database: str = ""
-
-
 class AgentProfile(BaseModel):
     agent_id: str
     name: str
@@ -607,7 +597,6 @@ class AgentProfile(BaseModel):
     skill_folders: List[str] = Field(default_factory=list)
     max_turns: int = 0
     env_vars: Dict[str, str] = Field(default_factory=dict)
-    data_scope: Dict[str, Any] = Field(default_factory=lambda: {"allowed_scopes": []})
     visibility: Dict[str, Any] = Field(
         default_factory=lambda: {"mode": "all", "allowed_users": [], "allowed_groups": []}
     )
@@ -629,7 +618,6 @@ class AgentReadableProfile(BaseModel):
     mcp_server_ids: List[str] = Field(default_factory=list)
     skill_folders: List[str] = Field(default_factory=list)
     max_turns: int = 0
-    data_scope: Dict[str, Any] = Field(default_factory=lambda: {"allowed_scopes": []})
     visibility_mode: str = "all"
     preset_questions: List[str] = Field(default_factory=list)
     is_default: bool = False

@@ -49,7 +49,7 @@ OpenDataWorks Platform Tools Skill。平台工具 Skill。
 9. 不暴露数据源账号密码或直连数据库细节。
 10. 首个足够平台结果或不可重试失败归因出现后就停止。
 11. 大结果或要落盘的场景，必须用导出脚本 `export_query.py`，让全量数据写工作区文件、只把路径与预览回给模型；不要用 `portal_query_readonly` 或 `run_sql.py` 把全量结果拉进上下文（会被结果字节守卫截断，且可能撑爆运行时缓冲）。
-12. 表、库、字段、结构的**发现**一律走元数据/DDL 工具（`inspect_metadata.py`、`get_table_ddl.py`，或 portal MCP 的元数据/DDL 工具），不要用 `SHOW TABLES` / `SHOW DATABASES` / `SHOW COLUMNS` 或查询 `information_schema`、`performance_schema`、`mysql`、`sys` 等系统库走只读 SQL 执行通道。数据范围生效时这类 SQL 会被后端拒绝（`Finding tables from ShowTablesStatement is not supported`、`数据范围限制: SQL 引用了未授权 schema`），属于**不可重试**的用错工具：看到这两类报错就改用元数据/DDL 工具，不要换库、换表或重复重试同类 SQL。
+12. 表、库、字段、结构的**发现**一律走元数据/DDL 工具（`inspect_metadata.py`、`get_table_ddl.py`，或 portal MCP 的元数据/DDL 工具），不要用系统库扫描代替发现工具。元数据按当前用户和智能体的数据库账号可见对象取交集；查询由人的账号 EXPLAIN 后，用智能体账号只读执行。缺映射或无权限应说明原因，不要换身份或反复重试。
 
 ## 读取顺序
 

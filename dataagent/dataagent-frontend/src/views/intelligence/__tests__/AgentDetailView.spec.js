@@ -10,7 +10,6 @@ const dataagentApi = vi.hoisted(() =>
       'getAgentDraft',
       'getAgentBuiltinPrompt',
       'getAgentCapabilities',
-      'listDataScopeOptions',
       'listAuthUsers',
       'updateAgent',
       'publishAgent',
@@ -50,11 +49,7 @@ const profile = {
   skill_folders: ['marketing-insights'],
   max_turns: 12,
   env_vars: { SAFE_FLAG: '1' },
-  data_scope: {
-    allowed_scopes: [
-      { cluster_id: 3, source_type: 'DORIS', database: 'ads_user' },
-    ],
-  },
+
   visibility: {
     mode: 'selected',
     allowed_users: ['local:alice'],
@@ -102,7 +97,6 @@ beforeEach(() => {
     skills: [{ folder: 'marketing-insights', enabled: true }],
     mcp_servers: [{ id: 'portal', name: 'Portal MCP', tool_names: [] }],
   })
-  dataagentApi.listDataScopeOptions.mockResolvedValue([])
   dataagentApi.listAuthUsers.mockResolvedValue({ items: [] })
   dataagentApi.updateAgent.mockResolvedValue({
     ...profile,
@@ -131,7 +125,7 @@ describe('agent draft workbench', () => {
     await flushPromises()
     expect(wrapper.find('.builtin-content').text()).toBe('# 真实内置提示词')
     expect(wrapper.find('#custom-prompt').element.value).toBe('只做营销分析')
-    expect(wrapper.vm.scopeSelection).toEqual(['3::ads_user'])
+    expect(wrapper.find('#data-scope').exists()).toBe(false)
     expect(wrapper.vm.canPublish).toBe(true)
     expect(wrapper.findAll('.workbench > .panel')).toHaveLength(3)
     wrapper.unmount()
@@ -164,7 +158,6 @@ describe('agent draft workbench', () => {
         expected_revision: 3,
         env_vars: { SAFE_FLAG: '1' },
         visibility: profile.visibility,
-        data_scope: profile.data_scope,
       }),
     )
     expect(dataagentApi.publishAgent).not.toHaveBeenCalled()

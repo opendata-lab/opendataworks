@@ -430,7 +430,7 @@ public class DorisMetadataSyncService {
 
         try {
             // 获取所有数据库
-            List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
+            List<String> databases = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getAllDatabases(clusterId)).stream()
                     .collect(Collectors.toList());
             log.info("Found {} databases to audit (filtered)", databases.size());
 
@@ -465,7 +465,7 @@ public class DorisMetadataSyncService {
         log.info("Auditing database: {}", database);
 
         // 获取 Doris 中的所有表
-        List<Map<String, Object>> dorisTables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+        List<Map<String, Object>> dorisTables = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTablesInDatabase(clusterId, database));
 
         // 获取本地已存在的表
         List<DataTable> localTables = dataTableMapper.selectList(
@@ -605,10 +605,10 @@ public class DorisMetadataSyncService {
 
         try {
             // 获取表的详细信息
-            Map<String, Object> tableCreateInfo = dorisConnectionService.getTableCreateInfo(clusterId, database,
-                    tableName);
-            List<Map<String, Object>> dorisColumns = dorisConnectionService.getColumnsInTable(clusterId, database,
-                    tableName);
+            Map<String, Object> tableCreateInfo = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTableCreateInfo(clusterId, database,
+                    tableName));
+            List<Map<String, Object>> dorisColumns = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getColumnsInTable(clusterId, database,
+                    tableName));
             String dorisTableType = normalizeTableType((String) dorisTable.get("tableType"));
             boolean viewType = isViewType(dorisTableType);
 
@@ -742,7 +742,7 @@ public class DorisMetadataSyncService {
 
         try {
             // 获取所有数据库
-            List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
+            List<String> databases = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getAllDatabases(clusterId)).stream()
                     .collect(Collectors.toList());
             log.info("Found {} databases to sync", databases.size());
 
@@ -777,7 +777,7 @@ public class DorisMetadataSyncService {
         log.info("Starting metadata statistics sync for cluster: {}", clusterId);
 
         try {
-            List<String> databases = dorisConnectionService.getAllDatabases(clusterId).stream()
+            List<String> databases = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getAllDatabases(clusterId)).stream()
                     .collect(Collectors.toList());
 
             for (String database : databases) {
@@ -813,7 +813,7 @@ public class DorisMetadataSyncService {
         }
 
         log.info("Syncing metadata statistics for database: {}", database);
-        List<Map<String, Object>> dorisTables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+        List<Map<String, Object>> dorisTables = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTablesInDatabase(clusterId, database));
         List<DataTable> localTables = dataTableMapper.selectList(
                 new LambdaQueryWrapper<DataTable>()
                         .eq(DataTable::getDbName, database)
@@ -850,7 +850,7 @@ public class DorisMetadataSyncService {
         log.info("Syncing metadata statistics for table: {}.{}", database, tableName);
 
         try {
-            List<Map<String, Object>> tables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+            List<Map<String, Object>> tables = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTablesInDatabase(clusterId, database));
             Map<String, Object> dorisTable = tables.stream()
                     .filter(t -> tableName.equals(t.get("tableName")))
                     .findFirst()
@@ -948,7 +948,7 @@ public class DorisMetadataSyncService {
         log.info("Syncing database: {}", database);
 
         // 获取 Doris 中的所有表
-        List<Map<String, Object>> dorisTables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+        List<Map<String, Object>> dorisTables = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTablesInDatabase(clusterId, database));
         log.info("Found {} tables in database {}", dorisTables.size(), database);
 
         // 获取本地已存在的表
@@ -1071,8 +1071,8 @@ public class DorisMetadataSyncService {
         log.info("Syncing new table: {}.{}", database, tableName);
 
         // 获取表的详细信息
-        Map<String, Object> tableCreateInfo = dorisConnectionService.getTableCreateInfo(clusterId, database, tableName);
-        List<Map<String, Object>> columns = dorisConnectionService.getColumnsInTable(clusterId, database, tableName);
+        Map<String, Object> tableCreateInfo = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTableCreateInfo(clusterId, database, tableName));
+        List<Map<String, Object>> columns = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getColumnsInTable(clusterId, database, tableName));
         String tableType = normalizeTableType((String) dorisTable.get("tableType"));
         boolean viewType = isViewType(tableType);
 
@@ -1166,8 +1166,8 @@ public class DorisMetadataSyncService {
         log.debug("Syncing existing table: {}.{}", database, tableName);
 
         // 获取表的详细信息
-        Map<String, Object> tableCreateInfo = dorisConnectionService.getTableCreateInfo(clusterId, database, tableName);
-        List<Map<String, Object>> columns = dorisConnectionService.getColumnsInTable(clusterId, database, tableName);
+        Map<String, Object> tableCreateInfo = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTableCreateInfo(clusterId, database, tableName));
+        List<Map<String, Object>> columns = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getColumnsInTable(clusterId, database, tableName));
         String tableType = normalizeTableType((String) dorisTable.get("tableType"));
         boolean viewType = isViewType(tableType);
 
@@ -1586,7 +1586,7 @@ public class DorisMetadataSyncService {
 
         try {
             // 获取 Doris 中的表信息
-            List<Map<String, Object>> tables = dorisConnectionService.getTablesInDatabase(clusterId, database);
+            List<Map<String, Object>> tables = dorisConnectionService.withSystemAccount(() -> dorisConnectionService.getTablesInDatabase(clusterId, database));
             Map<String, Object> dorisTable = tables.stream()
                     .filter(t -> tableName.equals(t.get("tableName")))
                     .findFirst()

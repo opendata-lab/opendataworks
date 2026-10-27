@@ -33,7 +33,6 @@
           <span>{{ agent.skill_folders?.length || 0 }} Skills</span>
           <span>{{ agent.allowed_tools?.length || 0 }} 工具</span>
           <span>{{ agent.mcp_server_ids?.length || 0 }} MCP</span>
-          <span>{{ agent.data_scope?.allowed_scopes?.length || 0 }} Schema</span>
         </div>
 
         <div class="agent-card-actions">
@@ -98,8 +97,7 @@ const handleCreate = async () => {
       mcp_server_ids: [],
       skill_folders: [],
       max_turns: 0,
-      env_vars: {},
-      data_scope: { allowed_scopes: [] }
+      env_vars: {}
     })
     await router.push(withAgentContext({
       name: 'IntelligentQueryAgentDetail',

@@ -30,6 +30,18 @@ public class AgentDatasourceResolution {
     @JsonIgnore
     private String password;
 
+    @JsonIgnore
+    private String checkUser;
+
+    @JsonIgnore
+    private String checkPassword;
+
+    @JsonIgnore
+    private String userId;
+
+    @JsonIgnore
+    private String agentId;
+
     @JsonProperty("source_type")
     private String sourceType;
 

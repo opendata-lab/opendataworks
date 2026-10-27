@@ -38,6 +38,12 @@ public class DataQueryHistory {
 
     private String executedBy;
 
+    private String agentId;
+
+    private String checkAccount;
+
+    private String executionAccount;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime executedAt;
 }

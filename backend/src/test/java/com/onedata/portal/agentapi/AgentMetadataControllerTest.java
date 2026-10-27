@@ -52,6 +52,7 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/inspect")
                         .header("X-Agent-Service-Token", "test-token")
+                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
                         .queryParam("database", "doris_ods"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kind").value("metadata_snapshot"))
@@ -76,6 +77,7 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/export")
                         .header("X-Agent-Service-Token", "test-token")
+                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
                         .queryParam("kind", "tables"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].db_name").value("opendataworks"));
@@ -100,6 +102,7 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/datasource/resolve")
                         .header("X-Agent-Service-Token", "test-token")
+                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
                         .queryParam("database", "doris_ods"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.database").value("doris_ods"))
@@ -123,6 +126,7 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/ddl")
                         .header("X-Agent-Service-Token", "test-token")
+                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
                         .queryParam("database", "doris_ods")
                         .queryParam("table", "ads_sales_di"))
                 .andExpect(status().isOk())

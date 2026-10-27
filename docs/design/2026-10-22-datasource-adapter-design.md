@@ -19,7 +19,7 @@
 | Java 表编辑 | `TableEngineHandler` / Registry | 已有独立编辑处理器，可复用；类型依赖枚举，不能当成基础接入门槛 |
 | Vue 3 / Element Plus | 数据源管理、Data Studio | 类型、端口、数据库必填、标识符引号、默认 SQL 和 UI 分支含硬编码 |
 | Java agent API | `AgentJdbcExecutor`、`BackendAgentMetadataService` | 独立拼接 JDBC/参考 DDL，另行维护 MySQL/Doris/PostgreSQL 映射 |
-| Python DataAgent | `core/datasource_resolver.py` | 同样有 MySQL/Doris 二选一映射，新增类型可能被误判 |
+| Python DataAgent | Java agent API / MCP | 2026-10-27 主体映射实施已删除未使用的 Python 直连 resolver/tool，执行统一走 Java 适配器 |
 | MySQL / 部署 | `doris_cluster`、Flyway、应用 JDBC 依赖 | 配置字段固定，特殊连接参数缺少明确扩展槽；驱动有 Java 版本约束 |
 
 仅抽出一个 JDBC URL 工厂无法达到目标：类型发现、元数据方言、查询页、能力控制和 agent 入口也必须消费同一份描述。

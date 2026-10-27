@@ -5,7 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentReadQueryRequest;
 import com.onedata.portal.agentapi.dto.AgentReadQueryResponse;
-import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
+import com.onedata.portal.entity.DataQueryHistory;
+import com.onedata.portal.mapper.DataQueryHistoryMapper;
+import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.JSQLParserException;
@@ -13,7 +15,6 @@ import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
 import net.sf.jsqlparser.statement.Statements;
 import net.sf.jsqlparser.statement.select.Select;
-import net.sf.jsqlparser.util.TablesNamesFinder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -47,19 +48,6 @@ public class BackendAgentQueryService implements AgentQueryService {
     private static final Set<String> READ_ONLY_PARSE_FALLBACK_KEYWORDS = new LinkedHashSet<>(
             Arrays.asList("SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN")
     );
-    private static final String SIMPLE_IDENTIFIER = "[A-Za-z0-9_]+";
-    private static final String OPTIONAL_SCHEMA = "(?:(?<schema>" + SIMPLE_IDENTIFIER + ")\\.)?" + SIMPLE_IDENTIFIER;
-
-    /**
-     * 数据范围生效且 SQL 无法解析时，唯一允许的语句形式：全部为整句匹配，只含简单标识符，
-     * 不接受注释、引号、FROM/IN 库名子句或 DESC 后接查询。有 schema 限定时取出来校验。
-     */
-    private static final List<Pattern> SCOPE_FALLBACK_FORMS = Arrays.asList(
-            Pattern.compile("(?i)SHOW\\s+(?:FULL\\s+)?TABLES(?:\\s+LIKE\\s+'[A-Za-z0-9_%]*')?"),
-            Pattern.compile("(?i)SHOW\\s+(?:FULL\\s+)?(?:COLUMNS|FIELDS)\\s+(?:FROM|IN)\\s+" + OPTIONAL_SCHEMA),
-            Pattern.compile("(?i)(?:DESC|DESCRIBE)\\s+" + OPTIONAL_SCHEMA)
-    );
-
     private static final Set<String> READ_ONLY_FALLBACK_KEYWORDS = new LinkedHashSet<>(
             Arrays.asList("SHOW", "DESC", "DESCRIBE", "EXPLAIN")
     );
@@ -67,6 +55,7 @@ public class BackendAgentQueryService implements AgentQueryService {
     private final AgentMetadataService agentMetadataService;
     private final AgentJdbcExecutor agentJdbcExecutor;
     private final ObjectMapper objectMapper;
+    private final DataQueryHistoryMapper historyMapper;
 
     /**
      * 单次只读查询返回行的字节预算。源头守卫：超预算即截断，防止单条工具结果帧
@@ -88,14 +77,11 @@ public class BackendAgentQueryService implements AgentQueryService {
         }
 
         validateReadOnlySql(sql);
-        AgentDataScopeContext.requireDatabaseNameAllowed(database);
         int limit = normalizeLimit(request.getLimit());
         int timeoutSeconds = normalizeTimeout(request.getTimeoutSeconds());
         String preferredEngine = trimToLower(request.getPreferredEngine());
 
         AgentDatasourceResolution datasource = agentMetadataService.resolveDatasource(database, preferredEngine);
-        // 标识符语义取决于引擎（PostgreSQL 未加引号的名称折叠为小写），所以在解析出数据源之后校验
-        validateSqlReferencesInScope(sql, datasource == null ? null : datasource.getEngine());
         AgentJdbcExecutor.QueryExecutionResult execution = agentJdbcExecutor.executeReadOnlyQuery(
                 datasource,
                 sql,
@@ -132,6 +118,25 @@ public class BackendAgentQueryService implements AgentQueryService {
             response.setRowCount(execution.getRowCount());
             response.setHasMore(execution.isHasMore());
         }
+        DataQueryHistory history = new DataQueryHistory();
+        history.setClusterId(datasource.getClusterId());
+        history.setClusterName(datasource.getClusterName());
+        history.setDatabaseName(database);
+        history.setSqlText(sql);
+        history.setExecutedBy(datasource.getUserId());
+        history.setAgentId(datasource.getAgentId());
+        history.setCheckAccount(datasource.getCheckUser());
+        history.setExecutionAccount(datasource.getUser());
+        history.setPreviewRowCount(response.getRowCount());
+        history.setDurationMs((long) response.getDurationMs());
+        history.setHasMore(Boolean.TRUE.equals(response.getHasMore()) ? 1 : 0);
+        history.setExecutedAt(LocalDateTime.now());
+        try {
+            history.setResultPreview(objectMapper.writeValueAsString(response.getRows()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("查询历史序列化失败", e);
+        }
+        historyMapper.insert(history);
         return response;
     }
 
@@ -194,101 +199,6 @@ public class BackendAgentQueryService implements AgentQueryService {
         }
 
         return READ_ONLY_FALLBACK_KEYWORDS.contains(detectLeadingKeyword(sql));
-    }
-
-    private void validateSqlReferencesInScope(String sql, String engine) {
-        if (!AgentDataScopeContext.isActive()) {
-            return;
-        }
-        boolean postgresql = "postgresql".equals(engine);
-        try {
-            Statement statement = CCJSqlParserUtil.parse(sql);
-            TablesNamesFinder finder = new TablesNamesFinder();
-            for (String tableName : finder.getTableList(statement)) {
-                String schema = schemaFromTableName(tableName, postgresql);
-                if (schema != null) {
-                    AgentDataScopeContext.requireSqlSchemaAllowedExactly(schema);
-                }
-            }
-        } catch (JSQLParserException | UnsupportedOperationException e) {
-            // TablesNamesFinder 对 SHOW 等非 DML 语句会抛 UnsupportedOperationException
-            // （如 "Finding tables from ShowTablesStatement is not supported"）。这类语句没有
-            // 可解析的 schema 引用，应回退到词法范围校验，而不是把内部异常当成执行失败抛出。
-            log.trace("SQL 结构化解析失败，回退到词法范围校验", e);
-            validateSqlReferencesInScopeLexically(sql, postgresql);
-        }
-    }
-
-    private void validateSqlReferencesInScopeLexically(String sql, boolean postgresql) {
-        // 数据范围生效时，无法完整解析的 SQL 不做词法猜测（逗号连接、DESC SELECT、SHOW ... FROM db、
-        // 可执行注释等都能骗过正则）。只放行下面几种结构完全固定的 MySQL/Doris 元数据语句，其余拒绝。
-        String statement = sql.trim();
-        if (statement.endsWith(";")) {
-            statement = statement.substring(0, statement.length() - 1).trim();
-        }
-        if (!postgresql) {
-            for (Pattern form : SCOPE_FALLBACK_FORMS) {
-                Matcher matcher = form.matcher(statement);
-                if (matcher.matches()) {
-                    String schema = matcher.groupCount() >= 1 ? matcher.group("schema") : null;
-                    if (schema != null) {
-                        AgentDataScopeContext.requireSqlSchemaAllowedExactly(schema);
-                    }
-                    return;
-                }
-            }
-        }
-        throw new IllegalArgumentException("数据范围限制: 无法完整解析 SQL 的表引用，请改写为可解析的标准 SELECT");
-    }
-
-    /**
-     * 解析表名的限定部分，返回目标引擎实际使用的 schema 名；没有限定时返回 {@code null}。
-     *
-     * <p>带引号的部分（反引号或双引号，支持重复引号转义）原样保留，包括其中的空白和点；
-     * PostgreSQL 未加引号的名称按其规则折叠为小写，MySQL/Doris 保持原样。
-     */
-    static String schemaFromTableName(String tableName, boolean postgresql) {
-        if (tableName == null || tableName.isEmpty()) {
-            return null;
-        }
-        String value = tableName.trim();
-        char first = value.charAt(0);
-        if (first == '`' || first == '"') {
-            StringBuilder part = new StringBuilder();
-            int i = 1;
-            while (i < value.length()) {
-                char current = value.charAt(i);
-                if (current == first) {
-                    if (i + 1 < value.length() && value.charAt(i + 1) == first) {
-                        part.append(first);
-                        i += 2;
-                        continue;
-                    }
-                    break;
-                }
-                part.append(current);
-                i++;
-            }
-            int rest = i + 1;
-            boolean qualified = rest < value.length() && value.substring(rest).trim().startsWith(".");
-            return qualified ? part.toString() : null;
-        }
-        int index = value.indexOf('.');
-        if (index <= 0) {
-            return null;
-        }
-        String schema = value.substring(0, index).trim();
-        return postgresql ? foldPostgresqlIdentifier(schema) : schema;
-    }
-
-    /** PostgreSQL 只把未加引号标识符中的 ASCII 大写字母折叠为小写，非 ASCII 字符保持原样。 */
-    static String foldPostgresqlIdentifier(String identifier) {
-        StringBuilder folded = new StringBuilder(identifier.length());
-        for (int i = 0; i < identifier.length(); i++) {
-            char current = identifier.charAt(i);
-            folded.append(current >= 'A' && current <= 'Z' ? (char) (current + ('a' - 'A')) : current);
-        }
-        return folded.toString();
     }
 
     private void validateReadOnlySqlWithLexicalFallback(String sql) {

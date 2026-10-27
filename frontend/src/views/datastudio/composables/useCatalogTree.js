@@ -195,8 +195,8 @@ export function useCatalogTree({
         activeSchema[key] = schemaStore[key][0]
       }
       return true
-    } catch {
-      ElMessage.error('加载数据库列表失败')
+    } catch (error) {
+      ElMessage.error(error.message || '加载数据库列表失败')
       return false
     } finally {
       schemaLoading[key] = false
@@ -262,8 +262,8 @@ export function useCatalogTree({
         refreshObjectGroupChildrenInTree(sourceId, database, 'view')
       }
       return true
-    } catch {
-      ElMessage.error('加载表列表失败')
+    } catch (error) {
+      ElMessage.error(error.message || '加载表列表失败')
       return false
     } finally {
       tableLoading[loadingKey] = false

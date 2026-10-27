@@ -1,6 +1,10 @@
 import request from '@/utils/request'
 
 export const dorisClusterApi = {
+  accounts(id) { return request.get(`/v1/doris-clusters/${id}/accounts`) },
+  accountUsers(id) { return request.get(`/v1/doris-clusters/${id}/accounts/users`) },
+  saveAccount(id, data) { return request.post(`/v1/doris-clusters/${id}/accounts`, data) },
+  removeAccount(id, accountId) { return request.delete(`/v1/doris-clusters/${id}/accounts/${accountId}`) },
   types() { return request.get('/v1/datasource-types') },
   defaultQuery(id, database, tableName) {
     return request.get(`/v1/doris-clusters/${id}/default-query`, { params: { database, tableName } })

@@ -663,7 +663,7 @@ def test_agent_responses_are_layered_by_authentication(monkeypatch, tmp_path):
             "allowed_tools": ["Read"],
             "mcp_server_ids": ["portal"],
             "skill_folders": ["demo"],
-            "data_scope": {"allowed_scopes": [{"database": "ads"}]},
+
             "env_vars": {"SECRET_TOKEN": "hidden"},
         }
         monkeypatch.setattr(admin_routes, "list_agent_profiles", lambda: [profile])
@@ -688,7 +688,6 @@ def test_agent_responses_are_layered_by_authentication(monkeypatch, tmp_path):
         assert readable.status_code == 200
         assert readable.json()["system_prompt"] == "internal instructions"
         assert readable.json()["mcp_server_ids"] == ["portal"]
-        assert readable.json()["data_scope"]["allowed_scopes"][0]["database"] == "ads"
         assert "env_vars" not in readable.json()
 
         # 管理员配置端点保留完整 Profile。

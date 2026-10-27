@@ -1,5 +1,7 @@
 # 数据中台权限管理系统实施计划
 
+> 历史方案：账号与范围规则已被 [2026-10-26 主体映射设计](../design/2026-10-26-dataagent-datasource-identity-design.md)替换；旧接口与范围配置已删除，不作为部署或开发依据。
+
 > Design: [数据中台权限管理系统设计](../design/2025-12-12-data-platform-rbac-design.md)
 
 **Goal:** 将现有的数据平台改造为支持用户权限管理的系统，通过规范化Doris用户方案实现细粒度的数据访问控制。

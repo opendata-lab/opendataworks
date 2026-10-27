@@ -1318,11 +1318,6 @@ const demoAgents = [
     skill_folders: ['dataagent-nl2sql'],
     max_turns: 0,
     env_vars: {},
-    data_scope: {
-      allowed_scopes: [
-        { cluster_id: DEMO_CLUSTER_ID, source_type: 'DORIS', database: DEMO_DATABASE }
-      ]
-    },
     is_default: true,
     is_builtin: true
   }

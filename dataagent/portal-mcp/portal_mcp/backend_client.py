@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
-from .scope_context import get_data_scope_header, get_operator_header
+from .identity_context import get_identity_headers, get_operator_header
 
 
 class BackendApiError(RuntimeError):
@@ -102,9 +102,7 @@ class BackendApiClient:
             "Accept": "application/json",
             self.settings.backend_token_header_name: self.settings.backend_service_token,
         }
-        data_scope = get_data_scope_header()
-        if data_scope:
-            headers["X-Agent-Data-Scope"] = data_scope
+        headers.update(get_identity_headers())
         operator = get_operator_header()
         if operator:
             headers["X-Agent-Operator"] = operator

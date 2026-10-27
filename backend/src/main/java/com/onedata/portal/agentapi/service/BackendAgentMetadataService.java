@@ -11,7 +11,6 @@ import com.onedata.portal.agentapi.dto.AgentMetadataCompleteRequest;
 import com.onedata.portal.agentapi.dto.AgentMetadataCompleteResponse;
 import com.onedata.portal.agentapi.dto.AgentTableDdlResponse;
 import com.onedata.portal.agentapi.dto.AgentTableMetadata;
-import com.onedata.portal.agentapi.scope.AgentDataScopeContext;
 import com.onedata.portal.dto.TableFreshnessRequest;
 import com.onedata.portal.entity.BusinessDomain;
 import com.onedata.portal.entity.DataDomain;
@@ -19,25 +18,21 @@ import com.onedata.portal.entity.DataField;
 import com.onedata.portal.entity.DataLineage;
 import com.onedata.portal.entity.DataTable;
 import com.onedata.portal.entity.DorisCluster;
-import com.onedata.portal.entity.DorisDbUser;
 import com.onedata.portal.mapper.BusinessDomainMapper;
 import com.onedata.portal.mapper.DataDomainMapper;
 import com.onedata.portal.mapper.DataFieldMapper;
 import com.onedata.portal.mapper.DataLineageMapper;
 import com.onedata.portal.mapper.DataTableMapper;
 import com.onedata.portal.mapper.DorisClusterMapper;
-import com.onedata.portal.mapper.DorisDbUserMapper;
 import com.onedata.portal.service.DataTableService;
 import com.onedata.portal.service.LineageService;
 import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.freshness.TableFreshnessService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -69,9 +64,8 @@ public class BackendAgentMetadataService implements AgentMetadataService {
     private final DataFieldMapper dataFieldMapper;
     private final DataLineageMapper dataLineageMapper;
     private final DorisClusterMapper dorisClusterMapper;
-    private final DorisDbUserMapper dorisDbUserMapper;
     private final LineageService lineageService;
-    private final DataSourceProperties dataSourceProperties;
+    private final AgentDatasourceAccessService datasourceAccess;
     private final AgentJdbcExecutor agentJdbcExecutor;
     private final DataTableService dataTableService;
     private final TableFreshnessService tableFreshnessService;
@@ -115,9 +109,9 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             throw new IllegalArgumentException("table 或 tableId 至少提供一个");
         }
 
-        List<DataTable> targets = filterTablesByScope(resolveLineageTargets(normalizedTable, normalizedDbName, tableId));
+        List<DataTable> targets = filterVisibleTables(resolveLineageTargets(normalizedTable, normalizedDbName, tableId));
         if (tableId != null && targets.isEmpty()) {
-            throw new IllegalArgumentException("数据范围限制: 未授权访问 tableId `" + tableId + "`");
+            throw new IllegalArgumentException("账号无权访问 tableId `" + tableId + "`");
         }
         AgentLineageResponse response = new AgentLineageResponse();
         response.setDbName(normalizedDbName);
@@ -176,35 +170,12 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             normalizedPreferredEngine = normalizedPreferredEngine.toLowerCase(Locale.ROOT);
         }
 
-        JdbcMysqlTarget platformMysql = parsePlatformMysql(dataSourceProperties.getUrl());
-        if (platformMysql != null && targetDatabase.equals(platformMysql.getDatabase())) {
-            AgentDataScopeContext.requireAllowed(null, targetDatabase);
-            ensurePreferredEngine(targetDatabase, normalizedPreferredEngine, "mysql");
-            AgentDatasourceResolution response = new AgentDatasourceResolution();
-            response.setEngine("mysql");
-            response.setDatabase(targetDatabase);
-            response.setHost(platformMysql.getHost());
-            response.setPort(platformMysql.getPort());
-            response.setUser(trimToEmpty(dataSourceProperties.getUsername()));
-            response.setPassword(trimToEmpty(dataSourceProperties.getPassword()));
-            response.setSourceType("MYSQL");
-            response.setClusterId(null);
-            response.setClusterName("platform-mysql");
-            response.setResolvedBy("platform_runtime");
-            return response;
-        }
-
         Long clusterId = resolveClusterIdFromTables(targetDatabase);
-        String resolvedBy = "data_table";
         if (clusterId == null) {
-            clusterId = resolveClusterIdFromDbUsers(targetDatabase);
-            resolvedBy = "doris_database_users";
-        }
-        if (clusterId == null) {
-            throw new IllegalArgumentException("未在 opendataworks 中找到 database `" + targetDatabase + "` 的数据源");
+            throw new IllegalArgumentException("未找到 namespace 对应的数据源，请先同步元数据");
         }
 
-        return resolveClusterDatasource(clusterId, targetDatabase, normalizedPreferredEngine, resolvedBy);
+        return resolveClusterDatasource(clusterId, targetDatabase, normalizedPreferredEngine, "subject_mapping");
     }
 
     private AgentDatasourceResolution resolveClusterDatasource(
@@ -213,30 +184,10 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if (cluster == null) {
             throw new IllegalArgumentException("cluster_id `" + clusterId + "` 不存在");
         }
-        AgentDataScopeContext.requireAllowed(clusterId, targetDatabase);
 
         String sourceType = normalizeSourceType(cluster.getSourceType());
         String engine = engineForSourceType(sourceType);
         ensurePreferredEngine(targetDatabase, normalizedPreferredEngine, engine);
-
-        String user = trimToEmpty(cluster.getUsername());
-        String password = trimToEmpty(cluster.getPassword());
-        if (!"mysql".equals(engine)) {
-            List<DorisDbUser> matchedUsers = dorisDbUserMapper.selectList(
-                    new LambdaQueryWrapper<DorisDbUser>()
-                            .eq(DorisDbUser::getClusterId, clusterId)
-                            .eq(DorisDbUser::getDatabaseName, targetDatabase)
-                            .last("LIMIT 2")
-            );
-            if (matchedUsers.size() > 1) {
-                throw new IllegalArgumentException("database `" + targetDatabase + "` 命中了多个只读账号");
-            }
-            if (!matchedUsers.isEmpty() && StringUtils.hasText(matchedUsers.get(0).getReadonlyUsername())) {
-                user = matchedUsers.get(0).getReadonlyUsername().trim();
-                password = trimToEmpty(matchedUsers.get(0).getReadonlyPassword());
-                resolvedBy = "readonly_user";
-            }
-        }
 
         AgentDatasourceResolution response = new AgentDatasourceResolution();
         response.setEngine(engine);
@@ -246,12 +197,11 @@ public class BackendAgentMetadataService implements AgentMetadataService {
                 : adapterRegistry.require(sourceType).descriptor().getDefaultPort());
         response.setConnectionDatabase(trimToNull(cluster.getDatabaseName()));
         response.setConnectionOptions(cluster.getConnectionOptions());
-        response.setUser(user);
-        response.setPassword(password);
         response.setSourceType(sourceType);
         response.setClusterId(cluster.getId());
         response.setClusterName(trimToEmpty(cluster.getClusterName()));
         response.setResolvedBy(resolvedBy);
+        datasourceAccess.applyCredentials(response);
         return response;
     }
 
@@ -267,7 +217,6 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         String targetDatabase = normalizedDatabase;
         String rawTableName = normalizedTable;
         if (matchedTable != null) {
-            AgentDataScopeContext.requireAllowed(matchedTable.getClusterId(), matchedTable.getDbName());
             if (StringUtils.hasText(matchedTable.getDbName())) {
                 targetDatabase = matchedTable.getDbName();
             }
@@ -379,19 +328,17 @@ public class BackendAgentMetadataService implements AgentMetadataService {
                 : dorisClusterMapper.selectBatchIds(clusterIds).stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.toMap(DorisCluster::getId, item -> item));
-        Map<String, DorisDbUser> dbUserMap = loadReadonlyUserMap(tables);
 
         List<Map<String, Object>> rows = new ArrayList<>();
         for (DataTable table : tables) {
             DorisCluster cluster = clusterMap.get(table.getClusterId());
-            DorisDbUser dbUser = dbUserMap.get(datasourceKey(table.getClusterId(), table.getDbName()));
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("db_name", table.getDbName());
             row.put("cluster_id", table.getClusterId());
             row.put("engine", cluster == null ? inferEngineFromDatabase(table.getDbName()) : engineForSourceType(cluster.getSourceType()));
             row.put("source_type", cluster == null ? null : normalizeSourceType(cluster.getSourceType()));
-            row.put("cluster_name", cluster == null ? "platform-mysql" : trimToEmpty(cluster.getClusterName()));
-            row.put("resolved_by", cluster == null ? "platform_runtime" : (dbUser == null ? "data_table" : "readonly_user"));
+            row.put("cluster_name", cluster == null ? null : trimToEmpty(cluster.getClusterName()));
+            row.put("resolved_by", "subject_mapping");
             rows.add(row);
         }
         return capExportRows(rows, "datasource");
@@ -403,7 +350,6 @@ public class BackendAgentMetadataService implements AgentMetadataService {
             throw new IllegalArgumentException("request 不能为空");
         }
         DataTable table = resolveWritableTable(request);
-        AgentDataScopeContext.requireAllowed(table.getClusterId(), table.getDbName());
 
         AgentMetadataCompleteResponse response = new AgentMetadataCompleteResponse();
         response.setTableId(table.getId());
@@ -819,7 +765,12 @@ public class BackendAgentMetadataService implements AgentMetadataService {
                         .orderByAsc(DataField::getFieldOrder)
                         .orderByAsc(DataField::getId)
         );
-        return fields.stream().collect(Collectors.groupingBy(
+        Map<Long, DataTable> tables = loadTableMap(tableIds);
+        return fields.stream().filter(field -> {
+            DataTable table = tables.get(field.getTableId());
+            return table != null && datasourceAccess.isColumnVisible(table.getClusterId(), table.getDbName(),
+                    extractActualTableName(table.getDbName(), table.getTableName()), field.getFieldName());
+        }).collect(Collectors.groupingBy(
                 DataField::getTableId,
                 LinkedHashMap::new,
                 Collectors.toList()
@@ -942,7 +893,7 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if (StringUtils.hasText(dbName)) {
             wrapper.eq(DataTable::getDbName, dbName);
         }
-        return filterTablesByScope(dataTableMapper.selectList(wrapper));
+        return filterVisibleTables(dataTableMapper.selectList(wrapper));
     }
 
     private Long resolveClusterIdFromTables(String database) {
@@ -956,12 +907,10 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         Set<Long> clusterIds = tables.stream()
                 .map(DataTable::getClusterId)
                 .filter(Objects::nonNull)
-                .filter(clusterId -> !AgentDataScopeContext.isActive()
-                        || AgentDataScopeContext.isAllowed(clusterId, database))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         if (clusterIds.size() > 1) {
             throw new IllegalArgumentException("database `" + database + "` 命中了多个 cluster_id " + clusterIds
-                    + "，请在智能体的数据范围中限定数据源");
+                    + "，请通过数据源 ID 定位");
         }
         return clusterIds.stream().findFirst().orElse(null);
     }
@@ -996,29 +945,11 @@ public class BackendAgentMetadataService implements AgentMetadataService {
                         .orderByAsc(DataTable::getId)
                         .last("LIMIT 4")
         );
-        matched = filterTablesByScope(matched);
+        matched = filterVisibleTables(matched);
         if (matched.size() > 1) {
             throw new IllegalArgumentException("database `" + database + "` 与 table `" + table + "` 命中了多张表，请改用 tableId");
         }
         return matched.isEmpty() ? null : matched.get(0);
-    }
-
-    private Long resolveClusterIdFromDbUsers(String database) {
-        List<DorisDbUser> dbUsers = dorisDbUserMapper.selectList(
-                new LambdaQueryWrapper<DorisDbUser>()
-                        .eq(DorisDbUser::getDatabaseName, database)
-                        .last("LIMIT 8")
-        );
-        Set<Long> clusterIds = dbUsers.stream()
-                .map(DorisDbUser::getClusterId)
-                .filter(Objects::nonNull)
-                .filter(clusterId -> !AgentDataScopeContext.isActive()
-                        || AgentDataScopeContext.isAllowed(clusterId, database))
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        if (clusterIds.size() > 1) {
-            throw new IllegalArgumentException("database `" + database + "` 在 doris_database_users 中命中了多个 cluster_id");
-        }
-        return clusterIds.stream().findFirst().orElse(null);
     }
 
     private List<DataTable> listActiveTables(String database) {
@@ -1030,48 +961,20 @@ public class BackendAgentMetadataService implements AgentMetadataService {
         if (StringUtils.hasText(database)) {
             wrapper.eq(DataTable::getDbName, database);
         }
-        return filterTablesByScope(dataTableMapper.selectList(wrapper));
+        return filterVisibleTables(dataTableMapper.selectList(wrapper));
     }
 
-    private List<DataTable> filterTablesByScope(List<DataTable> tables) {
-        if (!AgentDataScopeContext.isActive()) {
-            return tables;
-        }
-        if (tables == null || tables.isEmpty()) {
+    private List<DataTable> filterVisibleTables(List<DataTable> tables) {
+        if (tables == null) {
             return Collections.emptyList();
         }
         return tables.stream().filter(this::isTableAllowed).collect(Collectors.toList());
     }
 
     private boolean isTableAllowed(DataTable table) {
-        if (!AgentDataScopeContext.isActive()) {
-            return true;
-        }
-        return table != null && AgentDataScopeContext.isAllowed(table.getClusterId(), table.getDbName());
-    }
-
-    private Map<String, DorisDbUser> loadReadonlyUserMap(List<DataTable> tables) {
-        Set<Long> clusterIds = tables.stream()
-                .map(DataTable::getClusterId)
-                .filter(Objects::nonNull)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        Set<String> databases = tables.stream()
-                .map(DataTable::getDbName)
-                .filter(StringUtils::hasText)
-                .collect(Collectors.toCollection(LinkedHashSet::new));
-        if (clusterIds.isEmpty() || databases.isEmpty()) {
-            return Collections.emptyMap();
-        }
-        List<DorisDbUser> users = dorisDbUserMapper.selectList(
-                new LambdaQueryWrapper<DorisDbUser>()
-                        .in(DorisDbUser::getClusterId, clusterIds)
-                        .in(DorisDbUser::getDatabaseName, databases)
-        );
-        Map<String, DorisDbUser> results = new LinkedHashMap<>();
-        for (DorisDbUser user : users) {
-            results.putIfAbsent(datasourceKey(user.getClusterId(), user.getDatabaseName()), user);
-        }
-        return results;
+        return table != null && table.getClusterId() != null
+                && datasourceAccess.isVisible(table.getClusterId(), table.getDbName(),
+                        extractActualTableName(table.getDbName(), table.getTableName()));
     }
 
     private Map<String, Object> tableExportRow(DataTable table, DataField field) {
@@ -1136,60 +1039,6 @@ public class BackendAgentMetadataService implements AgentMetadataService {
 
     private String trimToEmpty(String value) {
         return value == null ? "" : value.trim();
-    }
-
-    private JdbcMysqlTarget parsePlatformMysql(String jdbcUrl) {
-        if (!StringUtils.hasText(jdbcUrl) || !jdbcUrl.startsWith("jdbc:")) {
-            return null;
-        }
-        try {
-            String uriText = jdbcUrl.substring("jdbc:".length());
-            URI uri = URI.create(uriText);
-            String path = uri.getPath();
-            String database = path == null ? "" : path.replaceFirst("^/", "");
-            if (!StringUtils.hasText(database)) {
-                return null;
-            }
-            JdbcMysqlTarget target = new JdbcMysqlTarget();
-            target.setHost(StringUtils.hasText(uri.getHost()) ? uri.getHost() : "localhost");
-            target.setPort(uri.getPort() > 0 ? uri.getPort() : 3306);
-            target.setDatabase(database);
-            return target;
-        } catch (Exception e) {
-            // JDBC URL 解析失败时返回 null
-            log.trace("解析 JDBC 连接信息失败，返回 null", e);
-            return null;
-        }
-    }
-
-    private static class JdbcMysqlTarget {
-        private String host;
-        private Integer port;
-        private String database;
-
-        public String getHost() {
-            return host;
-        }
-
-        public void setHost(String host) {
-            this.host = host;
-        }
-
-        public Integer getPort() {
-            return port;
-        }
-
-        public void setPort(Integer port) {
-            this.port = port;
-        }
-
-        public String getDatabase() {
-            return database;
-        }
-
-        public void setDatabase(String database) {
-            this.database = database;
-        }
     }
 
     private static final class SearchCandidate {

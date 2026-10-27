@@ -38,6 +38,7 @@ public class AgentJdbcExecutor {
             int timeoutSeconds
     ) {
         long start = System.currentTimeMillis();
+        checkReadAccess(datasource, sql, timeoutSeconds);
         try (Connection connection = openConnection(datasource, datasource.getDatabase());
              Statement statement = connection.createStatement()) {
             statement.setQueryTimeout(timeoutSeconds);
@@ -73,7 +74,7 @@ public class AgentJdbcExecutor {
             result.setDurationMs((int) (System.currentTimeMillis() - start));
             return result;
         } catch (SQLException e) {
-            throw new RuntimeException("执行只读 SQL 失败: " + e.getMessage(), e);
+            throw new RuntimeException("智能体账号无权访问所请求对象或查询执行失败", e);
         }
     }
 
@@ -89,6 +90,7 @@ public class AgentJdbcExecutor {
         if (!(adapter instanceof DatasourceReferenceDdlReader)) {
             throw new UnsupportedOperationException("此数据源不支持参考结构读取");
         }
+        checkReadAccess(datasource, adapter.dialect().defaultQuery(database, tableName, 1), timeoutSeconds);
         try (Connection connection = openConnection(datasource, database)) {
             return ((DatasourceReferenceDdlReader) adapter)
                     .referenceDdl(connection, database, tableName, timeoutSeconds);
@@ -97,7 +99,29 @@ public class AgentJdbcExecutor {
         }
     }
 
+    private void checkReadAccess(AgentDatasourceResolution datasource, String sql, int timeoutSeconds) {
+        if (datasource.getCheckUser() == null) {
+            // 缺少人的账号时不能退化为只用智能体权限。
+            throw new IllegalArgumentException("缺少提问人的数据库账号映射");
+        }
+        try (Connection connection = openConnection(datasource, datasource.getDatabase(),
+                    datasource.getCheckUser(), datasource.getCheckPassword());
+                Statement statement = connection.createStatement()) {
+            statement.setQueryTimeout(timeoutSeconds);
+            try (ResultSet ignored = statement.executeQuery("EXPLAIN " + sql)) {
+                // 只检查成功与否，执行计划不返回给模型或用户。
+            }
+        } catch (SQLException e) {
+            throw new IllegalArgumentException("你的账号无权访问所请求对象或权限检查失败", e);
+        }
+    }
+
     private Connection openConnection(AgentDatasourceResolution datasource, String database) throws SQLException {
+        return openConnection(datasource, database, datasource.getUser(), datasource.getPassword());
+    }
+
+    private Connection openConnection(AgentDatasourceResolution datasource, String database,
+            String username, String password) throws SQLException {
         String type = datasource.getSourceType();
         if (!StringUtils.hasText(type)) {
             type = datasource.getEngine();
@@ -108,10 +132,10 @@ public class AgentJdbcExecutor {
                 new ConnectionConfig(
                         datasource.getHost(), datasource.getPort() == null
                             ? adapter.descriptor().getDefaultPort() : datasource.getPort(),
-                        trimToEmpty(datasource.getUser()), datasource.getConnectionDatabase(),
+                        trimToEmpty(username), datasource.getConnectionDatabase(),
                         datasource.getConnectionOptions());
         return connectionFactory.open(type, config, target,
-                trimToEmpty(datasource.getUser()), trimToEmpty(datasource.getPassword()), true);
+                trimToEmpty(username), password == null ? "" : password, true);
     }
 
     private String trimToEmpty(String value) {

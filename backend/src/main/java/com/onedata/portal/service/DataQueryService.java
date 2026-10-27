@@ -4,6 +4,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.onedata.auth.context.UserContext;
+import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.dto.QueryPreview;
 import com.onedata.portal.dto.SqlAnalyzeRequest;
 import com.onedata.portal.dto.SqlAnalyzeResponse;
@@ -319,6 +321,7 @@ public class DataQueryService {
         List<SqlQueryResultSet> resultSets = new ArrayList<>();
         boolean cancelled = false;
         String message;
+        String executionAccount = null;
 
         String clientQueryId = request.getClientQueryId();
         String runningKey = StringUtils.hasText(userId) && StringUtils.hasText(clientQueryId)
@@ -329,6 +332,7 @@ public class DataQueryService {
 
         try (Connection connection = dorisConnectionService.getConnection(request.getClusterId(), request.getDatabase());
              java.sql.Statement statement = connection.createStatement()) {
+            executionAccount = connection.getMetaData().getUserName();
 
             if (runningKey != null) {
                 runningQuery = new RunningQuery(connection, statement);
@@ -469,7 +473,7 @@ public class DataQueryService {
         response.setHasMore(hasMore);
 
         if (!cancelled) {
-            DataQueryHistory history = saveHistory(request, columns, rows, hasMore, duration);
+            DataQueryHistory history = saveHistory(request, columns, rows, hasMore, duration, executionAccount);
             response.setHistoryId(history.getId());
             response.setExecutedAt(history.getExecutedAt());
         } else {
@@ -501,7 +505,7 @@ public class DataQueryService {
     public Page<DataQueryHistory> listHistoryByUser(String userId, Integer pageNum, Integer pageSize, Long clusterId, String database) {
         Page<DataQueryHistory> page = new Page<>(pageNum == null ? 1 : pageNum, pageSize == null ? 10 : pageSize);
         LambdaQueryWrapper<DataQueryHistory> wrapper = new LambdaQueryWrapper<DataQueryHistory>()
-            .eq(DataQueryHistory::getExecutedBy, userId)
+            .eq(!isHistoryAdmin(), DataQueryHistory::getExecutedBy, userId)
             .orderByDesc(DataQueryHistory::getExecutedAt);
         if (clusterId != null) {
             wrapper.eq(DataQueryHistory::getClusterId, clusterId);
@@ -510,6 +514,11 @@ public class DataQueryService {
             wrapper.eq(DataQueryHistory::getDatabaseName, database);
         }
         return historyMapper.selectPage(page, wrapper);
+    }
+
+    private boolean isHistoryAdmin() {
+        UserContext context = UserContextHolder.getContext();
+        return context != null && "admin".equals(context.getRole()) && !"anonymous".equals(context.getAuthSource());
     }
 
     void validateSql(String sql) {
@@ -1023,7 +1032,7 @@ public class DataQueryService {
         return userId == null ? "" : userId;
     }
 
-    private DataQueryHistory saveHistory(SqlQueryRequest request, List<String> columns, List<Map<String, Object>> rows, boolean hasMore, long duration) {
+    private DataQueryHistory saveHistory(SqlQueryRequest request, List<String> columns, List<Map<String, Object>> rows, boolean hasMore, long duration, String executionAccount) {
         DataQueryHistory history = new DataQueryHistory();
         history.setClusterId(request.getClusterId());
         history.setClusterName(resolveClusterName(request.getClusterId()));
@@ -1034,7 +1043,8 @@ public class DataQueryService {
         history.setHasMore(hasMore ? 1 : 0);
         history.setResultPreview(buildPreviewJson(columns, rows));
         history.setExecutedAt(LocalDateTime.now());
-        history.setExecutedBy(com.onedata.auth.context.UserContextHolder.getCurrentUserId());
+        history.setExecutedBy(UserContextHolder.getCurrentUserId());
+        history.setExecutionAccount(executionAccount);
         historyMapper.insert(history);
         return history;
     }

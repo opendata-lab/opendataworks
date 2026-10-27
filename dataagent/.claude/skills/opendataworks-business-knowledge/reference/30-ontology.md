@@ -53,8 +53,8 @@
 
 ## Doris 数据源
 
-- 相关表：`doris_cluster`、`doris_database_users`
-- 说明：记录 Doris/MySQL 数据源元信息以及数据库级只读/读写账号。账号密码字段只用于平台内部路由，不应在回答中暴露。
+- 相关表：`doris_cluster`、`datasource_subject_account`
+- 说明：记录数据源及主体账号映射；智能体账号由 DBA 授予只读权限。账号密码字段只用于平台内部路由，不应在回答中暴露。
 
 ## 表问题排查语义路径
 

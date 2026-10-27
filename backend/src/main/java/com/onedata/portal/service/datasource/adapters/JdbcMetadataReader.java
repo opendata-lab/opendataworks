@@ -14,7 +14,11 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -23,6 +27,11 @@ import java.util.Set;
 @Slf4j
 @RequiredArgsConstructor
 public class JdbcMetadataReader implements DatasourceMetadataReader {
+
+    private static final String VISIBLE_COLUMNS_SQL =
+            "SELECT table_schema, table_name, column_name FROM information_schema.columns";
+    private static final Set<String> SYSTEM_NAMESPACES = new HashSet<>(Arrays.asList(
+            "information_schema", "pg_catalog", "mysql", "performance_schema", "sys"));
 
     private final String namespacesSql;
     private final String tablesSql;
@@ -158,5 +167,25 @@ public class JdbcMetadataReader implements DatasourceMetadataReader {
             log.warn("SHOW FULL COLUMNS fallback failed for {}.{}: {}", namespace, table, e.getMessage());
         }
         return types;
+    }
+
+    @Override
+    public Map<String, Set<String>> visibleColumns(Connection connection) {
+        // information_schema.columns 在 PostgreSQL、MySQL、Doris 上都只返回当前账号有权限的字段。
+        Map<String, Set<String>> result = new LinkedHashMap<>();
+        try (Statement statement = connection.createStatement();
+                ResultSet rs = statement.executeQuery(VISIBLE_COLUMNS_SQL)) {
+            while (rs.next()) {
+                String namespace = rs.getString(1);
+                if (ignoredNamespaces.contains(namespace) || SYSTEM_NAMESPACES.contains(namespace)) {
+                    continue;
+                }
+                result.computeIfAbsent(namespace + "\u0000" + rs.getString(2), key -> new LinkedHashSet<>())
+                        .add(rs.getString(3));
+            }
+        } catch (SQLException e) {
+            throw new RuntimeException("获取可见字段失败: " + e.getMessage(), e);
+        }
+        return result;
     }
 }

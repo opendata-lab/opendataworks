@@ -315,7 +315,7 @@ async def test_mcp_servers_and_history_forwarded(monkeypatch, tmp_path: Path):
 
     agent_snapshot = {
         "mcp_server_ids": ["portal"],
-        "data_scope": {"allowed_scopes": []},
+
     }
 
     result = await task_executor._execute_task_stream_via_pi_runtime(
@@ -393,7 +393,7 @@ async def test_governance_settings_flow_from_settings_into_cell_init(monkeypatch
     # Watermarks and cache retention ride in the same section, so the Cell has a
     # single source for every governance decision.
     assert governance["prune_high_watermark_ratio"] == 0.90
-    assert governance["prune_target_ratio"] == 0.70
+    assert governance["prune_target_ratio"] == get_settings().dataagent_context_prune_target_ratio
     assert governance["cache_retention"] in {"short", "long", "off"}
 
 

@@ -90,7 +90,7 @@
         "只读账号",
         "数据库只读用户"
       ],
-      "explanation": "doris_database_users 按 cluster_id + database_name 保存数据库级只读账号和读写账号，供查询脚本在运行时路由使用。",
+      "explanation": "datasource_subject_account 按 source_id + subject_type + subject_id 保存人和智能体的账号映射；数据库 GRANT 决定权限，缺映射拒绝。",
       "ambiguous_terms": [
         "Doris 集群",
         "数据库路由"
@@ -99,7 +99,7 @@
       "related_metrics": [],
       "related_tables": [
         "doris_cluster",
-        "doris_database_users"
+        "datasource_subject_account"
       ]
     },
     {
@@ -119,7 +119,7 @@
       "related_metrics": [],
       "related_tables": [
         "doris_cluster",
-        "doris_database_users",
+        "datasource_subject_account",
         "data_table"
       ]
     },

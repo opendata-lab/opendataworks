@@ -41,10 +41,10 @@
 ## Doris 只读账号
 
 - 别名：只读账号、数据库只读用户
-- 解释：`doris_database_users` 按 `cluster_id + database_name` 保存数据库级只读账号和读写账号，供平台只读查询路由使用。
+- 解释：`datasource_subject_account` 按 `source_id + subject_type + subject_id` 保存人和智能体的数据库账号映射，实际权限由数据库 GRANT 决定。
 - 易混术语：Doris 集群、数据库路由
 - 歧义消解：请提供明确的 `database_name`；同一数据库在多个集群出现时，需要进一步确认 `cluster_id`。
-- 相关表：`doris_cluster`、`doris_database_users`
+- 相关表：`doris_cluster`、`datasource_subject_account`
 
 ## Doris 引擎
 
@@ -52,7 +52,7 @@
 - 解释：Doris 在语义中表示查询引擎类型，不是 SQL 的 schema 名。真正写 SQL 时，应使用 metadata 返回的 `db_name` / schema 作为库名前缀。
 - 易混术语：database_name、db_name、schema
 - 歧义消解：请确认用户给的是引擎类型，还是实际数据库 / schema 名。
-- 相关表：`doris_cluster`、`doris_database_users`、`data_table`
+- 相关表：`doris_cluster`、`datasource_subject_account`、`data_table`
 
 ## DF快照表
 

@@ -78,6 +78,8 @@ class DorisMetadataSyncServiceTest {
 
     @BeforeEach
     void setUp() {
+        lenient().when(dorisConnectionService.withSystemAccount(any()))
+                .thenAnswer(invocation -> ((java.util.function.Supplier<?>) invocation.getArgument(0)).get());
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);
         cluster.setSourceType("DORIS");

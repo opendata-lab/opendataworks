@@ -295,8 +295,8 @@ class DatasourceAdapterContractTest {
             when(metadata.namespaces(connection))
                     .thenReturn(Collections.singletonList(new Namespace("db", "sales", "sales")));
             DorisConnectionService service = new DorisConnectionService(
-                    mapper, properties(), mock(UserMappingService.class), registry);
-            assertEquals(Collections.singletonList("sales"), service.getAllDatabases(7L));
+                    mapper, properties(), mock(DatasourceSubjectAccountService.class), registry);
+            assertEquals(Collections.singletonList("sales"), service.withSystemAccount(() -> service.getAllDatabases(7L)));
             verify(metadata).namespaces(connection);
             verify(connection).close();
         } finally {
@@ -328,8 +328,10 @@ class DatasourceAdapterContractTest {
             DorisClusterMapper mapper = mock(DorisClusterMapper.class);
             when(mapper.selectById(1L)).thenReturn(cluster);
             DorisConnectionService service = new DorisConnectionService(
-                    mapper, properties(), mock(UserMappingService.class), registry);
-            assertThrows(SQLException.class, () -> service.getConnection(1L, "restricted"));
+                    mapper, properties(), mock(DatasourceSubjectAccountService.class), registry);
+            assertThrows(SQLException.class, () -> new com.onedata.portal.service.datasource.core.DatasourceConnectionFactory(registry).open(
+                        cluster.getSourceType(), com.onedata.portal.service.datasource.model.ConnectionConfig.from(cluster),
+                        "restricted", cluster.getUsername(), cluster.getPassword(), false));
             verify(connection).close();
         } finally {
             DriverManager.deregisterDriver(driver);

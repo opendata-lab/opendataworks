@@ -56,7 +56,6 @@ describe('AgentStudio', () => {
         allowed_tools: ['Skill', 'Read'],
         mcp_server_ids: ['portal'],
         skill_folders: ['dataagent-nl2sql'],
-        data_scope: { allowed_scopes: [{ cluster_id: 3, database: 'ads_user', source_type: 'DORIS' }] },
         is_default: true,
         is_builtin: true
       }
@@ -73,7 +72,7 @@ describe('AgentStudio', () => {
     expect(dataagentApi.listAgentWorkbench).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('默认智能问数助手')
     expect(wrapper.text()).toContain('1 Skills')
-    expect(wrapper.text()).toContain('1 Schema')
+    expect(wrapper.text()).not.toContain('Schema')
     expect(wrapper.text()).toContain('内置')
   })
 

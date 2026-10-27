@@ -1,5 +1,7 @@
 # 数据中台权限管理系统设计
 
+> 历史方案：账号与范围规则已被 [2026-10-26 主体映射设计](../design/2026-10-26-dataagent-datasource-identity-design.md)替换；旧接口与范围配置已删除，不作为部署或开发依据。
+
 **Date:** 2025-12-12
 **Goal:** 为数据中台实现基于角色的访问控制（RBAC）系统，通过规范化Doris用户方案实现细粒度的数据访问控制。
 **Tech Stack:** Java 8, Spring Boot 2.7, Apache Doris, Vue 3, MySQL

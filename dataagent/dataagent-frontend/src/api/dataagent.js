@@ -182,10 +182,6 @@ export const dataagentApi = {
     return dataagentRequest.get('/v1/dataagent/agents/capabilities')
   },
 
-  listDataScopeOptions() {
-    return dataagentRequest.get('/v1/dataagent/data-scope/options')
-  },
-
   listAdminTopics(params = {}) {
     return dataagentRequest.get('/v1/nl2sql-admin/topics', { params })
   },

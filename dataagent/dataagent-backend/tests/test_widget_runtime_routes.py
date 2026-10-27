@@ -151,11 +151,7 @@ def install_agent_profile(monkeypatch, agent_id="agent_widget"):
         "skill_folders": [],
         "max_turns": 0,
         "env_vars": {},
-        "data_scope": {
-            "allowed_scopes": [
-                {"cluster_id": 3, "source_type": "DORIS", "database": "ads_user"}
-            ]
-        },
+
     }
     monkeypatch.setattr(routes, "get_agent_profile", lambda requested_agent_id: profile if requested_agent_id == agent_id else None)
     return profile
@@ -250,7 +246,6 @@ def test_widget_topic_create_uses_requested_agent_snapshot(monkeypatch):
     assert store.calls[-1][0] == "create_topic"
     agent_snapshot = store.calls[-1][2]
     assert agent_snapshot["agent_id"] == profile["agent_id"]
-    assert agent_snapshot["data_scope"]["allowed_scopes"] == profile["data_scope"]["allowed_scopes"]
 
 
 def test_widget_requests_fall_back_to_visitor_context_without_user_id(monkeypatch):
@@ -482,9 +477,8 @@ def _session_cookie(auth, *, user_id="SSO:42", display_name="alice", role="user"
     return {"da_session": auth.issue_session_token(identity)}
 
 
-def test_unmarked_client_with_session_cookie_stays_anonymous_portal(monkeypatch, tmp_path):
-    """门户嵌入语义回归：无标记客户端即使带着 da_session Cookie（同主机名下
-    登录过 DataAgent 站点），也永不消费 cookie，仍是匿名 portal 池。"""
+def test_portal_client_consumes_verified_dataagent_session(monkeypatch, tmp_path):
+    """门户读取真实 DataAgent 登录身份，不再进入匿名池。"""
     auth = _enable_auth(monkeypatch, tmp_path)
     try:
         store = install_fake_store(monkeypatch)
@@ -494,7 +488,7 @@ def test_unmarked_client_with_session_cookie_stays_anonymous_portal(monkeypatch,
         assert response.status_code == 200
         context = store.calls[-1][1]
         assert context["source"] == "portal"
-        assert "auth_user_id" not in context
+        assert context["auth_user_id"] == "SSO:42"
     finally:
         auth.reset_auth_for_tests()
 

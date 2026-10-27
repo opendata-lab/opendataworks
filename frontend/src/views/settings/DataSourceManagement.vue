@@ -83,6 +83,7 @@
             <el-button type="warning" text size="small" :disabled="row.isDefault === 1" @click="handleSetDefault(row.id)"
               >设为默认</el-button
             >
+            <el-button text size="small" @click="accountCluster = row; accountVisible = true">账号映射</el-button>
             <el-button type="info" text size="small" @click="openMetadata(row)">元数据</el-button>
             <el-button type="primary" text size="small" @click="openSyncHistory(row)">同步历史</el-button>
             <el-button type="danger" text size="small" @click="openPendingDeletion(row)">待删除表</el-button>
@@ -92,6 +93,7 @@
       </el-table>
     </el-card>
 
+    <DatasourceAccountMappings v-model="accountVisible" :cluster="accountCluster" />
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="560px">
       <!-- 规则随类型描述变化，切换类型时不应把尚未填写的字段立即标红 -->
       <el-form ref="formRef" :model="form" :rules="rules" :validate-on-rule-change="false" label-width="120px">
@@ -404,9 +406,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Warning, CircleCheck } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { dorisClusterApi } from '@/api/doris'
+import DatasourceAccountMappings from './components/DatasourceAccountMappings.vue'
 import { tableApi } from '@/api/table'
 import SchemaBackupManager from '@/views/settings/components/SchemaBackupManager.vue'
 
+const accountVisible = ref(false)
+const accountCluster = ref(null)
 const loading = ref(false)
 const saving = ref(false)
 const clusters = ref([])

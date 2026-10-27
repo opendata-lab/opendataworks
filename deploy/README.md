@@ -343,9 +343,23 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 
 列映射（`column_mapping`）支持三种形式：留空（全列同步）、列清单（逗号分隔或 JSON 数组 / 源到目标的 JSON 对象映射）、完整 DataX 作业 JSON（含 `job` 键，按自定义模式 `customConfig=1` 下发）。
 
-## DataAgent Authentication (Optional)
+## 数据源主体账号映射（V54 / Alembic 20261026_000029）
 
-DataAgent（智能问数）支持可选的 OAuth2 + 本地管理员登录，以及非认证的运行时配置覆盖（`DATAAGENT_SETTINGS`）。配置采用 **Superset `docker/pythonpath_dev` 同款模式**：`deploy/docker/dataagent/` 目录被 compose 整体挂载进 `dataagent-backend` 容器（`/app/docker/dataagent`，只读），并加入 `sys.path`。
+升级前备份平台库和 DataAgent 会话库，检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
+
+1. DBA 为每个要用的数据源预建人的账号和各智能体的只读账号（只授所需对象的 SELECT/USAGE 等读取权限）。平台仅测试连接，不自动分析 GRANT；智能体只读性由 DBA 保证。Doris 使用 `Select_priv`，不依赖驱动只读事务。
+2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。主门户问数也必须已有 DataAgent 的真实登录会话；widget 自报用户 ID 和认证关闭时的聊天不能访问数据库。
+3. 管理员在数据源页“账号映射”选择人（平台 `sys_user.id`）或智能体（agent_id），登记数据库用户名/密码并测试连接。读接口不回传密码；编辑留空保留密码。数据源原账号只用于同步和运维，不用于主体查询。人用自己的映射浏览目录、查询、写入和结构编辑；能做什么由数据库 GRANT 决定。
+4. backend 的 `AGENT_API_SERVICE_TOKEN` 与 DataAgent `ODW_AGENT_SERVICE_TOKEN`、portal-mcp 的 `PORTAL_MCP_BACKEND_SERVICE_TOKEN` 保持一致，Java agent API 仍限私网。可信 Python 后端填写 `X-Agent-User-Id`（`local:<用户名>` / `<provider>:<sub>`）和 `X-Agent-Id`。每次访问都必须有用户；会话里的定时消息以会话所有者身份执行。不要由反向代理、浏览器或模型拼装这些身份头。
+5. 服务令牌和数据库密码不能注入模型 Bash 环境。CLI 经本次运行的本地 HTTP 通道添加固定身份和服务令牌；MCP 由可信运行器添加身份头。删除智能体“数据范围”配置及旧范围头；元数据和查询分别取两个数据库账号的可见对象交集和执行权限交集。
+
+PostgreSQL 16 支持仅视图 SELECT 的 EXPLAIN；MySQL 8.0.45 即使有视图 SELECT、SHOW VIEW，EXPLAIN 仍可能要求底表权限，代人问数严格拒绝，不做回退。交集是对象级，DBA 不应给智能体授予依赖当前用户/RLS/SECURITY DEFINER 的敏感对象。Doris EXPLAIN 和视图权限需在内网验证。
+
+同名 namespace 位于多个数据源时，现有按 database 定位的 agent API 会拒绝歧义；需使用不同 namespace 名称。详见[设计](../docs/design/2026-10-26-dataagent-datasource-identity-design.md)和[验证报告](../docs/reports/2026-10-26-dataagent-datasource-identity-verification.md)。
+
+## DataAgent 登录配置
+
+DataAgent（智能问数）支持 OAuth2 + 本地管理员登录（数据库问数必须启用认证），以及非认证的运行时配置覆盖（`DATAAGENT_SETTINGS`）。配置采用 **Superset `docker/pythonpath_dev` 同款模式**：`deploy/docker/dataagent/` 目录被 compose 整体挂载进 `dataagent-backend` 容器（`/app/docker/dataagent`，只读），并加入 `sys.path`。
 
 目录布局：
 
@@ -368,11 +382,11 @@ DataAgent（智能问数）支持可选的 OAuth2 + 本地管理员登录，以�
 
 语义与回滚（fail-closed）：
 
-- 覆盖文件不存在或 `AUTH_ENABLED=False`（默认） = 认证关闭，行为与无认证版本完全一致。
+- 覆盖文件不存在或 `AUTH_ENABLED=False`（默认） = 认证关闭；匿名聊天不具备数据库访问身份，数据库问数不可用。
 - 容器内 `DATAAGENT_CONFIG` env 被注释掉 = 彻底关闭外置配置机制（终极回滚手段）。
 - env 已设置但配置文件缺失 / 不可读 / 有语法错误 / 启用却缺合法 `SECRET_KEY` = 服务启动失败，不会静默降级为无认证。
-- 关闭后果：曾经登录用户名下的会话会重新出现在共享匿名池（恢复完整旧语义，不保留半套隔离）。
-- widget 外嵌会话（`X-ODW-Client: widget`）与主门户嵌入页的匿名会话完全不受认证影响。
+- 关闭后果：不再具备已验证的用户身份，代人问数不可用；不要用关闭认证作为数据库访问回退。
+- widget 外嵌会话的自报用户 ID 不作为数据库身份；主门户与独立前端都消费 DataAgent 验证的登录会话。
 
 详见 `docs/design/2026-07-01-dataagent-auth-design.md` 与 `docs/handbook/`。
 

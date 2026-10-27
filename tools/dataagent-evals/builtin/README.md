@@ -14,7 +14,7 @@ Only Evaluation V2 (`schema_version=2`) is executable. See
 `../dataset/README.md` for the structured semantic, time, tool, SQL, result,
 answer, limit, and scoring contract.
 
-Non-dry-run evaluation must also choose the DataAgent profile to execute with. Pass `--agent-id` or set `DATAAGENT_EVAL_AGENT_ID`. The selected agent's `data_scope` is snapshotted on each eval topic and enforces metadata/query access.
+Non-dry-run evaluation must also choose the DataAgent profile to execute with. Pass `--agent-id` or set `DATAAGENT_EVAL_AGENT_ID`. Database access requires a verified DataAgent login and database account mappings for the user and selected agent; database GRANTs determine visibility. See the datasource identity deployment requirements in `deploy/README.md`.
 
 ## Run With Docker
 

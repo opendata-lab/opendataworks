@@ -1,9 +1,7 @@
 package com.onedata.portal.service;
 
-import com.onedata.auth.context.UserContextHolder;
 import com.onedata.portal.config.DorisJdbcProperties;
 import com.onedata.portal.dto.ColumnValueProfile;
-import com.onedata.portal.dto.DorisCredential;
 import com.onedata.portal.dto.TablePartitionInfo;
 import com.onedata.portal.dto.TableStatistics;
 import com.onedata.portal.entity.DataField;
@@ -37,15 +35,16 @@ public class DorisConnectionService {
 
     private final DorisClusterMapper dorisClusterMapper;
     private final DorisJdbcProperties dorisJdbcProperties;
-    private final UserMappingService userMappingService;
+    private final DatasourceSubjectAccountService subjectAccounts;
+    private final ThreadLocal<Boolean> systemAccess = new ThreadLocal<>();
     private final DatasourceAdapterRegistry adapterRegistry;
     private final DatasourceConnectionFactory connectionFactory;
 
     public DorisConnectionService(DorisClusterMapper mapper, DorisJdbcProperties properties,
-            UserMappingService mappings, DatasourceAdapterRegistry registry) {
+            DatasourceSubjectAccountService mappings, DatasourceAdapterRegistry registry) {
         this.dorisClusterMapper = mapper;
         this.dorisJdbcProperties = properties;
-        this.userMappingService = mappings;
+        this.subjectAccounts = mappings;
         this.adapterRegistry = registry;
         this.connectionFactory = new DatasourceConnectionFactory(registry);
     }
@@ -85,7 +84,8 @@ public class DorisConnectionService {
      */
     public boolean testConnection(Long clusterId) {
         DorisCluster cluster = resolveCluster(clusterId);
-        try (Connection ignored = getConnection(cluster, null)) {
+        try (Connection ignored = connectionFactory.open(cluster.getSourceType(), ConnectionConfig.from(cluster), null,
+                cluster.getUsername(), cluster.getPassword(), false)) {
             return true;
         } catch (SQLException e) {
             log.warn("Doris connection test failed for cluster {}", cluster.getClusterName(), e);
@@ -109,35 +109,32 @@ public class DorisConnectionService {
         return getConnection(cluster, database);
     }
 
-    /**
-     * 获取连接（使用用户上下文自动选择凭据）
-     * 如果当前有用户上下文，则使用用户对应的Doris凭据
-     * 否则使用集群默认凭据
-     */
-    private Connection getConnection(DorisCluster cluster, String database) throws SQLException {
-        // 尝试从用户上下文获取用户ID
-        String userId = UserContextHolder.getCurrentUserId();
-
-        String username;
-        String password;
-
-        DorisCredential credential = null;
-        if (userId != null && StringUtils.hasText(database)) {
-            // 映射拒绝直接抛出：此时退回数据源账号，等于让用户访问未授权的库
-            credential = userMappingService.getDorisCredential(userId, cluster.getId(), database);
+    /** 系统同步/运维显式使用源账号；人工请求永不回退到该账号。 */
+    public <T> T withSystemAccount(java.util.function.Supplier<T> action) {
+        Boolean previous = systemAccess.get();
+        systemAccess.set(true);
+        try {
+            return action.get();
+        } finally {
+            if (previous == null) {
+                systemAccess.remove();
+            } else {
+                systemAccess.set(previous);
+            }
         }
-        if (credential != null) {
-            username = credential.getUsername();
-            password = credential.getPassword();
-            log.debug("Using mapped credential for user {} on database {}", userId, database);
-        } else {
-            // 无用户上下文、未指定库，或该库未登记映射账号：使用数据源账号
-            username = cluster.getUsername();
-            password = cluster.getPassword() == null ? "" : cluster.getPassword();
-        }
+    }
 
+    private Connection getSystemConnection(DorisCluster cluster, String database) throws SQLException {
         return connectionFactory.open(cluster.getSourceType(), ConnectionConfig.from(cluster), database,
-                username, password, false);
+                cluster.getUsername(), cluster.getPassword(), false);
+    }
+
+    private Connection getConnection(DorisCluster cluster, String database) throws SQLException {
+        if (Boolean.TRUE.equals(systemAccess.get())) {
+            return connectionFactory.open(cluster.getSourceType(), ConnectionConfig.from(cluster), database,
+                    cluster.getUsername(), cluster.getPassword(), false);
+        }
+        return subjectAccounts.open(cluster.getId(), "USER", subjectAccounts.currentUserId(), database, false);
     }
 
     private String quoteIdentifier(DorisCluster cluster, String identifier) {
@@ -166,7 +163,7 @@ public class DorisConnectionService {
             return Optional.empty(); // Base catalog statistics are supplied by the adapter.
         }
 
-        try (Connection connection = getConnection(cluster, null)) {
+        try (Connection connection = getSystemConnection(cluster, null)) {
             Optional<TableRuntimeStats> stats = queryTableStats(connection, database, tableName);
             if (stats.isPresent()) {
                 return stats;
@@ -232,7 +229,7 @@ public class DorisConnectionService {
         if (!adapterRegistry.require(cluster.getSourceType()).descriptor().supports("engineProperties")) {
             return Optional.empty();
         }
-        try (Connection connection = getConnection(cluster, null)) {
+        try (Connection connection = getSystemConnection(cluster, null)) {
             return queryTableTabletStats(connection, database.trim(), tableName.trim());
         } catch (SQLException e) {
             log.warn("Failed to fetch tablet stats for {}.{}, reason={}", database, tableName, e.getMessage());
@@ -919,7 +916,7 @@ public class DorisConnectionService {
         adapterRegistry.requireCapability(cluster.getSourceType(), "freshnessMetadata");
         String sql = "SELECT UPDATE_TIME AS max_loaded_at, NOW() AS snapshotted_at "
             + "FROM information_schema.tables WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?";
-        try (Connection connection = getConnection(cluster, null);
+        try (Connection connection = getSystemConnection(cluster, null);
                 PreparedStatement stmt = connection.prepareStatement(sql)) {
             if (timeoutSeconds > 0) {
                 stmt.setQueryTimeout(timeoutSeconds);
@@ -938,7 +935,7 @@ public class DorisConnectionService {
     }
 
     private FreshnessProbe runProbe(DorisCluster cluster, String database, String sql, int timeoutSeconds) {
-        try (Connection connection = getConnection(cluster, database);
+        try (Connection connection = getSystemConnection(cluster, database);
                 Statement stmt = connection.createStatement()) {
             if (timeoutSeconds > 0) {
                 stmt.setQueryTimeout(timeoutSeconds);

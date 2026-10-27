@@ -4,7 +4,7 @@ from __future__ import annotations
 只读 SQL 执行代理 — 把交互式查询转发到 backend-agent-api 的受治理通道。
 
 dataagent-backend 不直连任何业务数据库：只读校验、limit/字节守卫、
-数据范围隔离与数据源凭据全部由 Java 侧 `/v1/ai/query/read` 权威执行，
+数据库账号隔离与数据源凭据全部由 Java 侧 `/v1/ai/query/read` 权威执行，
 本模块仅做参数钳制、请求转发与错误归一。
 """
 
@@ -14,7 +14,7 @@ from typing import Any
 
 import httpx
 
-from core.data_scope import runtime_data_scope_header
+from core.agent_identity import identity_headers
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,6 @@ MAX_LIMIT = 1000
 DEFAULT_TIMEOUT_SECONDS = 30
 MAX_TIMEOUT_SECONDS = 120
 
-DATA_SCOPE_HEADER_NAME = "X-Agent-Data-Scope"
 
 
 class QueryProxyConfigError(RuntimeError):
@@ -123,7 +122,8 @@ async def execute_readonly_query(
     engine: str | None = None,
     limit: Any = None,
     timeout_seconds: Any = None,
-    data_scope_header: str | None = None,
+    user_id: str,
+    agent_id: str,
 ) -> dict[str, Any]:
     base_url = _ai_base_url()
     token = _service_token()
@@ -136,9 +136,7 @@ async def execute_readonly_query(
     clamped_timeout = clamp_timeout_seconds(timeout_seconds)
 
     headers = {_service_token_header_name(): token}
-    data_scope = runtime_data_scope_header() if data_scope_header is None else str(data_scope_header).strip()
-    if data_scope:
-        headers[DATA_SCOPE_HEADER_NAME] = data_scope
+    headers.update(identity_headers(user_id, agent_id))
 
     body: dict[str, Any] = {
         "database": database,
