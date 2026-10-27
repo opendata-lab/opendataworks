@@ -10,7 +10,7 @@ Docker Compose 会将此目录挂载到 MySQL 容器的 `/docker-entrypoint-init
 
 - `01-init-database.sql`: 数据库和用户的初始化脚本
   - 确保数据库使用正确的字符集（utf8mb4）
-  - 创建 `opendataworks` / `dataagent` 两个应用用户，并设置默认权限
+  - 创建 `opendataworks` 应用用户，并设置默认权限
 
 ## 注意事项
 
@@ -26,9 +26,9 @@ Docker Compose 会将此目录挂载到 MySQL 容器的 `/docker-entrypoint-init
      ```
 
 3. **数据库初始化与迁移分工**:
-   - 本目录只负责创建 `opendataworks` / `dataagent` 数据库、用户和授权
-   - DataAgent 的表结构由 `alembic upgrade head` 管理
-   - 不再由应用启动代码直接建表或删列
+   - 本目录只负责创建 `opendataworks` 数据库、用户和授权
+   - 表结构由 backend 的 Flyway 迁移管理
+   - DataAgent 的数据库随 opendataagent 仓库单独部署，不在此初始化
 
 4. **文件命名**: 建议使用数字前缀（如 `01-`, `02-`）来确保执行顺序。
 
@@ -36,7 +36,7 @@ Docker Compose 会将此目录挂载到 MySQL 容器的 `/docker-entrypoint-init
 
 6. **升级已有 volume**:
    - 如果 `mysql-data` 已存在，初始化脚本不会再次执行。
-   - 从旧版本升级到当前版本时，如需切换到独立 `dataagent` 用户，请手动执行下方 SQL，或删除 volume 后重新初始化。
+   - 旧版本留下的 `dataagent` 库和用户不再被本仓库使用；迁移到 opendataagent 部署后可自行备份并删除。
 
 ## 与手册的关系
 
@@ -44,12 +44,8 @@ Docker Compose 会将此目录挂载到 MySQL 容器的 `/docker-entrypoint-init
 
 ```sql
 CREATE DATABASE opendataworks DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE DATABASE dataagent DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER 'opendataworks'@'%' IDENTIFIED BY 'opendataworks123';
-CREATE USER 'dataagent'@'%' IDENTIFIED BY 'dataagent123';
 GRANT ALL PRIVILEGES ON opendataworks.* TO 'opendataworks'@'%';
-GRANT SELECT ON opendataworks.* TO 'dataagent'@'%';
-GRANT ALL PRIVILEGES ON dataagent.* TO 'dataagent'@'%';
 FLUSH PRIVILEGES;
 ```
 

@@ -71,19 +71,8 @@ When working in this repository, optimize for:
 
 ### Python baseline
 
-- In this workspace, prefer a dedicated local virtualenv when it already exists for DataAgent work.
-- `claude-agent-sdk` requires Python `>=3.10`. Do not try to install or run the DataAgent execution path with the Xcode Python `3.9.6`.
-- If no project virtualenv is present, prefer the Xcode Python at `/Applications/Xcode.app/Contents/Developer/usr/bin/python3` for local DataAgent commands, because the host `/usr/local/bin/python3` may point to a different interpreter without the required packages.
-- Before running backend commands, verify the interpreter can import the required runtime modules for the touched path, at minimum:
-  - `fastapi`
-  - `uvicorn`
-  - `alembic`
-  - `pymysql`
-  - `anyio`
-- For any execution path that reaches the real agent runtime, also verify:
-  - `claude_agent_sdk`
-- If the preferred interpreter cannot import the required modules, install the missing packages into the chosen environment before claiming the backend cannot be started.
-- If the runtime reports `claude-agent-sdk 未安装`, first verify the active interpreter and Python version before concluding that the package is actually missing. In this repo, that error usually means the wrong interpreter was used.
+- Python code in this repository is `odw-mcp-servers/opendataworks/` and the scripts and tests under `odw-skills/`; use Python `>=3.10`.
+- Do not assume the first `python3` on `PATH` is the right interpreter. Use a dedicated virtualenv with the touched module's `requirements.txt` installed, and verify it can import the packages the tests need before concluding a module is broken.
 
 ## Architecture Overview
 
@@ -153,9 +142,9 @@ DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent
   - for mapper-layer SQL contract tests, prefer an in-memory DuckDB (`jdbc:duckdb:`) so the test needs no local MySQL and no Spring context; the existing `@SpringBootTest` integration tests require a real MySQL on `localhost:3306` and are not a fit for a focused SQL guard
   - lock the production SQL itself, not a copy: reflect the `@Select`/`@Update` value off the mapper method, swap `#{param}` for a JDBC `?`, then execute it against DuckDB (see `TableTaskRelationMapperWriteTablesSqlTest`)
   - keep the DuckDB driver at a Java-8-compatible line (`org.duckdb:duckdb_jdbc:0.10.x`) to match the backend baseline; write DuckDB-portable DDL in the test (`BIGINT`/`VARCHAR`/`INTEGER`, no MySQL-only types)
-- DataAgent changes:
+- ODW MCP server or `odw-skills/` changes:
   - prefer focused `pytest` coverage for the touched module or contract
-  - if code paths are sensitive to prompt or runtime configuration, add or update a targeted regression test
+  - when a tool name, argument, or skill invocation changes, update the skill docs and their regression tests in the same change
 - Cross-layer changes:
   - if a change crosses frontend, backend, worker, persistence, or deployment boundaries, add a local end-to-end smoke verification on top of targeted tests when the required environment can be started locally
   - if that smoke verification cannot be run, report the missing local full-flow coverage explicitly

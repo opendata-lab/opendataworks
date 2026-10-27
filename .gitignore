@@ -83,10 +83,6 @@ backend-agent-api/target/
 
 # DataAgent local Python caches
 
-# Opendataagent local artifacts
-opendataagent/web/node_modules/
-opendataagent/web/dist/
-opendataagent/server/data/
 output/
 
 # Documentation site (VitePress)

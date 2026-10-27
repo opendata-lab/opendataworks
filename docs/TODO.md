@@ -42,7 +42,7 @@
 
 ## 测试与工程卫生
 
-- 根 `skills/bin/odw-cli` 仍是一份旧版拷贝；DataAgent 原直连 CLI 已在本次迁移中删除。根 skills 按本次范围保持不动，后续确认旧 CLI 是否使用并单独处理。来源：2026-10-27 迁移复核。
+- **website 中的 DataAgent 页面**：`website/architecture/dataagent.md`、`website/architecture/frontend.md`、`website/guide/configuration.md`、`website/guide/introduction.md` 仍按 DataAgent 内置于本仓库的方式描述其内部结构与配置。需要把 DataAgent 内部说明移到 opendataagent，本站只保留“接入 DataAgent”。来源：2026-10-27 拆分复核。
 
 ## 已完成
 
@@ -67,4 +67,8 @@
 
 ### DataAgent 运行时、插件和前端待办已迁出
 
-2026-10-27：上游 DataAgent 专属待办已迁往 opendataagent docs/TODO.md；含定时消息、运行时升级、ToolOutputRenderer 既有 10 项失败及本地 Skill。见[迁移验证报告](reports/2026-10-27-dataagent-opendataworks-decoupling-verification.md)。
+2026-10-27：上游 DataAgent 专属待办已迁往 opendataagent docs/TODO.md；含定时消息、运行时升级、ToolOutputRenderer 既有 10 项失败。见[迁移验证报告](reports/2026-10-27-dataagent-opendataworks-decoupling-verification.md)。
+
+### Go 版 opendataagent、根 skills 与 Gitee 发布同步已删除
+
+2026-10-27：`opendataagent/`（Go 版）、只服务它的根 `skills/`（含旧版 `odw-cli` 拷贝）、其构建 workflow、Gitee 发布渲染脚本及测试一并删除。原 `test_gitee_sync_workflow_patches_release_body_after_upload` 在 main `828eb2f8` 上已因 workflow 不含 Gitee 步骤而失败，随脚本删除。见[迁移验证报告](reports/2026-10-27-dataagent-opendataworks-decoupling-verification.md)。

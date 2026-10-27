@@ -150,15 +150,11 @@ jobs:
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${VERSION})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${VERSION})"
             echo "- [ODW MCP Server](https://hub.docker.com/r/${NS}/opendataworks-odw-mcp-server/tags?name=${VERSION})"
-            echo "- [Opendataagent Server](https://hub.docker.com/r/${NS}/opendataagent-server/tags?name=${VERSION})"
-            echo "- [Opendataagent Web](https://hub.docker.com/r/${NS}/opendataagent-web/tags?name=${VERSION})"
             echo ""
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-backend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-odw-mcp-server:${VERSION}"
-            echo "docker pull ${NS}/opendataagent-server:${VERSION}"
-            echo "docker pull ${NS}/opendataagent-web:${VERSION}"
             echo '```'
           } > release_body.md
           echo "RELEASE_BODY_FILE=release_body.md" >> $GITHUB_ENV
@@ -224,15 +220,11 @@ jobs:
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${IMAGE_TAG})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${IMAGE_TAG})"
             echo "- [ODW MCP Server](https://hub.docker.com/r/${NS}/opendataworks-odw-mcp-server/tags?name=${IMAGE_TAG})"
-            echo "- [Opendataagent Server](https://hub.docker.com/r/${NS}/opendataagent-server/tags?name=${IMAGE_TAG})"
-            echo "- [Opendataagent Web](https://hub.docker.com/r/${NS}/opendataagent-web/tags?name=${IMAGE_TAG})"
             echo ""
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-backend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-odw-mcp-server:${IMAGE_TAG}"
-            echo "docker pull ${NS}/opendataagent-server:${IMAGE_TAG}"
-            echo "docker pull ${NS}/opendataagent-web:${IMAGE_TAG}"
             echo '```'
           } > latest_release_body.md
 

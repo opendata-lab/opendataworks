@@ -4,105 +4,30 @@ This guide covers both Online (source code) and Offline (deployment package) dep
 
 ## 部署输入：默认优先
 
-`deploy/.env.example` 只展开 12 个常规安装项。首次安装复制为 `.env`，设置数据库
-凭据、JWT 密钥、共享服务令牌及宿主目录即可。密码须与实际 MySQL 用户一致；
-复用已有数据卷时，修改 `.env` 不会重建用户或改写库内密码。
+`deploy/.env.example` 只展开常规安装项。首次安装复制为 `.env`，设置数据库凭据、
+JWT 密钥和共享服务令牌即可。密码须与实际 MySQL 用户一致；复用已有数据卷时，
+修改 `.env` 不会重建用户或改写库内密码。
 
 | 配置位置 | 内容 |
 | --- | --- |
-| `.env` | 凭据、宿主路径、镜像和必要部署选择 |
-| Compose | 固定服务接线、共享令牌映射；DataAgent 通过一个 YAML anchor 共用 |
-| 代码默认 | 任务租约/心跳、调度扫描、缓存/池、超时等策略 |
-| `docker/dataagent/dataagent_config_docker.py` | backend 的 `DATAAGENT_SETTINGS` 运行策略覆盖及登录认证 |
-| 管理页面 | 供应商/模型、助手、已导入的 MCP 配置 |
+| `.env` | 凭据、镜像和必要部署选择 |
+| Compose | 固定服务接线、共享令牌映射 |
+| `docker/nginx/frontend.conf` | 门户 nginx（宿主机挂载），含 DataAgent 转发示例 |
+| 代码默认 | 调度扫描、缓存/池、超时等策略 |
 
-通常不用添加高级配置。确有需要时，`.env` 支持代码原生字段的大写形式：例如
-`TASK_MAX_CONCURRENCY=12`、`SCHEDULE_SCAN_INTERVAL_SECONDS=20`，不再附加
-`DATAAGENT_` 别名前缀。backend 策略优先使用已有 `DATAAGENT_SETTINGS`，不要在
-两处同时覆盖同一字段；runner 的池/隔离策略可用原生
-`DATAAGENT_SANDBOX_MAX_WARM_CONTAINERS` 等环境项。应用服务的 `env_file` 保留，
-静态前端不再接收全量部署变量。
-
-可选部署项在 `.env.example` 保持注释：UID/GID 默认 `1000:1000`，runner 默认
-`0:0`；容器 socket 默认 `/var/run/docker.sock`；Pi 的 Node 和编译产物路径使用
-镜像内的 ENV；源码默认直接执行，离线包自动填 `DATAAGENT_SANDBOX_MODE=container`。
-标准 runner 镜像只带 Docker CLI。Podman 宿主通过 `DATAAGENT_DOCKER_SOCKET`
-挂载其 Docker 兼容 API socket，保持 `DATAAGENT_SANDBOX_BACKEND=docker` 默认值；
-设置为 `podman` 需要自行构建包含 Podman CLI 的 runner 镜像。
 生产网络默认 `10.71.0.0/24`、网关 `10.71.0.1`，遇到 VPN/宿主网段冲突再修改；
-dev 使用 Compose 默认网络。时间戳、重启和健康检查策略仍保留原部署行为。
+dev 使用 Compose 默认网络。
 
-升级已有 `.env` 时不自动覆盖。需要人工迁移的旧项：
-
-| 旧项 | 处理 |
-| --- | --- |
-| `DATAAGENT_TASK_*` | 改用 `TASK_*` 或 `DATAAGENT_SETTINGS` 的小写字段 |
-| `DATAAGENT_SCHEDULE_*` | 改用 `SCHEDULE_*` 或 `DATAAGENT_SETTINGS` 的小写字段 |
-| `DATAAGENT_REDIS_DB` / `DATAAGENT_REDIS_PASSWORD` | 需要覆盖时使用 `REDIS_DB` / `REDIS_PASSWORD`；连接认证应与实际 Redis 服务一致 |
-| `DATAAGENT_MYSQL_DATABASE` | 业务库统一使用 `MYSQL_DATABASE`；会话库仍可用 `DATAAGENT_SESSION_MYSQL_DATABASE` |
-| `DATAAGENT_TASK_PERMISSION_WAIT_SECONDS` | 删除，审批/提问已持久化挂起，不使用等待超时 |
-| `DATAAGENT_LLM_JSON_FILE` | 删除，模型配置在 registry，不再打包来源不明的 settings.json |
-| `OPENDATAWORKS_DEV_SUBNET/GATEWAY` | 删除，dev Compose 未使用这些字段 |
-
-内部 API 地址由服务拓扑决定；ODW MCP Server 的地址/令牌环境值仅用于首次 registry
-bootstrap，后续在管理页面维护。`ODW_MCP_SERVER_TOKEN_HEADER_NAME` 默认
-`X-ODW-MCP-Token`，确需修改时一处设置会同步给 client/frontdoor。
-ODW MCP Server keep-alive 默认 600 秒（镜像入口维护），不要在 Compose 重复写默认。
-版本升级使用 `compose pull` 后重建对应服务；keep-alive 不是 MCP 重启/OOM 的恢复机制。
-
-## DataAgent 运行配置归属
-
-默认配置即可运行，只覆盖确有差异的字段；完整说明见
-[运行预算设计](../docs/design/2026-10-15-dataagent-runtime-budgets-design.md)。
-
-- 助手负责能力与权限，以及可选的 `max_turns`：0 继承全局，正数覆盖每次任务
-  的模型轮数（不是整段聊天的消息数量）。内置助手保持继承，不批量改写已有助手。
-- 模型负责 provider/model 和 `max_output_tokens`；Pi 未配置输出上限时使用 8192。
-- 全局负责轮数默认、工具次数、超时、并发、上下文与沙箱。按需在已有
-  `DATAAGENT_SETTINGS`（`docker/dataagent/dataagent_config_docker.py.example`）
-  中覆盖，或使用字段名大写的环境变量。外置配置覆盖环境变量；不要重复配置同一项。
-
-| 全局默认 | 交互 | auto / 后台 |
-| --- | ---: | ---: |
-| `agent_*_max_turns` | 24 | 40 |
-| `agent_*_max_tool_calls`（Pi） | 100 | 200 |
-| `agent_*_timeout_seconds` | 360 | 1800 |
-| `agent_*_bash_timeout_seconds`（Pi） | 300 | 900 |
-| `agent_*_sql_read_timeout_seconds` | 300 | 900 |
-
-`*` 为 `interactive` 或 `background`；页面发送 `auto`，走后台档。
-此预算表按默认 Pi 引擎的执行路径解释；Claude SDK 本次仅共用轮数继承，
-其原有执行/等待机制保持现状。
-SQL 写入默认 60 秒；Pi 无活动超时 `dataagent_run_idle_timeout_seconds` 为 300 秒，
-它统计运行时事件（包括工具心跳），不等价于业务进展。SQL 超时必须不大于 Bash
-超时，Bash 必须小于总超时。实际预算由控制面传进子容器，日志 `task.pi.limits`
-可核对。工具次数/Bash 限制仅接入 Pi，不作用于显式选择的 Claude SDK。
-
-升级时移除旧 `agent_timeout_seconds`、`agent_max_turns`，分别迁移到两个模式字段。
-移除未生效的 `agent_interactive_idle_timeout_seconds`、
-`agent_background_idle_timeout_seconds`，统一使用 `dataagent_run_idle_timeout_seconds`；
-移除重复的 `dataagent_run_total_timeout_seconds`，使用模式总超时。
-外置配置中的旧字段会被拒绝；环境中的旧字段不再生效。
-新部署引擎统一默认 `pi_agent_core`；已有 `.env` 显式设置 `claude_code` 的部署
-继续使用 Claude，升级时按实际引擎意图调整。预算变更需重启后端；协议更新需同时
-更新 backend 与 runner 镜像、重启沙箱 runner 清理旧暖容器；已失败任务需重新提交。
-Nginx 两个模板默认 1860 秒，覆盖后台总预算；自定义更长总预算时一并审查代理设置。
+`ODW_MCP_SERVER_TOKEN_HEADER_NAME` 默认 `X-ODW-MCP-Token`。ODW MCP Server keep-alive
+默认 600 秒（镜像入口维护），不要在 Compose 重复写默认。版本升级使用 `compose pull`
+后重建对应服务。
 
 ## Deployment Topology
 
-当前仓库维持两条并行智能体产品线：
-
-- 主前端内嵌的“智能问数”
-  - 跟随根 `deploy/` 一起部署
-  - 主门户只通过远程 widget JS 嵌入问答入口
-  - UI 运行时由 `dataagent-frontend` 提供，API 运行时依赖 `dataagent-backend`
-  - 当前仍是生产可用主链
-- 独立的 `opendataagent`
-  - 使用 [opendataagent/deploy/docker-compose.yml](/Users/guoruping/.codex/worktrees/92ff/opendataworks/opendataagent/deploy/docker-compose.yml) 单独部署
-  - 不由主前端内嵌，也不通过主前端菜单跳转
-  - 与现有智能问数并行存在，不互相替换
-
-根 `deploy/` 文档只覆盖主门户与现有智能问数链路。`opendataagent` 的部署说明见 [opendataagent/README.md](/Users/guoruping/.codex/worktrees/92ff/opendataworks/opendataagent/README.md)。
+本目录只部署 OpenDataWorks 门户：MySQL、Redis、backend、frontend、`odw-mcp-server`
+和日志收集 sidecar。DataAgent（智能问数）由独立仓库
+[opendataagent](https://github.com/MingkeVan/opendataagent) 单独部署，可以在另一台机器上；
+接入方式见文末“接入 DataAgent”。
 
 ## Directory Contents
 
@@ -145,14 +70,9 @@ Use this method if you have internet access and are deploying directly from the 
 
    主链路默认地址：
    - 门户首页: `http://localhost:8081/`
-   - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
-   - DataAgent Frontend: `http://localhost:8901/chat`
-   - DataAgent Backend: `http://localhost:8900`
+   - 主前端智能问数入口: `http://localhost:8081/intelligent-query`（需先接入 DataAgent）
    - ODW MCP Server Health: `http://localhost:8801/health`
    - ODW MCP Server Streamable HTTP: `http://localhost:8801/mcp/`
-
-   说明：
-   - 大模型供应商、Token 与候选模型在主前端配置页中维护，后端保存到 DataAgent provider registry。
 
 ## 2. Offline Deployment (Using Package)
 
@@ -196,37 +116,11 @@ Use this method for isolated environments without internet access. You will use 
    scripts/start.sh
    ```
 
-   离线包中的主链地址：
-   - 门户首页: `http://localhost:8081/`
-   - 主前端智能问数入口: `http://localhost:8081/intelligent-query`
-   - DataAgent Frontend: `http://localhost:8901/chat`
-   - DataAgent Backend: `http://localhost:8900`
-   - ODW MCP Server Health: `http://localhost:8801/health`
-   - ODW MCP Server Streamable HTTP: `http://localhost:8801/mcp/`
+   离线包中的地址同上。
 
-   说明：
-   - skill/runtime 不再需要外部数据源的 host / port / user / password；datasource 解析结果只保留定位摘要
-   - `odw-mcp-server` 作为独立远程 MCP 服务一并部署，客户端需带 `X-ODW-MCP-Token`
-   - `opendataagent` 需要用它自己的部署包或 compose 单独部署，不包含在这里的离线包主链描述中
-   - DataAgent backend/runner 额外持久化宿主目录 `DATAAGENT_HOST_ROOT`（默认 `/dataagent_runtime`），compose 挂载到容器内固定运行时根 `/dataagent_runtime`。topic 根目录默认位于 `/dataagent_runtime/<topic_id>/`，agent cwd 位于 `workspace/`，Claude SDK session 文件位于同一 topic 下的 `home/.claude/projects/<sanitized-cwd>/`；同一 topic 多轮复用该目录，不同 topic 不共享 `.claude` 状态
-   - `DATAAGENT_HOST_ROOT` 可在 `.env` 中改成任意自定义宿主机目录：绝对路径直接生效；相对路径按 `deploy/` 解析，`scripts/start.sh` 会在启动 compose 前统一展开成宿主机绝对路径并 `export`，保证 backend 卷挂载与 sandbox runner 反查的 child bind 源指向同一目录。若不经 `start.sh` 直接运行 `docker compose`，请填写绝对路径，否则 runner 会把相对路径误解析成容器内 `/app/<rel>` 导致 child bind 源错位
-   - `dataagent-home-init` 是一次性 init 服务（以 root 运行），在 backend/runner 启动前确保 `DATAAGENT_HOST_ROOT` 对应的 `/dataagent_runtime` bind mount 存在，并把属主改成 `DATAAGENT_RUNTIME_UID/GID`。这避免了 Docker 把缺失的 bind mount 宿主目录默认建成 `root:root 755`、导致非 root 的 `dataagent-backend` 写 `/dataagent_runtime` 时报 `permission denied` 的问题；属主修好后，每个 topic 的具体 skill 目录仍由运行时按需在各自 topic 工作区下创建，init 不预设任何按 skill 划分的目录；若改了 `DATAAGENT_RUNTIME_UID/GID`，该 init 服务会自动按新值修正属主
-   - `dataagent-backend` 与 `dataagent-sandbox-runner` 采用 master/worker 形态：backend 负责 topic/task 协调，runner 使用独立 `oda-runner` 镜像负责执行入口；设置 `DATAAGENT_SANDBOX_MODE` 后，backend 会把任务流式委托给 runner，runner 再启动每 task child 容器，并只把当前 topic 目录挂到 child 的 `/mnt/workspace`
-   - task child 内部路径与 backend/runner 服务路径分离：`/mnt/workspace` 是当前 task workspace 和 project skills 目录，`/mnt/home` 是 Claude HOME，`/tmp` 只用于临时 scratch；child 不注入 `DATAAGENT_WORKSPACE_DIR`、`DATAAGENT_WORKSPACE_PREPARED`，也不暴露共享运行时根
-   - 每个 task child 容器都是一次性容器，runner 使用 `--rm` 启动；正常结束自动删除，取消或异常时 runner 会 kill child，并在启动时清理带 `dataagent.sandbox.managed_by=dataagent-sandbox-runner` 标签的遗留 child 容器
-   - `DATAAGENT_DOCKER_SOCKET` 只挂到 `dataagent-sandbox-runner`，不会挂到 task child 容器；runner 默认用 `DATAAGENT_RUNNER_UID/GID=0:0` 访问 Docker socket，child task 仍用 `DATAAGENT_RUNTIME_UID/GID` 运行；若手动删除 `DATAAGENT_HOST_ROOT`，Claude SDK 本地 session 文件和 topic 工作区都会被清空，此时旧话题会退回到“重放历史 prompt”的兼容路径，直到该话题再次跑出新的真实 SDK session id
-
-   > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` / `dataagent` 数据库，并分别初始化 `opendataworks`、`dataagent` 两个应用用户。DataAgent 容器启动时会先执行 `alembic upgrade head`，再启动服务。
-   >
-   > 若保留旧的 `mysql-data` volume 升级，初始化脚本不会重跑；切换到独立 `dataagent` 用户前，需要先手动补建该用户或清空 volume 重新初始化。
-   > 升级到引入 `api_format` 的版本时，Alembic 会清空旧的 `da_model_provider` 供应商配置；升级完成后需在管理页重新添加供应商、凭据和模型。
-   >
+   > **💡 数据库自动初始化**: MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` 数据库和用户。保留旧的 `mysql-data` volume 升级时初始化脚本不会重跑。
 
 ---
-
-## 3. DataAgent 评测已迁出
-
-评测源码、两个评测镜像和离线评测脚本由独立 opendataagent 仓库维护。
 
 ## DataX Sync Prerequisites
 
@@ -238,9 +132,9 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 
 列映射（`column_mapping`）支持三种形式：留空（全列同步）、列清单（逗号分隔或 JSON 数组 / 源到目标的 JSON 对象映射）、完整 DataX 作业 JSON（含 `job` 键，按自定义模式 `customConfig=1` 下发）。
 
-## 数据源主体账号映射（V54 / Alembic 20261026_000029）
+## 数据源主体账号映射（V54）
 
-升级前备份平台库和 DataAgent 会话库，检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
+升级前备份平台库和 DataAgent 会话库（DataAgent 侧为 Alembic `20261026_000029`），检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
 
 1. DBA 为每个要用的数据源预建人的账号和各智能体的只读账号（只授所需对象的 SELECT/USAGE 等读取权限）。平台仅测试连接，不自动分析 GRANT；智能体只读性由 DBA 保证。Doris 使用 `Select_priv`，不依赖驱动只读事务。
 2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。主门户问数也必须已有 DataAgent 的真实登录会话；widget 自报用户 ID 和认证关闭时的聊天不能访问数据库。
@@ -251,39 +145,6 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 PostgreSQL 16 支持仅视图 SELECT 的 EXPLAIN；MySQL 8.0.45 即使有视图 SELECT、SHOW VIEW，EXPLAIN 仍可能要求底表权限，代人问数严格拒绝，不做回退。交集是对象级，DBA 不应给智能体授予依赖当前用户/RLS/SECURITY DEFINER 的敏感对象。Doris EXPLAIN 和视图权限需在内网验证。
 
 同名 namespace 位于多个数据源时，现有按 database 定位的 agent API 会拒绝歧义；需使用不同 namespace 名称。详见[设计](../docs/design/2026-10-26-dataagent-datasource-identity-design.md)和[验证报告](../docs/reports/2026-10-26-dataagent-datasource-identity-verification.md)。
-
-## DataAgent 登录配置
-
-DataAgent（智能问数）支持 OAuth2 + 本地管理员登录（数据库问数必须启用认证），以及非认证的运行时配置覆盖（`DATAAGENT_SETTINGS`）。配置采用 **Superset `docker/pythonpath_dev` 同款模式**：`deploy/docker/dataagent/` 目录被 compose 整体挂载进 `dataagent-backend` 容器（`/app/docker/dataagent`，只读），并加入 `sys.path`。
-
-目录布局：
-
-| 文件 | 说明 |
-|---|---|
-| `docker/dataagent/dataagent_config.py` | 仓库自带基础配置（默认 `AUTH_ENABLED=False`，**不要直接改**，升级会覆盖）；末尾自动加载同目录用户覆盖 |
-| `docker/dataagent/dataagent_config_docker.py.example` | 用户覆盖示例（认证 + `DATAAGENT_SETTINGS` 运行时覆盖）；拷贝为 `dataagent_config_docker.py` 后填写 |
-| `docker/dataagent/custom_sso_user_info.py.example` | UserInfo 获取与归一化钩子示例（Superset `SecurityManager.oauth_user_info` 对应物）；拷贝为 `custom_sso_user_info.py` 并在覆盖配置里挂 `OAUTH_USER_INFO` |
-| `docker/dataagent/.gitignore` | 忽略一切用户文件，只保留自带文件与 `.example` |
-| `docker/nginx/frontend.conf`、`docker/nginx/dataagent-frontend.conf` | 两个前端 nginx 配置的宿主机副本；默认仍用镜像内构建版本，取消 compose 中对应服务 volumes 注释即可切换为宿主机管理 |
-
-启用步骤：
-
-1. `cd deploy/docker/dataagent && cp dataagent_config_docker.py.example dataagent_config_docker.py`
-2. 按注释填写 `SECRET_KEY`（`secrets.token_urlsafe(32)` 生成）、`LOCAL_ADMINS`（bcrypt 哈希）、单项 `OAUTH_PROVIDERS`（Superset/FAB `remote_app` 形态，`icon` 支持 Font Awesome 4 class）、`ADMIN_USERS`（`provider:sub` 稳定标识），置 `AUTH_ENABLED = True`。
-   OAuth 的 `redirect_uri` 必须注册为 `https://<dataagent-host>/oauth-authorized/<provider_name>`；`api_base_url`、`response_type` 与 `grant_type` 在 `remote_app` 中配置。OAuth 启用时还必须从自定义模块导入 `OAUTH_USER_INFO(provider, token_response, oauth_remotes)`；钩子可通过 `oauth_remotes[provider].get("userinfo")` 获取并归一化用户信息。
-   早期版本的扁平 `OAUTH` 不再接受；检测到非空旧配置时服务会
-   fail-closed 启动失败并提示迁移，避免静默丢失 OAuth 登录。
-3. 重启 `dataagent-backend`。无需修改 compose。需要自定义扩展模块（如自研 SSO 适配）时，直接把 `.py` 放进同目录并在覆盖文件里 import（目录在 `sys.path` 上）。
-
-语义与回滚（fail-closed）：
-
-- 覆盖文件不存在或 `AUTH_ENABLED=False`（默认） = 认证关闭；匿名聊天不具备数据库访问身份，数据库问数不可用。
-- 容器内 `DATAAGENT_CONFIG` env 被注释掉 = 彻底关闭外置配置机制（终极回滚手段）。
-- env 已设置但配置文件缺失 / 不可读 / 有语法错误 / 启用却缺合法 `SECRET_KEY` = 服务启动失败，不会静默降级为无认证。
-- 关闭后果：不再具备已验证的用户身份，代人问数不可用；不要用关闭认证作为数据库访问回退。
-- widget 外嵌会话的自报用户 ID 不作为数据库身份；主门户与独立前端都消费 DataAgent 验证的登录会话。
-
-详见 `docs/design/2026-07-01-dataagent-auth-design.md` 与 `docs/handbook/`。
 
 ## Common Operations
 
@@ -316,32 +177,28 @@ docker-compose -f docker-compose.prod.yml logs -f backend
 
 - **服务日志（实时落盘）**：`log-collector` sidecar 自动把各服务日志实时写到包目录
   `deploy/logs/<container>.log`，打开目录即可查看，无需敲命令。
-  - 默认只覆盖 4 个应用服务：`backend`、`dataagent-backend`、`dataagent-sandbox-runner`、`odw-mcp-server`。
-  - 不收集 mysql/redis 基础设施与两个 nginx 前端；如需增减，在 `deploy/.env` 设置 `LOG_COLLECTOR_CONTAINERS`（空格分隔容器名）。
-  - 收集器复用 runner 镜像自带的 docker CLI，离线包不新增镜像；只读挂载 docker socket。
-- **task child 日志（已落盘）**：DataAgent 每个 `--rm` task child 的输出由 runner 实时写在挂载卷上
-  `<DATAAGENT_HOST_ROOT>/<topic_id>/logs/<task_id>.log`，`--rm` 删容器不影响留存。
-- **一键汇总/导出**：需要把全部服务日志 + 所有 task child 日志固化到一处时，运行：
+  - 默认只覆盖应用服务 `backend`、`odw-mcp-server`。
+  - 不收集 mysql/redis 基础设施与 nginx 前端；如需增减，在 `deploy/.env` 设置 `LOG_COLLECTOR_CONTAINERS`（空格分隔容器名）。
+  - 收集器使用 `docker:27.5.1-cli` 镜像（离线包已包含），只读挂载 docker socket（`DOCKER_SOCKET`）。
+- **一键汇总/导出**：
   ```bash
   scripts/dump-logs.sh
-  # 产物：
-  #   deploy/logs/services/<service>.log     各服务日志快照
-  #   deploy/logs/task-child/<topic>/*.log   所有 task child 日志
+  # 产物：deploy/logs/services/<service>.log
   # 打包带走：tar -czf odw-logs.tgz -C deploy logs
   ```
 
 
-## DataAgent 独立仓库接入（一次切换）
+## 接入 DataAgent
 
-DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 构建，镜像为 `oda-frontend`、`oda-backend`、`oda-runner`；本仓库只编排镜像。
+DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 构建和部署（`oda-frontend`、`oda-backend`、`oda-runner`），
+本仓库不编排它。两边可以在不同机器上，下文 `<DataAgent 主机>`、`<OpenDataWorks 主机>` 填对方可访问的地址。
 
-1. 先发布新 DataAgent 镜像，再同时更新本仓库 MCP 与主前端。widget 使用 `DataAgentWidget` 和 `dataagent-widget.bundle.js`，客户端头为 `X-DataAgent-*`。
-2. 启动 `odw-mcp-server`，配置 `ODW_MCP_SERVER_BACKEND_BASE_URL`、`ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN` 和 `ODW_MCP_SERVER_FRONTDOOR_TOKEN`。
-3. 管理员在 DataAgent 新增普通 HTTP MCP：URL 为 `http://odw-mcp-server:8801/mcp/`，header 填 `X-ODW-MCP-Token: <前门 token>`。工具名统一为 `odw_*`。
-4. 使用已有 Skill 导入功能导入并启用仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。DataAgent 不自动注册或默认绑定任何平台 MCP。
+1. 按 opendataagent 的 `deploy/README.md` 部署 DataAgent。从旧版本（DataAgent 跟随本目录部署）升级时，按其中“从 OpenDataWorks 内置部署迁移”导出旧 `dataagent` 库和 Skill 卷；本目录升级不会删除这些数据。
+   升级本目录时用 `up -d --remove-orphans` 清掉旧的 `opendataworks-dataagent-*` 容器。
+2. 门户内嵌 widget：编辑 `docker/nginx/frontend.conf`，把 DataAgent 转发段中的 `<DataAgent 主机>` 改成实际地址并取消注释，重启 `frontend`。未接入 DataAgent 时保持注释，门户其他功能不受影响。
+3. 管理员在 DataAgent 新增普通 HTTP MCP：URL 为 `http://<OpenDataWorks 主机>:8801/mcp/`，header 填 `X-ODW-MCP-Token: <前门 token>`。工具名统一为 `odw_*`。
+4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
 5. 在 OpenDataWorks 为带来源前缀的人（例如 `local:alice`）和智能体 ID 配置数据库账号映射。前门 token 校验通过后，MCP 将 DataAgent 后端填写的 `X-Agent-User-Id`、`X-Agent-Id` 和服务令牌转发给 backend-agent-api；缺映射时拒绝访问。
-6. Alembic `20261027_000031` 把已有平台 MCP / 内置智能体转为普通可编辑记录并保留历史引用。管理员更新旧记录的 MCP 地址、token 头和提示词中的工具名，再使用它们。
+6. DataAgent 的 Alembic `20261027_000031` 把旧的平台 MCP / 内置智能体转为普通可编辑记录；管理员更新其中的 MCP 地址、token 头和提示词中的工具名。
 
-DataAgent 只接收其会话 schema 的数据库配置，不注入平台库、Doris 或平台服务令牌。通用 Skill 随独立镜像发布；额外 Skill 用管理界面导入。方法论查询节点通过 MCP 执行，原本地直连执行脚本已删除。
-
-Skills 使用 `dataagent-skills` 命名卷持久化。新卷从独立 DataAgent 镜像获取通用 Skill，home-init 统一设置目录属主；backend 与 runner 共享该卷，平台 Skill 通过管理界面导入。
+前门 token 是 DataAgent 访问本平台的凭证；两边跨机器时 `odw-mcp-server` 的 8801 端口需对 DataAgent 主机可达，且应走内网或 HTTPS。

@@ -19,13 +19,13 @@
 - OpenDataWorks 专属 Skill 迁到 `opendataworks/odw-skills/`；
 - DataAgent 中的 `portal` 特例、内置 OpenDataWorks 智能体、平台直连与专属提示词全部删除；
 - DataAgent 的身份请求头变成通用契约，对所有 HTTP MCP 一致发送；
-- 两个仓库各自的部署、镜像构建、CI、文档和测试的所有权调整。
+- 两个仓库各自的部署、镜像构建、CI、文档和测试的所有权调整；OpenDataWorks 的 Compose 不再编排 DataAgent；
+- 删除 `opendataworks/opendataagent/`（Go 版产品线）、只服务它的根目录 `skills/`，以及 Gitee 发布同步。
 
 不覆盖：
 
 - Plugin 打包与导入（`odw-plugins/`、DataAgent Plugin 接口与页面），记入 `docs/TODO.md`；
 - 租户、API Key、数据白名单；
-- `opendataworks/opendataagent/`（Go 版产品线）与根目录 `skills/`，保持不动；
 - 改变主门户通过 widget 嵌入 DataAgent 的能力。
 
 ## Current State
@@ -144,9 +144,12 @@ OpenDataWorks 专属 Skill 平移到 `opendataworks/odw-skills/<原目录名>/`�
 
 `opendataworks`：
 
-- `deploy/docker-compose.*.yml` 继续用镜像编排 DataAgent，`portal-mcp` 服务改为 `odw-mcp-server`；DataAgent 不 `depends_on` `odw-mcp-server`，容器不注入 `DATAAGENT_PORTAL_MCP_*`、Doris 或平台元数据库凭证；skills 挂载不再指向 `../dataagent/.claude/skills`；
+- `deploy/docker-compose.*.yml` 只编排门户（mysql、redis、backend、frontend、`odw-mcp-server`、log-collector），不含任何 DataAgent 服务、变量或镜像；MySQL 初始化不再创建 `dataagent` 库和用户；log-collector 改用 `docker:27.5.1-cli` 镜像；离线包不再带 DataAgent 镜像；
+- 两边可以部署在不同机器上。门户 frontend 默认挂载宿主机 `deploy/docker/nginx/frontend.conf`，widget 与 DataAgent API 的转发以注释示例给出，管理员填 DataAgent 的实际地址后启用；镜像内置 nginx 不含 DataAgent 转发，未接入时门户照常启动；
+- opendataagent 的 Compose 固定项目名 `opendataagent`（两边目录都叫 `deploy`，不固定会被当成同一项目、共用卷），宿主机端口 mysql 3326、redis 6389，避开门户端口；
+- 旧部署的数据（门户 MySQL 中的 `dataagent` 库、`deploy_dataagent-skills` 卷、`DATAAGENT_HOST_ROOT` 目录）不会被升级删除，按 opendataagent `deploy/README.md` 的迁移步骤导入新部署；
 - `docker-build.yml` 删除 DataAgent 和评测镜像构建，`portal-mcp` 改为 `odw-mcp-server`；
-- `deploy/README.md` 写明接入步骤：在 DataAgent 新增 HTTP MCP（URL 指向 `odw-mcp-server`，header 填 `X-ODW-MCP-Token`），导入 `odw-skills/` 下所需 Skill，新建智能体并绑定它们，再按已上线的身份设计为人和智能体配置数据库账号映射；
+- `deploy/README.md` 写明接入步骤：在 DataAgent 新增 HTTP MCP（URL 为 `http://<OpenDataWorks 主机>:8801/mcp/`，header 填 `X-ODW-MCP-Token`），导入 `odw-skills/` 下所需 Skill，新建智能体并绑定它们，再按已上线的身份设计为人和智能体配置数据库账号映射；
 - `AGENTS.md` 删除 DataAgent 模块附录，改为指向 `opendataagent` 仓库；`.gitignore`、`README.md`、`website/` 中的 DataAgent 源码路径同步更新。
 
 DataAgent 必须能在没有 OpenDataWorks backend、`odw-mcp-server` 和任何平台变量的情况下启动、创建智能体、使用内置 Skill、挂载任意第三方 MCP 并完成一次会话。

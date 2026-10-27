@@ -133,3 +133,28 @@ opendataagent 中剩余的 opendataworks 名称一次性改掉，不保留旧名
 验证：opendataagent pytest 877 通过；前端 748 通过、既有 `ToolOutputRenderer` 10 项失败；`build`、`build:widget`、`test:sdk`、`build:sdk` 通过；Pi 183 通过、既有 Bash 时序用例 1 项失败，build 通过；两边 compose `config` 通过；opendataworks 部署契约测试 13 通过。
 
 上线注意：`oda-*` 镜像在 Docker Hub 上还不存在。opendataworks prod compose 默认 `oda-*:1.5.0`，发布前需由 opendataagent 先构建并推送对应 tag。以 `@opendataagent` scope 发布 npm 包前需先在 npm 上拥有该 scope。
+
+## 部署拆分（2026-10-27 追加）
+
+用户确认 OpenDataWorks 的 Compose 不再包含 DataAgent，两边可以在不同机器上；同时删除 Go 版产品线和 Gitee 发布同步。
+
+opendataworks：
+
+- `docker-compose.dev/prod.yml` 删除 `dataagent-*` 服务、YAML anchor 与 `dataagent-skills` 卷；frontend 不再依赖 DataAgent，默认挂载宿主机 `deploy/docker/nginx/frontend.conf`。
+- 宿主机 nginx 配置中 DataAgent 的四段转发改为注释示例（`<DataAgent 主机>` 占位）；镜像内置 `frontend/nginx.conf` 删除这些转发，未接入 DataAgent 时 nginx 不会因解析不到上游而启动失败。
+- log-collector 改用 `docker:27.5.1-cli`，默认只收集 backend 与 odw-mcp-server；socket 变量改为 `DOCKER_SOCKET`。
+- `.env.example`、MySQL 初始化脚本与说明、离线打包/加载脚本、`start.sh`、`dump-logs.sh`、多架构构建配置中的 DataAgent 部分删除；`deploy/docker/dataagent/` 与 `dataagent-frontend.conf` 删除（opendataagent 已有）。
+- 删除 `opendataagent/`（Go 版）、根 `skills/`、`opendataagent-build.yml`、`docker-build.yml` 中的 Go 镜像链接、`docs/handbook/parallel-agent-platforms.md`、`scripts/release/render-gitee-release-body.sh` 与 `tests/test_gitee_release_sync.py`。
+- `deploy/README.md` 改为只描述门户，新增“接入 DataAgent”；README、AGENTS、handbook、website 同步。
+
+opendataagent：
+
+- Compose 固定 `name: opendataagent`。两边目录都叫 `deploy`，原先在同一台机器上会被当成同一项目，DataAgent 的 mysql 会挂上门户的 `deploy_mysql-data` 卷。宿主机端口改为 mysql 3326、redis 6389。
+- 新增 `deploy/README.md`：运行配置、运行时目录与沙箱、登录配置、被门户内嵌时的转发，以及从旧内置部署迁移 `dataagent` 库、Skill 卷和运行时目录的步骤。
+
+验证：
+
+- opendataworks 根测试 10 通过（删除 Gitee 测试后无失败）；dev/prod `compose config` 通过；主前端 419 通过、build 通过。
+- `nginx:1.30.3-alpine` 下 `nginx -t`：宿主机配置（注释状态）、镜像内置配置、以及把示例填上地址并取消注释后的配置均通过。
+- opendataagent `compose config` 解析出项目名 `opendataagent`、卷 `opendataagent_mysql-data`、端口 8900/8901/3326/6389。
+- 未验证：迁移步骤未在真实旧部署上演练；跨机器的 widget 转发与 MCP 访问未实测；opendataagent 尚无启动、日志导出与离线包脚本（已记入其 TODO）。

@@ -326,7 +326,8 @@ Widget 请求会携带以下特殊请求头：
 Widget 需要单独构建：
 
 ```bash
-cd https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend
+# 在 opendataagent 仓库中执行
+cd dataagent-frontend
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use
 npm run build:widget   # 产出 dist/widget/dataagent-widget.bundle.js
 ```

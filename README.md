@@ -40,7 +40,7 @@ OpenDataWorks 是一个面向数据平台团队的开源统一数据门户，提
 - **工作流编排**：可视化配置批处理和流处理任务，并深度集成 DolphinScheduler。
 - **数据血缘分析**：自动解析 SQL 血缘，在交互式图谱中查看上下游链路。
 - **智能问数**：在主门户内通过自然语言生成 SQL、执行分析并查看结果。
-- **快速部署**：通过现有 Docker Compose 一次性拉起前端、后端、DataAgent Backend、Redis、MySQL 和 Portal MCP。
+- **快速部署**：通过现有 Docker Compose 一次性拉起前端、后端、Redis、MySQL 和 ODW MCP Server；智能问数的 DataAgent 由 [opendataagent](https://github.com/MingkeVan/opendataagent) 单独部署。
 
 ## 功能亮点
 
@@ -80,7 +80,7 @@ OpenDataWorks 是一个面向数据平台团队的开源统一数据门户，提
 
 ### 开发环境快速启动
 
-如果希望一次性在本机拉起完整环境（前端、后端、DataAgent Backend、Redis、MySQL、Portal MCP），可使用开发环境 Compose：
+如果希望一次性在本机拉起门户环境（前端、后端、Redis、MySQL、ODW MCP Server），可使用开发环境 Compose（DataAgent 另行部署，见 [部署文档](deploy/README.md) 的“接入 DataAgent”）：
 
 ```bash
 # 1. 准备配置
@@ -95,8 +95,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 # 访问地址
 # 前端: http://localhost:8081
 # 后端: http://localhost:8080/api
-# DataAgent Backend: http://localhost:8900
-# Portal MCP: http://localhost:8801/mcp
+# ODW MCP Server: http://localhost:8801/mcp
 ```
 
 ### 生产环境与离线部署
@@ -113,10 +112,10 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 
 - `backend/`：主业务后端（Java · Spring Boot），元数据、工作流、血缘、平台 API；依赖库模块 `odw-auth`（统一鉴权）与 `backend-agent-api`（面向 Agent 的只读元数据接口契约）。三者由根 `pom.xml` 统一构建。
 - `frontend/`：主门户 Web 前端（Vue 3 · Vite），智能问数页内嵌 DataAgent Widget。
-- DataAgent：Python 智能体平台源码已迁往 [opendataagent](https://github.com/MingkeVan/opendataagent)。本仓库通过镜像编排、普通 MCP 与 Skill 导入接入。
-- `opendataagent/`：独立的 Go Agent 平台，**独立部署、与主门户编排解耦**（详见 [双 Agent 平台共存说明](docs/handbook/parallel-agent-platforms.md)）。
-- `skills/`：两套 Agent 运行时共享的技能源目录，运行时挂载、不打包进镜像。
-- `deploy/`：主门户 Docker Compose 编排与环境模板（不含 `opendataagent`）。
+- `odw-mcp-servers/opendataworks/`：OpenDataWorks MCP Server，DataAgent 等 MCP 客户端通过它访问平台。
+- `odw-skills/`：OpenDataWorks 专属 Skill，通过 DataAgent 的 Skill 导入使用。
+- DataAgent：智能体平台源码在独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)，单独部署，通过普通 MCP 与 Skill 导入接入。
+- `deploy/`：主门户 Docker Compose 编排与环境模板（不含 DataAgent）。
 
 更多约定见仓库根 `AGENTS.md` 与 `docs/handbook/architecture.md`。
 

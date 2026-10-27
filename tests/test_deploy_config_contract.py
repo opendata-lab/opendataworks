@@ -58,17 +58,14 @@ def render(tmp_path, request, compose_command):
 
 
 
-def test_dataagent_has_only_session_database_and_explicit_wiring(render):
-    services = render(MYSQL_DATABASE="platform_data", DATAAGENT_MYSQL_USER="agent_user",
-                      DATAAGENT_MYSQL_PASSWORD="agent password", DATAAGENT_SESSION_MYSQL_DATABASE="agent_sessions")
-    for name in ("dataagent-backend", "dataagent-sandbox-runner"):
-        service = services[name]
-        env = service["environment"]
-        assert env["MYSQL_DATABASE"] == env["SESSION_MYSQL_DATABASE"] == "agent_sessions"
-        assert env["MYSQL_USER"] == "agent_user" and env["MYSQL_PASSWORD"] == "agent password"
-        assert not any(key.startswith(("ODW_", "DORIS_", "DATAAGENT_PORTAL_")) for key in env)
-        assert "odw-mcp-server" not in service.get("depends_on", {})
-        assert all("/dataagent/.claude/skills" not in volume.get("source", "") for volume in service.get("volumes", []))
+def test_dataagent_is_deployed_outside_this_stack(render):
+    services = render()
+    assert not any(name.startswith("dataagent") for name in services)
+    assert not any("oda-" in service.get("image", "") for service in services.values())
+    # Widget forwarding lives in the mounted nginx config, so the portal does not depend on DataAgent.
+    frontend = services["frontend"]
+    assert set(frontend.get("depends_on", {})) == {"backend"}
+    assert any(volume.get("target") == "/etc/nginx/conf.d/default.conf" for volume in frontend["volumes"])
 
 
 def test_mcp_tokens_are_owned_by_opendataworks(render):

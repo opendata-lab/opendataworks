@@ -174,34 +174,16 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_BACKEND_IMAGE=.*|OPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=oda-frontend:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=oda-frontend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=oda-backend:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=.*|OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=oda-backend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=.*|OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
-        -e "s|^# *DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
-        -e "s|^DATAAGENT_SANDBOX_MODE=.*|DATAAGENT_SANDBOX_MODE=container|" \
         "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
 
     grep -q '^OPENDATAWORKS_BACKEND_IMAGE=' "$env_file" 2>/dev/null || \
         { echo ""; echo "# 离线部署镜像（由 create-offline-package 自动设置）"; echo "OPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:${PARSER_TAG}"; } >> "$env_file"
     grep -q '^OPENDATAWORKS_FRONTEND_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_FRONTEND_IMAGE=oda-frontend:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_BACKEND_IMAGE=oda-backend:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_DATAAGENT_RUNNER_IMAGE=oda-runner:${PARSER_TAG}" >> "$env_file"
     grep -q '^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}" >> "$env_file"
-    # 离线包默认开启 sandbox 容器模式（每个 task 由 sandbox runner 启动独立 child 容器执行），
-    # 源码部署仍以 .env.example 中的空值（关闭）为默认，二者不混淆。
-    grep -q '^DATAAGENT_SANDBOX_MODE=' "$env_file" 2>/dev/null || \
-        echo "DATAAGENT_SANDBOX_MODE=container" >> "$env_file"
 }
 
 rewrite_offline_env_file "$PACKAGED_DEPLOY_DIR/.env.example"
@@ -262,19 +244,16 @@ compute_checksums() {
 
 OP_TAG="$PARSER_TAG"
 
-# 评测镜像（evals-builtin / evals-deepeval）默认不随服务启动，且 deepeval 依赖很重，
 MAIN_IMAGES=(
     "opendataworks-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-frontend:${OP_TAG}|opendataworks-frontend:${OP_TAG}"
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
-    "oda-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/oda-frontend:${OP_TAG}|oda-frontend:${OP_TAG}"
-    "oda-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/oda-backend:${OP_TAG}|oda-backend:${OP_TAG}"
-    "oda-runner.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/oda-runner:${OP_TAG}|oda-runner:${OP_TAG}"
     "opendataworks-odw-mcp-server.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-odw-mcp-server:${OP_TAG}|opendataworks-odw-mcp-server:${OP_TAG}"
 )
 
 EXTRA_IMAGES=(
     "mysql-8.0.tar|docker.io/library/mysql:8.0|mysql:8.0"
     "redis-7.2-alpine.tar|docker.io/library/redis:7.2-alpine|redis:7.2-alpine"
+    "docker-27.5.1-cli.tar|docker.io/library/docker:27.5.1-cli|docker:27.5.1-cli"
 )
 
 COMBINED_ARCHIVE="all-images.tar"

@@ -246,13 +246,6 @@ if [ "$BUILD_BACKEND" = true ]; then
     echo ""
 fi
 
-# 构建 DataAgent 前端镜像
-
-# 构建 DataAgent 后端镜像
-
-
-
-
 if [ "$BUILD_ODW_MCP_SERVER" = true ]; then
     echo -e "${YELLOW}📦 构建 ODW MCP Server 镜像...${NC}"
     echo "镜像: $ODW_MCP_SERVER_IMAGE:$VERSION"

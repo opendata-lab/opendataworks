@@ -41,23 +41,20 @@ OpenDataWorks 推荐使用 Docker Compose 进行本地一键启动。本指南�
 
 * **前端 Web UI**: [http://localhost:8081](http://localhost:8081)
 * **后端 API**: `http://localhost:8080/api`
-* **智能查询 DataAgent**: `http://localhost:8900`
-* **MySQL 物理库**: `127.0.0.1:3316`（用户 `dataagent`/`opendataworks`）
+* **ODW MCP Server**: `http://localhost:8801/mcp/`
+* **MySQL 物理库**: `127.0.0.1:3316`（用户 `opendataworks`）
 
 ::: info 数据库自动初始化
-首次启动时，MySQL 容器会自动执行初始化脚本，创建 `opendataworks` 与 `dataagent` 数据库与对应的服务用户。后端 Spring Boot 首次加载时会自动运行 Flyway 生成表结构，无需任何手动导数操作。
+首次启动时，MySQL 容器会自动执行初始化脚本，创建 `opendataworks` 数据库与服务用户。后端 Spring Boot 首次加载时会自动运行 Flyway 生成表结构，无需任何手动导数操作。
 :::
 
 ---
 
 ## 3. 功能验证 (Smoke Test)
 
-启动后，您可以进行以下快速验证以确保服务链路全线畅通：
+启动后，浏览器打开 [http://localhost:8081](http://localhost:8081) 进入系统，并检查 `http://localhost:8801/health` 返回正常。
 
-1. 浏览器打开 [http://localhost:8081](http://localhost:8081)，进入系统。
-2. 导航到 **「智能查询」** 模块。
-3. 新建一个会话，在对话框中输入问题：`你好，请直接回复 smoke-ok。`
-4. 看到 AI 助手流式返回回复后，说明 DataAgent 容器、Redis 异步任务队列、FastAPI 与前端 SSE 交互链路完全正常。
+「智能查询」由独立部署的 DataAgent（[opendataagent](https://github.com/MingkeVan/opendataagent)）提供。部署 DataAgent 并按仓库 `deploy/README.md` 的“接入 DataAgent”配置 nginx 转发后，在该模块新建会话输入 `你好，请直接回复 smoke-ok。`，看到流式回复即说明链路正常。
 
 ---
 

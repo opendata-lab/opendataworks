@@ -31,21 +31,15 @@
 | `backend/pom.xml` | 后端模块版本，如 `<version>1.0.0</version>` |
 | `frontend/package.json` | 前端版本，如 `"version": "1.0.0"` |
 | `frontend/package-lock.json` | 锁文件顶层版本，如 `"version": "1.0.0"` |
-| `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend/package.json` | DataAgent 前端版本，如 `"version": "1.0.0"` |
-| `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-frontend/package-lock.json` | DataAgent 前端锁文件顶层版本，如 `"version": "1.0.0"` |
-| `https://github.com/MingkeVan/opendataagent/tree/main/dataagent-backend/main.py` | DataAgent 对外暴露版本，如 `version="1.0.0"` |
-| `opendataagent/VERSION` | 独立 `opendataagent` 发布版本，如 `1.0.0` |
-| `opendataagent/web/package.json` | `opendataagent` Web 版本，如 `"version": "1.0.0"` |
-| `opendataagent/web/package-lock.json` | `opendataagent` Web 锁文件顶层版本，如 `"version": "1.0.0"` |
+
+DataAgent 在 [opendataagent](https://github.com/MingkeVan/opendataagent) 仓库单独发版，不在本流程内。
 
 ### 2.2 Docker Compose 正式部署
 
 | 文件 | 说明 |
 |------|------|
-| `deploy/docker-compose.prod.yml` | 更新 frontend、backend、dataagent-frontend、dataagent-backend、dataagent-runner、odw-mcp-server 六个正式镜像默认 tag，例如 `${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.0.0}` |
+| `deploy/docker-compose.prod.yml` | 更新 frontend、backend、odw-mcp-server 三个正式镜像默认 tag，例如 `${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.0.0}` |
 | `deploy/.env.example` | 更新离线部署时的镜像变量示例 |
-| `opendataagent/deploy/docker-compose.yml` | 更新 `opendataagent-server` 与 `opendataagent-web` 默认 tag |
-| `opendataagent/deploy/.env.example` | 更新独立 `opendataagent` 部署版本示例 |
 
 ### 2.3 构建相关（如有）
 
@@ -62,10 +56,9 @@
 # 前端构建
 export NVM_DIR="$HOME/.nvm" && [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use
 cd frontend && npm run build
-cd ../opendataagent/dataagent-frontend && npm run build && npm run build:widget
 
 # 后端构建
-cd ../../ && mvn -pl backend -am clean package -DskipTests
+cd .. && mvn -pl backend -am clean package -DskipTests
 
 # 可选：本地构建 Docker 镜像
 scripts/build/build-images.sh
@@ -87,11 +80,9 @@ git push origin v1.0.0
 
 工作流将依次执行：
 
-1. **构建并推送 Docker 镜像**：`mikefan2019/opendataworks-frontend`、`mikefan2019/opendataworks-backend`、`mikefan2019/opendataworks-dataagent-frontend`、`mikefan2019/opendataworks-dataagent-backend`、`mikefan2019/opendataworks-dataagent-runner`、`mikefan2019/opendataworks-odw-mcp-server`、`mikefan2019/opendataagent-server`、`mikefan2019/opendataagent-web`，打上版本 tag
+1. **构建并推送 Docker 镜像**：`mikefan2019/opendataworks-frontend`、`mikefan2019/opendataworks-backend`、`mikefan2019/opendataworks-odw-mcp-server`，打上版本 tag
 2. **生成离线部署包**：调用 `scripts/create-offline-package.sh --tag 1.0.0`
-3. **生成 Opendataagent 离线部署包**：调用 `opendataagent/scripts/create-offline-package.sh --tag 1.0.0`
-4. **创建 GitHub Release**：上传两份离线包为 Release 附件，并自动生成 Release Notes（含提交记录）
-5. **同步 Gitee Release**：上传同一组离线包附件，并在附件上传完成后用 Gitee 附件 id 回写下载链接
+3. **创建 GitHub Release**：上传离线包为 Release 附件，并自动生成 Release Notes（含提交记录）
 
 ---
 
@@ -112,17 +103,11 @@ scripts/create-offline-package.sh --tag 1.0.0 --output opendataworks-deployment-
 GitHub Release 中应包含：
 
 - **Release Notes**：GitHub Actions 自动生成（包含提交记录）
-- **下载区块**：由工作流写入 Release 正文，包含 Docker 镜像拉取命令与两份离线包链接
-- **Docker 镜像区块**：包含 `opendataworks-*` 和 `opendataagent-*` 的 Docker Hub 链接与 `docker pull` 示例
+- **下载区块**：由工作流写入 Release 正文，包含 Docker 镜像拉取命令与离线包链接
+- **Docker 镜像区块**：包含 `opendataworks-*` 的 Docker Hub 链接与 `docker pull` 示例
 - **附件**：
   - `opendataworks-deployment-1.0.0.tar.xz`（主离线部署包）
-  - `opendataworks-evals-offline-1.0.0.tar.xz`（可选评测附加包，含两个评测镜像）
-  - `opendataagent-deployment-1.0.0.tar.gz`（独立 `opendataagent` 离线部署包）
   - 可选：`opendataworks-deployment-1.0.0.tar.xz.sha256`（校验和）
-  - 可选：`opendataworks-evals-offline-1.0.0.tar.xz.sha256`（校验和）
-  - 可选：`opendataagent-deployment-1.0.0.tar.gz.sha256`（校验和）
-
-Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL。同步步骤会先创建占位正文，上传附件后根据 Gitee 返回的 `attach_files/{id}/download` 地址生成最终正文并 PATCH 回 Release。
 
 ### 4.3 用户下载方式
 
@@ -130,16 +115,10 @@ Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL
    ```bash
    docker pull mikefan2019/opendataworks-frontend:1.0.0
    docker pull mikefan2019/opendataworks-backend:1.0.0
-   docker pull mikefan2019/opendataworks-dataagent-frontend:1.0.0
-   docker pull mikefan2019/opendataworks-dataagent-backend:1.0.0
-   docker pull mikefan2019/opendataworks-dataagent-runner:1.0.0
    docker pull mikefan2019/opendataworks-odw-mcp-server:1.0.0
-   docker pull mikefan2019/opendataagent-server:1.0.0
-   docker pull mikefan2019/opendataagent-web:1.0.0
    ```
 
 2. **主系统离线部署包**：在 Release 页面下载 `opendataworks-deployment-1.0.0.tar.xz`，按 [deploy/README.md](../../deploy/README.md) 进行离线部署。
-3. **Opendataagent 离线部署包**：在 Release 页面下载 `opendataagent-deployment-1.0.0.tar.gz`，按 [opendataagent/deploy/README.md](../../opendataagent/deploy/README.md) 进行离线部署。
 
 ---
 
@@ -147,7 +126,6 @@ Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL
 
 - [ ] 在 GitHub Releases 页面检查附件是否上传成功
 - [ ] 验证 Release Notes 中的下载链接可用
-- [ ] 在 Gitee Releases 页面检查附件是否上传成功，并确认正文下载链接指向 `gitee.com/.../attach_files/.../download`
 - [ ] 如有文档站，更新「最新版本」等说明
 
 ---
@@ -157,11 +135,11 @@ Gitee Release 复用同一组离线包附件，但不能复用 GitHub 下载 URL
 ```
 1. 明确版本号 (如 1.0.0)
        ↓
-2. 修改 Maven、前端、DataAgent、Compose 与构建配置中的版本号
+2. 修改 Maven、前端、Compose 与构建配置中的版本号
        ↓
 3. git commit、git tag v1.0.0、git push
        ↓
-4. CI 构建镜像、生成两份离线包、创建 Release 并上传附件
+4. CI 构建镜像、生成离线包、创建 Release 并上传附件
        ↓
 5. 检查 Release 页面，确认下载可用
 ```
