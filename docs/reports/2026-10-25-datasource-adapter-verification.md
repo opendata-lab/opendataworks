@@ -1,6 +1,6 @@
 # 数据源适配器阶段一、二验证
 
-日期：2026-10-25。工作区：`/Users/guoruping/project/bigdata/opendataworks-datasource-adapter`，分支 `feat/datasource-adapter`。
+日期：2026-10-25。工作区：`<workspace>/opendataworks-datasource-adapter`，分支 `feat/datasource-adapter`。
 
 设计：[数据源适配器架构](../design/2026-10-22-datasource-adapter-design.md)；计划：[实施计划](../plans/2026-10-22-datasource-adapter-plan.md)；后续：[TODO](../TODO.md)。未 commit、未 push。
 

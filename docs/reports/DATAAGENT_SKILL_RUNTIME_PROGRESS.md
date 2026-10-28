@@ -5,7 +5,7 @@
 ## 当前结论
 
 - 智能问数真实产品路径应以流式 SSE 为主。
-- 前端页面当前固定调用流式接口，见 [frontend/src/views/intelligence/NL2SqlChat.vue](/Users/guoruping/.codex/worktrees/a56e/opendataworks/frontend/src/views/intelligence/NL2SqlChat.vue)。
+- 前端页面当前固定调用流式接口，见 [frontend/src/views/intelligence/NL2SqlChat.vue](~/.codex/worktrees/a56e/opendataworks/frontend/src/views/intelligence/NL2SqlChat.vue)。
 - 后端非流式路径仍保留，但只作为契约校验、脚本调用和问题排查辅助，不作为主验收口径。
 
 ## 已完成

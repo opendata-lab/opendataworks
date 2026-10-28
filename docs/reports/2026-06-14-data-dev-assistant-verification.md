@@ -53,7 +53,7 @@
 - 环境：
   - MySQL：`127.0.0.1:3306`，业务库 `opendataworks`，会话库 `dataagent`，用户 `dataagent/dataagent123`。
   - Redis：`127.0.0.1:6379`。
-  - Python：`/Users/guoruping/project/bigdata/opendataworks/dataagent/dataagent-backend/.venv-py313`。
+  - Python：`<workspace>/opendataworks/dataagent/dataagent-backend/.venv-py313`。
   - Java backend：`127.0.0.1:8080/api`，`AGENT_API_SERVICE_TOKEN=odw-agent-service-token`。
   - portal-mcp：`127.0.0.1:8801/mcp/`，frontdoor token `odw-portal-mcp-token`。
   - DataAgent：`127.0.0.1:8900`，`DATAAGENT_HOST_ROOT=.dataagent_runtime`，provider `anthropic_compatible` / `deepseek-v4-pro`。

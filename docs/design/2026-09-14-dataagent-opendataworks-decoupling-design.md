@@ -14,7 +14,7 @@
 
 覆盖：
 
-- `opendataworks/dataagent/` 中除 `portal-mcp` 和 OpenDataWorks 专属 Skill 外的全部内容，迁到 `/Users/guoruping/project/bigdata/opendataagent` 仓库根目录，覆盖该仓库原有 MVP；
+- `opendataworks/dataagent/` 中除 `portal-mcp` 和 OpenDataWorks 专属 Skill 外的全部内容，迁到 `<workspace>/opendataagent` 仓库根目录，覆盖该仓库原有 MVP；
 - `dataagent/portal-mcp/` 迁到 `opendataworks/odw-mcp-server/`，统一改用 `odw` 命名；
 - OpenDataWorks 专属 Skill 迁到 `opendataworks/odw-skills/`；
 - DataAgent 中的 `portal` 特例、内置 OpenDataWorks 智能体、平台直连与专属提示词全部删除；
@@ -36,7 +36,7 @@
 4. 内置 Skill 混有平台专属内容：`opendataworks-business-knowledge`、`opendataworks-platform-tools`、`opendataworks-data-dev`、`opendataworks-methodology-dag`、`ontology-modeling-assistant`。
 5. DataAgent 仍有平台直连：`readonly_query_proxy`、datasource resolver、`odw-cli` fallback，以及 OpenDataWorks 元数据库连接配置。
 6. 会话来源值是 `portal`，widget 叫 `OpenDataWorksWidget`，客户端请求头是 `X-ODW-*`。
-7. `opendataagent` 仓库（`git@github.com:MingkeVan/opendataagent.git`）当前是 18 个提交的早期 MVP，与 DataAgent 无代码关系。
+7. `opendataagent` 仓库（`git@github.com:opendata-lab/opendataagent.git`）当前是 18 个提交的早期 MVP，与 DataAgent 无代码关系。
 
 ## Design
 

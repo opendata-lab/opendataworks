@@ -59,7 +59,7 @@ npm --prefix dataagent-runtime-pi run build
 . "$HOME/.nvm/nvm.sh" && nvm use
 npm --prefix frontend test
 npm --prefix frontend run build
-mvn -s /private/tmp/claude-502/-Users-guoruping-project-bigdata-opendataworks/8153a01d-5553-4bdf-ac77-51952e012d96/scratchpad/m2-settings.xml -o -q -pl backend -am test
+mvn -s <scratchpad>/m2-settings.xml -o -q -pl backend -am test
 ```
 
 Maven 测试通过 JAVA_TOOL_OPTIONS 固定 Spring 数据源为 `127.0.0.1:3316/odw_split_tests` 和临时账号，避免访问默认 3306 平台库；该库实际从零运行 54 个 Flyway 迁移。运行联调 Java 的 jar 另外以 JDK 8u361、`package -Dmaven.test.skip=true` 构建；Java 代码没有改动。

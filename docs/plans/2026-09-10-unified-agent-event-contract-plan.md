@@ -198,7 +198,7 @@
 
 前端：
 
-    export NVM_DIR="/Users/guoruping/.nvm"
+    export NVM_DIR="$HOME/.nvm"
     . "$NVM_DIR/nvm.sh"
     nvm use
     cd dataagent/dataagent-frontend
@@ -853,7 +853,7 @@ Pi：
 
 ### 13.2 Frontend
 
-    export NVM_DIR="/Users/guoruping/.nvm"
+    export NVM_DIR="$HOME/.nvm"
     . "$NVM_DIR/nvm.sh"
     nvm use
     cd dataagent/dataagent-frontend
@@ -882,7 +882,7 @@ Pi：
 ### 13.4 Pi runtime
 
     cd dataagent/dataagent-runtime-pi
-    export NVM_DIR="/Users/guoruping/.nvm"
+    export NVM_DIR="$HOME/.nvm"
     . "$NVM_DIR/nvm.sh"
     nvm use
     npm test

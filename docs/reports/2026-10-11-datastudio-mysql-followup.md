@@ -36,7 +36,7 @@
 - 后端：`mvn -pl backend -am -DfailIfNoTests=false -Dsurefire.failIfNoSpecifiedTests=false -Dtest=DorisMetadataSyncServiceTest,DataTableServiceTest,MysqlTableEngineHandlerTest test`，25 项通过。
 - 前端 build、后端 package、`git diff --check` 均通过。前端仍有既有大 chunk / Sass 提示。
 - 日志：`/tmp/odw-studio-followup-module-tests.log`、`/tmp/odw-studio-followup-backend-tests.log`、`/tmp/odw-studio-followup-frontend-build.log`、`/tmp/odw-studio-followup-backend-package.log`、`/tmp/odw-studio-followup-backend.log`。
-- 截图：`/Users/guoruping/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9/datastudio-followup-2026-10-11-proof.jpg`，保留工作区标签、真实查询结果及字段主键禁用态。
+- 截图：`~/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9/datastudio-followup-2026-10-11-proof.jpg`，保留工作区标签、真实查询结果及字段主键禁用态。
 
 ## 相关设计与计划
 

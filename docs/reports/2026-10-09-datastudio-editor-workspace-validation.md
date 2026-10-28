@@ -37,7 +37,7 @@
 - 概览、字段、DDL、血缘、新鲜度、引擎配置、访问统计、变更记录均检查；血缘对象名字号10px，新鲜度标签直接可见。
 - 1280/1100/840px没有页面横向溢出；窄详情栏可以滚动打开新鲜度。临时 viewport 已重置，临时查询标签已清理，用户原有标签与 SQL 保留。
 
-截图、计算样式对照 JSON 与交互式截图集保存在 `/Users/guoruping/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9`。主要截图为 `datastudio-implemented-lineage.jpg` 与 `datastudio-implemented-freshness.jpg`；截图集为 `datastudio-implementation-gallery.html`。
+截图、计算样式对照 JSON 与交互式截图集保存在 `~/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9`。主要截图为 `datastudio-implemented-lineage.jpg` 与 `datastudio-implemented-freshness.jpg`；截图集为 `datastudio-implementation-gallery.html`。
 
 ## 验证边界
 

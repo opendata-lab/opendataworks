@@ -58,8 +58,8 @@
 
 ## 证据
 
-- 页面汇总结果与新鲜度截图：`/Users/guoruping/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9/datastudio-mysql-smoke-proof-2026-10-11.jpg`。截图裁去浏览器输出外围空白及下方空白，保留连接、SQL、结果、对象详情与新鲜度。
-- 实际导出的 CSV：`/Users/guoruping/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9/datastudio-mysql-export-2026-10-11.csv`。
+- 页面汇总结果与新鲜度截图：`~/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9/datastudio-mysql-smoke-proof-2026-10-11.jpg`。截图裁去浏览器输出外围空白及下方空白，保留连接、SQL、结果、对象详情与新鲜度。
+- 实际导出的 CSV：`~/.codex/visualizations/2026/10/09/01a11e91-87d8-7fe0-a559-d09d9cf7e9c9/datastudio-mysql-export-2026-10-11.csv`。
 - 本地日志：`/tmp/odw-studio-mysql-smoke-backend-fixed.log`、`/tmp/odw-studio-mysql-smoke-tests.log`、`/tmp/odw-studio-mysql-smoke-frontend-tests.log`、`/tmp/odw-studio-mysql-smoke-frontend-build.log`。
 
 ## 清理与边界

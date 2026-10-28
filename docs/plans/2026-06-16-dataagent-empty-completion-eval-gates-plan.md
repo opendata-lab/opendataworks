@@ -20,7 +20,7 @@
 cd dataagent/dataagent-backend
 .venv-py313/bin/python -m pytest tests/test_task_executor.py -q
 
-cd /Users/guoruping/project/bigdata/opendataworks
+cd <workspace>/opendataworks
 dataagent/dataagent-backend/.venv-py313/bin/python -m pytest tests/test_dataagent_deepeval_evals.py tests/test_run_dataagent_evals.py -q
 ```
 

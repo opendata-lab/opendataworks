@@ -5,8 +5,8 @@
 
 涉及两个仓库：
 
-- `opendataworks`：worktree `/Users/guoruping/project/bigdata/opendataworks-dataagent-split`，分支 `feat/dataagent-split`；
-- `opendataagent`：`/Users/guoruping/project/bigdata/opendataagent`，新分支 `feat/import-dataagent`（从 `main` 切出）。
+- `opendataworks`：worktree `<workspace>/opendataworks-dataagent-split`，分支 `feat/dataagent-split`；
+- `opendataagent`：`<workspace>/opendataagent`，新分支 `feat/import-dataagent`（从 `main` 切出）。
 
 ## 1. 任务
 
