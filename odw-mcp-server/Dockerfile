@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app/odw-mcp-server
 
-COPY odw-mcp-servers/opendataworks/requirements.txt /tmp/requirements.txt
+COPY odw-mcp-server/requirements.txt /tmp/requirements.txt
 ARG PIP_INDEX_URL
 ARG PIP_TRUSTED_HOST
 RUN apt-get update \
@@ -14,7 +14,7 @@ RUN apt-get update \
     && PIP_INDEX_URL="${PIP_INDEX_URL}" PIP_TRUSTED_HOST="${PIP_TRUSTED_HOST}" \
        pip install --no-cache-dir -r /tmp/requirements.txt
 
-COPY odw-mcp-servers/opendataworks /app/odw-mcp-server
+COPY odw-mcp-server/ /app/odw-mcp-server
 
 EXPOSE 8801
 

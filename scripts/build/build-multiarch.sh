@@ -255,7 +255,7 @@ if [ "$BUILD_ODW_MCP_SERVER" = true ]; then
     if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
         -t $ODW_MCP_SERVER_IMAGE:$VERSION \
         -t $ODW_MCP_SERVER_IMAGE:latest \
-        --file odw-mcp-servers/opendataworks/Dockerfile \
+        --file odw-mcp-server/Dockerfile \
         . ; then
         echo -e "${GREEN}✅ ODW MCP Server 镜像构建成功${NC}"
         ((SUCCESSFUL_BUILDS++))

@@ -15,7 +15,7 @@
 覆盖：
 
 - `opendataworks/dataagent/` 中除 `portal-mcp` 和 OpenDataWorks 专属 Skill 外的全部内容，迁到 `/Users/guoruping/project/bigdata/opendataagent` 仓库根目录，覆盖该仓库原有 MVP；
-- `dataagent/portal-mcp/` 迁到 `opendataworks/odw-mcp-servers/opendataworks/`，统一改用 `odw` 命名；
+- `dataagent/portal-mcp/` 迁到 `opendataworks/odw-mcp-server/`，统一改用 `odw` 命名；
 - OpenDataWorks 专属 Skill 迁到 `opendataworks/odw-skills/`；
 - DataAgent 中的 `portal` 特例、内置 OpenDataWorks 智能体、平台直连与专属提示词全部删除；
 - DataAgent 的身份请求头变成通用契约，对所有 HTTP MCP 一致发送；
@@ -45,7 +45,7 @@
 | 能力 | 所有者 | 位置 |
 |---|---|---|
 | 会话、任务编排、模型、通用 Skill/MCP 管理、通用内置 Skill | DataAgent | `opendataagent` 仓库 |
-| OpenDataWorks MCP server | OpenDataWorks | `opendataworks/odw-mcp-servers/opendataworks/` |
+| OpenDataWorks MCP server | OpenDataWorks | `opendataworks/odw-mcp-server/` |
 | OpenDataWorks 业务知识、平台工具、数据开发、方法论、本体建模 Skill | OpenDataWorks | `opendataworks/odw-skills/` |
 | 人/智能体到数据库账号的映射、权限执行 | OpenDataWorks backend | 已上线，不变 |
 
@@ -124,7 +124,7 @@ DataAgent 新增一个 Alembic 迁移：
 
 ### 7. `odw-mcp-server`
 
-`dataagent/portal-mcp` → `odw-mcp-servers/opendataworks`，一次性改名，不保留旧名：
+`dataagent/portal-mcp` → `odw-mcp-server/`，一次性改名，不保留旧名：
 
 - Python 包 `portal_mcp` → `odw_mcp_server`；server name、compose service `portal-mcp` → `odw-mcp-server`；镜像 `opendataworks-portal-mcp` → `opendataworks-odw-mcp-server`；
 - 环境变量 `PORTAL_MCP_*` → `ODW_MCP_SERVER_*`；前门 token 头 `X-Portal-MCP-Token` → `X-ODW-MCP-Token`；
@@ -156,7 +156,7 @@ DataAgent 必须能在没有 OpenDataWorks backend、`odw-mcp-server` 和任何�
 
 ## Completion Criteria
 
-- `opendataworks` 中不再有 `dataagent/` 目录；`odw-mcp-servers/opendataworks` 可独立构建和测试；
+- `opendataworks` 中不再有 `dataagent/` 目录；`odw-mcp-server/` 可独立构建和测试；
 - `opendataagent` 仓库的后端、前端、Pi runtime 测试与构建全部可运行，结果与迁移前一致（既有失败除外，并记入 TODO）；
 - 在 `opendataagent` 中搜索不到作为产品依赖的 `OpenDataWorks`、`portal`、`portal_*`、`odw_*`、`PORTAL_MCP`、`ODW_` 常量、工具名或环境变量（迁移脚本和历史文档除外）；
 - 全新 DataAgent 数据库启动后没有 OpenDataWorks MCP、智能体或 Skill；

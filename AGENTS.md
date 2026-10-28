@@ -71,7 +71,7 @@ When working in this repository, optimize for:
 
 ### Python baseline
 
-- Python code in this repository is `odw-mcp-servers/opendataworks/` and the scripts and tests under `odw-skills/`; use Python `>=3.10`.
+- Python code in this repository is `odw-mcp-server/` and the scripts and tests under `odw-skills/`; use Python `>=3.10`.
 - Do not assume the first `python3` on `PATH` is the right interpreter. Use a dedicated virtualenv with the touched module's `requirements.txt` installed, and verify it can import the packages the tests need before concluding a module is broken.
 
 ## Architecture Overview
@@ -129,7 +129,7 @@ When working in this repository, optimize for:
 
 ## DataAgent
 
-DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)。本仓库仅维护 `odw-mcp-servers/opendataworks/` 与 `odw-skills/`，通过普通 HTTP MCP 与 Skill 导入接入。
+DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)。本仓库仅维护 `odw-mcp-server/` 与 `odw-skills/`，通过普通 HTTP MCP 与 Skill 导入接入。
 
 ## Verification Expectations
 

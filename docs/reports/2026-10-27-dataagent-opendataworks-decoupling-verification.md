@@ -53,7 +53,7 @@ npm --prefix dataagent-runtime-pi run build
 .venv-py313/bin/uvicorn main:app --host 127.0.0.1 --port 18900
 
 # opendataworks，使用新仓库 venv 的 pytest
-../opendataagent/dataagent-backend/.venv-py313/bin/pytest -q odw-mcp-servers/opendataworks/tests
+../opendataagent/dataagent-backend/.venv-py313/bin/pytest -q odw-mcp-server/tests
 ../opendataagent/dataagent-backend/.venv-py313/bin/pytest -q odw-skills
 ../opendataagent/dataagent-backend/.venv-py313/bin/pytest -q tests/test_deploy_config_contract.py tests/test_offline_package_env_policy.py
 . "$HOME/.nvm/nvm.sh" && nvm use

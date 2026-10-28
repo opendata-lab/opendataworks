@@ -21,7 +21,7 @@
          │ Java agent API       │ X-Agent-User-Id / X-Agent-Id
 ┌────────┴───────────┐          │
 │ ODW MCP Server      │◄─────────┘
-│ odw-mcp-servers/    │
+│ odw-mcp-server/     │
 └────────────────────┘
 ```
 
@@ -32,7 +32,7 @@
 | `backend` | `com.onedata.portal` | 表/字段/任务 CRUD、血缘生成、巡检、执行记录、调用 DolphinScheduler OpenAPI | `/api/v1/tables`, `/api/v1/tasks`, `/api/v1/lineage`, `/api/v1/dolphin/...` |
 | `backend-agent-api` | `backend-agent-api/` | 面向 Agent 的平台接口，按主体映射的数据库账号执行 | `/api/v1/ai/...` |
 | `frontend` | `src/views/*` | 门户界面、交互校验、日志展示、血缘 ECharts、通过远程 JS 嵌入智能问数 widget | `/dashboard`, `/workflows`, `/lineage`, `/intelligent-query` |
-| `odw-mcp-server` | `odw-mcp-servers/opendataworks` | OpenDataWorks 平台 MCP，DataAgent 等客户端作为普通外部 MCP 接入 | `/health`, `/mcp` |
+| `odw-mcp-server` | `odw-mcp-server/` | OpenDataWorks 平台 MCP，DataAgent 等客户端作为普通外部 MCP 接入 | `/health`, `/mcp` |
 | `odw-skills/` | `odw-skills/*` | OpenDataWorks 专属 Skill，通过 DataAgent 的 Skill 导入使用 | — |
 | Dinky / Flink | 外部预留能力 | 未来流任务执行引擎 | 当前仓库未内置模块 |
 | `DolphinScheduler` | 外部集群 | 接收 Portal 提交的工作流/实例并运行 | OpenAPI `/projects/...` |
@@ -55,7 +55,7 @@
 | Backend | 8080 | `/api/v1/health` | `docker volume backend-logs` 或 `backend/logs/` |
 | DolphinScheduler | 12345 (示例) | `/dolphinscheduler` 登录页或 OpenAPI `/projects` | 外部集群日志 |
 | Frontend | 80（容器）/ 8081（compose）/ 3000（Vite dev） | `/`、`/intelligent-query` | Nginx 日志或 `frontend/dist` |
-| ODW MCP Server | 8801 | `/health` | 容器日志或 `odw-mcp-servers/opendataworks` |
+| ODW MCP Server | 8801 | `/health` | 容器日志或 `odw-mcp-server/` |
 
 DataAgent 的端口与观察点见 opendataagent 仓库的 `deploy/README.md`。
 
@@ -65,7 +65,7 @@ DataAgent 的端口与观察点见 opendataagent 仓库的 `deploy/README.md`。
 | --- | --- | --- |
 | 后端 | Java 8+, Spring Boot 2.7.18, MyBatis-Plus 3.5.5, Lombok | 使用 Maven reactor 构建 |
 | 前端 | Vue 3.4+, Vite 5, Pinia, Element Plus, ECharts | DataAgent widget 由远程 JS 接入 |
-| MCP | Python, FastMCP | `odw-mcp-servers/opendataworks` |
+| MCP | Python, FastMCP | `odw-mcp-server/` |
 | 数据库 | MySQL 8.0+, Doris (目标库) | 初始化脚本见 `backend/src/main/resources/db/migration` (Flyway) |
 
 ## 架构演进提示

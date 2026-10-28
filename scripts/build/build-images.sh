@@ -66,7 +66,7 @@ echo "📦 步骤 8/8: 构建 ODW MCP Server 镜像 (AMD64 架构)..."
 cd "$REPO_ROOT"
 $CONTAINER_CMD build --platform linux/amd64 -t $ODW_MCP_SERVER_IMAGE \
   "${PIP_BUILD_ARGS[@]}" \
-  -f odw-mcp-servers/opendataworks/Dockerfile \
+  -f odw-mcp-server/Dockerfile \
   .
 echo "✅ ODW MCP Server 镜像构建完成"
 echo ""

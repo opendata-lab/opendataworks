@@ -39,7 +39,7 @@
 
 ### 1.3 opendataworks：MCP server 与 Skill
 
-- `git mv dataagent/portal-mcp odw-mcp-servers/opendataworks`，按设计第 7 节改包名、server name、环境变量、前门 token 头、工具名，补 annotations，更新测试。
+- `git mv dataagent/portal-mcp odw-mcp-server/`，按设计第 7 节改包名、server name、环境变量、前门 token 头、工具名，补 annotations，更新测试。
 - ODW 专属 Skill 迁到 `odw-skills/<原目录名>/`，按设计第 8 节改写为只走 MCP 工具。
 - 删除 `dataagent/` 剩余内容（已迁往 opendataagent）、`tools/dataagent-evals/`、对应根 `tests/`。
 
@@ -61,7 +61,7 @@
   - 在带旧数据的库上验证新 Alembic 迁移；
   - 静态扫描 `OpenDataWorks|portal|PORTAL_MCP|ODW_|odw_`，只允许出现在迁移脚本与历史文档。
 - opendataworks：
-  - `odw-mcp-servers/opendataworks` 的 pytest；
+  - `odw-mcp-server/` 的 pytest；
   - 主前端 `nvm use` 后 test 与 build；
   - backend `mvn -s <临时 mirror settings> -o -q -pl backend -am test`，失败只允许既有 7 个 DolphinScheduler 用例；
   - `docker compose -f deploy/docker-compose.dev.yml config` 校验；

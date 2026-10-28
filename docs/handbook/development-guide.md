@@ -40,7 +40,7 @@ mvn -f pom.xml -pl backend -am spring-boot:run
 
 ## 第三步：启动 DataAgent（可选）
 
-只有调试智能问数时才需要。DataAgent 在独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)，按其 `README.md` 在本地启动（默认端口 `8900`）。要让它访问本地平台，再启动 `odw-mcp-servers/opendataworks`（默认 `8801`），在 DataAgent 中新增该 MCP 并导入 `odw-skills/` 下所需 Skill。
+只有调试智能问数时才需要。DataAgent 在独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)，按其 `README.md` 在本地启动（默认端口 `8900`）。要让它访问本地平台，再启动 `odw-mcp-server/`（默认 `8801`），在 DataAgent 中新增该 MCP 并导入 `odw-skills/` 下所需 Skill。
 
 ## 第四步：启动前端 (Vue3)
 

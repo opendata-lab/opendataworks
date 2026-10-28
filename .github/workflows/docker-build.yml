@@ -38,7 +38,7 @@ jobs:
           - name: odw-mcp-server
             image: opendataworks-odw-mcp-server
             context: .
-            dockerfile: ./odw-mcp-servers/opendataworks/Dockerfile
+            dockerfile: ./odw-mcp-server/Dockerfile
             build_args: ""
 
 

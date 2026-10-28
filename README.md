@@ -112,7 +112,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 
 - `backend/`：主业务后端（Java · Spring Boot），元数据、工作流、血缘、平台 API；依赖库模块 `odw-auth`（统一鉴权）与 `backend-agent-api`（面向 Agent 的只读元数据接口契约）。三者由根 `pom.xml` 统一构建。
 - `frontend/`：主门户 Web 前端（Vue 3 · Vite），智能问数页内嵌 DataAgent Widget。
-- `odw-mcp-servers/opendataworks/`：OpenDataWorks MCP Server，DataAgent 等 MCP 客户端通过它访问平台。
+- `odw-mcp-server/`：OpenDataWorks MCP Server，DataAgent 等 MCP 客户端通过它访问平台。
 - `odw-skills/`：OpenDataWorks 专属 Skill，通过 DataAgent 的 Skill 导入使用。
 - DataAgent：智能体平台源码在独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)，单独部署，通过普通 MCP 与 Skill 导入接入。
 - `deploy/`：主门户 Docker Compose 编排与环境模板（不含 DataAgent）。
