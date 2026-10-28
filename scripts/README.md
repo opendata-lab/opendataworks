@@ -49,4 +49,4 @@ mirror requires it.
 
 ### DataAgent 评测
 
-评测与离线评测包脚本已迁往独立 [opendataagent](https://github.com/MingkeVan/opendataagent) 仓库。
+评测与离线评测包脚本已迁往独立 [opendataagent](https://github.com/opendata-lab/opendataagent) 仓库。

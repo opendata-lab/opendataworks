@@ -2,7 +2,7 @@
 
 本章沉淀稳定的架构与运行时说明。活动中的中大型变更设计请查看 `docs/design/`。
 
-本仓库是 OpenDataWorks 门户。智能问数由独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent) 的 DataAgent 提供：门户通过 widget 内嵌它，它通过 `odw-mcp-server` 访问平台。两者单独部署，可以在不同机器上。
+本仓库是 OpenDataWorks 门户。智能问数由独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent) 的 DataAgent 提供：门户通过 widget 内嵌它，它通过 `odw-mcp-server` 访问平台。两者单独部署，可以在不同机器上。
 
 ## 组件一览
 

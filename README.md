@@ -40,7 +40,7 @@ OpenDataWorks 是一个面向数据平台团队的开源统一数据门户，提
 - **工作流编排**：可视化配置批处理和流处理任务，并深度集成 DolphinScheduler。
 - **数据血缘分析**：自动解析 SQL 血缘，在交互式图谱中查看上下游链路。
 - **智能问数**：在主门户内通过自然语言生成 SQL、执行分析并查看结果。
-- **快速部署**：通过现有 Docker Compose 一次性拉起前端、后端、Redis、MySQL 和 ODW MCP Server；智能问数的 DataAgent 由 [opendataagent](https://github.com/MingkeVan/opendataagent) 单独部署。
+- **快速部署**：通过现有 Docker Compose 一次性拉起前端、后端、Redis、MySQL 和 ODW MCP Server；智能问数的 DataAgent 由 [opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署。
 
 ## 功能亮点
 
@@ -114,7 +114,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 - `frontend/`：主门户 Web 前端（Vue 3 · Vite），智能问数页内嵌 DataAgent Widget。
 - `odw-mcp-server/`：OpenDataWorks MCP Server，DataAgent 等 MCP 客户端通过它访问平台。
 - `odw-skills/`：OpenDataWorks 专属 Skill，通过 DataAgent 的 Skill 导入使用。
-- DataAgent：智能体平台源码在独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)，单独部署，通过普通 MCP 与 Skill 导入接入。
+- DataAgent：智能体平台源码在独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent)，单独部署，通过普通 MCP 与 Skill 导入接入。
 - `deploy/`：主门户 Docker Compose 编排与环境模板（不含 DataAgent）。
 
 更多约定见仓库根 `AGENTS.md` 与 `docs/handbook/architecture.md`。

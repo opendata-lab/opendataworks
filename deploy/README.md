@@ -26,7 +26,7 @@ dev 使用 Compose 默认网络。
 
 本目录只部署 OpenDataWorks 门户：MySQL、Redis、backend、frontend、`odw-mcp-server`
 和日志收集 sidecar。DataAgent（智能问数）由独立仓库
-[opendataagent](https://github.com/MingkeVan/opendataagent) 单独部署，可以在另一台机器上；
+[opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署，可以在另一台机器上；
 接入方式见文末“接入 DataAgent”。
 
 ## Directory Contents
@@ -190,7 +190,7 @@ docker-compose -f docker-compose.prod.yml logs -f backend
 
 ## 接入 DataAgent
 
-DataAgent 镜像由 [opendataagent](https://github.com/MingkeVan/opendataagent) 构建和部署（`oda-frontend`、`oda-backend`、`oda-runner`），
+DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagent) 构建和部署（`oda-frontend`、`oda-backend`、`oda-runner`），
 本仓库不编排它。两边可以在不同机器上，下文 `<DataAgent 主机>`、`<OpenDataWorks 主机>` 填对方可访问的地址。
 
 1. 按 opendataagent 的 `deploy/README.md` 部署 DataAgent。从旧版本（DataAgent 跟随本目录部署）升级时，按其中“从 OpenDataWorks 内置部署迁移”导出旧 `dataagent` 库和 Skill 卷；本目录升级不会删除这些数据。

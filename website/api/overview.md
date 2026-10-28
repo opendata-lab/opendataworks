@@ -21,7 +21,7 @@ OpenDataWorks 提供 RESTful API 用于与平台交互。
 
 ### 智能查询 API
 
-智能查询由独立部署的 DataAgent 提供，其会话、消息与任务接口见 [opendataagent 会话 API](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/api.md)。
+智能查询由独立部署的 DataAgent 提供，其会话、消息与任务接口见 [opendataagent 会话 API](https://github.com/opendata-lab/opendataagent/blob/main/docs/handbook/api.md)。
 
 ## 通用响应格式
 

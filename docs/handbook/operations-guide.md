@@ -23,7 +23,7 @@ bash scripts/start.sh
 - MySQL 卷：`mysql-data`
 - 后端日志卷：`backend-logs`
 - Compose 服务：`mysql`、`redis`、`backend`、`frontend`、`odw-mcp-server`、`log-collector`
-- DataAgent 不在本 Compose 中，由 [opendataagent](https://github.com/MingkeVan/opendataagent) 单独部署（可在另一台机器上）；接入步骤见 `deploy/README.md` 的“接入 DataAgent”
+- DataAgent 不在本 Compose 中，由 [opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署（可在另一台机器上）；接入步骤见 `deploy/README.md` 的“接入 DataAgent”
 - **数据库自动初始化**：MySQL 容器首次启动时，会自动执行 `deploy/database/mysql/` 目录下的初始化脚本，创建 `opendataworks` 数据库和用户。表结构由后端服务的 Flyway 自动创建。
 - 环境变量重点：
   - `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE=opendataworks`, `MYSQL_USER=opendataworks`

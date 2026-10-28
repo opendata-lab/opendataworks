@@ -41,4 +41,4 @@ OpenDataWorks 的核心功能分为以下四大支柱：
 项目采用现代化主流开发技术栈构建，以保证系统的高效运行与容器化一键部署：
 * **前端 Web 应用**：基于 **Vue 3**、**Vite** 和 **Element Plus** 库构建，并集成 **ECharts** 实现大盘指标与血缘图谱的可视化展示。
 * **主后端服务**：基于 **Java 8**、**Spring Boot**、**MyBatis-Plus** 与 **MySQL 8**，集成了 **Flyway** 表结构版本管理及 Apache DolphinScheduler API 客户端。
-* **智能查询 DataAgent**：独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent) 中的智能体平台（Python / FastAPI），单独部署，通过 widget 内嵌到门户、通过 **ODW MCP Server** 访问平台。
+* **智能查询 DataAgent**：独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent) 中的智能体平台（Python / FastAPI），单独部署，通过 widget 内嵌到门户、通过 **ODW MCP Server** 访问平台。

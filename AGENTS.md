@@ -129,7 +129,7 @@ When working in this repository, optimize for:
 
 ## DataAgent
 
-DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent)。本仓库仅维护 `odw-mcp-server/` 与 `odw-skills/`，通过普通 HTTP MCP 与 Skill 导入接入。
+DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent)。本仓库仅维护 `odw-mcp-server/` 与 `odw-skills/`，通过普通 HTTP MCP 与 Skill 导入接入。
 
 ## Verification Expectations
 

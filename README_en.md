@@ -42,7 +42,7 @@ It brings the core pieces of a modern data platform into a deployable full-stack
 - **Workflow orchestration**: configure batch and streaming jobs visually, with deep DolphinScheduler integration.
 - **Lineage analysis**: parse SQL lineage automatically and explore upstream/downstream relationships in an interactive graph.
 - **Intelligent query**: use natural language to generate SQL, execute analysis, and review results from the main portal.
-- **Ready to deploy**: run the frontend, backend, Redis, MySQL, and the ODW MCP Server from the provided Docker Compose setup. The DataAgent behind intelligent query is deployed separately from [opendataagent](https://github.com/MingkeVan/opendataagent).
+- **Ready to deploy**: run the frontend, backend, Redis, MySQL, and the ODW MCP Server from the provided Docker Compose setup. The DataAgent behind intelligent query is deployed separately from [opendataagent](https://github.com/opendata-lab/opendataagent).
 
 ## Feature Highlights
 

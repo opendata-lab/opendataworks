@@ -1,11 +1,11 @@
 # 智能查询接入
 
-「智能查询」由 DataAgent 提供。DataAgent 是独立仓库 [opendataagent](https://github.com/MingkeVan/opendataagent) 中的通用智能体平台，单独部署，可以和 OpenDataWorks 不在同一台机器上。它的内部架构、会话 API 与 Widget SDK 见：
+「智能查询」由 DataAgent 提供。DataAgent 是独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent) 中的通用智能体平台，单独部署，可以和 OpenDataWorks 不在同一台机器上。它的内部架构、会话 API 与 Widget SDK 见：
 
-- [DataAgent 架构](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/architecture.md)
-- [DataAgent 会话 API](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/api.md)
-- [Widget 嵌入](https://github.com/MingkeVan/opendataagent/blob/main/docs/handbook/widget.md)
-- [DataAgent 部署](https://github.com/MingkeVan/opendataagent/blob/main/deploy/README.md)
+- [DataAgent 架构](https://github.com/opendata-lab/opendataagent/blob/main/docs/handbook/architecture.md)
+- [DataAgent 会话 API](https://github.com/opendata-lab/opendataagent/blob/main/docs/handbook/api.md)
+- [Widget 嵌入](https://github.com/opendata-lab/opendataagent/blob/main/docs/handbook/widget.md)
+- [DataAgent 部署](https://github.com/opendata-lab/opendataagent/blob/main/deploy/README.md)
 
 ## 两边如何连接
 

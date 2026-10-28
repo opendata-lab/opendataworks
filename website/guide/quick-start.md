@@ -54,7 +54,7 @@ OpenDataWorks 推荐使用 Docker Compose 进行本地一键启动。本指南�
 
 启动后，浏览器打开 [http://localhost:8081](http://localhost:8081) 进入系统，并检查 `http://localhost:8801/health` 返回正常。
 
-「智能查询」由独立部署的 DataAgent（[opendataagent](https://github.com/MingkeVan/opendataagent)）提供。部署 DataAgent 并按仓库 `deploy/README.md` 的“接入 DataAgent”配置 nginx 转发后，在该模块新建会话输入 `你好，请直接回复 smoke-ok。`，看到流式回复即说明链路正常。
+「智能查询」由独立部署的 DataAgent（[opendataagent](https://github.com/opendata-lab/opendataagent)）提供。部署 DataAgent 并按仓库 `deploy/README.md` 的“接入 DataAgent”配置 nginx 转发后，在该模块新建会话输入 `你好，请直接回复 smoke-ok。`，看到流式回复即说明链路正常。
 
 ---
 

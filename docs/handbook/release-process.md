@@ -32,7 +32,7 @@
 | `frontend/package.json` | 前端版本，如 `"version": "1.0.0"` |
 | `frontend/package-lock.json` | 锁文件顶层版本，如 `"version": "1.0.0"` |
 
-DataAgent 在 [opendataagent](https://github.com/MingkeVan/opendataagent) 仓库单独发版，不在本流程内。
+DataAgent 在 [opendataagent](https://github.com/opendata-lab/opendataagent) 仓库单独发版，不在本流程内。
 
 ### 2.2 Docker Compose 正式部署
 
