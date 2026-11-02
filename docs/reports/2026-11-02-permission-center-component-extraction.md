@@ -54,3 +54,5 @@ node_modules/.bin/prettier --check src/views/settings/components/DatasourcePermi
 ## 交付与回退
 
 更新同主题设计／计划，将组件拆分待办移入已完成，推送现有PR #491。回退只需还原本轮前端与文档提交，无数据库迁移、服务配置或真实授权回退。
+
+后续修复（2026-11-02）：用户要求该问题修通后上线。已确认采集账号读取mysql.role_edges被1142拒绝，改为成员连接自查并通过Java21项、真实MySQL17项及管理员浏览器验收；该项已从待办关闭。详见[实际权限回读修复报告](2026-11-02-native-permission-inspection-verification.md)。

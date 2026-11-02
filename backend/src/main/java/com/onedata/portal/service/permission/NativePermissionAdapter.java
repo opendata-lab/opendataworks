@@ -206,9 +206,16 @@ public final class NativePermissionAdapter {
             for(Map<String,Object> r:rows(c,"SELECT table_schema,table_name,privilege_type FROM information_schema.role_table_grants WHERE grantee=? ORDER BY table_schema,table_name,privilege_type",identity.getUser()))result.add(r.toString());
             result.add("原生角色："+String.join(", ",memberships(c,identity)));
         } else {
-            String sql="SHOW GRANTS FOR "+account(identity);
-            if(!doris()) {
-                Set<String> roles=memberships(c,identity);if(!roles.isEmpty()){List<String> quoted=new ArrayList<>();for(String r:roles)quoted.add(role(r));sql+=" USING "+String.join(", ",quoted);}
+            // Inspect the already verified member session, never another account through a manager.
+            String sql = "SHOW GRANTS";
+            if (!doris()) {
+                sql = "SHOW GRANTS FOR CURRENT_USER";
+                List<String> enabled = new ArrayList<>();
+                for (Map<String,Object> row : rows(c,
+                        "SELECT ROLE_NAME AS name, ROLE_HOST AS host FROM information_schema.ENABLED_ROLES ORDER BY ROLE_NAME, ROLE_HOST")) {
+                    enabled.add(account(new Identity(string(row, "name"), string(row, "host"))));
+                }
+                if (!enabled.isEmpty()) sql += " USING " + String.join(", ", enabled);
             }
             for(Map<String,Object> r:rows(c,sql)) { r.remove("password");result.add(r.toString()); }
         }

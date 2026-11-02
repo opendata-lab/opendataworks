@@ -139,3 +139,15 @@ Doris 由用户在内网验证：EXPLAIN 对无权表报错；视图权限不依
 6. 完成后TODO移入已完成，提交并推送现有PR #491。回退为还原本轮前端／文档提交；无迁移或运行时配置回退。
 
 8.1结果（2026-11-02）：步骤1～5已完成，原组件3086→603行；拆出12个视图及6个状态模块。原10项测试保留，现权限中心18项、相关5文件41项通过，构建与ESLint／Prettier通过；浏览器成员、角色空态、记录及凭据表单已核对。真实源实际权限回读返回后端错误，保持失败展示并独立TODO，不为前端重构更改原生账号。步骤6的文档与TODO已更新，随本轮提交推送现有PR。见[报告](../reports/2026-11-02-permission-center-component-extraction.md)。
+
+## 9. 修通实际权限回读（2026-11-02）
+
+依据[设计13](../design/2026-10-26-dataagent-datasource-identity-design.md#13-成员原生权限回读修复2026-11-02)：
+
+1. 复现源1两种成员的接口失败，验证成员连接可用及采集账号读取mysql.role_edges报1142；保留凭据私密，不更改业务源权限。
+2. DatasourcePermissionService.inspect改为已验证成员连接自查，补步骤及SQLState／错误码诊断；NativePermissionAdapter的MySQL回读使用ENABLED_ROLES与保留host的SHOW GRANTS USING，保留PG／Doris输出和接口字段。
+3. 补无需Spring／真实数据库的JDBC契约与服务单测，检查不打开管理连接、只读SERVICE、角色作用域与失败反馈；运行最小相关Maven测试及打包。
+4. 外部构建重启本机后端，运行独立真实MySQL冒烟，检查演示源两成员和临时受限角色账号；不在测试代码启动／重启服务。清理临时资源并核对业务源授权未变。
+5. 浏览器验证实际权限结果，更新报告及手册，TODO移已完成；提交推送现有PR #491。回退仅还原代码及重启旧Jar，无数据库迁移或授权回退。
+
+9.1结果（2026-11-02）：步骤1～4完成，Java21项／打包、真实MySQL17项及浏览器管理员／服务账号原生回读通过；临时资源已清理且幂等cleanup通过。第5步文档及TODO已更新，随本轮提交推送PR #491。见[验收报告](../reports/2026-11-02-native-permission-inspection-verification.md)。

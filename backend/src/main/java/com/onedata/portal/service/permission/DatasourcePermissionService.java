@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 import static com.onedata.portal.service.permission.PermissionJdbc.*;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 @RequiredArgsConstructor
 public class DatasourcePermissionService {
     private final JdbcTemplate jdbc;
@@ -312,15 +313,25 @@ public class DatasourcePermissionService {
         removeMember(source,found.getSubjectType(),found.getSubjectId());
     }
     public Map<String,Object> inspect(Long source,String type,String subject) {
-        source(source);validateSubject(type,subject,false);DatasourceSubjectAccount account=findAccount(source,type,subject);
-        if(account==null)throw new IllegalArgumentException("尚未绑定数据库账号");
-        NativePermissionAdapter adapter=nativeAdapter(source(source));
-        try(Connection c=accountConnection(source(source),account)) {
-            Identity identity=adapter.identity(c,account.getUsername());
-            try(Connection manager=management(source)) {
-                return map("username",account.getUsername(),"nativeIdentity",adapter.account(identity),"grants",adapter.inspect(manager,identity),"notice","有效权限包含账号已有直接授权、外部原生角色及所有权；平台只管理本平台创建的角色。");
-            }
-        }catch(SQLException e){throw new IllegalArgumentException("实际权限读取失败，请核对账号连接和数据库权限");}
+        DorisCluster cluster = source(source);
+        validateSubject(type, subject, false);
+        DatasourceSubjectAccount account = findAccount(source, type, subject);
+        if (account == null) throw new IllegalArgumentException("尚未绑定数据库账号");
+        NativePermissionAdapter adapter = nativeAdapter(cluster);
+        String stage = "连接成员数据库账号";
+        try (Connection connection = accountConnection(cluster, account)) {
+            stage = "验证数据库实际身份";
+            Identity identity = adapter.identity(connection, account.getUsername());
+            stage = "读取账号原生权限";
+            return map("username", account.getUsername(), "nativeIdentity", adapter.account(identity),
+                    "grants", adapter.inspect(connection, identity),
+                    "notice", "使用成员绑定账号的新连接读取原生授权；MySQL展开当前连接已激活角色，未激活角色不计为当前有效权限。平台只管理本平台创建的角色，账号可能另有直接授权、外部角色或所有权。");
+        } catch (SQLException error) {
+            log.warn("Native permission inspection failed: source={}, subjectType={}, subject={}, stage={}, sqlState={}, errorCode={}",
+                    source, type, subject, stage, error.getSQLState(), error.getErrorCode());
+            throw new IllegalArgumentException(stage + "失败（SQLState=" + error.getSQLState()
+                    + "，错误码=" + error.getErrorCode() + "），请核对成员连接及数据库权限");
+        }
     }
     public Map<String,Object> deleteRole(Long source,Long id) {
         return locked(source,()->{

@@ -74,8 +74,6 @@
 
 ## 测试与工程卫生
 
-- **本机演示源原生权限回读失败**（2026-11-02组件拆分浏览器检查发现）：现有MySQL演示源ID 1的服务账号“实际权限”返回后端“实际权限读取失败，请核对账号连接和数据库权限”，界面正确展示错误。需核对成员连接、授权管理连接与原生SHOW GRANTS权限，并通过受控诊断定位被统一异常提示掩盖的SQL原因，再补真实回读验收；本轮纯前端拆分不修改数据库账号或授权。来源：[拆分验收报告](reports/2026-11-02-permission-center-component-extraction.md)。
-
 - **Data Studio浏览器草稿按用户隔离**（2026-11-02服务账号浏览器验收发现）：管理员退出后，同一浏览器登录临时普通用户，编辑器恢复了上一轮测试的连接ID、表标签与SQL草稿（结果未显示，实际查询仍由后端受限账号校验）。需检查本地持久化键和退出清理，按平台用户隔离标签、SQL、详情缓存，避免共用浏览器串出前一账号的编辑上下文；当前服务账号／Token变更不顺带改编辑器持久化。来源：[本轮报告](reports/2026-11-02-service-accounts-verification.md)。
 
 - **primaryKeyControls单测并发超时**（2026-11-02服务账号最终复核发现）：全量`vitest run`时`primaryKeyControls.spec.js`的「synced=1 applies row-specific primary edit permissions」用时17.8秒超时失败，单独运行5项全过（单项0.7～2.3秒）。需定位挂载开销或等待逻辑，降低用例耗时或拆分，避免全量回归偶发失败；不放宽全局超时掩盖。来源：[本轮报告](reports/2026-11-02-service-accounts-verification.md)。
@@ -90,9 +88,13 @@
 
 ## 已完成
 
+### 成员实际权限回读
+
+2026-11-02修复演示源USER／SERVICE实际权限回读失败：原因是旧流程使用采集账号读取mysql.role_edges被1142拒绝，并非成员账号无法登录。现通过已验证成员连接自查，MySQL按已激活角色及真实host展开SHOW GRANTS，补失败步骤／SQLState／错误码；不提升采集权限或回退其他账号。Java定向21项与打包、真实MySQL／HTTP17项及管理员浏览器两个成员回读通过，临时账号／角色／库和绑定已清理，原配置未变。见[设计13](design/2026-10-26-dataagent-datasource-identity-design.md#13-成员原生权限回读修复2026-11-02)、[计划9](plans/2026-10-26-dataagent-datasource-identity-plan.md#9-修通实际权限回读2026-11-02)、[报告](reports/2026-11-02-native-permission-inspection-verification.md)。
+
 ### 数据源权限中心组件拆分
 
-2026-11-02依据用户评审建议实施：主组件从3086行减至603行，拆分成员、权限矩阵、记录与弹窗，共12个功能视图；6个composable分别管理上下文与功能状态。保持成员优先布局、API及原生权限语义，补关闭／切源凭据清理、迟到响应和旧预览隔离。原10项断言保留，权限中心现18项、相关5文件41项通过，定向ESLint／Prettier及构建通过，浏览器核对布局和表单。既有演示源实际权限回读失败单独保留上方待办。见[设计12](design/2026-10-26-dataagent-datasource-identity-design.md#12-权限中心前端组件拆分2026-11-02)、[计划8](plans/2026-10-26-dataagent-datasource-identity-plan.md#8-权限中心组件拆分2026-11-02)、[报告](reports/2026-11-02-permission-center-component-extraction.md)及[PR #491](https://github.com/opendata-lab/opendataworks/pull/491)。
+2026-11-02依据用户评审建议实施：主组件从3086行减至603行，拆分成员、权限矩阵、记录与弹窗，共12个功能视图；6个composable分别管理上下文与功能状态。保持成员优先布局、API及原生权限语义，补关闭／切源凭据清理、迟到响应和旧预览隔离。原10项断言保留，权限中心现18项、相关5文件41项通过，定向ESLint／Prettier及构建通过，浏览器核对布局和表单。拆分时发现的演示源实际权限回读失败已由下述后续修复完成（见本节「成员实际权限回读」）。见[设计12](design/2026-10-26-dataagent-datasource-identity-design.md#12-权限中心前端组件拆分2026-11-02)、[计划8](plans/2026-10-26-dataagent-datasource-identity-plan.md#8-权限中心组件拆分2026-11-02)、[报告](reports/2026-11-02-permission-center-component-extraction.md)及[PR #491](https://github.com/opendata-lab/opendataworks/pull/491)。
 
 ### 平台普通用户与服务账号
 

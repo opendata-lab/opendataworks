@@ -460,3 +460,27 @@ agent-api模块定义小型ServiceAccountAuthenticator SPI，主backend实现摘
 ### 12.4 实施结果
 
 主容器603行，12个功能视图、6个composable与1个常量模块已完成；最大视图为634行的角色矩阵，未把全部逻辑转移到单一控制器。请求上下文按数据源／打开周期失效，资源／记录／成员回读与角色预览保留各自序号。保持显式依赖与功能view-model，不新增全局状态。权限中心18项、相关41项及构建／静态检查通过，浏览器布局和表单通过；既有演示源实际权限回读返回后端连接／权限错误，单独记TODO。详见[拆分报告](../reports/2026-11-02-permission-center-component-extraction.md)。
+
+## 13. 成员原生权限回读修复（2026-11-02）
+
+### 13.1 已复现原因与范围
+
+演示MySQL源1的USER／SERVICE成员连接均可成功，旧inspect随后改用采集连接账号读取mysql.role_edges，因该账号无系统表SELECT权限返回1142。管理连接未单独配置，采集账号权限不足以读取其他用户的原生授权。已有错误提示吞掉了具体失败步骤，不能将此项作为可上线验收。
+
+本轮只修“实际权限”读取链路及诊断，涉及Java权限服务／Adapter、定向测试与真实源冒烟。前端接口形状、原生授权写入、数据库账号和已有业务数据不变；不通过提升采集账号权限或填入root来掩盖错误。
+
+### 13.2 读取边界
+
+管理员请求后，以当前成员已绑定账号建立连接并验证数据库实际身份，在同一连接读取其自己的原生授权，不再为查看授权打开采集／管理连接。MySQL使用SHOW GRANTS FOR CURRENT_USER，按information_schema.ENABLED_ROLES返回的名称及host构造USING以展开新连接实际激活的角色；保留角色host并转义，不假定外部角色均为@%。没有激活的角色不计为当前连接有效权限，不执行SET ROLE ALL。PG／Doris保持既有原生回读输出格式，改在已验证的成员连接读取；本轮不扩展其权限表达模型。
+
+保留username、nativeIdentity、grants和notice响应字段，补充MySQL按新连接激活角色展示的说明。成员连接／身份验证／原生回读失败均明确返回失败步骤、SQLState及错误码；服务日志记录相同诊断，不记录密码、SQL授权结果或连接串。不吞错回空列表，不自动切换其他账号。
+
+依据[MySQL SHOW GRANTS](https://dev.mysql.com/doc/refman/8.0/en/show-grants.html)、[ENABLED_ROLES](https://dev.mysql.com/doc/refman/8.0/en/information-schema-enabled-roles-table.html)及[Doris SHOW GRANTS](https://doris.apache.org/docs/dev/sql-manual/sql-statements/account-management/SHOW-GRANTS/)，普通账号可以查看自身授权；修改原生权限仍使用独立管理连接。
+
+### 13.3 验证与交付
+
+定向测试覆盖只开成员连接、USER／SERVICE只读标识、空／多激活角色、非默认host与引号转义、失败步骤与连接关闭。真实MySQL验证演示源两个成员回读、直接授权、激活角色展开、未激活角色不误报及无系统表读取权限仍可回读，并检查接口与直接SQL一致。管理员浏览器点击实际权限看到真实GRANT结果。测试使用独立临时账号／库／角色，清理后核对业务源权限未变。构建重启为测试脚本之外的本机操作；完成后更新TODO、报告及PR #491。
+
+### 13.4 实施结果
+
+已完成成员连接自查、MySQL激活角色host保留及分阶段诊断；Java定向21项与打包、真实MySQL／HTTP17项和浏览器两位既有成员回读通过，原源配置与授权未变，临时资源清理完成。ENABLED_ROLES只需返回激活顶层角色，嵌套权限由SHOW GRANTS USING展开并以真实查询验证。PG／Doris本轮不声称真实实例验收。见[报告](../reports/2026-11-02-native-permission-inspection-verification.md)。
