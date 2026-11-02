@@ -74,6 +74,8 @@
 
 ## 测试与工程卫生
 
+- **数据源权限中心组件拆分**（2026-11-02用户评审建议）：`DatasourcePermissionCenter.vue`现为3086行，集中承担角色管理、资源授权矩阵、预览对比、成员授权／账号绑定及授权记录。当前相关定向测试通过，本轮仅记录维护项，不拆分实现。后续先按中型变更补充设计与实施计划，明确子组件职责、状态归属和事件契约，再按权限矩阵、预览结果、成员绑定及审计记录等功能块提取子组件／composable；保持成员优先布局、API契约、原生权限语义与失败反馈，并保留切源迟到响应、只读服务账号、部分失败及成员绑定回归。来源：[PR #491](https://github.com/opendata-lab/opendataworks/pull/491)、[现有设计](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)、[验收报告](reports/2026-11-02-service-accounts-verification.md)。
+
 - **Data Studio浏览器草稿按用户隔离**（2026-11-02服务账号浏览器验收发现）：管理员退出后，同一浏览器登录临时普通用户，编辑器恢复了上一轮测试的连接ID、表标签与SQL草稿（结果未显示，实际查询仍由后端受限账号校验）。需检查本地持久化键和退出清理，按平台用户隔离标签、SQL、详情缓存，避免共用浏览器串出前一账号的编辑上下文；当前服务账号／Token变更不顺带改编辑器持久化。来源：[本轮报告](reports/2026-11-02-service-accounts-verification.md)。
 
 - **primaryKeyControls单测并发超时**（2026-11-02服务账号最终复核发现）：全量`vitest run`时`primaryKeyControls.spec.js`的「synced=1 applies row-specific primary edit permissions」用时17.8秒超时失败，单独运行5项全过（单项0.7～2.3秒）。需定位挂载开销或等待逻辑，降低用例耗时或拆分，避免全量回归偶发失败；不放宽全局超时掩盖。来源：[本轮报告](reports/2026-11-02-service-accounts-verification.md)。
