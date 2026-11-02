@@ -74,7 +74,7 @@
 
 ## 测试与工程卫生
 
-- **数据源权限中心组件拆分**（2026-11-02用户评审建议）：`DatasourcePermissionCenter.vue`现为3086行，集中承担角色管理、资源授权矩阵、预览对比、成员授权／账号绑定及授权记录。当前相关定向测试通过，本轮仅记录维护项，不拆分实现。后续先按中型变更补充设计与实施计划，明确子组件职责、状态归属和事件契约，再按权限矩阵、预览结果、成员绑定及审计记录等功能块提取子组件／composable；保持成员优先布局、API契约、原生权限语义与失败反馈，并保留切源迟到响应、只读服务账号、部分失败及成员绑定回归。来源：[PR #491](https://github.com/opendata-lab/opendataworks/pull/491)、[现有设计](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)、[验收报告](reports/2026-11-02-service-accounts-verification.md)。
+- **本机演示源原生权限回读失败**（2026-11-02组件拆分浏览器检查发现）：现有MySQL演示源ID 1的服务账号“实际权限”返回后端“实际权限读取失败，请核对账号连接和数据库权限”，界面正确展示错误。需核对成员连接、授权管理连接与原生SHOW GRANTS权限，并通过受控诊断定位被统一异常提示掩盖的SQL原因，再补真实回读验收；本轮纯前端拆分不修改数据库账号或授权。来源：[拆分验收报告](reports/2026-11-02-permission-center-component-extraction.md)。
 
 - **Data Studio浏览器草稿按用户隔离**（2026-11-02服务账号浏览器验收发现）：管理员退出后，同一浏览器登录临时普通用户，编辑器恢复了上一轮测试的连接ID、表标签与SQL草稿（结果未显示，实际查询仍由后端受限账号校验）。需检查本地持久化键和退出清理，按平台用户隔离标签、SQL、详情缓存，避免共用浏览器串出前一账号的编辑上下文；当前服务账号／Token变更不顺带改编辑器持久化。来源：[本轮报告](reports/2026-11-02-service-accounts-verification.md)。
 
@@ -89,6 +89,10 @@
 - **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份；2026-10-29 统一权限设计已选定短期签名身份断言与 DataAgent 验签，不再同时规划 nginx auth_request 后备路径。该修复已按用户2026-11-01要求延期，并非本轮本机功能验收前置；生产可信委托仍需实施[统一权限中心设计](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)的交付前提，尚未实施。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
 
 ## 已完成
+
+### 数据源权限中心组件拆分
+
+2026-11-02依据用户评审建议实施：主组件从3086行减至603行，拆分成员、权限矩阵、记录与弹窗，共12个功能视图；6个composable分别管理上下文与功能状态。保持成员优先布局、API及原生权限语义，补关闭／切源凭据清理、迟到响应和旧预览隔离。原10项断言保留，权限中心现18项、相关5文件41项通过，定向ESLint／Prettier及构建通过，浏览器核对布局和表单。既有演示源实际权限回读失败单独保留上方待办。见[设计12](design/2026-10-26-dataagent-datasource-identity-design.md#12-权限中心前端组件拆分2026-11-02)、[计划8](plans/2026-10-26-dataagent-datasource-identity-plan.md#8-权限中心组件拆分2026-11-02)、[报告](reports/2026-11-02-permission-center-component-extraction.md)及[PR #491](https://github.com/opendata-lab/opendataworks/pull/491)。
 
 ### 平台普通用户与服务账号
 
