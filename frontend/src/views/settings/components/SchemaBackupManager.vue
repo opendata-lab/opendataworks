@@ -94,7 +94,7 @@
           <el-select v-model="configForm.minioConfigId" placeholder="请选择 MinIO 环境" :loading="minioLoading">
             <el-option v-for="item in minioOptions" :key="item.id" :label="item.configName" :value="item.id" />
           </el-select>
-          <div class="tip">在“设置 / 配置管理 / MinIO 环境”中维护</div>
+          <div class="tip">在“管理中心 / MinIO 管理”中维护</div>
         </el-form-item>
 
         <el-form-item label="Bucket" prop="minioBucket">

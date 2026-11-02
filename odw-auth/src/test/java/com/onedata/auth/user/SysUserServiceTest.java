@@ -1,6 +1,7 @@
 package com.onedata.auth.user;
 
 import com.onedata.auth.exception.AuthFailureException;
+import com.onedata.auth.context.UserContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -15,7 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -145,11 +149,44 @@ class SysUserServiceTest {
     @Test
     void changePasswordStoresNewHash() {
         when(sysUserMapper.selectById(1L)).thenReturn(adminUser());
+        when(sysUserMapper.replacePassword(eq(1L), anyString(), eq(0))).thenReturn(1);
 
         service.changePassword(1L, PASSWORD, "new-password-123");
 
-        ArgumentCaptor<SysUser> captor = ArgumentCaptor.forClass(SysUser.class);
-        verify(sysUserMapper).updateById(captor.capture());
-        assertTrue(ENCODER.matches("new-password-123", captor.getValue().getPasswordHash()));
+        ArgumentCaptor<String> captor = ArgumentCaptor.forClass(String.class);
+        verify(sysUserMapper).replacePassword(eq(1L), captor.capture(), eq(0));
+        assertTrue(ENCODER.matches("new-password-123", captor.getValue()));
+    }
+
+    @Test
+    void sessionUsesCurrentRoleAndEnabledStateAndPasswordVersion() {
+        SysUser user = adminUser(); user.setRole("user"); user.setSessionVersion(3);
+        when(sysUserMapper.selectById(1L)).thenReturn(user);
+        UserContext old = new UserContext("1", "admin", "admin", "local", 3);
+        assertEquals("user", service.verifySession(old).getRole());
+        user.setEnabled(false); assertNull(service.verifySession(old));
+        user.setEnabled(true); user.setSessionVersion(4); assertNull(service.verifySession(old));
+        assertNull(service.verifySession(new UserContext("1", "admin", "admin", "oidc", 4)));
+    }
+
+    @Test
+    void concurrentPasswordResetDoesNotRevalidateAnOldVersion() {
+        when(sysUserMapper.selectById(1L)).thenReturn(adminUser());
+        when(sysUserMapper.replacePassword(eq(1L), anyString(), eq(0))).thenReturn(0);
+        assertThrows(AuthFailureException.class, () -> service.changePassword(1L, PASSWORD, "new-password-123"));
+    }
+
+    @Test
+    void bcryptPasswordByteLimitIsEnforced() {
+        assertThrows(AuthFailureException.class, () -> SysUserService.validatePassword(String.join("", java.util.Collections.nCopies(25,"密"))));
+    }
+
+    @Test void serviceAccountCannotLoginEvenWithAccidentalPasswordHashOrForgedSession() {
+        SysUser machine=adminUser();machine.setAccountType("SERVICE");machine.setAuthSource("service");
+        when(sysUserMapper.selectOne(any())).thenReturn(machine);
+        assertThrows(AuthFailureException.class,()->service.login("admin",PASSWORD));
+        when(sysUserMapper.selectById(1L)).thenReturn(machine);
+        assertNull(service.verifySession(new UserContext("1","admin","admin","service")));
+        assertThrows(AuthFailureException.class,()->service.changePassword(1L,PASSWORD,"new-password-123"));
     }
 }

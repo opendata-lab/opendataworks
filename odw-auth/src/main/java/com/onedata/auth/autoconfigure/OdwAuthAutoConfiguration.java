@@ -73,9 +73,9 @@ public class OdwAuthAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(name = "authenticationFilterRegistration")
     public FilterRegistrationBean<AuthenticationFilter> authenticationFilterRegistration(
-            OdwAuthProperties properties, JwtService jwtService) {
+            OdwAuthProperties properties, JwtService jwtService, SysUserService users) {
         FilterRegistrationBean<AuthenticationFilter> bean =
-                new FilterRegistrationBean<>(new AuthenticationFilter(properties, jwtService));
+                new FilterRegistrationBean<>(new AuthenticationFilter(properties, jwtService, users));
         bean.setOrder(AUTH_FILTER_ORDER);
         return bean;
     }

@@ -152,6 +152,9 @@ public class DataTableMetadataSyncService {
         if (cluster == null) {
             throw new RuntimeException("未找到指定数据源: " + clusterId);
         }
+        if (!"active".equals(cluster.getStatus())) {
+            throw new IllegalArgumentException("数据源已停用");
+        }
         return cluster;
     }
 

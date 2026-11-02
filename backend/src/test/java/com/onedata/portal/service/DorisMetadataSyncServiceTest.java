@@ -92,6 +92,27 @@ class DorisMetadataSyncServiceTest {
     }
 
     @Test
+    void syncTableExplainsWhenSourceAccountCannotSeeTable() {
+        when(dorisConnectionService.getTablesInDatabase(1L, "dw"))
+                .thenReturn(Collections.emptyList(), Collections.singletonList(dorisTable("orders", "")));
+
+        DorisMetadataSyncService.SyncResult result = service.syncTable(1L, "dw", "orders");
+
+        assertEquals("FAILED", result.getStatus());
+        assertEquals(Collections.singletonList("表 dw.orders 对当前用户可见，但数据源同步账号无权查看，请检查同步账号权限"), result.getErrors());
+        verifyNoInteractions(dataTableMapper);
+    }
+
+    @Test
+    void syncTableDoesNotClaimMissingTableWhenNeitherAccountCanSeeIt() {
+        when(dorisConnectionService.getTablesInDatabase(1L, "dw")).thenReturn(Collections.emptyList());
+
+        DorisMetadataSyncService.SyncResult result = service.syncTable(1L, "dw", "orders");
+
+        assertEquals(Collections.singletonList("数据源同步账号未查到表 dw.orders，请使用有权限的账号确认表是否存在"), result.getErrors());
+    }
+
+    @Test
     void syncDatabaseMarksNewMysqlTableAsPhysicalObject() {
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);

@@ -42,6 +42,11 @@ const stubs = {
     props: ['index'],
     template: '<button class="el-menu-item-stub" :data-index="index"><slot /></button>'
   },
+  'el-sub-menu': {
+    props: ['index'],
+    template: '<div class="el-sub-menu-stub" :data-index="index"><slot name="title" /><slot /></div>'
+  },
+  'el-button': { template: '<button><slot /></button>' },
   'el-icon': { template: '<span><slot /></span>' },
   'el-tag': { template: '<span><slot /></span>' },
   RouterView: { template: '<div />' }
@@ -66,12 +71,12 @@ describe('Layout', () => {
       global: { plugins: [createPinia()], stubs }
     })
 
-    const intelligentQueryItem = wrapper.find('[data-index="/intelligent-query"]')
+    const intelligentQueryItem = wrapper.find('[data-index="query"]')
     expect(intelligentQueryItem.exists()).toBe(true)
     expect(intelligentQueryItem.text()).toContain('智能问数')
     expect(intelligentQueryItem.text()).not.toContain('Agent问答')
-    expect(wrapper.find('[data-index="/datastudio"]').text()).toContain('数据开发')
-    expect(wrapper.find('[data-index="/workflows"]').text()).toContain('工作流')
+    expect(wrapper.find('[data-index="development"]').text()).toContain('数据开发')
+    expect(wrapper.find('[data-index="governance"]').text()).toContain('数据治理')
   })
 
   it('loads the remote DataAgent widget script and installs the floating widget', async () => {
@@ -146,13 +151,13 @@ describe('Layout', () => {
 
   it.each([
     ['/datastudio', {}, '数据开发', '帮我编写数据查询 SQL'],
-    ['/workflows', { tab: 'tasks' }, '工作流', '帮我查询任务执行情况'],
-    ['/workflows', { tab: 'monitor' }, '工作流', '帮我分析工作流执行失败原因'],
+    ['/workflows', { tab: 'tasks' }, '任务调度', '帮我查询任务执行情况'],
+    ['/workflows', { tab: 'monitor' }, '任务调度', '帮我分析工作流执行失败原因'],
     ['/lineage', {}, '数据血缘', '帮我分析表的上下游依赖'],
     ['/dashboard', {}, '控制台', '帮我汇总平台数据资产概况'],
     ['/inspection', {}, '数据质量', '帮我分析数据质量问题'],
     ['/integration', {}, '数据集成', '帮我梳理数据同步任务配置'],
-    ['/settings', {}, '设置', '帮我了解平台配置项']
+    ['/settings', {}, '数据源', '帮我了解平台配置项']
   ])('shows the shared page heading and scoped assistant for %s', (path, query, title, prompt) => {
     routeState.path = path
     routeState.query = query

@@ -4,6 +4,7 @@ import com.onedata.auth.autoconfigure.OdwAuthProperties;
 import com.onedata.auth.context.UserContext;
 import com.onedata.auth.context.UserContextHolder;
 import com.onedata.auth.jwt.JwtService;
+import com.onedata.auth.user.SysUserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.util.AntPathMatcher;
@@ -29,11 +30,17 @@ public class AuthenticationFilter extends OncePerRequestFilter {
 
     private final OdwAuthProperties properties;
     private final JwtService jwtService;
+    private final SysUserService users;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
     public AuthenticationFilter(OdwAuthProperties properties, JwtService jwtService) {
+        this(properties, jwtService, null);
+    }
+
+    public AuthenticationFilter(OdwAuthProperties properties, JwtService jwtService, SysUserService users) {
         this.properties = properties;
         this.jwtService = jwtService;
+        this.users = users;
     }
 
     @Override
@@ -41,7 +48,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         try {
             UserContext user = resolveSession(request);
-            if (user == null && properties.getAnonymous().isEnabled()) {
+            if (user == null && resolveToken(request) == null && properties.getAnonymous().isEnabled()) {
                 user = new UserContext(
                         properties.getAnonymous().getUserId(),
                         properties.getAnonymous().getUsername(),
@@ -68,7 +75,8 @@ public class AuthenticationFilter extends OncePerRequestFilter {
         if (token == null || token.isEmpty()) {
             return null;
         }
-        return jwtService.verify(token);
+        UserContext parsed = jwtService.verify(token);
+        return users == null ? parsed : users.verifySession(parsed);
     }
 
     private String resolveToken(HttpServletRequest request) {

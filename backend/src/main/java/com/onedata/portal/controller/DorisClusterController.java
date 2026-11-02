@@ -2,6 +2,10 @@ package com.onedata.portal.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.onedata.auth.annotation.RequireAuth;
+import com.onedata.auth.annotation.RequireRole;
+import com.onedata.portal.dto.MetadataSyncConfigRequest;
+import javax.validation.Valid;
+import java.util.LinkedHashMap;
 import com.onedata.portal.dto.backup.SchemaBackupConfigRequest;
 import com.onedata.portal.dto.backup.SchemaBackupItem;
 import com.onedata.portal.dto.backup.SchemaBackupRestoreRequest;
@@ -55,31 +59,63 @@ public class DorisClusterController {
         return Result.success(dorisClusterService.getById(id));
     }
 
+    @RequireRole("admin")
     @PostMapping
     public Result<DorisCluster> create(@RequestBody DorisCluster cluster) {
         return Result.success(dorisClusterService.create(cluster));
     }
 
+    @RequireRole("admin")
     @PutMapping("/{id}")
     public Result<DorisCluster> update(@PathVariable Long id, @RequestBody DorisCluster cluster) {
         return Result.success(dorisClusterService.update(id, cluster));
     }
 
+    @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long id) {
         dorisClusterService.delete(id);
         return Result.success();
     }
 
+    @RequireRole("admin")
     @PostMapping("/{id}/default")
     public Result<Void> setDefault(@PathVariable Long id) {
         dorisClusterService.setDefault(id);
         return Result.success();
     }
 
+    @RequireRole("admin")
     @PostMapping("/{id}/test")
     public Result<Boolean> testConnection(@PathVariable Long id) {
         return Result.success(dorisConnectionService.testConnection(id));
+    }
+
+    /** 采集预览与实际采集一样使用平台连接账号，不能复用用户目录接口。 */
+    @RequireRole("admin")
+    @GetMapping("/{id}/metadata-scope")
+    public Result<Map<String, Object>> metadataScope(@PathVariable Long id,
+            @RequestParam(required = false) String database) {
+        DorisCluster cluster = dorisClusterService.getById(id);
+        if (cluster == null) throw new IllegalArgumentException("数据源不存在");
+        if (!"active".equals(cluster.getStatus())) throw new IllegalArgumentException("数据源已停用");
+        return Result.success(dorisConnectionService.withSystemAccount(() -> {
+            Map<String, Object> scope = new LinkedHashMap<>();
+            scope.put("accountUsername", cluster.getUsername());
+            scope.put("database", database);
+            scope.put("databases", StringUtils.hasText(database) ? Collections.emptyList()
+                    : dorisConnectionService.getAllDatabases(id));
+            scope.put("tables", StringUtils.hasText(database)
+                    ? dorisConnectionService.getTablesInDatabase(id, database) : Collections.emptyList());
+            return scope;
+        }));
+    }
+
+    @RequireRole("admin")
+    @PutMapping("/{id}/metadata-sync-config")
+    public Result<DorisCluster> metadataSyncConfig(@PathVariable Long id,
+            @Valid @RequestBody MetadataSyncConfigRequest request) {
+        return Result.success(dorisClusterService.updateMetadataSyncConfig(id, request));
     }
 
     @RequireAuth
@@ -204,6 +240,7 @@ public class DorisClusterController {
         return Result.success(result);
     }
 
+    @RequireRole("admin")
     @GetMapping("/{id}/sync-history")
     public Result<PageResult<MetadataSyncHistory>> listSyncHistory(
             @PathVariable Long id,
@@ -219,6 +256,7 @@ public class DorisClusterController {
         return Result.success(PageResult.of(page.getTotal(), page.getRecords()));
     }
 
+    @RequireRole("admin")
     @GetMapping("/{id}/sync-history/{runId}")
     public Result<MetadataSyncHistory> getSyncHistoryDetail(
             @PathVariable Long id,

@@ -18,6 +18,12 @@ import java.util.concurrent.TimeoutException;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(com.onedata.portal.service.permission.PermissionConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Result<Void> handlePermissionConflict(com.onedata.portal.service.permission.PermissionConflictException e) {
+        return Result.fail(e.getMessage());
+    }
+
     /**
      * 处理业务异常
      */

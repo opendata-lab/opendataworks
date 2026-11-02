@@ -2,28 +2,29 @@
   <el-container class="layout-container" :style="widgetLayoutStyle">
     <el-header height="var(--odw-nav-height)">
       <div class="header-wrapper">
-        <div class="logo">
+        <router-link class="logo" to="/dashboard" aria-label="返回控制台">
           <picture class="logo-icon">
             <source srcset="/opendataworks-icon-dark.svg" media="(prefers-color-scheme: dark)">
             <img src="/opendataworks-icon-light.svg" alt="OpenDataWorks 图标">
           </picture>
           <h2>数据门户</h2>
           <el-tag v-if="isDemoMode" size="small" effect="dark" class="demo-tag">演示环境</el-tag>
-        </div>
+        </router-link>
         <el-menu
           :default-active="activeMenu"
-          router
           mode="horizontal"
+          :ellipsis="false"
+          @select="navigateModule"
           class="menu"
         >
           <el-menu-item
             v-for="item in menuItems"
-            :key="item.index"
-            :index="item.index"
-            @mouseenter="preloadMenuRoute(item.index)"
-            @focus="preloadMenuRoute(item.index)"
+            :key="item.key"
+            :index="item.key"
+            @mouseenter="preloadMenuRoute(item.target)"
+            @focus="preloadMenuRoute(item.target)"
           >
-            <el-icon><component :is="item.icon" /></el-icon>
+            <el-icon><component :is="navigationIcons[item.icon]" /></el-icon>
             <span>{{ item.label }}</span>
           </el-menu-item>
         </el-menu>
@@ -45,6 +46,22 @@
       </div>
     </el-header>
 
+    <div class="portal-workspace">
+      <aside v-if="sidebarItems.length" class="module-sidebar" :class="{ 'is-collapsed': sidebarCollapsed }">
+        <el-button class="sidebar-toggle" text :aria-expanded="!sidebarCollapsed" :aria-label="sidebarCollapsed ? '展开导航' : '收起导航'" @click="sidebarCollapsed = !sidebarCollapsed">
+          <el-icon><Expand v-if="sidebarCollapsed" /><Fold v-else /></el-icon>
+          <span v-if="!sidebarCollapsed">{{ activeModuleLabel }}</span>
+        </el-button>
+        <el-menu :key="activeMenu" class="module-menu" :default-active="activeLeaf" :default-openeds="['map']" :collapse="sidebarCollapsed" @select="navigateLeaf">
+          <template v-for="item in sidebarItems" :key="item.key">
+            <el-sub-menu v-if="item.children" :index="item.key">
+              <template #title><el-icon><component :is="navigationIcons[item.icon]" /></el-icon><span>{{ item.label }}</span></template>
+              <el-menu-item v-for="child in item.children" :key="child.key" :index="child.key"><el-icon><component :is="navigationIcons[child.icon]" /></el-icon><span>{{ child.label }}</span></el-menu-item>
+            </el-sub-menu>
+            <el-menu-item v-else :index="item.key"><el-icon><component :is="navigationIcons[item.icon]" /></el-icon><span>{{ item.label }}</span></el-menu-item>
+          </template>
+        </el-menu>
+      </aside>
     <el-main>
       <header class="portal-page-header">
         <h1>{{ pageTitle }}</h1>
@@ -52,6 +69,7 @@
       </header>
       <div class="portal-page-content"><router-view /></div>
     </el-main>
+    </div>
 
     <el-dialog v-model="passwordDialogVisible" title="修改密码" width="420px">
       <el-form
@@ -83,7 +101,7 @@
 import { computed, onMounted, onBeforeUnmount, provide, readonly, reactive, ref } from 'vue'
 import { isNavigationFailure, NavigationFailureType, useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound, User, ArrowDown } from '@element-plus/icons-vue'
+import { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound, User, ArrowDown, Download, Coin, Cpu, FolderOpened, MagicStick, Expand, Fold } from '@element-plus/icons-vue'
 import { isDemoMode } from '@/demo/runtime'
 import { preloadRouteComponents, scheduleRouteWarmup } from '@/router/routeWarmup'
 import { loadDataAgentWidgetScript, loadQueryAgentId, portalWidgetIdentity } from '@/utils/dataagentWidgetLoader'
@@ -91,6 +109,7 @@ import AiAssistantTrigger from '@/components/AiAssistantTrigger.vue'
 import { FLOATING_WIDGET_KEY } from '@/utils/floatingWidget'
 import { useAuthStore } from '@/stores/auth'
 import { authApi } from '@/api/auth'
+import { navigationModules, getModuleMenus, resolveNavigation } from '@/router/navigation'
 
 const workflowPrompts = {
   workflows: ['帮我查看工作流发布趋势', '帮我分析工作流调度依赖', '帮我解释工作流发布流程'],
@@ -165,62 +184,30 @@ const submitChangePassword = async () => {
     passwordSubmitting.value = false
   }
 }
-const menuItems = computed(() => {
-  const items = [
-    { index: '/dashboard', label: '控制台', icon: DataBoard },
-    { index: '/datastudio', label: '数据开发', icon: DataLine },
-    { index: '/workflows', label: '工作流', icon: Share },
-    { index: '/domains', label: '数据建模', icon: Collection },
-    { index: '/lineage', label: '数据血缘', icon: Connection },
-    { index: '/inspection', label: '数据质量', icon: Warning },
-    { index: '/integration', label: '数据集成', icon: Link },
-    { index: '/intelligent-query', label: '智能问数', icon: ChatDotRound },
-    { index: '/settings', label: '设置', icon: Setting }
-  ]
-  if (!isDemoMode) {
-    return items
-  }
-  return items.filter((item) => ['/dashboard', '/domains', '/datastudio', '/workflows', '/lineage', '/intelligent-query'].includes(item.index))
-})
-const activeMenu = computed(() => {
-  const path = route.path
-  if (path.startsWith('/dashboard')) {
-    return '/dashboard'
-  }
-  if (path.startsWith('/datastudio')) {
-    return '/datastudio'
-  }
-  if (path.startsWith('/workflows') || path.startsWith('/tasks')) {
-    return '/workflows'
-  }
-  if (path.startsWith('/domains')) {
-    return '/domains'
-  }
-  if (path.startsWith('/lineage')) {
-    return '/lineage'
-  }
-  if (path.startsWith('/inspection')) {
-    return '/inspection'
-  }
-  if (path.startsWith('/integration')) {
-    return '/integration'
-  }
-  if (path.startsWith('/intelligent-query') || path.startsWith('/nl2sql')) {
-    return '/intelligent-query'
-  }
-  if (path.startsWith('/settings')) {
-    return '/settings'
-  }
-  return path
-})
-
-const pageTitle = computed(() => route.meta?.title || menuItems.value.find(item => item.index === activeMenu.value)?.label || '数据门户')
+const navigationIcons = { DataBoard, DataLine, Connection, Collection, Warning, Setting, Share, Link, ChatDotRound, User, Download, Coin, Cpu, FolderOpened, MagicStick }
+const navigation = computed(() => resolveNavigation(route))
+const menuItems = computed(() => navigationModules.filter(item => !isDemoMode || item.key !== 'management'))
+const activeMenu = computed(() => navigation.value.moduleKey)
+const activeLeaf = computed(() => navigation.value.key)
+const activeModuleLabel = computed(() => navigationModules.find(item => item.key === activeMenu.value)?.label || '')
+const sidebarItems = computed(() => getModuleMenus(activeMenu.value, { isAdmin: authStore.isAdmin, demo: isDemoMode }))
+const sidebarCollapsed = ref(false)
+const navigateModule = key => {
+  const item = menuItems.value.find(item => item.key === key)
+  if (item) router.push(item.target)
+}
+const navigateLeaf = key => {
+  const item = sidebarItems.value.flatMap(item => item.children || [item]).find(item => item.key === key)
+  if (item) router.push(item.target)
+}
+const pageTitle = computed(() => navigation.value.title)
 const pagePrompts = {
   '/dashboard': ['帮我汇总平台数据资产概况', '帮我查看工作流运行趋势', '帮我梳理数据质量问题'],
   '/domains': ['帮我设计业务域和数据域划分', '帮我解释数仓分层的设计方法', '帮我梳理数据建模流程'],
   '/lineage': ['帮我分析表的上下游依赖', '帮我评估表结构变更的影响范围', '帮我解释数据血缘关系'],
   '/inspection': ['帮我分析数据质量问题', '帮我设计数据巡检规则', '帮我排查数据异常的原因'],
   '/integration': ['帮我梳理数据同步任务配置', '帮我排查数据同步失败原因', '帮我检查数据源连接配置'],
+  '/metadata-sync': ['帮我检查采集账号的可见范围', '帮我排查元数据采集失败原因', '帮我查看元数据采集历史'],
   '/settings': ['帮我了解平台配置项', '帮我检查调度环境配置', '帮我配置智能助手'],
   '/intelligent-query': ['帮我推荐数据分析方法', '帮我整理一个数据分析问题', '帮我解释查询结果']
 }
@@ -231,11 +218,11 @@ const assistantPrompts = computed(() => {
     const name = route.params?.id ? `工作流 #${route.params.id}` : '当前工作流'
     return [`帮我分析${name}的调度依赖`, `帮我排查${name}的执行失败原因`, `帮我梳理${name}的发布流程`]
   }
-  return pagePrompts[activeMenu.value] || [`帮我了解${pageTitle.value}的使用方法`, '帮我分析当前的数据问题']
+  return pagePrompts[route.path] || [`帮我了解${pageTitle.value}的使用方法`, '帮我分析当前的数据问题']
 })
 
 const preloadMenuRoute = (path) => {
-  if (!path || path === activeMenu.value) {
+  if (!path || path === route.fullPath) {
     return
   }
   void preloadRouteComponents(router, path)
@@ -298,8 +285,8 @@ onMounted(() => {
   scheduleRouteWarmup(
     router,
     menuItems.value
-      .map((item) => item.index)
-      .filter((path) => path !== activeMenu.value)
+      .map((item) => item.target)
+      .filter((path) => path !== route.fullPath)
   )
   void installFloatingWidget().catch((error) => {
     console.warn('[OpenDataWorks] failed to install DataAgent widget:', error)
@@ -312,6 +299,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+.portal-workspace { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.module-sidebar { flex: 0 0 188px; width: 188px; overflow-y: auto; overflow-x: hidden; background: var(--odw-bg-card); border-right: 1px solid var(--odw-border); }
+.module-sidebar.is-collapsed { flex-basis: 64px; width: 64px; }
+.sidebar-toggle { width: 100%; height: 40px; justify-content: flex-start; padding: 0 20px; color: var(--odw-text-secondary); }
+.module-menu { border-right: none; background: transparent; }
+.module-menu:not(.el-menu--collapse) { width: 188px; }
+.module-menu :deep(.el-menu-item), .module-menu :deep(.el-sub-menu__title) { height: 42px; line-height: 42px; font-size: 13px; }
+
 .layout-container {
   height: 100vh;
   display: flex;
@@ -322,6 +317,7 @@ onBeforeUnmount(() => {
 }
 
 .el-header {
+  container-type: inline-size;
   background: var(--odw-nav-bg);
   padding: 0;
   box-shadow: var(--odw-shadow-nav);
@@ -331,7 +327,8 @@ onBeforeUnmount(() => {
 }
 
 .header-wrapper {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   height: 100%;
   width: 100%;
@@ -340,6 +337,9 @@ onBeforeUnmount(() => {
 }
 
 .logo {
+  width: 200px;
+  justify-self: start;
+  text-decoration: none;
   height: var(--odw-nav-height);
   min-width: 200px;
   flex: 0 0 200px;
@@ -380,7 +380,8 @@ onBeforeUnmount(() => {
 
 .menu {
   --el-menu-horizontal-height: var(--odw-nav-height);
-  flex: 1 1 auto;
+  width: max-content;
+  justify-content: safe center;
   min-width: 0;
   border: none;
   background: transparent;
@@ -399,6 +400,7 @@ onBeforeUnmount(() => {
 }
 
 .user-area {
+  justify-self: end;
   flex: 0 0 auto;
   padding: 0 16px;
 }
@@ -423,24 +425,24 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
 }
 
-.el-menu--horizontal {
+.menu.el-menu--horizontal {
   border-bottom: none;
 }
 
-.el-menu-item {
+.menu :deep(.el-menu-item) {
   color: var(--odw-text-on-dark-secondary);
   border-bottom: none;
   transition: all var(--odw-transition);
   font-weight: 500;
 }
 
-.el-menu-item:hover {
+.menu :deep(.el-menu-item:hover) {
   background-color: var(--odw-nav-item-hover) !important;
   color: var(--odw-text-on-dark) !important;
   border-bottom: none;
 }
 
-.el-menu-item.is-active {
+.menu :deep(.el-menu-item.is-active) {
   background-color: var(--odw-nav-item-active) !important;
   color: var(--odw-text-on-dark) !important;
   border-bottom: 2px solid var(--odw-nav-active-border);
@@ -478,8 +480,14 @@ onBeforeUnmount(() => {
   .portal-page-header :deep(.ai-assistant-prompt-window) { display: none; }
 }
 
-@media (max-width: 768px) {
+@container (max-width: 900px) {
+  .header-wrapper { display: flex; }
+  .menu { width: 0; flex: 1 1 auto; }
+}
+
+@container (max-width: 768px) {
   .logo {
+    width: 148px;
     min-width: 148px;
     flex-basis: 148px;
     justify-content: flex-start;
@@ -491,6 +499,8 @@ onBeforeUnmount(() => {
     height: 24px;
     margin-right: 4px;
   }
+
+  .user-area { padding: 0 8px; }
 
   .logo h2 {
     white-space: nowrap;

@@ -6,6 +6,7 @@ import com.onedata.auth.user.SysUserMapper;
 import com.onedata.portal.dto.Result;
 import com.onedata.portal.entity.DatasourceSubjectAccount;
 import com.onedata.portal.service.DatasourceSubjectAccountService;
+import com.onedata.portal.service.permission.DatasourcePermissionService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -26,6 +27,7 @@ import java.util.stream.Collectors;
 public class DatasourceSubjectAccountController {
     private final DatasourceSubjectAccountService service;
     private final SysUserMapper userMapper;
+    private final DatasourcePermissionService permissions;
 
     @RequireRole("admin")
     @GetMapping
@@ -35,15 +37,15 @@ public class DatasourceSubjectAccountController {
 
     @RequireRole("admin")
     @PostMapping
-    public Result<DatasourceSubjectAccount> save(@PathVariable Long sourceId,
+    public Result<Map<String, Object>> save(@PathVariable Long sourceId,
             @RequestBody DatasourceSubjectAccount account) {
-        return Result.success(service.save(sourceId, account));
+        return Result.success(permissions.bindLegacyAccount(sourceId, account));
     }
 
     @RequireRole("admin")
     @DeleteMapping("/{id}")
     public Result<Void> delete(@PathVariable Long sourceId, @PathVariable Long id) {
-        service.delete(sourceId, id);
+        permissions.removeLegacyAccount(sourceId, id);
         return Result.success();
     }
 

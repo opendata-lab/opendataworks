@@ -159,7 +159,8 @@
 <script setup>
 import { capabilityReason } from '@/utils/datasourceTypes'
 
-import { defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
@@ -226,6 +227,8 @@ const toggleDetails = async () => {
 
 const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
+const canCollectMetadata = computed(() => authStore.isAdmin)
 const createDrawerVisible = ref(false)
 
 const lineageCache = reactive({})
@@ -595,7 +598,7 @@ const {
   saveAsTask,
   handleCreateTable,
   handleDeleteTable,
-  syncMissingTableMetadata,
+  goToMetadataCollection,
   handleCreateSuccess,
   loadDdl,
   loadAccessStats,
@@ -606,16 +609,15 @@ const {
   goLineage,
 } = useTableActions({
   clusterId,
-  openTabs,
   activeTab,
   tabStates,
   createDrawerVisible,
   taskDrawerRef,
   router,
+  canCollectMetadata: () => canCollectMetadata.value,
   hasEngineProperties,
   isPlatformMetadataMissing,
   warnPlatformMetadataMissing,
-  tableStore,
   loadClusters,
   loadTables,
   openTableTab,
@@ -716,6 +718,7 @@ watch(
 )
 
   provide('dataStudioCtx', {
+  canCollectMetadata,
   getSourceName,
     clusterId,
     openTabs,
@@ -736,7 +739,7 @@ watch(
   cancelMetaEdit,
   saveMetaEdit,
   handleDeleteTable,
-  syncMissingTableMetadata,
+  goToMetadataCollection,
   startFieldsEdit,
   cancelFieldsEdit,
   saveFieldsEdit,

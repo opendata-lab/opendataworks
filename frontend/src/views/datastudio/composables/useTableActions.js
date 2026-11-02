@@ -9,18 +9,17 @@ import { copyText } from '@/utils/clipboard'
 // 任务抽屉与血缘跳转从 DataStudioNew.vue 抽离。共享状态所有权仍归组件。
 export function useTableActions({
   clusterId,
-  openTabs,
   activeTab,
   tabStates,
   createDrawerVisible,
   taskDrawerRef,
   router,
+  canCollectMetadata = () => false,
   // 组件内判定助手
   hasEngineProperties,
   isPlatformMetadataMissing,
   warnPlatformMetadataMissing,
   // useCatalogTree
-  tableStore,
   loadClusters,
   loadTables,
   // useStudioTabs
@@ -125,74 +124,19 @@ export function useTableActions({
     }
   }
 
-  const syncMissingTableMetadata = async (tabId) => {
-    if (isDemoMode) {
-      showDemoReadonlyMessage('同步平台元数据')
-      return
-    }
-    const state = tabStates[String(tabId || '')]
-    const table = state?.table
+  const goToMetadataCollection = (tabId) => {
+    if (isDemoMode || !canCollectMetadata()) return
+    const table = tabStates[String(tabId || '')]?.table
     if (!isPlatformMetadataMissing(table)) return
     const sourceId = String(table.sourceId || table.clusterId || clusterId.value || '')
-    const dbName = table.dbName || table.databaseName || table.database || ''
+    const database = table.dbName || table.databaseName || table.database || ''
     const tableName = table.tableName || ''
-    if (!sourceId || !dbName || !tableName) {
-      ElMessage.warning('缺少数据源、数据库或表名，无法同步')
+    if (!sourceId || !database || !tableName) {
+      ElMessage.warning('缺少数据源、数据库或表名，无法打开采集页面')
       return
     }
-
-    try {
-      await ElMessageBox.confirm(
-        `确定将 “${dbName}.${tableName}” 同步到平台元数据吗？`,
-        '同步平台元数据',
-        {
-          type: 'warning',
-          confirmButtonText: '立即同步',
-          cancelButtonText: '取消'
-        }
-      )
-    } catch (error) {
-      return
-    }
-
-    state.metadataSyncing = true
-    try {
-      const response = await tableApi.syncTableMetadataByName(dbName, tableName, sourceId)
-      await loadTables(sourceId, dbName, true)
-      const list = tableStore[String(sourceId)]?.[dbName] || []
-      const synced = list.find((item) => {
-        if (!item) return false
-        if (response?.tableId && String(item.id) === String(response.tableId)) return true
-        return item.tableName === tableName
-      })
-      const syncedTable = synced || {
-        ...table,
-        id: response?.tableId || table.id,
-        metadataMissing: false,
-        metadataStatus: 'synced'
-      }
-      state.table = {
-        ...state.table,
-        ...syncedTable,
-        sourceId,
-        dbName,
-        metadataMissing: false,
-        metadataStatus: 'synced'
-      }
-      const tab = openTabs.value.find((item) => String(item.id) === String(tabId))
-      if (tab) {
-        tab.sourceId = sourceId
-        tab.dbName = dbName
-        tab.tableName = tableName
-      }
-      state.dataLoaded = false
-      await loadTabData(String(tabId))
-      ElMessage.success('平台元数据已同步')
-    } catch (error) {
-      ElMessage.error('同步平台元数据失败')
-    } finally {
-      state.metadataSyncing = false
-    }
+    const target = router.resolve({ path: '/metadata-sync', query: { sourceId, database, tableName } })
+    window.open(target.href, '_blank', 'noopener')
   }
 
   const handleCreateSuccess = async (result) => {
@@ -326,7 +270,7 @@ export function useTableActions({
     saveAsTask,
     handleCreateTable,
     handleDeleteTable,
-    syncMissingTableMetadata,
+    goToMetadataCollection,
     handleCreateSuccess,
     loadDdl,
     loadAccessStats,

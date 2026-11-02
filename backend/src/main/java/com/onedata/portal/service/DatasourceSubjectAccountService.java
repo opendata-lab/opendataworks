@@ -14,6 +14,7 @@ import com.onedata.portal.service.datasource.model.ConnectionConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -26,14 +27,23 @@ public class DatasourceSubjectAccountService {
     private final DorisClusterMapper clusterMapper;
     private final SysUserMapper userMapper;
     private final DatasourceConnectionFactory connectionFactory;
+    private final JdbcTemplate permissionJdbc;
 
     public DatasourceSubjectAccount require(Long sourceId, String type, String subjectId) {
+        validateSubject(type,subjectId);
         DatasourceSubjectAccount account = accountMapper.selectOne(new LambdaQueryWrapper<DatasourceSubjectAccount>()
                 .eq(DatasourceSubjectAccount::getSourceId, sourceId)
                 .eq(DatasourceSubjectAccount::getSubjectType, type)
                 .eq(DatasourceSubjectAccount::getSubjectId, subjectId));
         if (account == null) {
-            throw new IllegalArgumentException("未配置" + ("USER".equals(type) ? "用户" : "智能体") + "的数据源账号映射");
+            throw new IllegalArgumentException("未配置" + ("USER".equals(type) ? "用户" : "服务账号") + "的数据源账号映射");
+        }
+        Long uncertain = permissionJdbc.queryForObject("SELECT COUNT(*) FROM datasource_access_member m WHERE m.source_id=? "
+                + "AND m.subject_type=? AND m.subject_id=? AND (m.status IN ('ERROR','APPLYING') OR EXISTS ("
+                + "SELECT 1 FROM datasource_access_member_role mr JOIN datasource_access_role r ON r.id=mr.role_id "
+                + "WHERE mr.member_id=m.id AND r.status IN ('ERROR','APPLYING')))", Long.class, sourceId, type, subjectId);
+        if (uncertain != null && uncertain > 0) {
+            throw new IllegalArgumentException("该成员或所属角色的原生权限结果待核对，请联系管理员查看授权记录");
         }
         return account;
     }
@@ -66,7 +76,16 @@ public class DatasourceSubjectAccountService {
         }
         SysUser user = userMapper.selectOne(query);
         requireEnabled(user);
+        if (user.isServiceAccount()) throw new IllegalArgumentException("代用户身份必须为普通用户");
         return user;
+    }
+
+    private void validateSubject(String type,String id) {
+        if (!"USER".equals(type) && !"SERVICE".equals(type)) throw new IllegalArgumentException("主体类型必须为USER或SERVICE");
+        final Long key;
+        try { key=Long.valueOf(id); } catch(RuntimeException e) {throw new IllegalArgumentException("请选择平台已有账号");}
+        SysUser user=userMapper.selectById(key);requireEnabled(user);
+        if ("SERVICE".equals(type)!=user.isServiceAccount()) throw new IllegalArgumentException("账号类型与授权主体不一致");
     }
 
     private void requireEnabled(SysUser user) {
@@ -92,9 +111,7 @@ public class DatasourceSubjectAccountService {
     }
 
     public DatasourceSubjectAccount save(Long sourceId, DatasourceSubjectAccount account) {
-        if (!"USER".equals(account.getSubjectType()) && !"AGENT".equals(account.getSubjectType())) {
-            throw new IllegalArgumentException("主体类型必须为 USER 或 AGENT");
-        }
+        validateSubject(account.getSubjectType(),account.getSubjectId());
         if (!StringUtils.hasText(account.getSubjectId()) || !StringUtils.hasText(account.getUsername())) {
             throw new IllegalArgumentException("主体和数据库用户名不能为空");
         }
@@ -116,7 +133,7 @@ public class DatasourceSubjectAccountService {
             throw new IllegalArgumentException("数据源不存在");
         }
         try (Connection ignored = connectionFactory.open(cluster.getSourceType(), ConnectionConfig.from(cluster), null,
-                account.getUsername(), account.getPassword(), "AGENT".equals(account.getSubjectType()))) {
+                account.getUsername(), account.getPassword(), "SERVICE".equals(account.getSubjectType()))) {
             if (account.getId() == null) {
                 accountMapper.insert(account);
             } else {

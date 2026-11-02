@@ -152,12 +152,12 @@
                     应用建议
                   </el-button>
                   <el-button
-                    v-if="analysisSummary.unmatched > 0"
+                    v-if="analysisSummary.unmatched > 0 && authStore.isAdmin"
                     type="warning"
                     link
                     @click="goToMetadataSync"
                   >
-                    去元数据同步
+                    去采集元数据
                   </el-button>
                 </div>
               </div>
@@ -350,7 +350,8 @@
 
 <script setup>
 import { ref, reactive, computed, watch, onBeforeUnmount, nextTick, defineAsyncComponent } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Loading, CircleClose, CircleCheck } from '@element-plus/icons-vue'
 import { taskApi } from '@/api/task'
@@ -380,8 +381,8 @@ const props = defineProps({
 
 const emit = defineEmits(['saved', 'success', 'close'])
 
-const route = useRoute()
 const router = useRouter()
+const authStore = useAuthStore()
 
 const visible = ref(false)
 const drawerOpening = ref(false)
@@ -816,12 +817,11 @@ const focusAnalyzeRef = (item) => {
 }
 
 const goToMetadataSync = () => {
-  router.push({
-    path: '/integration',
-    query: {
-      redirect: route.fullPath
-    }
-  })
+  if (!authStore.isAdmin) return
+  const query = {}
+  if (queryTarget.value?.sourceId) query.sourceId = queryTarget.value.sourceId
+  if (queryTarget.value?.dbName) query.database = queryTarget.value.dbName
+  window.open(router.resolve({ path: '/metadata-sync', query }).href, '_blank', 'noopener')
 }
 
 const activeWorkflowDolphinConfigId = computed(() => {

@@ -68,6 +68,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${MYSQL_USER:-opendataworks}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${MYSQL_PASSWORD:-opendataworks123}}
       AGENT_API_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+      ODW_CREDENTIAL_KEY: ${ODW_CREDENTIAL_KEY:-}
     # DolphinScheduler 不包含在本 Compose 中，配置请在系统管理界面进行
     ports:
       - "8080:8080"
@@ -116,8 +117,6 @@ services:
       - ./.env
     environment:
       ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-      ODW_MCP_SERVER_FRONTDOOR_TOKEN: ${ODW_MCP_SERVER_TOKEN:-odw-odw-mcp-server-token}
-      ODW_MCP_SERVER_FRONTDOOR_TOKEN_HEADER_NAME: ${ODW_MCP_SERVER_TOKEN_HEADER_NAME:-X-ODW-MCP-Token}
     ports:
       - "8801:8801"
     depends_on:

@@ -37,6 +37,16 @@ export const dorisClusterApi = {
     return request.post(`/v1/doris-clusters/${id}/test`)
   },
 
+  metadataScope(id, database) {
+    return request.get(`/v1/doris-clusters/${id}/metadata-scope`, {
+      params: database ? { database } : {}, skipErrorMessage: true
+    })
+  },
+
+  saveMetadataSyncConfig(id, data) {
+    return request.put(`/v1/doris-clusters/${id}/metadata-sync-config`, data)
+  },
+
   getDatabases(id) {
     return request.get(`/v1/doris-clusters/${id}/databases`)
   },

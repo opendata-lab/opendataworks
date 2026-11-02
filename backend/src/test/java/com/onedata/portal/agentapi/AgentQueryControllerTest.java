@@ -35,7 +35,7 @@ class AgentQueryControllerTest {
         AgentApiProperties properties = new AgentApiProperties();
         properties.setServiceToken("test-token");
         properties.setRequirePrivateNetwork(false);
-        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(properties, new ObjectMapper());
+        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(properties, new ObjectMapper(), token -> "9");
         mockMvc = MockMvcBuilders.standaloneSetup(new AgentQueryController(agentQueryService))
                 .addInterceptors(interceptor)
                 .build();
@@ -51,6 +51,7 @@ class AgentQueryControllerTest {
 
         mockMvc.perform(post("/v1/ai/query/read")
                         .header("X-Agent-Service-Token", "test-token")
+                        .header("Authorization", "Bearer test-service-token")
                         .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"database\":\"opendataworks\",\"sql\":\"SELECT 1\"}"))

@@ -40,12 +40,15 @@ class DatasourceSubjectAccountServiceTest {
     private final DorisClusterMapper clusters = mock(DorisClusterMapper.class);
     private final SysUserMapper users = mock(SysUserMapper.class);
     private final DatasourceConnectionFactory factory = mock(DatasourceConnectionFactory.class);
-    private final DatasourceSubjectAccountService service = new DatasourceSubjectAccountService(accounts, clusters, users, factory);
+    private final org.springframework.jdbc.core.JdbcTemplate permissionJdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+    private final DatasourceSubjectAccountService service = new DatasourceSubjectAccountService(accounts, clusters, users, factory, permissionJdbc);
 
     @BeforeEach
     void metadata() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), SysUser.class);
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""), DatasourceSubjectAccount.class);
+        SysUser serviceUser=user();serviceUser.setId(19L);serviceUser.setAccountType("SERVICE");
+        when(users.selectById(19L)).thenReturn(serviceUser);
     }
 
     @AfterEach
@@ -94,15 +97,15 @@ class DatasourceSubjectAccountServiceTest {
     void missingMappingDoesNotOpenAnyConnection() throws Exception {
         DorisCluster cluster = new DorisCluster();
         when(clusters.selectById(1L)).thenReturn(cluster);
-        assertThrows(IllegalArgumentException.class, () -> service.open(1L, "AGENT", "agent-a", "sales", true));
+        assertThrows(IllegalArgumentException.class, () -> service.open(1L, "SERVICE", "19", "sales", true));
         verify(factory, never()).open(any(), any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
     void saveChecksConnectionBeforePersistingAndNeverSerializesPassword() throws Exception {
         DatasourceSubjectAccount account = new DatasourceSubjectAccount();
-        account.setSubjectType("AGENT");
-        account.setSubjectId("agent-a");
+        account.setSubjectType("SERVICE");
+        account.setSubjectId("19");
         account.setUsername("reader");
         account.setPassword("secret");
         DorisCluster cluster = new DorisCluster();
@@ -119,8 +122,8 @@ class DatasourceSubjectAccountServiceTest {
     @Test
     void failedConnectionDoesNotPersistMapping() throws Exception {
         DatasourceSubjectAccount account = new DatasourceSubjectAccount();
-        account.setSubjectType("AGENT");
-        account.setSubjectId("agent-a");
+        account.setSubjectType("SERVICE");
+        account.setSubjectId("19");
         account.setUsername("reader");
         account.setPassword("bad");
         DorisCluster cluster = new DorisCluster();

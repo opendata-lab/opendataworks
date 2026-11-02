@@ -77,4 +77,54 @@ class DorisClusterServiceTest {
         assertThrows(RuntimeException.class, () -> service.create(cluster));
         verifyNoInteractions(mapper);
     }
+
+    @Test
+    void connectionUpdateCannotOverwriteCollectionConfig() {
+        DorisCluster existing = datasource();
+        existing.setAutoSync(1);
+        existing.setSyncCron("0 0 2 * * ?");
+        when(mapper.selectById(3L)).thenReturn(existing);
+        DorisCluster update = datasource();
+        update.setAutoSync(0);
+        update.setSyncCron("0 * * * * ?");
+        service.update(3L, update);
+        assertNull(update.getAutoSync());
+        assertNull(update.getSyncCron());
+        assertNull(update.getLastSyncTime());
+    }
+
+    @Test
+    void collectionConfigRejectsInvalidCronBeforeWriting() {
+        when(mapper.selectById(3L)).thenReturn(datasource());
+        com.onedata.portal.dto.MetadataSyncConfigRequest request = new com.onedata.portal.dto.MetadataSyncConfigRequest();
+        request.setAutoSync(1);
+        request.setSyncCron("invalid");
+        assertThrows(IllegalArgumentException.class, () -> service.updateMetadataSyncConfig(3L, request));
+        verify(mapper, never()).update(any(), any());
+    }
+
+    @Test
+    void collectionConfigWritesOnlyScheduleColumns() {
+        org.apache.ibatis.session.Configuration configuration = new org.apache.ibatis.session.Configuration();
+        configuration.setMapUnderscoreToCamelCase(true);
+        com.baomidou.mybatisplus.core.metadata.TableInfoHelper.initTableInfo(
+            new org.apache.ibatis.builder.MapperBuilderAssistant(configuration, "test"), DorisCluster.class);
+        DorisCluster existing = datasource();
+        existing.setId(3L);
+        existing.setAutoSync(0);
+        when(mapper.selectById(3L)).thenReturn(existing);
+        com.onedata.portal.dto.MetadataSyncConfigRequest request = new com.onedata.portal.dto.MetadataSyncConfigRequest();
+        request.setAutoSync(1);
+        request.setSyncCron("0 0 2 * * ?");
+        service.updateMetadataSyncConfig(3L, request);
+        org.mockito.ArgumentCaptor<com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<DorisCluster>> captor =
+            org.mockito.ArgumentCaptor.forClass(com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper.class);
+        verify(mapper).update(isNull(), captor.capture());
+        String sql = captor.getValue().getSqlSet();
+        assertTrue(sql.contains("auto_sync"));
+        assertTrue(sql.contains("sync_cron"));
+        assertTrue(sql.contains("last_sync_time"));
+        assertFalse(sql.contains("username"));
+        assertFalse(sql.contains("fe_host"));
+    }
 }

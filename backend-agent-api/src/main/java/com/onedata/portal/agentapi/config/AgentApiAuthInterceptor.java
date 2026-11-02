@@ -2,6 +2,7 @@ package com.onedata.portal.agentapi.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.onedata.portal.agentapi.identity.AgentIdentityContext;
+import com.onedata.portal.agentapi.auth.ServiceAccountAuthenticator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpMethod;
@@ -24,6 +25,7 @@ public class AgentApiAuthInterceptor implements HandlerInterceptor {
 
     private final AgentApiProperties properties;
     private final ObjectMapper objectMapper;
+    private final ServiceAccountAuthenticator serviceAccounts;
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
@@ -52,8 +54,17 @@ public class AgentApiAuthInterceptor implements HandlerInterceptor {
         }
 
         try {
-            AgentIdentityContext.set(request.getHeader(AgentIdentityContext.USER_HEADER),
-                    request.getHeader(AgentIdentityContext.AGENT_HEADER));
+            String authorization=request.getHeader("Authorization");
+            if(authorization==null || !authorization.startsWith("Bearer "))throw new IllegalArgumentException("缺少服务账号Bearer Token");
+            String serviceId=serviceAccounts.authenticate(authorization.substring(7));
+            String path=request.getRequestURI().substring(request.getContextPath().length());
+            boolean read=HttpMethod.GET.matches(request.getMethod()) && (path.startsWith("/v1/ai/metadata/") || "/v1/ai/auth/identity".equals(path))
+                    || HttpMethod.POST.matches(request.getMethod()) && "/v1/ai/query/read".equals(path);
+            if(!read) {
+                writeError(response,HttpServletResponse.SC_FORBIDDEN,"当前服务账号Token仅支持元数据与只读查询，不能调用开发写接口");
+                return false;
+            }
+            AgentIdentityContext.set(request.getHeader(AgentIdentityContext.USER_HEADER),serviceId);
         } catch (IllegalArgumentException e) {
             writeError(response, HttpServletResponse.SC_UNAUTHORIZED, e.getMessage());
             return false;

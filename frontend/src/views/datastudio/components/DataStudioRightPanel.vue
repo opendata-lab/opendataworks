@@ -45,16 +45,16 @@
         >
           <template #title>
             <div class="metadata-missing-title">
-              <span>当前表在 Doris 中存在，平台中不存在。</span>
+              <span>该表尚未采集到平台，查询不受影响。</span>
               <el-button
+                v-if="canCollectMetadata"
                 class="metadata-sync-action"
                 type="primary"
                 link
-                :loading="state.metadataSyncing"
                 :disabled="isDemoMode"
-                @click="syncMissingTableMetadata(activeTabId)"
+                @click="goToMetadataCollection(activeTabId)"
               >
-                立即同步
+                去采集元数据
               </el-button>
             </div>
           </template>
@@ -193,7 +193,8 @@ const {
   hasEngineProperties,
   structureEditBlockedReason,
   isPlatformMetadataMissing,
-  syncMissingTableMetadata,
+  canCollectMetadata,
+  goToMetadataCollection,
   copyDdl,
   goLineage,
   goCreateRelatedTask,

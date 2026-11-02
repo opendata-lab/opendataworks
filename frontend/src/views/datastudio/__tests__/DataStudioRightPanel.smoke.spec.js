@@ -80,7 +80,7 @@ const buildCtx = () => {
     cancelMetaEdit: fn(),
     saveMetaEdit: fn(),
     handleDeleteTable: fn(),
-    syncMissingTableMetadata: fn(),
+    goToMetadataCollection: fn(),
     startFieldsEdit: fn(),
     cancelFieldsEdit: fn(),
     saveFieldsEdit: fn(),

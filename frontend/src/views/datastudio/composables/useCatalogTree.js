@@ -73,7 +73,7 @@ export function useCatalogTree({
     return list.find((item) => String(item.id) === id) || null
   }
 
-  const activateDatasource = async (sourceId) => {
+  const activateDatasource = async (sourceId, force = false) => {
     if (!sourceId) return false
     const key = String(sourceId)
     const source = getDatasourceById(key)
@@ -81,20 +81,21 @@ export function useCatalogTree({
       ElMessage.warning('数据源已停用')
       return false
     }
-    if (activatedSources[key]) return true
+    if (activatedSources[key] && !force) return true
     if (datasourceActivationTasks.has(key)) {
       return datasourceActivationTasks.get(key)
     }
 
     const task = (async () => {
       try {
-        const connected = await dorisClusterApi.testConnection(sourceId)
-        if (connected !== true) throw new Error('连接失败')
+        const schemas = await dorisClusterApi.getDatabases(sourceId)
+        if (!Array.isArray(schemas)) throw new Error('数据库目录响应无效，请刷新重试')
+        schemaStore[key] = schemas
         activatedSources[key] = true
         return true
-      } catch {
+      } catch (error) {
         activatedSources[key] = false
-        ElMessage.error('数据源连接失败')
+        ElMessage.error(error?.message || '数据源连接失败')
         return false
       } finally {
         datasourceActivationTasks.delete(key)
@@ -184,10 +185,8 @@ export function useCatalogTree({
     }
     schemaLoading[key] = true
     try {
-      const activated = await activateDatasource(sourceId)
+      const activated = await activateDatasource(sourceId, force)
       if (!activated) return false
-      const schemas = await dorisClusterApi.getDatabases(sourceId)
-      schemaStore[key] = Array.isArray(schemas) ? schemas : []
       activatedSources[key] = true
       refreshDatasourceChildrenInTree(sourceId)
       await loadSchemaCounts(sourceId, searchKeyword.value, true)

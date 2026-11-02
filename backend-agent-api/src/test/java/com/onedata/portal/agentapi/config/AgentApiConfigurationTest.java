@@ -15,7 +15,7 @@ class AgentApiConfigurationTest {
 
     @Test
     void addInterceptorsProtectsAllAgentApiRoutes() throws Exception {
-        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(new AgentApiProperties(), new ObjectMapper());
+        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(new AgentApiProperties(), new ObjectMapper(), token -> "9");
         AgentApiConfiguration configuration = new AgentApiConfiguration(interceptor);
         InterceptorRegistry registry = new InterceptorRegistry();
 
