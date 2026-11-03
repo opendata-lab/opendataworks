@@ -1,5 +1,5 @@
 # 前端构建镜像
-FROM node:20.19-alpine AS builder
+FROM --platform=$BUILDPLATFORM node:20.19-alpine AS builder
 
 WORKDIR /app
 
