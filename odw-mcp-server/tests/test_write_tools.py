@@ -164,17 +164,6 @@ async def test_create_table_service_methods_delegate_to_backend():
     assert names == ["preview_create_table", "create_table"]
 
 
-def test_operator_contextvar_propagates_into_request_headers(monkeypatch):
-    # The backend client must attach X-Agent-Operator when the contextvar is set.
-    from odw_mcp_server import identity_context
-
-    reset = identity_context.set_operator_header("agent:topic-1")
-    try:
-        assert identity_context.get_operator_header() == "agent:topic-1"
-    finally:
-        reset()
-    assert identity_context.get_operator_header() == ""
-
 
 async def _call_tool(mcp, name, arguments):
     """Invoke a registered MCP tool by name with raw arguments."""

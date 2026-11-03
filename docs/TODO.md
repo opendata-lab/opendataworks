@@ -88,6 +88,10 @@
 
 ## 已完成
 
+### 废弃智能体身份请求头残留清理
+
+2026-11-03完成用户要求的未使用代码清理：删除X-Agent-Id常量、Controller的X-Agent-Operator绑定、MCP operator上下文及旧测试／注释；业务审计参数继续使用已认证服务账号ID，保留防伪旧头负向回归，开发写接口仍403。Java23项／打包、MCP43项及真实Java／MCP／MySQL22项通过；无账号授权或业务数据变化。来源：2026-11-02用户要求删除并提交、11-03继续，见[设计14](design/2026-10-26-dataagent-datasource-identity-design.md#14-废弃身份请求头残留清理2026-11-02)、[计划10](plans/2026-10-26-dataagent-datasource-identity-plan.md#10-清理旧身份头2026-11-02)、[报告](reports/2026-11-03-legacy-agent-header-cleanup.md)。
+
 ### 成员实际权限回读
 
 2026-11-02修复演示源USER／SERVICE实际权限回读失败：原因是旧流程使用采集账号读取mysql.role_edges被1142拒绝，并非成员账号无法登录。现通过已验证成员连接自查，MySQL按已激活角色及真实host展开SHOW GRANTS，补失败步骤／SQLState／错误码；不提升采集权限或回退其他账号。Java定向21项与打包、真实MySQL／HTTP17项及管理员浏览器两个成员回读通过，临时账号／角色／库和绑定已清理，原配置未变。见[设计13](design/2026-10-26-dataagent-datasource-identity-design.md#13-成员原生权限回读修复2026-11-02)、[计划9](plans/2026-10-26-dataagent-datasource-identity-plan.md#9-修通实际权限回读2026-11-02)、[报告](reports/2026-11-02-native-permission-inspection-verification.md)。

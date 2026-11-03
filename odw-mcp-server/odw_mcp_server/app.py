@@ -17,7 +17,7 @@ from starlette.routing import Mount, Route
 
 from .backend_client import BackendApiClient, BackendApiError
 from .config import Settings, load_settings
-from .identity_context import set_identity_headers, set_operator_header
+from .identity_context import set_identity_headers
 from .service import OdwToolService
 
 
@@ -321,12 +321,11 @@ class ServiceAccountTokenMiddleware:
             return
 
         # The backend resolves the service identity. External agent/operator IDs
-        # are not identities and never override the account encoded by a token.
+        # are not identities and never override the account authenticated by a token.
         reset_identity = set_identity_headers({
             "Authorization": authorization,
             "X-Agent-User-Id": headers.get("x-agent-user-id", ""),
         })
-        reset_operator = set_operator_header("")
         try:
             try:
                 await self.backend_client.verify_identity()
@@ -336,7 +335,6 @@ class ServiceAccountTokenMiddleware:
                 return
             await self.app(scope, receive, send)
         finally:
-            reset_operator()
             reset_identity()
 
 

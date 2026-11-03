@@ -25,9 +25,9 @@ public interface AgentWorkflowService {
 
     Object publish(Long workflowId, AgentPublishRequest request, String operator);
 
-    Object upsertSchedule(Long workflowId, AgentScheduleUpsertRequest request, String operator);
+    Object upsertSchedule(Long workflowId, AgentScheduleUpsertRequest request);
 
-    Object scheduleOnline(Long workflowId, String previewToken, String operator);
+    Object scheduleOnline(Long workflowId, String previewToken);
 
-    Object scheduleOffline(Long workflowId, String operator);
+    Object scheduleOffline(Long workflowId);
 }

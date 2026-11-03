@@ -114,7 +114,7 @@ async def test_backend_client_forwards_trusted_identity_headers(monkeypatch):
         "odw_mcp_server.backend_client.httpx.AsyncClient",
         lambda **kwargs: fake_client,
     )
-    reset = set_identity_headers({"X-Agent-User-Id": "local:alice", "Authorization": "Bearer account-token", "X-Agent-Id": "spoofed"})
+    reset = set_identity_headers({"X-Agent-User-Id": "local:alice", "Authorization": "Bearer account-token", "X-Agent-Id": "spoofed", "X-Agent-Operator": "admin"})
     try:
         await BackendApiClient(_settings()).inspect(database="dw")
     finally:
@@ -123,3 +123,4 @@ async def test_backend_client_forwards_trusted_identity_headers(monkeypatch):
     assert fake_client.last_kwargs["headers"]["X-Agent-User-Id"] == "local:alice"
     assert fake_client.last_kwargs["headers"]["Authorization"] == "Bearer account-token"
     assert "X-Agent-Id" not in fake_client.last_kwargs["headers"]
+    assert "X-Agent-Operator" not in fake_client.last_kwargs["headers"]

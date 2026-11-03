@@ -96,7 +96,7 @@ public class BackendAgentWorkflowService implements AgentWorkflowService {
     }
 
     @Override
-    public Object upsertSchedule(Long workflowId, AgentScheduleUpsertRequest request, String operator) {
+    public Object upsertSchedule(Long workflowId, AgentScheduleUpsertRequest request) {
         validateScheduleDoesNotChangeState(request);
         WorkflowScheduleRequest scheduleRequest =
                 objectMapper.convertValue(request.getSchedule(), WorkflowScheduleRequest.class);
@@ -104,13 +104,13 @@ public class BackendAgentWorkflowService implements AgentWorkflowService {
     }
 
     @Override
-    public Object scheduleOnline(Long workflowId, String previewToken, String operator) {
+    public Object scheduleOnline(Long workflowId, String previewToken) {
         previewTokenSupport.verify(workflowId, currentVersionId(workflowId), previewToken);
         return workflowScheduleService.onlineSchedule(workflowId);
     }
 
     @Override
-    public Object scheduleOffline(Long workflowId, String operator) {
+    public Object scheduleOffline(Long workflowId) {
         return workflowScheduleService.offlineSchedule(workflowId);
     }
 

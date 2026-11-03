@@ -151,3 +151,15 @@ Doris 由用户在内网验证：EXPLAIN 对无权表报错；视图权限不依
 5. 浏览器验证实际权限结果，更新报告及手册，TODO移已完成；提交推送现有PR #491。回退仅还原代码及重启旧Jar，无数据库迁移或授权回退。
 
 9.1结果（2026-11-02）：步骤1～4完成，Java21项／打包、真实MySQL17项及浏览器管理员／服务账号原生回读通过；临时资源已清理且幂等cleanup通过。第5步文档及TODO已更新，随本轮提交推送PR #491。见[验收报告](../reports/2026-11-02-native-permission-inspection-verification.md)。
+
+## 10. 清理旧身份头（2026-11-02）
+
+依据[设计14](../design/2026-10-26-dataagent-datasource-identity-design.md#14-废弃身份请求头残留清理2026-11-02)：
+
+1. 列出旧头、operator上下文、Controller绑定与审计调用；区分实际使用的业务参数和废弃输入，保留负向安全测试。
+2. 删除AGENT_HEADER与MCP operator状态；Controller审计从已认证服务账号ID获得，删除三个调度Service未使用的operator参数及传参，清理注释与普通读测试的旧头。
+3. 增强后端Controller与MCP转发契约，运行Java8定向／打包及专用Python虚拟环境测试。
+4. 外部更新本机Java／MCP，验证既有服务Token只读查询与伪造头／写403；记录覆盖，不修改业务账号授权或独立DataAgent源码。
+5. 更新现行手册、报告与设计结果，检查残留及diff，提交推送原分支PR #491；不纳入已存在的Docker／CI改动。
+
+10.1结果（2026-11-03）：步骤1～4完成，Java23项／打包、MCP43项及真实身份／查询／拒绝链路22项通过。步骤5文档与TODO已更新，随本轮提交推送PR #491；无业务数据或授权变更。见[报告](../reports/2026-11-03-legacy-agent-header-cleanup.md)。

@@ -484,3 +484,15 @@ agent-api模块定义小型ServiceAccountAuthenticator SPI，主backend实现摘
 ### 13.4 实施结果
 
 已完成成员连接自查、MySQL激活角色host保留及分阶段诊断；Java定向21项与打包、真实MySQL／HTTP17项和浏览器两位既有成员回读通过，原源配置与授权未变，临时资源清理完成。ENABLED_ROLES只需返回激活顶层角色，嵌套权限由SHOW GRANTS USING展开并以真实查询验证。PG／Doris本轮不声称真实实例验收。见[报告](../reports/2026-11-02-native-permission-inspection-verification.md)。
+
+## 14. 废弃身份请求头残留清理（2026-11-02）
+
+用户要求删除未使用代码并提交。当前服务认证已经只接受Bearer服务Token，仍残留X-Agent-Id常量、Java写Controller的X-Agent-Operator绑定、MCP无用途的operator上下文和误导性旧测试／注释。本轮清理这些残留，不改变服务账号、可选用户交集、内部hop认证或只读接口白名单。
+
+删除AgentIdentityContext.AGENT_HEADER与MCP operator ContextVar／getter／setter及中间件清空代码。Java Controller不再声明外部operator请求头；三个调度Service方法的operator参数未被实现使用，连同接口声明及传参删除；其余用于owner／审计的参数保留并从AgentIdentityContext.require().getAgentId()传入已认证的服务账号ID，不伪造自然人。所有写接口仍由拦截器403，不启用新写能力，不重构业务写服务。保留内部agentId命名与审计字段，它们目前承载已认证服务账号ID，不能仅凭名称当作废弃代码删除。
+
+删除正常读请求测试中无意义的旧头，移除仅测试已删除operator ContextVar的旧用例；保留并强化恶意旧头不能转发／覆盖身份、缺Token401、写接口403的测试。补Controller可信审计来源契约，更新现行文档；历史设计中的旧头描述保留为历史，不伪装成当前配置。无数据模型、迁移或前端修改。
+
+验证Java定向与打包、MCP Python测试、静态残留搜索；本机更新Java／MCP后用既有服务账号进行只读链路及伪造旧头／写403冒烟，不重新建立完整业务工作流。测试外部操作启动／重启，不把环境操作嵌入测试代码。完成后同步报告及PR #491；回退为还原代码并运行旧版本，无数据库回退。
+
+14.1结果（2026-11-03）：清理完成，生产目录不再引用两个旧头或operator上下文；Controller业务审计参数保留并取已认证服务账号ID，写接口继续403。Java23项及打包、MCP43项、真实Java／MCP／MySQL22项通过。负向安全测试有意保留旧头；可信自然人委托仍为独立待办。见[报告](../reports/2026-11-03-legacy-agent-header-cleanup.md)。

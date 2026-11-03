@@ -5,8 +5,8 @@ import com.onedata.portal.agentapi.dto.AgentTaskUpsertRequest;
 /**
  * Agent-facing data task write API. Implemented in the backend module by
  * delegating to the existing DataTaskService; agent-api stays free of business
- * logic. {@code operator} is the audit identity carried by the X-Agent-Operator
- * header.
+ * logic. {@code operator} is the authenticated service account ID supplied by
+ * the controller, never an external audit header.
  */
 public interface AgentTaskService {
 

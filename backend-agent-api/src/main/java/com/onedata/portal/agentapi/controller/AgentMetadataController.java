@@ -1,5 +1,6 @@
 package com.onedata.portal.agentapi.controller;
 
+import com.onedata.portal.agentapi.identity.AgentIdentityContext;
 import com.onedata.portal.agentapi.dto.AgentDatasourceResolution;
 import com.onedata.portal.agentapi.dto.AgentInspectResponse;
 import com.onedata.portal.agentapi.dto.AgentLineageResponse;
@@ -11,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -79,8 +79,7 @@ public class AgentMetadataController {
 
     @PostMapping("/complete")
     public AgentMetadataCompleteResponse complete(
-            @RequestBody AgentMetadataCompleteRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentMetadataService.complete(request, operator);
+            @RequestBody AgentMetadataCompleteRequest request) {
+        return agentMetadataService.complete(request, AgentIdentityContext.require().getAgentId());
     }
 }

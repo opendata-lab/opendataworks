@@ -524,13 +524,13 @@ async def test_display_description_is_accepted_but_not_forwarded():
 
 
 def test_service_bearer_is_verified_each_http_request_and_spoofed_ids_are_not_forwarded():
-    from odw_mcp_server.identity_context import get_identity_headers, get_operator_header
+    from odw_mcp_server.identity_context import get_identity_headers
 
     class AuthBackend(FakeBackendClient):
         rejected = False
         observed = []
         async def verify_identity(self):
-            self.observed.append((get_identity_headers(), get_operator_header()))
+            self.observed.append(get_identity_headers())
             if self.rejected:
                 raise BackendApiError("Token revoked", status_code=401)
             return {"serviceAccountId": "17"}
@@ -541,13 +541,13 @@ def test_service_bearer_is_verified_each_http_request_and_spoofed_ids_are_not_fo
     with TestClient(app) as client:
         first = client.post("/mcp/", headers={"Authorization": bearer, "X-Agent-Id": "spoofed", "X-Agent-Operator": "admin", "X-Agent-User-Id": "local:alice"}, json={})
         assert first.status_code != 401
-        assert backend.observed[0] == ({"Authorization": bearer, "X-Agent-User-Id": "local:alice"}, "")
+        assert backend.observed[0] == {"Authorization": bearer, "X-Agent-User-Id": "local:alice"}
         backend.rejected = True
         second = client.post("/mcp/", headers={"Authorization": bearer}, json={})
         assert second.status_code == 401
         assert len(backend.observed) == 2
+        assert backend.observed[1] == {"Authorization": bearer, "X-Agent-User-Id": ""}
     assert get_identity_headers() == {}
-    assert get_operator_header() == ""
 
 
 def test_shared_legacy_token_and_malformed_bearer_are_not_account_credentials():

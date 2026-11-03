@@ -21,7 +21,6 @@ class AgentApiAuthInterceptorTest {
         request.addHeader("X-Agent-Service-Token", "test-token");
         request.addHeader("X-Agent-User-Id", "local:alice");
         request.addHeader("Authorization", "Bearer test-service-token");
-        request.addHeader("X-Agent-Id", "agent-a");
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         assertTrue(interceptor.preHandle(request, response, new Object()));

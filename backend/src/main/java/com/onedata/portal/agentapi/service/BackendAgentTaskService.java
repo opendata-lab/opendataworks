@@ -13,7 +13,7 @@ import org.springframework.util.StringUtils;
 
 /**
  * Agent-facing task write API, delegating to {@link DataTaskService}. Tasks are
- * created as drafts; the X-Agent-Operator identity is recorded as the owner.
+ * created as drafts; the authenticated service account ID is recorded as the owner.
  */
 @Slf4j
 @Service

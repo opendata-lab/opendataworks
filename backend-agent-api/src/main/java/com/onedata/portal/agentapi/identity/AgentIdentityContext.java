@@ -4,7 +4,6 @@ import lombok.Value;
 
 public final class AgentIdentityContext {
     public static final String USER_HEADER = "X-Agent-User-Id";
-    public static final String AGENT_HEADER = "X-Agent-Id";
     private static final ThreadLocal<Identity> CURRENT = new ThreadLocal<>();
 
     private AgentIdentityContext() {

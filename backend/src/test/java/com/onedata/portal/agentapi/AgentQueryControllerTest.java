@@ -52,7 +52,7 @@ class AgentQueryControllerTest {
         mockMvc.perform(post("/v1/ai/query/read")
                         .header("X-Agent-Service-Token", "test-token")
                         .header("Authorization", "Bearer test-service-token")
-                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
+                        .header("X-Agent-User-Id", "local:tester")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"database\":\"opendataworks\",\"sql\":\"SELECT 1\"}"))
                 .andExpect(status().isOk())
