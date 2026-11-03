@@ -37,7 +37,7 @@ class AgentMetadataControllerTest {
         AgentApiProperties properties = new AgentApiProperties();
         properties.setServiceToken("test-token");
         properties.setRequirePrivateNetwork(false);
-        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(properties, new ObjectMapper());
+        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(properties, new ObjectMapper(), token -> "9");
         mockMvc = MockMvcBuilders.standaloneSetup(new AgentMetadataController(agentMetadataService))
                 .addInterceptors(interceptor)
                 .build();
@@ -52,7 +52,8 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/inspect")
                         .header("X-Agent-Service-Token", "test-token")
-                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
+                        .header("Authorization", "Bearer test-service-token")
+                        .header("X-Agent-User-Id", "local:tester")
                         .queryParam("database", "doris_ods"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kind").value("metadata_snapshot"))
@@ -77,7 +78,8 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/export")
                         .header("X-Agent-Service-Token", "test-token")
-                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
+                        .header("Authorization", "Bearer test-service-token")
+                        .header("X-Agent-User-Id", "local:tester")
                         .queryParam("kind", "tables"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].db_name").value("opendataworks"));
@@ -102,7 +104,8 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/datasource/resolve")
                         .header("X-Agent-Service-Token", "test-token")
-                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
+                        .header("Authorization", "Bearer test-service-token")
+                        .header("X-Agent-User-Id", "local:tester")
                         .queryParam("database", "doris_ods"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.database").value("doris_ods"))
@@ -126,7 +129,8 @@ class AgentMetadataControllerTest {
 
         mockMvc.perform(get("/v1/ai/metadata/ddl")
                         .header("X-Agent-Service-Token", "test-token")
-                        .header("X-Agent-User-Id", "local:tester").header("X-Agent-Id", "agent_test")
+                        .header("Authorization", "Bearer test-service-token")
+                        .header("X-Agent-User-Id", "local:tester")
                         .queryParam("database", "doris_ods")
                         .queryParam("table", "ads_sales_di"))
                 .andExpect(status().isOk())

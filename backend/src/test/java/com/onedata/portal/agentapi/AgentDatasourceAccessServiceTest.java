@@ -48,7 +48,7 @@ class AgentDatasourceAccessServiceTest {
         DatasourceAdapter adapter = mock(DatasourceAdapter.class);
         when(adapters.require("MYSQL")).thenReturn(adapter);
         when(adapter.metadata()).thenReturn(reader);
-        when(accounts.open(1L, "AGENT", "a", null, true)).thenReturn(agent);
+        when(accounts.open(1L, "SERVICE", "a", null, true)).thenReturn(agent);
         when(accounts.open(1L, "USER", "2", null, true)).thenReturn(person);
         SysUser user = new SysUser();
         user.setId(2L);

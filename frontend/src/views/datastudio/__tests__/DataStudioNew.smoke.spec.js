@@ -5,6 +5,7 @@ import { definition } from '@/utils/__tests__/datasourceFixtures'
 // 挂载/渲染会抛错，本测试即失败 —— 这是 build/lint 之外能在本环境拿到的运行时验证。
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { shallowMount, flushPromises } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 
 // 所有被访问的方法都返回一个稳定的空响应，避免 onMounted 内的接口调用抛错。
 // 用 vi.hoisted 让工厂可在被提升的 vi.mock 中安全引用。
@@ -26,7 +27,7 @@ const { apiStub, routeState, replaceRoute, listClusters, getTable } = vi.hoisted
 
 vi.mock('@/api/table', () => ({ tableApi: apiStub({ getById: getTable }) }))
 vi.mock('@/api/lineage', () => ({ lineageApi: apiStub() }))
-vi.mock('@/api/doris', () => ({ dorisClusterApi: apiStub({ list: listClusters }) }))
+vi.mock('@/api/doris', () => ({ dorisClusterApi: apiStub({ list: listClusters, getDatabases: () => Promise.resolve([]) }) }))
 vi.mock('@/api/query', () => ({ dataQueryApi: apiStub() }))
 vi.mock('@/api/domain', () => ({ businessDomainApi: apiStub(), dataDomainApi: apiStub() }))
 
@@ -73,6 +74,7 @@ class NoopObserver {
 
 describe('DataStudioNew runtime mount smoke', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     localStorage.clear()
     routeState.query = {}
     replaceRoute.mockClear()

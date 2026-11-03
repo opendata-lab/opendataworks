@@ -58,6 +58,12 @@ const routes = [
       },
 
       {
+        path: '/metadata-sync',
+        name: 'MetadataSync',
+        component: lazyView(() => import('@/views/settings/MetadataSync.vue')),
+        meta: { title: '元数据采集', admin: true }
+      },
+      {
         path: '/lineage',
         name: 'Lineage',
         component: lazyView(() => import('@/views/lineage/LineageView.vue')),
@@ -101,7 +107,7 @@ const routes = [
         path: '/settings',
         name: 'Settings',
         component: lazyView(() => import('@/views/settings/ConfigurationManagement.vue')),
-        meta: { title: '设置' }
+        meta: { title: '管理中心' }
       },
       {
         path: '/settings/skills',
@@ -142,6 +148,7 @@ if (!isDemoMode) {
     if (!authStore.isLoggedIn) {
       return { path: '/login', query: { redirect: to.fullPath } }
     }
+    if (to.meta.admin && !authStore.isAdmin) return '/lineage'
     return true
   })
 }

@@ -1,5 +1,6 @@
 package com.onedata.portal.agentapi.controller;
 
+import com.onedata.portal.agentapi.identity.AgentIdentityContext;
 import com.onedata.portal.agentapi.dto.AgentPublishPreviewResponse;
 import com.onedata.portal.agentapi.dto.AgentPublishRequest;
 import com.onedata.portal.agentapi.dto.AgentScheduleOnlineRequest;
@@ -13,7 +14,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -27,17 +27,15 @@ public class AgentWorkflowController {
 
     @PostMapping
     public Object create(
-            @Validated @RequestBody AgentWorkflowUpsertRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentWorkflowService.createWorkflow(request, operator);
+            @Validated @RequestBody AgentWorkflowUpsertRequest request) {
+        return agentWorkflowService.createWorkflow(request, AgentIdentityContext.require().getAgentId());
     }
 
     @PutMapping("/{id}")
     public Object update(
             @PathVariable("id") Long id,
-            @Validated @RequestBody AgentWorkflowUpsertRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentWorkflowService.updateWorkflow(id, request, operator);
+            @Validated @RequestBody AgentWorkflowUpsertRequest request) {
+        return agentWorkflowService.updateWorkflow(id, request, AgentIdentityContext.require().getAgentId());
     }
 
     @GetMapping("/{id}")
@@ -61,31 +59,27 @@ public class AgentWorkflowController {
     @PostMapping("/{id}/publish")
     public Object publish(
             @PathVariable("id") Long id,
-            @Validated @RequestBody AgentPublishRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentWorkflowService.publish(id, request, operator);
+            @Validated @RequestBody AgentPublishRequest request) {
+        return agentWorkflowService.publish(id, request, AgentIdentityContext.require().getAgentId());
     }
 
     @PutMapping("/{id}/schedule")
     public Object upsertSchedule(
             @PathVariable("id") Long id,
-            @Validated @RequestBody AgentScheduleUpsertRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentWorkflowService.upsertSchedule(id, request, operator);
+            @Validated @RequestBody AgentScheduleUpsertRequest request) {
+        return agentWorkflowService.upsertSchedule(id, request);
     }
 
     @PostMapping("/{id}/schedule/online")
     public Object scheduleOnline(
             @PathVariable("id") Long id,
-            @Validated @RequestBody AgentScheduleOnlineRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentWorkflowService.scheduleOnline(id, request.getPreviewToken(), operator);
+            @Validated @RequestBody AgentScheduleOnlineRequest request) {
+        return agentWorkflowService.scheduleOnline(id, request.getPreviewToken());
     }
 
     @PostMapping("/{id}/schedule/offline")
     public Object scheduleOffline(
-            @PathVariable("id") Long id,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentWorkflowService.scheduleOffline(id, operator);
+            @PathVariable("id") Long id) {
+        return agentWorkflowService.scheduleOffline(id);
     }
 }

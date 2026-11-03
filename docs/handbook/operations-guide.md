@@ -28,7 +28,7 @@ bash scripts/start.sh
 - 环境变量重点：
   - `MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE=opendataworks`, `MYSQL_USER=opendataworks`
   - Spring 连接由 MYSQL_* 自动推导；连接外部库时才填三项 SPRING_DATASOURCE_* 覆盖
-  - `AGENT_API_SERVICE_TOKEN`、`ODW_MCP_SERVER_TOKEN`
+  - 内部转发`AGENT_API_SERVICE_TOKEN`；外部应用在账号管理生成服务账号Token，MCP使用Authorization: Bearer
   - DolphinScheduler 配置请在系统管理界面进行
 - 需要扩展端口（如前端 80 → 8081）时，直接修改 `ports`。
 

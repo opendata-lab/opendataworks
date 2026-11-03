@@ -1,0 +1,111 @@
+.top-alert {
+  margin-bottom: 14px;
+}
+
+.list-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.muted-text {
+  color: #667085;
+  font-size: 12px;
+}
+
+.dialog-source-strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 12px;
+  color: #667085;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.dialog-source-strip strong {
+  color: #253247;
+  font-size: 14px;
+}
+
+.role-checkbox-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 260px;
+  overflow-y: auto;
+  width: 100%;
+}
+
+.role-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 6px 4px;
+  cursor: pointer;
+}
+
+.role-check-item.disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.role-check-meta strong {
+  display: block;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.role-check-meta small {
+  display: block;
+  font-size: 12px;
+  color: #667085;
+  margin-top: 2px;
+}
+
+.field-hint {
+  font-size: 12px;
+  color: #667085;
+  line-height: 1.6;
+  margin: 6px 0 0;
+}
+
+.form-error {
+  color: #b63737;
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+.state-note {
+  padding: 10px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 10px 0;
+}
+
+.warning-note {
+  color: #80590a;
+  background: #fff7e7;
+}
+
+.sub-cell-text {
+  font-size: 12px;
+  color: #667085;
+}

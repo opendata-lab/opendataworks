@@ -1,6 +1,8 @@
 import { builtinDefinitions, definition } from '@/utils/__tests__/datasourceFixtures'
 import { shallowMount, flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
 
 const api = vi.hoisted(() => ({
   types: vi.fn(), list: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), testConnection: vi.fn()
@@ -17,6 +19,7 @@ import DataSourceManagement from '../DataSourceManagement.vue'
 const mountView = () => shallowMount(DataSourceManagement, {
   global: {
     stubs: {
+      'el-table': { template: '<div><slot /></div>' },
       'el-card': { template: '<div><slot name="header" /><slot /></div>' },
       'el-dialog': { template: '<div><slot /><slot name="footer" /></div>' },
       'el-form': { template: '<form><slot /></form>', methods: { validate: () => Promise.resolve() } },
@@ -33,6 +36,26 @@ describe('DataSourceManagement PostgreSQL', () => {
     api.list.mockResolvedValue([])
     api.create.mockResolvedValue({})
     api.update.mockResolvedValue({})
+  })
+
+  it('普通用户不显示配置写入口，管理员可配置权限', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    try {
+      const auth = useAuthStore()
+      auth.currentUser = { id: 2, username: 'reader', role: 'user' }
+      const wrapper = mountView()
+      await flushPromises()
+      expect(wrapper.findComponent({ name: 'DatasourcePermissionCenter' }).exists()).toBe(false)
+      expect(wrapper.findAllComponents({ name: 'ElTableColumn' }).some(column => column.props('label') === '操作')).toBe(false)
+      auth.currentUser = { id: 1, username: 'admin', role: 'admin' }
+      await flushPromises()
+      expect(wrapper.findComponent({ name: 'DatasourcePermissionCenter' }).exists()).toBe(true)
+      expect(wrapper.findAllComponents({ name: 'ElTableColumn' }).some(column => column.props('label') === '操作')).toBe(true)
+      wrapper.unmount()
+    } finally {
+      setActivePinia(undefined)
+    }
   })
 
   it('offers PostgreSQL and switches default ports while retaining custom ports', async () => {
@@ -139,5 +162,14 @@ describe('DataSourceManagement PostgreSQL', () => {
     await mountView().vm.handleTestConnection(9)
     expect(messages.error).toHaveBeenCalled()
     expect(messages.success).not.toHaveBeenCalled()
+  })
+
+  it('opens permission configuration drawer with the selected datasource context', async () => {
+    const row = { id: 15, clusterName: '生产 Doris', sourceType: 'DORIS' }
+    const wrapper = mountView()
+    await flushPromises()
+    wrapper.vm.openPermissions(row)
+    expect(wrapper.vm.permissionVisible).toBe(true)
+    expect(wrapper.vm.permissionCluster).toEqual(row)
   })
 })

@@ -21,6 +21,9 @@ from odw_mcp_server.service import OdwToolService
 
 
 class FakeBackendClient:
+    async def verify_identity(self):
+        return {"serviceAccountId": "17"}
+
     def __init__(self):
         self.calls: list[tuple[str, dict]] = []
 
@@ -60,8 +63,6 @@ def _settings() -> Settings:
         backend_service_token="service-token",
         backend_token_header_name="X-Agent-Service-Token",
         backend_timeout_seconds=30,
-        frontdoor_token="odw-token",
-        frontdoor_token_header_name="X-ODW-MCP-Token",
         host="0.0.0.0",
         port=8801,
         mcp_mount_path="/mcp",
@@ -83,13 +84,13 @@ def test_mcp_path_rejects_missing_frontdoor_token():
         response = client.post("/mcp", json={})
 
     assert response.status_code == 401
-    assert response.json()["message"] == "ODW MCP token 无效"
+    assert "Bearer Token" in response.json()["message"]
 
 
 def test_mcp_path_accepts_valid_frontdoor_token():
     app = create_app(settings=_settings(), backend_client=FakeBackendClient())
     with TestClient(app) as client:
-        response = client.post("/mcp", headers={"X-ODW-MCP-Token": "odw-token"}, json={})
+        response = client.post("/mcp", headers={"Authorization": "Bearer odw_sa_" + "a" * 43}, json={})
 
     assert response.status_code != 401
 
@@ -112,7 +113,7 @@ def test_mcp_path_accepts_docker_hostname():
         response = client.post(
             "/mcp/",
             headers={
-                "X-ODW-MCP-Token": "odw-token",
+                "Authorization": "Bearer odw_sa_" + "a" * 43,
                 "Content-Type": "application/json",
                 # Streamable HTTP requires the client to accept both; sending it
                 # makes initialize return 200 so the no-session-id assertion below
@@ -173,7 +174,7 @@ async def _call_mcp_tool(app, *, tool_name: str, arguments: dict) -> tuple[objec
         async with httpx.AsyncClient(
             transport=transport,
             base_url="http://localhost:8801",
-            headers={"X-ODW-MCP-Token": "odw-token"},
+            headers={"Authorization": "Bearer odw_sa_" + "a" * 43},
         ) as http_client:
             async with streamable_http_client("http://localhost:8801/mcp/", http_client=http_client) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream) as session:
@@ -520,3 +521,49 @@ async def test_display_description_is_accepted_but_not_forwarded():
         {"database": "dw", "sql": "SELECT 1", "limit": 1000, "timeoutSeconds": 30},
     )
     assert result.structuredContent["kind"] == "query_result"
+
+
+def test_service_bearer_is_verified_each_http_request_and_spoofed_ids_are_not_forwarded():
+    from odw_mcp_server.identity_context import get_identity_headers
+
+    class AuthBackend(FakeBackendClient):
+        rejected = False
+        observed = []
+        async def verify_identity(self):
+            self.observed.append(get_identity_headers())
+            if self.rejected:
+                raise BackendApiError("Token revoked", status_code=401)
+            return {"serviceAccountId": "17"}
+
+    backend = AuthBackend()
+    app = create_app(settings=_settings(), backend_client=backend)
+    bearer = "Bearer odw_sa_" + "a" * 43
+    with TestClient(app) as client:
+        first = client.post("/mcp/", headers={"Authorization": bearer, "X-Agent-Id": "spoofed", "X-Agent-Operator": "admin", "X-Agent-User-Id": "local:alice"}, json={})
+        assert first.status_code != 401
+        assert backend.observed[0] == {"Authorization": bearer, "X-Agent-User-Id": "local:alice"}
+        backend.rejected = True
+        second = client.post("/mcp/", headers={"Authorization": bearer}, json={})
+        assert second.status_code == 401
+        assert len(backend.observed) == 2
+        assert backend.observed[1] == {"Authorization": bearer, "X-Agent-User-Id": ""}
+    assert get_identity_headers() == {}
+
+
+def test_shared_legacy_token_and_malformed_bearer_are_not_account_credentials():
+    backend = FakeBackendClient()
+    app = create_app(settings=_settings(), backend_client=backend)
+    with TestClient(app) as client:
+        for headers in [{"X-ODW-MCP-Token": "odw-token"}, {"Authorization": "Bearer old-shared-token"}, {"Authorization": "Basic ignored"}]:
+            assert client.post("/mcp/", headers=headers, json={}).status_code == 401
+
+
+def test_backend_identity_unavailable_is_explicit_503_not_empty_catalog():
+    class DownBackend(FakeBackendClient):
+        async def verify_identity(self):
+            raise BackendApiError("backend unavailable")
+
+    with TestClient(create_app(settings=_settings(), backend_client=DownBackend())) as client:
+        response = client.post("/mcp/", headers={"Authorization": "Bearer odw_sa_" + "a" * 43}, json={})
+        assert response.status_code == 503
+        assert response.json()["message"] == "backend unavailable"

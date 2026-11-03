@@ -39,6 +39,12 @@ public class UserContext {
      */
     private String authSource;
 
+    private Integer sessionVersion = 0;
+
+    public UserContext(String userId, String username, String role, String authSource) {
+        this(userId, username, role, authSource, 0);
+    }
+
     public boolean isAdmin() {
         return ROLE_ADMIN.equals(role);
     }

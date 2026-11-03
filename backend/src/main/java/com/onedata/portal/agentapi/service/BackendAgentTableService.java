@@ -13,7 +13,7 @@ import org.springframework.util.StringUtils;
  * Agent-facing table-creation API, delegating to the engine-aware
  * {@link TableCreateService}. Preview generates the target table name and
  * normalized DDL without side effects; create persists metadata and executes the
- * DDL on the engine (Doris). The X-Agent-Operator identity is recorded as the
+ * DDL on the engine (Doris). The authenticated service account ID is recorded as the
  * table owner, and the target database is checked against the agent data scope.
  */
 @Slf4j

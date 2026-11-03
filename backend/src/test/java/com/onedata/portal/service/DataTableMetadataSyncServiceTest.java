@@ -50,6 +50,7 @@ class DataTableMetadataSyncServiceTest {
     void syncTableByNameRecordsHistoryAndEnrichesSyncedTableId() {
         DorisCluster cluster = new DorisCluster();
         cluster.setId(1L);
+        cluster.setStatus("active");
         cluster.setClusterName("local-doris");
         cluster.setSourceType("DORIS");
 

@@ -103,7 +103,7 @@ class BackendAgentWorkflowServiceTest {
         schedule.put("enabled", Boolean.TRUE);
         req.setSchedule(schedule);
 
-        assertThrows(IllegalArgumentException.class, () -> svc.upsertSchedule(12L, req, "agent:t"));
+        assertThrows(IllegalArgumentException.class, () -> svc.upsertSchedule(12L, req));
         verify(workflowScheduleService, never()).upsertSchedule(any(), any(WorkflowScheduleRequest.class));
     }
 }

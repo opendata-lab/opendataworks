@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 
 from .config import Settings
-from .identity_context import get_identity_headers, get_operator_header
+from .identity_context import get_identity_headers
 
 
 class BackendApiError(RuntimeError):
@@ -18,6 +18,9 @@ class BackendApiError(RuntimeError):
 @dataclass
 class BackendApiClient:
     settings: Settings
+
+    async def verify_identity(self) -> dict[str, Any]:
+        return await self._request("GET", "/v1/ai/auth/identity")
 
     async def inspect(self, **params: Any) -> dict[str, Any]:
         return await self._request("GET", "/v1/ai/metadata/inspect", params=params)
@@ -102,10 +105,8 @@ class BackendApiClient:
             "Accept": "application/json",
             self.settings.backend_token_header_name: self.settings.backend_service_token,
         }
-        headers.update(get_identity_headers())
-        operator = get_operator_header()
-        if operator:
-            headers["X-Agent-Operator"] = operator
+        headers.update({key: value for key, value in get_identity_headers().items()
+                        if key in {"Authorization", "X-Agent-User-Id"}})
         timeout = httpx.Timeout(self.settings.backend_timeout_seconds)
         async with httpx.AsyncClient(timeout=timeout) as client:
             try:

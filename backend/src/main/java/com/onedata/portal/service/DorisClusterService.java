@@ -3,6 +3,7 @@ package com.onedata.portal.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.onedata.portal.entity.DorisCluster;
+import com.onedata.portal.dto.MetadataSyncConfigRequest;
 import com.onedata.portal.mapper.DorisClusterMapper;
 import com.onedata.portal.service.datasource.core.DatasourceAdapterRegistry;
 import com.onedata.portal.service.datasource.model.ConnectionConfig;
@@ -111,26 +112,45 @@ public class DorisClusterService {
             options.putAll(exists.getConnectionOptions());
         }
         cluster.setConnectionOptions(options);
-        if (cluster.getAutoSync() == null) {
-            cluster.setAutoSync(exists.getAutoSync());
-        }
-        if (cluster.getSyncCron() == null) {
-            cluster.setSyncCron(exists.getSyncCron());
-        }
-        if (cluster.getLastSyncTime() == null) {
-            cluster.setLastSyncTime(exists.getLastSyncTime());
-        }
-
-        if ((exists.getAutoSync() == null || exists.getAutoSync() != 1) && cluster.getAutoSync() != null
-                && cluster.getAutoSync() == 1) {
-            // 开启自动同步时，将 lastSyncTime 置为当前时间作为调度基准
-            cluster.setLastSyncTime(LocalDateTime.now());
-        }
+        // 连接编辑不能覆盖采集页独立保存的配置。
+        cluster.setAutoSync(exists.getAutoSync());
+        cluster.setSyncCron(exists.getSyncCron());
+        cluster.setLastSyncTime(exists.getLastSyncTime());
         validate(cluster);
         cluster.setId(id);
         handleDefaultFlag(cluster, id);
+        // MyBatis-Plus 默认忽略 null 字段，连接更新不写采集配置，避免并发覆盖。
+        cluster.setAutoSync(null);
+        cluster.setSyncCron(null);
+        cluster.setLastSyncTime(null);
         dorisClusterMapper.updateById(cluster);
         log.info("Updated Doris cluster: {}", cluster.getClusterName());
+        return describe(dorisClusterMapper.selectById(id));
+    }
+
+    @Transactional
+    public DorisCluster updateMetadataSyncConfig(Long id, MetadataSyncConfigRequest request) {
+        DorisCluster existing = dorisClusterMapper.selectById(id);
+        if (existing == null) throw new IllegalArgumentException("数据源不存在");
+        Integer enabled = request.getAutoSync();
+        if (enabled == null || (enabled != 0 && enabled != 1)) {
+            throw new IllegalArgumentException("自动采集开关必须为 0 或 1");
+        }
+        String cron = request.getSyncCron() == null ? "" : request.getSyncCron().trim();
+        if (enabled == 1 && !StringUtils.hasText(cron)) {
+            throw new IllegalArgumentException("开启自动采集时必须配置 Cron");
+        }
+        if (StringUtils.hasText(cron)) {
+            CronExpression.parse(cron);
+        }
+        LambdaUpdateWrapper<DorisCluster> update = new LambdaUpdateWrapper<DorisCluster>()
+                .eq(DorisCluster::getId, id)
+                .set(DorisCluster::getAutoSync, enabled)
+                .set(DorisCluster::getSyncCron, cron);
+        if (enabled == 1 && !Integer.valueOf(1).equals(existing.getAutoSync())) {
+            update.set(DorisCluster::getLastSyncTime, LocalDateTime.now());
+        }
+        dorisClusterMapper.update(null, update);
         return describe(dorisClusterMapper.selectById(id));
     }
 

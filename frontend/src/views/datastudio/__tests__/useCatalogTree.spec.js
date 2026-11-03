@@ -1,11 +1,21 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { createApp, ref, nextTick } from 'vue'
 
 vi.mock('element-plus', () => ({ ElMessage: { warning: vi.fn(), error: vi.fn(), success: vi.fn() } }))
 vi.mock('@/api/table', () => ({ tableApi: {} }))
-vi.mock('@/api/doris', () => ({ dorisClusterApi: { testConnection: vi.fn().mockResolvedValue(true) } }))
+vi.mock('@/api/doris', () => ({ dorisClusterApi: {
+  testConnection: vi.fn(), getDatabases: vi.fn(), getSchemaObjectCounts: vi.fn()
+} }))
 
 import { useCatalogTree } from '../composables/useCatalogTree'
+import { dorisClusterApi } from '@/api/doris'
+import { ElMessage } from 'element-plus'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  dorisClusterApi.getDatabases.mockResolvedValue(['public'])
+  dorisClusterApi.getSchemaObjectCounts.mockResolvedValue([])
+})
 
 function withSetup(composable) {
   let result
@@ -36,6 +46,30 @@ function setup() {
 }
 
 describe('useCatalogTree (getters / filter)', () => {
+  it('activates through the current-user catalog, coalesces requests and never calls the admin collector test', async () => {
+    const { api, unmount } = setup()
+    api.dataSources.value = [{ id: 1, status: 'active' }]
+    expect(await Promise.all([api.activateDatasource('1'), api.activateDatasource('1')])).toEqual([true, true])
+    expect(api.schemaStore['1']).toEqual(['public'])
+    await api.loadSchemas('1')
+    expect(dorisClusterApi.getDatabases).toHaveBeenCalledTimes(1)
+    await api.loadSchemas('1', true)
+    expect(dorisClusterApi.getDatabases).toHaveBeenCalledTimes(2)
+    expect(dorisClusterApi.testConnection).not.toHaveBeenCalled()
+    unmount()
+  })
+
+  it('missing current-user binding fails activation with no collector-account fallback and permits retry', async () => {
+    const { api, unmount } = setup()
+    const source = { type: 'datasource', sourceId: '1', status: 'active' }
+    dorisClusterApi.getDatabases.mockRejectedValueOnce(new Error('尚未绑定数据库账号'))
+    expect(await api.activateDatasource('1')).toBe(false)
+    expect(api.isCatalogNodeActive(source)).toBe(false)
+    expect(ElMessage.error).toHaveBeenCalledWith('尚未绑定数据库账号')
+    expect(dorisClusterApi.testConnection).not.toHaveBeenCalled()
+    expect(await api.activateDatasource('1')).toBe(true)
+    unmount()
+  })
   it('getDatasourceById finds by stringified id from the owned dataSources ref', () => {
     const { api, unmount } = setup()
     api.dataSources.value = [{ id: 1, name: 'demo' }, { id: 2, name: 'prod' }]

@@ -54,6 +54,7 @@ public class AuthController {
                 user.getUsername(),
                 user.getRole(),
                 user.getAuthSource());
+        context.setSessionVersion(user.getSessionVersion());
         String token = jwtService.issue(context);
         response.addHeader(HttpHeaders.SET_COOKIE, buildSessionCookie(token, properties.getJwt().getTtl().getSeconds()));
         log.info("User logged in: {}", user.getUsername());

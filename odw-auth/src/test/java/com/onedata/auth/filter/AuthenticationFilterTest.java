@@ -136,6 +136,28 @@ class AuthenticationFilterTest {
     }
 
     @Test
+    void invalidCookieCannotFallBackToAnonymousAdministrator() throws Exception {
+        properties.getAnonymous().setEnabled(true);
+        MockHttpServletRequest request = request("/v1/users");
+        request.setCookies(new Cookie("odw_session", "invalid"));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
+    void revokedSessionIsRejectedByFilterEvenWhenAnonymousIsEnabled() throws Exception {
+        properties.getAnonymous().setEnabled(true);
+        com.onedata.auth.user.SysUserService users = org.mockito.Mockito.mock(com.onedata.auth.user.SysUserService.class);
+        filter = new AuthenticationFilter(properties, jwtService, users);
+        MockHttpServletRequest request = request("/v1/users");
+        request.setCookies(new Cookie("odw_session", jwtService.issue(new UserContext("1","admin","admin","local"))));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        filter.doFilter(request, response, new MockFilterChain());
+        assertEquals(401, response.getStatus());
+    }
+
+    @Test
     void whitelistedPathStillPopulatesContextWhenSessionPresent() throws Exception {
         String token = jwtService.issue(new UserContext("1", "admin", "admin", "local"));
         MockHttpServletRequest request = request("/auth/me");

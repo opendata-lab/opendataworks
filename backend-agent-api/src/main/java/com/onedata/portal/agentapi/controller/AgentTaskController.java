@@ -1,5 +1,6 @@
 package com.onedata.portal.agentapi.controller;
 
+import com.onedata.portal.agentapi.identity.AgentIdentityContext;
 import com.onedata.portal.agentapi.dto.AgentTaskUpsertRequest;
 import com.onedata.portal.agentapi.service.AgentTaskService;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +10,6 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,17 +23,15 @@ public class AgentTaskController {
 
     @PostMapping
     public Object create(
-            @Validated @RequestBody AgentTaskUpsertRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentTaskService.createTask(request, operator);
+            @Validated @RequestBody AgentTaskUpsertRequest request) {
+        return agentTaskService.createTask(request, AgentIdentityContext.require().getAgentId());
     }
 
     @PutMapping("/{id}")
     public Object update(
             @PathVariable("id") Long id,
-            @Validated @RequestBody AgentTaskUpsertRequest request,
-            @RequestHeader(value = "X-Agent-Operator", required = false) String operator) {
-        return agentTaskService.updateTask(id, request, operator);
+            @Validated @RequestBody AgentTaskUpsertRequest request) {
+        return agentTaskService.updateTask(id, request, AgentIdentityContext.require().getAgentId());
     }
 
     @GetMapping("/{id}")

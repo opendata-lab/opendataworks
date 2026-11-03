@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import contextlib
 import json
 import logging
@@ -13,9 +15,9 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse
 from starlette.routing import Mount, Route
 
-from .backend_client import BackendApiClient
+from .backend_client import BackendApiClient, BackendApiError
 from .config import Settings, load_settings
-from .identity_context import set_identity_headers, set_operator_header
+from .identity_context import set_identity_headers
 from .service import OdwToolService
 
 
@@ -292,10 +294,11 @@ class AnalyzeSqlInput(BaseModel):
     cluster_id: int | None = Field(default=None, description="集群 ID,可选")
 
 
-class FrontDoorTokenMiddleware:
-    def __init__(self, app, settings: Settings):
+class ServiceAccountTokenMiddleware:
+    def __init__(self, app, settings: Settings, backend_client: BackendApiClient):
         self.app = app
         self.settings = settings
+        self.backend_client = backend_client
 
     async def __call__(self, scope, receive, send):
         if scope.get("type") != "http":
@@ -308,28 +311,30 @@ class FrontDoorTokenMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if not self.settings.frontdoor_token:
-            await _send_json(scope, receive, send, 503, {"success": False, "message": "ODW MCP frontdoor token 未配置"})
-            return
-
         headers = {
             key.decode("latin-1").lower(): value.decode("latin-1")
             for key, value in scope.get("headers", [])
         }
-        actual = headers.get(self.settings.frontdoor_token_header_name.lower(), "").strip()
-        if actual != self.settings.frontdoor_token:
-            await _send_json(scope, receive, send, 401, {"success": False, "message": "ODW MCP token 无效"})
+        authorization = headers.get("authorization", "")
+        if not re.fullmatch(r"Bearer odw_sa_[A-Za-z0-9_-]{43}", authorization):
+            await _send_json(scope, receive, send, 401, {"success": False, "message": "需要有效的服务账号Bearer Token"})
             return
 
+        # The backend resolves the service identity. External agent/operator IDs
+        # are not identities and never override the account authenticated by a token.
         reset_identity = set_identity_headers({
+            "Authorization": authorization,
             "X-Agent-User-Id": headers.get("x-agent-user-id", ""),
-            "X-Agent-Id": headers.get("x-agent-id", ""),
         })
-        reset_operator = set_operator_header(headers.get("x-agent-operator", ""))
         try:
+            try:
+                await self.backend_client.verify_identity()
+            except BackendApiError as exc:
+                status = exc.status_code if exc.status_code in (401, 403, 503) else 503
+                await _send_json(scope, receive, send, status, {"success": False, "message": str(exc)})
+                return
             await self.app(scope, receive, send)
         finally:
-            reset_operator()
             reset_identity()
 
 
@@ -339,7 +344,7 @@ def build_mcp_server(service: OdwToolService) -> FastMCP:
     # DNS-rebinding protection defaults to localhost-only in FastMCP 1.x, which
     # rejects requests from the Claude CLI subprocess using the Docker service
     # hostname (e.g. Host: odw-mcp-server:8801) with HTTP 421. The service is
-    # already protected by FrontDoorTokenMiddleware, so disable it here.
+    # already protected by ServiceAccountTokenMiddleware, so disable it here.
     mcp.settings.transport_security = TransportSecuritySettings(enable_dns_rebinding_protection=False)
     # Stateless mode: each request is handled independently with no session-ID
     # handshake required. Correct for a read-only tool server.
@@ -710,7 +715,7 @@ def create_app(
         ],
         lifespan=lifespan,
     )
-    app.add_middleware(FrontDoorTokenMiddleware, settings=effective_settings)
+    app.add_middleware(ServiceAccountTokenMiddleware, settings=effective_settings, backend_client=client)
     return app
 
 

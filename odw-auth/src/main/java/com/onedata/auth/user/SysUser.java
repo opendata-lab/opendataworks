@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -21,7 +22,15 @@ public class SysUser {
 
     private String username;
 
+    private String accountType;
+
+    private String description;
+
+    @JsonIgnore
+    public boolean isServiceAccount() { return "SERVICE".equals(accountType); }
+
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
+    @lombok.ToString.Exclude
     private String passwordHash;
 
     private String nickname;
@@ -35,6 +44,9 @@ public class SysUser {
     private String authSource;
 
     private String externalId;
+
+    @JsonIgnore
+    private Integer sessionVersion;
 
     private Integer failedAttempts;
 

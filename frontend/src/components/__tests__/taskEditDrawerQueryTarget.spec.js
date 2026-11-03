@@ -15,6 +15,7 @@ const { taskApi } = vi.hoisted(() => ({
   },
 }))
 
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAdmin: false }) }))
 vi.mock('@/api/task', () => ({ taskApi }))
 vi.mock('@/api/workflow', () => ({ workflowApi: { list: vi.fn(() => Promise.resolve({ records: [] })) } }))
 vi.mock('@/api/table', () => ({ tableApi: { options: vi.fn(() => Promise.resolve([])), getById: vi.fn() } }))

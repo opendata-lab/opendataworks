@@ -857,7 +857,7 @@ public class DorisMetadataSyncService {
                     .orElse(null);
 
             if (dorisTable == null) {
-                result.addError("表 " + database + "." + tableName + " 在 Doris 中不存在");
+                result.addError(tableNotVisibleMessage(clusterId, database, tableName));
                 return result;
             }
 
@@ -1593,7 +1593,7 @@ public class DorisMetadataSyncService {
                     .orElse(null);
 
             if (dorisTable == null) {
-                result.addError("表 " + database + "." + tableName + " 在 Doris 中不存在");
+                result.addError(tableNotVisibleMessage(clusterId, database, tableName));
                 return result;
             }
 
@@ -1617,6 +1617,20 @@ public class DorisMetadataSyncService {
         }
 
         return result;
+    }
+
+    private String tableNotVisibleMessage(Long clusterId, String database, String tableName) {
+        String qualifiedName = database + "." + tableName;
+        try {
+            boolean visibleToUser = dorisConnectionService.getTablesInDatabase(clusterId, database).stream()
+                    .anyMatch(table -> tableName.equals(table.get("tableName")));
+            if (visibleToUser) {
+                return "表 " + qualifiedName + " 对当前用户可见，但数据源同步账号无权查看，请检查同步账号权限";
+            }
+        } catch (Exception e) {
+            log.debug("Cannot check table visibility for the current user: {}", qualifiedName, e);
+        }
+        return "数据源同步账号未查到表 " + qualifiedName + "，请使用有权限的账号确认表是否存在";
     }
 
     private void addChangedValue(Map<String, Object> changes, String key, Object oldValue, Object newValue) {

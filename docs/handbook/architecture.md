@@ -17,8 +17,8 @@
 │ Spring Boot 后端    │  │ DataAgent（独立部署）   │
 │ (backend/)          │  │ opendataagent 仓库      │
 │ 元数据/调度/血缘 API │  └───────┬────────────────┘
-└────────▲───────────┘          │ HTTP MCP + X-ODW-MCP-Token
-         │ Java agent API       │ X-Agent-User-Id / X-Agent-Id
+└────────▲───────────┘          │ HTTP MCP + 服务账号Bearer Token
+         │ Java agent API       │ 可选X-Agent-User-Id；服务身份由Token解析
 ┌────────┴───────────┐          │
 │ ODW MCP Server      │◄─────────┘
 │ odw-mcp-server/     │

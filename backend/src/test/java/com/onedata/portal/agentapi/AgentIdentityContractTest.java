@@ -21,11 +21,11 @@ class AgentIdentityContractTest {
     }
 
     @Test
-    void serviceTokenAndUserAreBothRequiredForOrdinaryQueries() throws Exception {
+    void internalTransportAndAccountTokenAreRequiredAndIdentityComesFromToken() throws Exception {
         AgentApiProperties properties = new AgentApiProperties();
         properties.setServiceToken("service-secret");
         properties.setRequirePrivateNetwork(false);
-        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(properties, new ObjectMapper());
+        AgentApiAuthInterceptor interceptor = new AgentApiAuthInterceptor(properties, new ObjectMapper(), token -> "9");
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/v1/ai/query/read");
         request.addHeader("X-Agent-Id", "agent-a");
         MockHttpServletResponse response = new MockHttpServletResponse();
@@ -34,15 +34,19 @@ class AgentIdentityContractTest {
         request.addHeader("X-Agent-Service-Token", "service-secret");
         assertFalse(interceptor.preHandle(request, new MockHttpServletResponse(), this));
         request.addHeader("X-Agent-User-Id", "local:alice");
+        request.addHeader("Authorization", "Bearer test-service-token");
         assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), this));
         assertEquals("local:alice", AgentIdentityContext.require().getUserId());
+        assertEquals("9", AgentIdentityContext.require().getAgentId());
         interceptor.afterCompletion(request, response, this, null);
         assertThrows(IllegalArgumentException.class, AgentIdentityContext::require);
     }
 
     @Test
-    void identityRequiresBothUserAndAgent() {
-        assertThrows(IllegalArgumentException.class, () -> AgentIdentityContext.set(null, "agent-a"));
+    void identityAllowsStandaloneServiceButNeverMissingService() {
+        AgentIdentityContext.set(null, "9");
+        assertEquals(null, AgentIdentityContext.require().getUserId());
+        assertEquals("9", AgentIdentityContext.require().getAgentId());
         assertThrows(IllegalArgumentException.class, () -> AgentIdentityContext.set("local:alice", null));
         AgentIdentityContext.set("local:alice", "agent-a");
         assertEquals("agent-a", AgentIdentityContext.require().getAgentId());

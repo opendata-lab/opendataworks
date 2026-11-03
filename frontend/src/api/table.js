@@ -249,7 +249,7 @@ export const tableApi = {
 
   // 同步指定数据库的元数据
   syncDatabaseMetadata(database, clusterId = null) {
-    return request.post(`/v1/tables/sync-metadata/database/${database}`, null, {
+    return request.post(`/v1/tables/sync-metadata/database/${encodeURIComponent(database)}`, null, {
       params: { clusterId },
       timeout: METADATA_SYNC_TIMEOUT
     })

@@ -29,7 +29,7 @@ function setup(overrides = {}) {
   const tabStates = reactive({})
   const openTabs = ref([])
   const activeTab = ref('')
-  const router = { push: vi.fn() }
+  const router = { push: vi.fn(), resolve: vi.fn(() => ({ href: '/metadata-sync?sourceId=s1&database=db&tableName=demo' })) }
   const taskDrawerRef = ref({ open: vi.fn() })
   const deps = {
     clusterId: ref('c1'),
@@ -166,20 +166,25 @@ describe('useTableActions', () => {
     expect(deps.loadTabData).toHaveBeenCalledWith('t1')
   })
 
-  it('syncMissingTableMetadata syncs, refreshes tables, and reloads the tab', async () => {
-    const { deps, api, tabStates, openTabs } = setup({
-      isPlatformMetadataMissing: vi.fn(() => true),
-    })
-    openTabs.value.push({ id: 't1', kind: 'table' })
-    tabStates.t1 = { table: { tableName: 'demo', dbName: 'db', sourceId: 's1' }, metadataSyncing: false, dataLoaded: true }
-    tableApi.syncTableMetadataByName.mockResolvedValue({ tableId: 99 })
-    await api.syncMissingTableMetadata('t1')
-    expect(tableApi.syncTableMetadataByName).toHaveBeenCalledWith('db', 'demo', 's1')
-    expect(deps.loadTables).toHaveBeenCalledWith('s1', 'db', true)
-    expect(tabStates.t1.table.metadataStatus).toBe('synced')
-    expect(deps.loadTabData).toHaveBeenCalledWith('t1')
-    expect(tabStates.t1.metadataSyncing).toBe(false)
+  it('管理员从缺失表打开独立采集页，工作区不执行同步', () => {
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const { api, tabStates, router, deps } = setup({ isPlatformMetadataMissing: () => true, canCollectMetadata: () => true })
+    tabStates.t1 = { table: { tableName: 'demo', dbName: 'db', sourceId: 's1', metadataMissing: true } }
+    api.goToMetadataCollection('t1')
+    expect(router.resolve).toHaveBeenCalledWith({ path: '/metadata-sync', query: { sourceId: 's1', database: 'db', tableName: 'demo' } })
+    expect(open).toHaveBeenCalledWith('/metadata-sync?sourceId=s1&database=db&tableName=demo', '_blank', 'noopener')
+    expect(tableApi.syncTableMetadataByName).not.toHaveBeenCalled()
+    expect(deps.loadTables).not.toHaveBeenCalled()
+    expect(tabStates.t1.table.metadataMissing).toBe(true)
+    open.mockRestore()
   })
+
+  it('普通用户不提供平台采集动作', () => {
+    const { api, router } = setup()
+    api.goToMetadataCollection('t1')
+    expect(router.resolve).not.toHaveBeenCalled()
+  })
+
 })
 
 

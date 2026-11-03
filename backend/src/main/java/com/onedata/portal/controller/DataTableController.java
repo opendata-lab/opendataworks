@@ -2,6 +2,7 @@ package com.onedata.portal.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.onedata.auth.annotation.RequireAuth;
+import com.onedata.auth.annotation.RequireRole;
 import com.onedata.portal.dto.ColumnValueProfile;
 import com.onedata.portal.dto.PageResult;
 import com.onedata.portal.dto.Result;
@@ -520,6 +521,7 @@ public class DataTableController {
     /**
      * 稽核/比对 Doris 元数据（只检查差异，不同步）
      */
+    @RequireRole("admin")
     @PostMapping("/audit-metadata")
     public Result<Map<String, Object>> auditAllMetadata(
             @RequestParam(required = false) Long clusterId) {
@@ -539,6 +541,7 @@ public class DataTableController {
      * 手动触发 Doris 元数据同步（全量同步）
      * 建议先调用 audit-metadata 接口确认差异后再调用此接口
      */
+    @RequireRole("admin")
     @PostMapping("/sync-metadata")
     public Result<Map<String, Object>> syncAllMetadata(
             @RequestParam(required = false) Long clusterId) {
@@ -553,6 +556,7 @@ public class DataTableController {
     /**
      * 手动触发指定数据库的元数据同步
      */
+    @RequireRole("admin")
     @PostMapping("/sync-metadata/database/{database}")
     public Result<Map<String, Object>> syncDatabaseMetadata(
             @PathVariable String database,
@@ -568,6 +572,7 @@ public class DataTableController {
     /**
      * 手动按库表名同步指定表的元数据，用于平台尚未有 tableId 的 Doris 表。
      */
+    @RequireRole("admin")
     @PostMapping("/sync-metadata/database/{database}/table/{tableName}")
     public Result<Map<String, Object>> syncTableMetadataByName(
             @PathVariable String database,
@@ -584,6 +589,7 @@ public class DataTableController {
     /**
      * 手动触发指定表的元数据同步
      */
+    @RequireRole("admin")
     @PostMapping("/{id}/sync-metadata")
     public Result<Map<String, Object>> syncTableMetadata(
             @PathVariable Long id,

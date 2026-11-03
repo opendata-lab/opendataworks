@@ -30,10 +30,16 @@ public class AgentDatasourceAccessService {
 
     public void applyCredentials(AgentDatasourceResolution datasource) {
         AgentIdentityContext.Identity identity = AgentIdentityContext.require();
-        DatasourceSubjectAccount agent = accounts.require(datasource.getClusterId(), "AGENT", identity.getAgentId());
+        DatasourceSubjectAccount agent = accounts.require(datasource.getClusterId(), "SERVICE", identity.getAgentId());
         datasource.setUser(agent.getUsername());
         datasource.setPassword(agent.getPassword());
         datasource.setAgentId(identity.getAgentId());
+        if (identity.getUserId() == null) {
+            datasource.setUserId(null);
+            datasource.setCheckUser(agent.getUsername());
+            datasource.setCheckPassword(agent.getPassword());
+            return;
+        }
         SysUser user = accounts.resolveUser(identity.getUserId());
         DatasourceSubjectAccount person = accounts.require(datasource.getClusterId(), "USER", String.valueOf(user.getId()));
         datasource.setUserId(String.valueOf(user.getId()));
@@ -74,8 +80,9 @@ public class AgentDatasourceAccessService {
             return new LinkedHashMap<>();
         }
         DatasourceMetadataReader reader = adapters.require(cluster.getSourceType()).metadata();
-        try (Connection agent = accounts.open(sourceId, "AGENT", identity.getAgentId(), null, true)) {
+        try (Connection agent = accounts.open(sourceId, "SERVICE", identity.getAgentId(), null, true)) {
             Map<String, Set<String>> result = enumerate(reader, agent);
+            if (identity.getUserId() == null) return result;
             SysUser user = accounts.resolveUser(identity.getUserId());
             try (Connection person = accounts.open(sourceId, "USER", String.valueOf(user.getId()), null, true)) {
                 Map<String, Set<String>> visible = enumerate(reader, person);

@@ -46,6 +46,7 @@ public class Hs256JwtService implements JwtService {
                 .claim(CLAIM_USERNAME, user.getUsername())
                 .claim(CLAIM_ROLE, user.getRole())
                 .claim(CLAIM_AUTH_SOURCE, user.getAuthSource())
+                .claim("session_version", user.getSessionVersion() == null ? 0 : user.getSessionVersion())
                 .setIssuer(issuer)
                 .setIssuedAt(new Date(now))
                 .setExpiration(new Date(now + ttlMillis))
@@ -66,7 +67,8 @@ public class Hs256JwtService implements JwtService {
                     claims.getSubject(),
                     claims.get(CLAIM_USERNAME, String.class),
                     claims.get(CLAIM_ROLE, String.class),
-                    claims.get(CLAIM_AUTH_SOURCE, String.class));
+                    claims.get(CLAIM_AUTH_SOURCE, String.class),
+                    claims.get("session_version", Integer.class) == null ? 0 : claims.get("session_version", Integer.class));
         } catch (JwtException | IllegalArgumentException e) {
             log.debug("Session token rejected: {}", e.getMessage());
             return null;
