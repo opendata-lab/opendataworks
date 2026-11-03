@@ -19,9 +19,15 @@ on:
 permissions:
   contents: write
 
+# Only supersede PR checks; do not interrupt an active image/release publication.
+concurrency:
+  group: docker-build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       matrix:
         service:
@@ -40,9 +46,6 @@ jobs:
             context: .
             dockerfile: ./odw-mcp-server/Dockerfile
             build_args: ""
-
-
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -65,20 +68,6 @@ jobs:
             type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
             type=raw,value=${{ github.event.inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version != '' && (github.event.inputs.version != 'latest' || github.ref == 'refs/heads/main') }}
 
-      - name: Build
-        id: build
-        uses: docker/build-push-action@v5
-        with:
-          context: ${{ matrix.service.context }}
-          file: ${{ matrix.service.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: false
-          build-args: ${{ matrix.service.build_args }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ runner.os }}-buildx-${{ matrix.service.name }}
-          cache-to: type=gha,mode=max,scope=${{ runner.os }}-buildx-${{ matrix.service.name }},sharing=locked
-
       - name: Login to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -86,23 +75,24 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Push
-        id: push
-        if: github.event_name != 'pull_request'
+      # One build: PRs only build; publication events also push.
+      - name: Build and push
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: ${{ matrix.service.context }}
           file: ${{ matrix.service.dockerfile }}
           platforms: linux/amd64,linux/arm64
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           build-args: ${{ matrix.service.build_args }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ runner.os }}-buildx-${{ matrix.service.name }}
+          cache-from: type=gha,scope=buildx-${{ matrix.service.name }}
+          cache-to: type=gha,mode=max,scope=buildx-${{ matrix.service.name }}
 
       - name: Image digest
         if: github.event_name != 'pull_request'
-        run: echo "Image digest ${{ steps.push.outputs.digest }}"
+        run: echo "Image digest ${{ steps.build.outputs.digest }}"
 
   create-release:
     needs: build-and-push
@@ -157,7 +147,7 @@ jobs:
           echo "RELEASE_BODY_FILE=release_body.md" >> $GITHUB_ENV
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           body_path: release_body.md
@@ -237,7 +227,7 @@ jobs:
           gh api -X DELETE "repos/${REPO}/git/refs/tags/${RELEASE_TAG}" >/dev/null 2>&1 || true
 
       - name: Create or update latest release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: ${{ env.RELEASE_NAME }}

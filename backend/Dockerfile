@@ -1,5 +1,5 @@
 # 后端构建镜像
-FROM maven:3.8-openjdk-17 AS builder
+FROM --platform=$BUILDPLATFORM maven:3.8-openjdk-17 AS builder
 
 WORKDIR /app
 
