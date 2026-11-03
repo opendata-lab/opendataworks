@@ -9,11 +9,21 @@
 - 开始做某一条时，如果属于中大型变更，先按 AGENTS.md 的流程写 `design/` 和 `plans/`，并在这里附上链接。
 - 做完后把这一条移到文末的"已完成"，保留结果链接，不直接删除。
 
+## Backend MCP 与认证收敛设计复核
+
+- **后端收敛与历史冗余清理设计已收敛，代码实施及验收待执行（2026-11-03）**：原评审 R1～R8、N1～N3 及必要性复核 F1～F5 已按用户“直接改设计”要求同步到[主设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md)、[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)、[清理设计](design/2026-11-03-backend-legacy-redundancy-cleanup-design.md)与[清理计划](plans/2026-11-03-backend-legacy-redundancy-cleanup-plan.md)。当前确定：
+  1. 保留四模块与全部 23 个 MCP 工具，删除 Python/Agent REST 中转层；core 无 HTTP/MCP 协议依赖，保留已有连接工厂与包名。
+  2. USER DDL 使用自身映射，SERVICE DDL 始终使用自身映射；可选用户头只用于只读交集，不借用其写账号，也不冒充已验证的自然人审计主体。
+  3. 删除预览签名、随机密钥与 nonce 消费机制，保留预览和执行时领域预检；`confirmDiff` 显式传入、缺省 false，不由适配层自动确认。
+  4. core 按完整行预算构造并审计唯一结果，不改写单元格；MCP 仅包装并检查工具结果大小，超限返回简短错误，不二次删行、不自动重执行业务。MCP 固定参数与现有 Java/Web 请求统一 camelCase，同名对象直接绑定，删除纯改名映射和旧参数别名；仅保留方法参数提取、包装结构解包与默认值处理。Schema、Skill 配方和回归在实施时同步切换，不改门户全局命名。
+  5. 外部身份来源精确匹配、受信代理链解析、Dolphin 单次目标解析与显式传参、平台 Mapper 收口和死代码清理已明确唯一任务归属；保留 SDK 所需 Reactor 依赖。
+  以上仅完成设计/计划与文档检查；业务代码尚未迁移，真实 MySQL/Dolphin/MCP/DataAgent 及 PG/Doris 覆盖仍按计划验证。完成实施与验收后再移至“已完成”。来源：[评审记录及当前状态](reports/2026-11-03-backend-consolidation-entropy-review.md#当前收敛状态)。
+
 ## 权限与数据源
 
 ### 权限中心剩余验证与边界
 
-- **服务账号的开发写授权**（2026-11-02边界确认）：当前服务账号仅能访问元数据与只读SQL；agent开发写接口统一403，不接受调用方operator头提升为管理员。后续需分别设计工具动作、平台资源和数据库原生写入能力的授权与审计，再开放写工具；不能复用服务Token就默认获得开发管理员权限。[设计11](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)、[验收报告](reports/2026-11-02-service-accounts-verification.md)。
+- **平台用户与服务账号功能权限模型（RBAC）**（2026-11-03 用户决策登记）：在尚未设计平台级用户功能权限的前提下，23 个 MCP 工具（含工作流/任务查询、SQL 分析、表设计、草稿编辑及执行时重新预检的发布/上线）对已通过认证的服务账号保持可用，不再硬编码拦截为 403（数据源原生库/表/列权限与物理 DDL 映射账号校验仍严格生效）。后续需独立设计平台级功能权限体系（涵盖门户用户与服务账号对工作流、任务、建表、元数据修改等平台资源与 MCP 工具动作的细粒度授权与审计）。关联：[主收敛设计 §2.2](design/2026-11-03-backend-mcp-auth-consolidation-design.md#22-非目标与待办边界out-of-scope)、[历史验证报告](reports/2026-11-03-dataagent-widget-question-verification.md)、[设计11](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)。
 - **PG／Doris服务Token真实回归**（2026-11-02验证范围）：本轮服务账号Bearer到MCP与原生库的完整验收使用MySQL；PG此前原生角色／问数已验收，但新SERVICE身份与Token链路未在本轮重新建立真实PG环境，Doris仍无实例。需在对应环境复跑服务独立查询、可选人交集、视图、撤销和只读拒绝；当前不将SQL契约及MySQL结果记作这些引擎的真实验收。[报告](reports/2026-11-02-service-accounts-verification.md)。
 
 用户管理和源内多角色中心已实现并完成本机验收，结果移至「已完成」。当前模型以[设计第10节](design/2026-10-26-dataagent-datasource-identity-design.md#implementation-contract)为准，历史单角色／共享角色账号草案不适用。
