@@ -2,7 +2,7 @@
 
 ## 后端配置
 
-后端配置文件位于 `backend/src/main/resources/application.yml`。
+后端配置文件位于 `backend/app/src/main/resources/application.yml`。
 
 ### 数据库配置
 
@@ -78,9 +78,10 @@ MYSQL_DATABASE=opendataworks
 MYSQL_USER=opendataworks
 MYSQL_PASSWORD=opendataworks123
 
-# Agent 接入
-AGENT_API_SERVICE_TOKEN=odw-agent-service-token
-ODW_MCP_SERVER_TOKEN=odw-odw-mcp-server-token
+# HTTP 入口（MCP 使用管理中心签发的 SERVICE Token）
+ODW_HTTP_ALLOWED_ORIGINS=https://portal.example.com
+ODW_HTTP_REQUIRE_PRIVATE_NETWORK=true
+ODW_HTTP_TRUSTED_PROXIES=
 ```
 
 ::: tip

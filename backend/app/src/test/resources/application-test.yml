@@ -1,0 +1,15 @@
+# 测试环境配置
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/opendataworks?useUnicode=true&characterEncoding=UTF-8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: opendataworks
+    password: opendataworks123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+# DolphinScheduler配置（直接调用 OpenAPI）
+
+
+# 日志配置
+logging:
+  level:
+    com.onedata.portal: DEBUG

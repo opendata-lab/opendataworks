@@ -1,7 +1,7 @@
 # Backend 终态架构收敛设计：四子模块边界、内置 MCP 与核心链路熵减
 
 - 日期：2026-11-03
-- 状态：已按熵减评审及必要性复核（R1～R8、N1～N3、F1～F5）修订，待实施；采用 Java 17 + Spring Boot 3.5.x + 官方 MCP Java SDK；`backend` 划分为 `core`、`api`、`mcp-server`、`app` 四子模块，下线 `/api/v1/ai/**` 与 `BackendAgent*Service` 平行层；保留全部 23 个 MCP 工具对已认证服务账号可用，平台级功能权限（RBAC）记入待办。
+- 状态：已实施；Java / Vue / Python、真实 MySQL / Dolphin / HTTP MCP 验证通过。外部引擎及独立 DataAgent 完整问答覆盖边界见[实施报告](../reports/2026-11-03-backend-consolidation-validation.md)。
 - 关联计划：`docs/plans/2026-11-03-backend-mcp-auth-consolidation-plan.md`
 - 协同清理设计与计划（互不重叠）：
   - `docs/design/2026-11-03-backend-legacy-redundancy-cleanup-design.md`（负责平台 MySQL 表裸 `JdbcTemplate` 收口、Dolphin 双 `ThreadLocal` 消除与 `RestClient` 替换 `spring-boot-starter-webflux`、门户前后端废弃 REST 接口与死代码清理）
@@ -50,7 +50,10 @@
    - `DatasourceSubjectAccessService` 专注主体身份解析（修复 `<authSource>:<externalId>` 精确匹配）、成员状态校验、主体连接获取与库/表/列可见性交集，删除 `AgentDatasourceResolution` 上的 10 个 `@JsonIgnore` 明文密码字段；
    - `DataQueryService` 专注只读 SQL 守卫、双账号 `EXPLAIN + SELECT` 协同、JDBC 流式字节预算读取与 `data_query_history` 审计写入；
    - `DorisTableEngineHandler` 吸收原 `DorisConnectionService` 中的 Doris `ALTER TABLE` SQL 拼接方法，且**交互式物理建表/改表/删表强制使用主体连接，后台采集显式使用系统连接**。
-5. **MCP 顶层扁平 `inputSchema` 单一契约与响应体积双层预算**
+5. **服务账号原生写授权与门户角色选择同步**
+   - 服务账号可绑定经管理员授权的数据库读写映射，不再在权限中心按 SERVICE 类型硬编码只读角色限制；READONLY 模板仍保持只读。
+   - 只读工具仍强制只读连接和 SQL 守卫；物理 DDL 使用 SERVICE 自身映射，绝不借用用户头写权限。同步移除门户角色选择器对 SERVICE 写角色的禁用，并回归原生拒绝/允许场景。
+6. **MCP 顶层扁平 `inputSchema` 单一契约与响应体积双层预算**
    - 23 个工具采用顶层扁平、内联（零 `$ref`/`$defs`）的 JSON Schema，移除 FastMCP 遗留的 `{"params": {...}}` 外层包裹；由标准 JSON Schema 校验器统一执行结构校验，并区分 JDBC 行读取预算与 MCP 最终响应（含 `TextContent` + `structuredContent`）预算。
 
 ### 2.2 非目标与待办边界（Out of Scope）

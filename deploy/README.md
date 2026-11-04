@@ -24,7 +24,7 @@ MCP调用方使用账号管理生成的服务Token（`Authorization: Bearer`）�
 
 ## Deployment Topology
 
-本目录只部署 OpenDataWorks 门户：MySQL、Redis、backend、frontend、`odw-mcp-server`
+本目录只部署 OpenDataWorks 门户：MySQL、Redis、backend、frontend
 和日志收集 sidecar。DataAgent（智能问数）由独立仓库
 [opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署，可以在另一台机器上；
 接入方式见文末“接入 DataAgent”。
@@ -71,8 +71,8 @@ Use this method if you have internet access and are deploying directly from the 
    主链路默认地址：
    - 门户首页: `http://localhost:8081/`
    - 主前端智能问数入口: `http://localhost:8081/intelligent-query`（需先接入 DataAgent）
-   - ODW MCP Server Health: `http://localhost:8801/health`
-   - ODW MCP Server Streamable HTTP: `http://localhost:8801/mcp/`
+   - ODW MCP Server Health: `http://localhost:8080/api/v1/health`
+   - ODW MCP Server Streamable HTTP: `http://localhost:8080/api/mcp/`
 
 ## 2. Offline Deployment (Using Package)
 
@@ -157,7 +157,7 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 1. DBA 为每个要用的数据源预建人的账号和各智能体的只读账号。V55起可用角色中心管理托管授权并核验Agent只读能力；账号已有直接授权仍由DBA核对。Doris 使用 `Select_priv`，不依赖驱动只读事务。
 2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。门户内嵌问数时由门户上报当前用户（`/auth/me` 的 `agentUserId`），DataAgent 以该用户执行，不再要求单独登录 DataAgent；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
 3. 管理员在数据源页「权限配置 → 成员」选择人（平台 `sys_user.id`）或服务账号（同为平台 `sys_user.id`，V57后不接受外部agent_id），分配角色并绑定数据库用户名／密码。读接口不回传密码，编辑留空保留密码。数据源原账号只用于采集和运维，不用于主体查询；人的目录、查询、写入和结构编辑均由其受限账号执行。
-4. backend的`AGENT_API_SERVICE_TOKEN`与MCP的`ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN`保持一致，作为内部转发服务认证，Java agent API仍限私网；此凭据不能替代外部服务账号Bearer Token。MCP转发原Bearer与可选用户头，忽略外部agent／operator。服务Token本期只支持元数据GET和只读SQL，其他开发写接口403。
+4. MCP 内置于 Java 后端 `/api/mcp/`（也支持 `/api/mcp`），外部仅使用 `Authorization: Bearer <服务账号Token>`。全部 23 个工具可用；物理 DDL 使用 SERVICE 自身数据库映射，用户头只用于只读权限交集。按部署填写 `ODW_HTTP_ALLOWED_ORIGINS` 与受信代理 IP，MCP 默认只允许私网访问。
 5. 服务令牌和数据库密码不能注入模型 Bash 环境。DataAgent通过普通HTTP MCP配置的Authorization Bearer服务账号Token访问；MCP添加独立内部转发凭据，DataAgent后端可填写用户身份头。无用户头按服务账号自身权限，有用户头严格取两个数据库账号交集。删除旧数据范围配置及范围头。
 
 PostgreSQL 16 支持仅视图 SELECT 的 EXPLAIN；MySQL 8.0.45 即使有视图 SELECT、SHOW VIEW，EXPLAIN 仍可能要求底表权限，代人问数严格拒绝，不做回退。交集是对象级，DBA 不应给智能体授予依赖当前用户/RLS/SECURITY DEFINER 的敏感对象。Doris EXPLAIN 和视图权限需在内网验证。
@@ -169,7 +169,7 @@ PostgreSQL 16 支持仅视图 SELECT 的 EXPLAIN；MySQL 8.0.45 即使有视图 
 
 V57增加USER／SERVICE及用途字段和Token摘要表。账号创建时选择类型，之后不可转换；普通用户可登录，服务账号无密码／网页会话或平台admin权限。服务账号可以生成多个Token（有效期1～365天，默认90），明文只返回一次，平台只存摘要；生命周期时间按UTC保存与比较，API返回带Z时间，页面按本地时区展示；停用／删除立即阻止后续Token请求。平台账号与数据库登录账号分开，后者在源内绑定。
 
-升级前备份平台库及调用方MCP配置，发布匹配Java／MCP／Vue。既有AGENT绑定按旧ID去重迁移为平台服务账号，保留原生角色与数据库账号，不自动签发Token。管理员在账号管理找到迁移账号并生成Token，更新调用方Authorization头。旧共享前门Token及外部agent_id不能继续认证，无旧协议回退；原始ODW_MCP_SERVER_TOKEN及TOKEN_HEADER_NAME环境项停止使用。内部AGENT_API_SERVICE_TOKEN保留，不能填入外部Authorization。
+升级前备份平台库及调用方MCP配置，发布匹配Java／MCP／Vue。既有AGENT绑定按旧ID去重迁移为平台服务账号，保留原生角色与数据库账号，不自动签发Token。管理员在账号管理找到迁移账号并生成Token，更新调用方Authorization头。旧共享前门Token及外部agent_id不能继续认证，无旧协议回退；原始ODW_MCP_SERVER_TOKEN及TOKEN_HEADER_NAME环境项停止使用。内部共享服务Token已移除，调用方 URL 切换到 `/api/mcp/` 并刷新工具 Schema 缓存；工具固定参数统一 camelCase、直接顶层 arguments，预览不签发凭据，发布 confirmDiff 缺省 false。
 
 Token明文只存外部应用的安全配置；平台记录名称、前缀、到期／撤销／最后使用时间。轮换时先创建新Token并更新调用方，验证后撤销旧Token，不需要改角色或数据库账号。已签发Token不允许再次查看。账号停用不自动撤销数据库直连权限，DBA生命周期仍独立。
 
@@ -206,7 +206,7 @@ docker-compose -f docker-compose.prod.yml logs -f backend
 
 - **服务日志（实时落盘）**：`log-collector` sidecar 自动把各服务日志实时写到包目录
   `deploy/logs/<container>.log`，打开目录即可查看，无需敲命令。
-  - 默认只覆盖应用服务 `backend`、`odw-mcp-server`。
+  - 默认只覆盖应用服务 `backend`。
   - 不收集 mysql/redis 基础设施与 nginx 前端；如需增减，在 `deploy/.env` 设置 `LOG_COLLECTOR_CONTAINERS`（空格分隔容器名）。
   - 收集器使用 `docker:27.5.1-cli` 镜像（离线包已包含），只读挂载 docker socket（`DOCKER_SOCKET`）。
 - **一键汇总/导出**：
@@ -228,10 +228,10 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
    在 DataAgent「Widget 接入」中登记站点 `opendataworks-portal`，允许来源填门户的访问地址（如 `https://portal.example.com`）。
    门户 widget 以该站点身份上报当前用户：本地登录为 `local:<用户名>`，第三方登录为 `<来源>:<external_id>`；DataAgent 按此用户选择数据库账号。
    注意：这个用户标识来自浏览器，登录门户的用户可以篡改它冒充他人，按冒充对象的数据库账号权限查数。只在可信内网使用，并保证 DataAgent 的 8900 端口不对外暴露（风险已记入 `docs/TODO.md`）。
-3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页分配只读角色、绑定受限数据库账号。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8801/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
+3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页分配只读角色、绑定受限数据库账号。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8080/api/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
 4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
    在门户「配置管理 → 智能助手」把「智能问数助手」选为这个智能体；未选择时，门户问数页会提示先配置，不会自动挑选。
 5. 平台根据服务Token识别服务账号，不查询外部助手目录、不信任调用方agent_id。无用户头时按服务账号自身权限查询；代人问数时可提供`X-Agent-User-Id: local:alice`等原有标识，并要求该普通用户的源内映射，查询范围取双方交集。可信用户委托仍延期，未签名用户头不构成可信人身份认证。
 6. DataAgent侧应使用普通可编辑的HTTP MCP记录（configured），管理员更新MCP地址、Authorization头和提示词中的工具名。本机旧portal种子仍标记为plugin，需由DataAgent运维备份并转为configured后再编辑；不要通过平台访问外部助手目录或修改DataAgent源码来鉴别服务账号。
 
-服务账号Token由平台管理，可到期或单独撤销，账号停用后所有Token失效；两边跨机器时 `odw-mcp-server` 的 8801 端口需对 DataAgent 主机可达，且应走内网或 HTTPS。
+服务账号Token由平台管理，可到期或单独撤销，账号停用后所有Token失效；两边跨机器时后端 8080 端口或门户 `/api/mcp/` 反向代理入口需对 DataAgent 主机可达，且应走内网或 HTTPS。

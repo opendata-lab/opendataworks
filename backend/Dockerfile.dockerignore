@@ -1,0 +1,7 @@
+**
+!backend/
+!backend/**
+backend/**/target/
+backend/**/src/test/
+backend/.idea/
+backend/*.log

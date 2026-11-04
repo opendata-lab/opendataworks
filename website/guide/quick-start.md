@@ -41,7 +41,7 @@ OpenDataWorks 推荐使用 Docker Compose 进行本地一键启动。本指南�
 
 * **前端 Web UI**: [http://localhost:8081](http://localhost:8081)
 * **后端 API**: `http://localhost:8080/api`
-* **ODW MCP Server**: `http://localhost:8801/mcp/`
+* **内置 MCP**: `http://localhost:8080/api/mcp/`
 * **MySQL 物理库**: `127.0.0.1:3316`（用户 `opendataworks`）
 
 ::: info 数据库自动初始化
@@ -52,7 +52,7 @@ OpenDataWorks 推荐使用 Docker Compose 进行本地一键启动。本指南�
 
 ## 3. 功能验证 (Smoke Test)
 
-启动后，浏览器打开 [http://localhost:8081](http://localhost:8081) 进入系统，并检查 `http://localhost:8801/health` 返回正常。
+启动后，浏览器打开 [http://localhost:8081](http://localhost:8081) 进入系统，并检查 `http://localhost:8080/api/v1/health` 返回正常。
 
 「智能查询」由独立部署的 DataAgent（[opendataagent](https://github.com/opendata-lab/opendataagent)）提供。部署 DataAgent 并按仓库 `deploy/README.md` 的“接入 DataAgent”配置 nginx 转发后，在该模块新建会话输入 `你好，请直接回复 smoke-ok。`，看到流式回复即说明链路正常。
 

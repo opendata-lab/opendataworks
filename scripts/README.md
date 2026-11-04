@@ -29,7 +29,7 @@ bash scripts/stop.sh
 ### Build
 Build the project using scripts in `build/`.
 ```bash
-# Build images (multi-arch, main frontend, Java backend and ODW MCP server)
+# Build images (multi-arch, main frontend and Java backend with built-in MCP)
 bash scripts/build/build-multiarch.sh
 
 # Use a pip mirror for Python image build layers

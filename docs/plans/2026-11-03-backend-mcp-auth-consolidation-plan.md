@@ -1,7 +1,7 @@
 # Backend 终态架构收敛执行计划：四子模块边界、内置 MCP 与核心链路熵减
 
 - 日期：2026-11-03
-- 状态：已按必要性复核删除预览签名/nonce、固定 SERVICE 写身份并明确结果与协议映射；已按熵减评审（R1～R8、N2、N3）及用户确认修订，待执行
+- 状态：已实施；Java / Vue / Python、真实 MySQL / Dolphin / HTTP MCP 验证通过。外部引擎及独立 DataAgent 完整问答覆盖边界见[实施报告](../reports/2026-11-03-backend-consolidation-validation.md)。
 - 关联设计：`docs/design/2026-11-03-backend-mcp-auth-consolidation-design.md`
 - 协同计划（职责不重叠）：`docs/plans/2026-11-03-backend-legacy-redundancy-cleanup-plan.md`
 - 受影响栈：
@@ -74,7 +74,8 @@
    - **彻底废除 `DorisConnectionService` 中的 `ThreadLocal<Boolean> systemAccess`**，显式拆分为：
      - `openPrincipalConnection(clusterId, db, readOnly)` / `executeAsPrincipal(clusterId, db, sql)`：**供表设计器物理建表（`TableCreateService`）、表结构/注释编辑与软删恢复（`DataTableService` → `TableEngineHandler`）、Data Studio 实时目录/预览/DDL、Web 与 MCP 查询使用**（USER 用自身映射；SERVICE 无论是否携带 `delegatedUserKey` 均用自身映射执行 DDL，用户头只增加只读交集约束，不选择写账号；无映射或原生无权限直接拒绝）；
      - `openSystemConnection(clusterId, db)` / `executeAsSystem(clusterId, db, sql)`：**仅限元数据同步/稽核、数据源连接测试与采集范围预览、表容量统计采集、Schema 备份恢复、数据新鲜度/质量巡检、访问审计同步显式调用**。
-2. **物理表 DDL 归位至 `TableEngineHandler`（回应 R1）**：
+2. **服务账号写映射与门户同步**：移除权限中心 SERVICE 只能分配只读角色及原生只读账号的硬编码门禁；同步 MemberRolesDialog/MemberAuthorizationDialog 的角色选择提示，保留 READONLY 模板与只读工具连接约束。实际 DDL 按主体映射的数据库权限决定允许或拒绝。
+3. **物理表 DDL 归位至 `TableEngineHandler`（回应 R1）**：
    - 将原 `DorisConnectionService` 中残留的 Doris `ALTER TABLE` / `DROP TABLE` / 列定义拼接方法迁入 `DorisTableEngineHandler`；
    - `DorisTableEngineHandler` 与 `MysqlTableEngineHandler` 的建表、改表、删表方法统一调用 `datasourceSubjectAccessService.executeAsPrincipal(clusterId, database, sql)`，删除 `TableEngineJdbcExecutor`，并编写单测锁定“只读或无映射用户执行 DDL 被拒绝且不触发系统连接”。
 3. **统一 `DataQueryService`、完整行预算与执行审计（回应 R3、R7、F4）**：

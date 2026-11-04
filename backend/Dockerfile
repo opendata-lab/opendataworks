@@ -3,22 +3,10 @@ FROM --platform=$BUILDPLATFORM maven:3.8-openjdk-17 AS builder
 
 WORKDIR /app
 
-# 复制 Maven reactor 与模块 pom 文件
-COPY pom.xml ./pom.xml
-COPY backend/pom.xml ./backend/pom.xml
-COPY backend-agent-api/pom.xml ./backend-agent-api/pom.xml
-COPY odw-auth/pom.xml ./odw-auth/pom.xml
-
-# 下载依赖（利用 Docker 缓存）
-RUN mvn -f pom.xml -pl backend -am dependency:go-offline -B
-
-# 复制源代码
-COPY backend/src ./backend/src
-COPY backend-agent-api/src ./backend-agent-api/src
-COPY odw-auth/src ./odw-auth/src
-
-# 构建应用
-RUN mvn -f pom.xml -pl backend -am clean package -DskipTests
+# Build the reactor once; retain downloaded dependencies across local/CI builds.
+COPY backend ./backend
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -ntp -f backend/pom.xml package -Dmaven.test.skip=true
 
 # 生产运行镜像
 FROM eclipse-temurin:17-jre-jammy
@@ -31,7 +19,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # 复制构建的 jar 文件
-COPY --from=builder /app/backend/target/*.jar app.jar
+COPY --from=builder /app/backend/app/target/*.jar app.jar
 
 # 创建日志目录
 RUN mkdir -p /app/logs

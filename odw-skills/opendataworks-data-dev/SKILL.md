@@ -48,7 +48,7 @@ tools: [Bash, Read]
 
 1. **SQL 生成 / 润色**
    - 生成前用 `odw_search_tables` / `odw_get_table_ddl` 核实库、表、字段，不臆造表名或字段。
-   - 润色或落任务前，先 `odw_analyze_sql` 识别输入/输出表与操作类型；据此推荐 `input_table_ids` / `output_table_ids`。
+   - 润色或落任务前，先 `odw_analyze_sql` 识别输入/输出表与操作类型；据此推荐 `inputTableIds` / `outputTableIds`。
    - 血缘字段是**全量列表**：创建时两侧都必须显式提供；更新时省略某侧表示保留原值，传数组表示整体替换该侧。只改一侧就省略另一侧，绝不要回传不完整的列表，漏掉的表 ID 会被删除。详见 `reference/10-task-fields.md`。
    - 常见加工场景(每日增量/全量快照/聚合/关联拉宽/upsert)可参照 `reference/50-sql-scenarios.md` 的模板起手，再按真实表结构改写。
    - 含写操作的 SQL（INSERT/UPDATE/INSERT OVERWRITE 等）只允许写进任务定义，**不要**用只读查询工具试跑。
@@ -73,17 +73,17 @@ tools: [Bash, Read]
 
 5. **发布与上线（高危，强制顺序）**
    - 先 `odw_preview_publish`，把 `diffSummary` / `errors` / `warnings` 摘要展示给用户；存在 error 级 issue 时**禁止**继续，转为修复建议。
-   - 调用 `odw_publish_workflow(operation="deploy", preview_token=<上一步返回>)`。`deploy`/`online` 必须携带 preview 返回的 `preview_token`。
-   - deploy 成功后再 `odw_publish_workflow(operation="online", preview_token=...)` 上线。
-   - 在 default / acceptEdits 权限模式下，发布/上线会触发对话内权限确认卡片；请把操作目标与差异摘要放进工具参数的 `title` / `summary`，便于用户判断。
+   - 调用 `odw_publish_workflow(operation="deploy", confirmDiff=true)`。仅在调用方明确接受差异时传 `confirmDiff=true`；缺省 false。
+   - deploy 成功后再 `odw_publish_workflow(operation="online", confirmDiff=true)` 上线。
+   - 工具仅接受 Schema 声明的参数；展示意图使用可选 `description`，不要添加 description。执行时重新预检，不把预览当作审批凭证。
 
 6. **调度**
-   - `odw_upsert_schedule` 配置 cron/时区等；`odw_workflow_schedule_online`（需 preview_token，高危）启用；`odw_workflow_schedule_offline` 停用。
+   - `odw_upsert_schedule` 配置 cron/时区等；`odw_workflow_schedule_online`（高危）启用；`odw_workflow_schedule_offline` 停用。
 
 7. **完善已有表的元数据（批量扫描 + 逐个完善）**
    - 用 `odw_search_tables` / `odw_export_metadata` 扫出注释缺失/薄弱的表，排出待完善清单（复用读工具，无专门扫描接口）。
    - 逐张表：`odw_get_table_ddl` 取字段与现有注释 → 基于 DDL/字段/血缘提案 → `odw_update_table_metadata` 写回（草稿级，`default` 触发确认）。一张一确认，不要一次批量自动写。
-   - 受控属性只填平台清单内编码、`freshness.loaded_at_field` 必须是真实时间列；服务端会丢弃清单外的编码/列并写进 `skipped`，据此纠正后只重试该表。枚举取值本工具不写。详见 `reference/30-tool-recipes.md` 第 7 节。
+   - 受控属性只填平台清单内编码、`freshness.loadedAtField` 必须是真实时间列；服务端会丢弃清单外的编码/列并写进 `skipped`，据此纠正后只重试该表。枚举取值本工具不写。详见 `reference/30-tool-recipes.md` 第 7 节。
 
 8. **失败恢复**
    - 发布失败时读取后端返回的报错与 `workflow_publish_record` 信息，判断是结构问题（回 draft 修改后重走预览）还是引擎问题（提示用户检查 DolphinScheduler 配置）；不要盲目重试同一请求。

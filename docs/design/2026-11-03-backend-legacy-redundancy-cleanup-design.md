@@ -1,7 +1,7 @@
 # 后端与门户历史冗余深度清理设计：持久化收口、Dolphin 目标显式传递与废弃接口下线
 
 - 日期：2026-11-03
-- 状态：已按熵减评审（R8、N1）修订，待实施
+- 状态：已实施；Java / Vue / Python、真实 MySQL / Dolphin / HTTP MCP 验证通过。外部引擎及独立 DataAgent 完整问答覆盖边界见[实施报告](../reports/2026-11-03-backend-consolidation-validation.md)。
 - 关联计划：`docs/plans/2026-11-03-backend-legacy-redundancy-cleanup-plan.md`
 - 协同架构设计（边界严格分离）：`docs/design/2026-11-03-backend-mcp-auth-consolidation-design.md`
 - 关联评审：`docs/reports/2026-11-03-backend-consolidation-entropy-review.md`
@@ -39,7 +39,7 @@
 1. **扩展 `SysUserMapper`**：将用户名全局唯一性计数（含软删除行）、活跃管理员计数、`FOR UPDATE` 行锁、`session_version + 1` 原子递增、重置密码并递增会话版本、软删除并递增会话版本全部定义为 `SysUserMapper` 的 `@Select` / `@Update` 方法。
 2. **新增 `PlatformUserOperation` 实体与 `PlatformUserOperationMapper`**：作为 `platform_user_operation` 审计写入的唯一入口。
 3. **新增 `ServiceAccountToken` 实体与 `ServiceAccountTokenMapper`**：封装 Token 列表、创建、吊销、按 `token_hash` 关联 `sys_user` 认证及 `last_used_at` 更新，移除 `JdbcTemplate` 与弱类型 `Map`。
-4. **新增权限中心 Mapper（`DatasourceAccessPermissionMapper`）**：将 `datasource_access_*` 五张平台 MySQL 表的读写与成员不确定状态计数子查询收口至 MyBatis Mapper；外部数据源原生权限回读改用数据源连接层的标准 JDBC 方法，删除 `PermissionJdbc.java`。
+4. **新增权限中心 Mapper（`DatasourceAccessPermissionMapper`）**：将 `datasource_access_*` 平台 MySQL 表的读写与成员不确定状态计数子查询收口至固定参数化 MyBatis Mapper；既有动态权限视图仍使用 Map，身份、Token 与用户审计采用强类型实体；外部数据源原生权限回读改用数据源连接层的标准 JDBC 方法，删除 `PermissionJdbc.java`。
 5. **DuckDB SQL 契约单测**：通过反射提取上述 Mapper 上的生产 `@Select`/`@Update` SQL，在内存 DuckDB（`jdbc:duckdb:`）中验证契约。
 
 ---
@@ -51,7 +51,7 @@
    - `DolphinSchedulerService.java:63`（`scopedConfig`）与 `DolphinOpenApiClient.java:49`（`scopedConfig`）各自维护了一份 `ThreadLocal<DolphinConfig>`；
    - `DolphinSchedulerService.withConfig` 必须同时绑定两处 ThreadLocal；当上下文为空时，`DolphinSchedulerService.getConfig()` 与 `DolphinOpenApiClient.getWebClient()` 又各自回退去查 `dolphinConfigService.getActiveConfig()`。
 2. **为阻塞调用引入整套 WebFlux**：
-   - 全仓仅 `WebClientConfig` 与 `DolphinOpenApiClient` 使用了 `WebClient`，且所有调用均通过 `.block()` 同步阻塞执行。
+   - 实施核对发现 `HealthCheckService` 也使用 `WebClient`；连同 `WebClientConfig`、`DolphinOpenApiClient` 一起迁移至同步 `RestClient`，保留原有健康检查超时与失败状态语义。
 
 #### 目标态方案
 1. **消除双层 `ThreadLocal<DolphinConfig>`，改为入口解析一次、显式传参（回应 N1）**：
@@ -79,3 +79,7 @@
 | 5. `SqlTableMatcher` 未使用接口 | 从 `SqlTableMatcherController` 删除 `POST /v1/sql-table-matcher/match` 与 `POST /v1/sql-table-matcher/tasks/{taskId}/bind`；从 `SqlTableMatcherService` 删除 `match`、`bindTaskRelations` 及 `SqlTableMatchResponse.java` | 无（前端仅封装了 `/analyze`） | 全仓仅使用 `/v1/sql-table-matcher/analyze` |
 | 6. `DataTable` 5 个未使用接口与表数据导出 | 从 `DataTableController` 删除 `GET /v1/tables/all`、`POST /v1/tables`、`GET /v1/tables/statistics/database/{database}`、`GET /v1/tables/{id}/statistics/history/last7days`、`last30days`、`GET /v1/tables/{id}/export`；从 `DataTableQueryService` 删除对应方法，并**彻底删除 `DataExportService.java` 与 `TableExport.java`**（主收敛设计同步不再保留 `DataExportService`） | 从 `frontend/src/api/table.js` 删除 `listAll`、`create`、`getDatabaseStatistics`、`getLast7DaysHistory`、`getLast30DaysHistory` | 分别已被 `/v1/tables/options`、`POST /v1/table-designer`、带 `limit` 的 `/statistics/history` 替代；`/export` 从未被前端接入 |
 | 7. JDBC 配置命名规范化 | 将被 Doris / MySQL / PostgreSQL 所有连接器共用的 `DorisJdbcProperties` 重命名为通用的 `DatasourceJdbcProperties` | 无 | 消除“MySQL/PG 连接器注入 `DorisJdbcProperties`”的命名错位 |
+
+## 本机真实 Dolphin 3.2.2 验证调整（2026-11-03）
+
+真实 standalone 3.2.2 镜像缺少 MySQL 驱动，验收环境补入 Connector/J 8.0.33 后再运行 SQL DAG。`updateProcessDefinitionBasicInfo` 仅被集成测试使用，3.2.2 没有该端点；删除这条生产死方法，测试通过现有导出和完整定义更新接口模拟外部修改，不增加回退链。导入测试显式传入目标 Dolphin 配置，与当前导入接口契约保持一致。

@@ -1,5 +1,4 @@
 import { reactive, ref, computed } from 'vue'
-import { isWriteRole } from './permissionLabels'
 import { permissionsApi } from '@/api/permissions'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { validateNewUserDraft } from '@/utils/userValidation'
@@ -149,12 +148,6 @@ export function usePermissionMembers({
         authorizeError.value = '请选择启用的平台服务账号'
         return
       }
-      if (
-        authorizeForm.roleIds.some((rid) => isWriteRole(overview.roles.find((r) => r.id === rid)))
-      ) {
-        authorizeError.value = '服务账号只能分配只读角色'
-        return
-      }
 
       authorizing.value = true
       try {
@@ -292,14 +285,6 @@ export function usePermissionMembers({
     if (roleAssignSaving.value || !roleAssignTarget.value) return
     roleAssignError.value = ''
     const target = roleAssignTarget.value
-
-    if (
-      target.subjectType === 'SERVICE' &&
-      roleAssignForm.roleIds.some((rid) => isWriteRole(overview.roles.find((r) => r.id === rid)))
-    ) {
-      roleAssignError.value = '服务账号只能分配只读角色'
-      return
-    }
 
     roleAssignSaving.value = true
     try {

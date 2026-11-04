@@ -9,19 +9,12 @@
 - 开始做某一条时，如果属于中大型变更，先按 AGENTS.md 的流程写 `design/` 和 `plans/`，并在这里附上链接。
 - 做完后把这一条移到文末的"已完成"，保留结果链接，不直接删除。
 
-## Backend MCP 与认证收敛设计复核
-
-- **后端收敛与历史冗余清理设计已收敛，代码实施及验收待执行（2026-11-03）**：原评审 R1～R8、N1～N3 及必要性复核 F1～F5 已按用户“直接改设计”要求同步到[主设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md)、[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)、[清理设计](design/2026-11-03-backend-legacy-redundancy-cleanup-design.md)与[清理计划](plans/2026-11-03-backend-legacy-redundancy-cleanup-plan.md)。当前确定：
-  1. 保留四模块与全部 23 个 MCP 工具，删除 Python/Agent REST 中转层；core 无 HTTP/MCP 协议依赖，保留已有连接工厂与包名。
-  2. USER DDL 使用自身映射，SERVICE DDL 始终使用自身映射；可选用户头只用于只读交集，不借用其写账号，也不冒充已验证的自然人审计主体。
-  3. 删除预览签名、随机密钥与 nonce 消费机制，保留预览和执行时领域预检；`confirmDiff` 显式传入、缺省 false，不由适配层自动确认。
-  4. core 按完整行预算构造并审计唯一结果，不改写单元格；MCP 仅包装并检查工具结果大小，超限返回简短错误，不二次删行、不自动重执行业务。MCP 固定参数与现有 Java/Web 请求统一 camelCase，同名对象直接绑定，删除纯改名映射和旧参数别名；仅保留方法参数提取、包装结构解包与默认值处理。Schema、Skill 配方和回归在实施时同步切换，不改门户全局命名。
-  5. 外部身份来源精确匹配、受信代理链解析、Dolphin 单次目标解析与显式传参、平台 Mapper 收口和死代码清理已明确唯一任务归属；保留 SDK 所需 Reactor 依赖。
-  以上仅完成设计/计划与文档检查；业务代码尚未迁移，真实 MySQL/Dolphin/MCP/DataAgent 及 PG/Doris 覆盖仍按计划验证。完成实施与验收后再移至“已完成”。来源：[评审记录及当前状态](reports/2026-11-03-backend-consolidation-entropy-review.md#当前收敛状态)。
-
 ## 权限与数据源
 
 ### 权限中心剩余验证与边界
+
+- **本轮后端收敛的外部完整链路覆盖（2026-11-03）**：真实 MySQL、Dolphin 3.2.2 与全部 23 个 HTTP MCP handler 已验证；本机当前没有可调用的独立 DataAgent 8900 服务或 Doris 实例，本轮未复跑真实模型最终消息和 PostgreSQL/Doris 权限、DDL 全流程。需在独立 DataAgent 完成 MCP URL/Schema 刷新后验证完整问答及消息持久化，在 PostgreSQL/Doris 环境复跑原生权限与 DDL；生产快照升级、生产代理拓扑也需部署环境验收。没有将这些路径计为本轮通过。来源：[实施报告](reports/2026-11-03-backend-consolidation-validation.md)，关联[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)。
+
 
 - **平台用户与服务账号功能权限模型（RBAC）**（2026-11-03 用户决策登记）：在尚未设计平台级用户功能权限的前提下，23 个 MCP 工具（含工作流/任务查询、SQL 分析、表设计、草稿编辑及执行时重新预检的发布/上线）对已通过认证的服务账号保持可用，不再硬编码拦截为 403（数据源原生库/表/列权限与物理 DDL 映射账号校验仍严格生效）。后续需独立设计平台级功能权限体系（涵盖门户用户与服务账号对工作流、任务、建表、元数据修改等平台资源与 MCP 工具动作的细粒度授权与审计）。关联：[主收敛设计 §2.2](design/2026-11-03-backend-mcp-auth-consolidation-design.md#22-非目标与待办边界out-of-scope)、[历史验证报告](reports/2026-11-03-dataagent-widget-question-verification.md)、[设计11](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)。
 - **PG／Doris服务Token真实回归**（2026-11-02验证范围）：本轮服务账号Bearer到MCP与原生库的完整验收使用MySQL；PG此前原生角色／问数已验收，但新SERVICE身份与Token链路未在本轮重新建立真实PG环境，Doris仍无实例。需在对应环境复跑服务独立查询、可选人交集、视图、撤销和只读拒绝；当前不将SQL契约及MySQL结果记作这些引擎的真实验收。[报告](reports/2026-11-02-service-accounts-verification.md)。
@@ -97,6 +90,11 @@
 - **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份；2026-10-29 统一权限设计已选定短期签名身份断言与 DataAgent 验签，不再同时规划 nginx auth_request 后备路径。该修复已按用户2026-11-01要求延期，并非本轮本机功能验收前置；生产可信委托仍需实施[统一权限中心设计](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)的交付前提，尚未实施。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
 
 ## 已完成
+
+### Backend 四模块、内置 MCP 与认证收敛
+
+2026-11-03 完成 PR #493 的代码实施：Java 17 / Boot 3.5.7 四模块、统一主体上下文和 HTTP 认证、23 个内置 MCP 工具、原生访问身份守恒、完整行查询预算、平台 Mapper 与显式 Dolphin 目标、历史接口及部署清理。Java 596 项、真实 Dolphin/MySQL 集成 7 项、Vue 480 项、Python 13 项以及真实 HTTP 验收通过；工具/Skill 同步为顶层 camelCase 参数。设计复核 R1～R8、N1～N3、F1～F5 的结果见[实施报告](reports/2026-11-03-backend-consolidation-validation.md)、[主设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md)、[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)、[清理设计](design/2026-11-03-backend-legacy-redundancy-cleanup-design.md)、[清理计划](plans/2026-11-03-backend-legacy-redundancy-cleanup-plan.md)。原“代码待实施”条目迁至此处；外部环境剩余验证另列下方待办。
+
 
 ### 废弃智能体身份请求头残留清理
 

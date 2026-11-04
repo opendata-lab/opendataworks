@@ -1,12 +1,14 @@
 # 测试与质量
 
+Java 17 四模块构建、内置 MCP 和本地前后端运行见[后端运行说明](backend-runtime.md)。
+
 整合 `MANUAL_TEST_GUIDE.md`、`workflow-integration-test-guide.md`、`integration-test-summary.md`、`TASK_EXECUTION_WORKFLOW_LIFECYCLE.md`、`BROWSER_TEST_RESULTS.md` 中的信息，形成可执行的质量指引。
 
 ## 测试分层
 
 | 层级 | 覆盖内容 | 入口 |
 | --- | --- | --- |
-| 单元/服务测试 | Mapper、Service、调度编排 | `mvn -f pom.xml -pl backend -am test`，可通过 `-Dtest=TaskExecutionWorkflowTest` 定点 |
+| 单元/服务测试 | Mapper、Service、调度编排 | `mvn -f backend/pom.xml -Dtest='*Test,!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false test`，可通过 `-Dtest=WorkflowExecutionServiceTest` 定点 |
 | 集成测试 | 真正调用 DolphinScheduler OpenAPI、MySQL | `backend/scripts/run-integration-test.sh` |
 | 手工回归 | 浏览器操作、工作流生命周期、异常场景 | 本指南 “手工测试剧本” |
 | 前端冒烟 | 关键页面渲染、交互 | `docs/reports/BROWSER_TEST_RESULTS.md` 中列出的脚本 |
@@ -51,8 +53,8 @@
 | 脚本 | 功能 |
 | --- | --- |
 | `backend/scripts/prepare-test-env.sh` | 校验 DolphinScheduler 连接并给出基础环境准备提示（遗留脚本） |
-| `backend/scripts/run-integration-test.sh` | Dolphin 集成测试快捷入口（当前默认测试类较老，建议使用下方 Maven 命令） |
-| `mvn -f backend/pom.xml -Dtest=WorkflowRuntimeDiffServiceTest,WorkflowRuntimeSyncServicePreviewTest,WorkflowVersionOperationServiceTest,WorkflowRuntimeSyncRealIntegrationTest -DfailIfNoTests=false test` | 运行运行态同步/版本治理完整集成回归 |
+| `backend/scripts/run-integration-test.sh` | 真实 WorkflowRuntimeSync 集成测试入口 |
+| `mvn -f backend/pom.xml -Dtest=WorkflowRuntimeDiffServiceTest,WorkflowRuntimeSyncServicePreviewTest,WorkflowVersionOperationServiceTest,WorkflowRuntimeSyncRealIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test` | 运行运行态同步/版本治理完整集成回归 |
 
 运行示例：
 
@@ -60,7 +62,7 @@
 # 推荐：直接运行完整回归集
 mvn -f backend/pom.xml \
   -Dtest=WorkflowRuntimeDiffServiceTest,WorkflowRuntimeSyncServicePreviewTest,WorkflowVersionOperationServiceTest,WorkflowRuntimeSyncRealIntegrationTest \
-  -DfailIfNoTests=false test
+  -Dsurefire.failIfNoSpecifiedTests=false test
 ```
 
 ## DolphinScheduler 集成测试
@@ -73,10 +75,10 @@ mvn -f backend/pom.xml \
 - 真实执行校验：在真实 MySQL 表上执行工作流并核对结果数据。
 
 ### 关键测试类
-- `backend/src/test/java/com/onedata/portal/service/WorkflowRuntimeSyncRealIntegrationTest.java`
-- `backend/src/test/java/com/onedata/portal/service/WorkflowRuntimeSyncServicePreviewTest.java`
-- `backend/src/test/java/com/onedata/portal/service/WorkflowRuntimeDiffServiceTest.java`
-- `backend/src/test/java/com/onedata/portal/service/WorkflowVersionOperationServiceTest.java`
+- `backend/app/src/test/java/com/onedata/portal/service/WorkflowRuntimeSyncRealIntegrationTest.java`
+- `backend/core/src/test/java/com/onedata/portal/service/WorkflowRuntimeSyncServicePreviewTest.java`
+- `backend/core/src/test/java/com/onedata/portal/service/WorkflowRuntimeDiffServiceTest.java`
+- `backend/core/src/test/java/com/onedata/portal/service/WorkflowVersionOperationServiceTest.java`
 
 ### 测试前准备
 1. 启动 DolphinScheduler，本地默认地址 `http://localhost:12345/dolphinscheduler`。
@@ -104,9 +106,9 @@ export IT_MYSQL_PASSWORD=opendataworks123
 
 ### 执行方式
 - 推荐：  
-  `mvn -f backend/pom.xml -Dtest=WorkflowRuntimeDiffServiceTest,WorkflowRuntimeSyncServicePreviewTest,WorkflowVersionOperationServiceTest,WorkflowRuntimeSyncRealIntegrationTest -DfailIfNoTests=false test`
+  `mvn -f backend/pom.xml -Dtest=WorkflowRuntimeDiffServiceTest,WorkflowRuntimeSyncServicePreviewTest,WorkflowVersionOperationServiceTest,WorkflowRuntimeSyncRealIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test`
 - 仅跑真实运行态同步集成：  
-  `mvn -f backend/pom.xml -Dtest=WorkflowRuntimeSyncRealIntegrationTest -DfailIfNoTests=false test`
+  `mvn -f backend/pom.xml -Dtest=WorkflowRuntimeSyncRealIntegrationTest -Dsurefire.failIfNoSpecifiedTests=false test`
 - IDE：直接运行上述四个测试类；排查时可打开 `-Dlogging.level.com.onedata.portal=DEBUG`。
 
 ### 必测场景清单（运行态同步）

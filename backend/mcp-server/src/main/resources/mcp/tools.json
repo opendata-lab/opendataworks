@@ -1,0 +1,1381 @@
+[
+  {
+    "name": "odw_search_tables",
+    "description": "Search OpenDataWorks tables by database, table name, or comment keyword.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。"
+        },
+        "database": {
+          "type": "string",
+          "description": "数据库名，可选"
+        },
+        "table": {
+          "type": "string",
+          "description": "表名，可选"
+        },
+        "keyword": {
+          "type": "string",
+          "description": "表注释、字段注释或字段名关键字，可选"
+        },
+        "tableLimit": {
+          "type": "integer",
+          "default": 12,
+          "minimum": 1,
+          "maximum": 100,
+          "description": "返回表数量上限"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_get_lineage",
+    "description": "Get lineage information for a table by table name or table id.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。"
+        },
+        "table": {
+          "type": "string",
+          "description": "表名，可选"
+        },
+        "dbName": {
+          "type": "string",
+          "description": "数据库名，可选"
+        },
+        "tableId": {
+          "type": "integer",
+          "description": "表 ID，可选"
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "description": "血缘深度，可选"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "table"
+          ]
+        },
+        {
+          "required": [
+            "tableId"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "odw_resolve_datasource",
+    "description": "Resolve datasource summary and routing metadata for a database.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。"
+        },
+        "database": {
+          "type": "string",
+          "description": "数据库名"
+        },
+        "preferredEngine": {
+          "type": "string",
+          "enum": [
+            "mysql",
+            "doris",
+            "postgresql"
+          ],
+          "description": "期望引擎，可选"
+        }
+      },
+      "required": [
+        "database"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_export_metadata",
+    "description": "Export metadata rows for tables, lineage, or datasource records.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "tables",
+            "lineage",
+            "datasource"
+          ],
+          "description": "导出类型"
+        },
+        "database": {
+          "type": "string",
+          "description": "数据库过滤条件，可选"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_get_table_ddl",
+    "description": "Get live table DDL together with OpenDataWorks metadata summary.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。"
+        },
+        "database": {
+          "type": "string",
+          "description": "数据库名，可选"
+        },
+        "table": {
+          "type": "string",
+          "description": "表名，可选"
+        },
+        "tableId": {
+          "type": "integer",
+          "description": "表 ID，可选"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "tableId"
+          ]
+        },
+        {
+          "required": [
+            "database",
+            "table"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "odw_query_readonly",
+    "description": "Execute a single read-only SQL query through the backend read-only query path.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图说明，仅用于前端展示，例如“搜索订单相关表”；不参与查询逻辑。"
+        },
+        "database": {
+          "type": "string",
+          "description": "数据库名"
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "description": "单条只读 SQL"
+        },
+        "preferredEngine": {
+          "type": "string",
+          "enum": [
+            "mysql",
+            "doris",
+            "postgresql"
+          ],
+          "description": "期望引擎，可选"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 1000,
+          "minimum": 1,
+          "maximum": 10000,
+          "description": "结果返回上限"
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "default": 30,
+          "minimum": 1,
+          "maximum": 120,
+          "description": "单次查询超时秒数"
+        }
+      },
+      "required": [
+        "database",
+        "sql"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_preview_create_table",
+    "description": "Preview a new target table: returns the generated table name and normalized CREATE TABLE DDL without creating anything. Follow the data-dev skill DDL standards; use before odw_create_table.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "dbName": {
+          "type": "string",
+          "description": "目标数据库名"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "columnName": {
+                "type": "string",
+                "description": "列名"
+              },
+              "dataType": {
+                "type": "string",
+                "description": "数据类型,如 BIGINT/VARCHAR/DECIMAL/DATETIME/STRING"
+              },
+              "typeParams": {
+                "type": "string",
+                "description": "类型参数,如 '64'(VARCHAR)或 '18,2'(DECIMAL)"
+              },
+              "nullable": {
+                "type": "boolean",
+                "description": "是否可空,默认可空"
+              },
+              "primaryKey": {
+                "type": "boolean",
+                "description": "是否为 KEY/主键列"
+              },
+              "partitionColumn": {
+                "type": "boolean",
+                "description": "是否为分区列"
+              },
+              "defaultValue": {
+                "type": "string",
+                "description": "默认值"
+              },
+              "comment": {
+                "type": "string",
+                "description": "列注释"
+              }
+            },
+            "required": [
+              "columnName",
+              "dataType"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "description": "列定义(至少一列),每列建议带 comment"
+        },
+        "layer": {
+          "type": "string",
+          "description": "数仓分层:ods/dwd/dws/dim/ads,用于生成表名"
+        },
+        "businessDomain": {
+          "type": "string",
+          "description": "业务域,用于生成表名"
+        },
+        "dataDomain": {
+          "type": "string",
+          "description": "数据域,用于生成表名"
+        },
+        "customIdentifier": {
+          "type": "string",
+          "description": "自定义标识,用于生成表名"
+        },
+        "statisticsCycle": {
+          "type": "string",
+          "description": "统计周期,用于生成表名"
+        },
+        "updateType": {
+          "type": "string",
+          "description": "刷新方式,如 di(按日增量)/df(按日全量)"
+        },
+        "tableComment": {
+          "type": "string",
+          "description": "表注释"
+        },
+        "owner": {
+          "type": "string",
+          "description": "负责人,可选(默认取调用者身份)"
+        },
+        "tableModel": {
+          "type": "string",
+          "description": "Doris 表模型:DUPLICATE(默认/明细)/AGGREGATE/UNIQUE"
+        },
+        "bucketNum": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "分桶数,默认 10"
+        },
+        "replicaNum": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "副本数,默认 3(本地/测试用 1)"
+        },
+        "partitionColumn": {
+          "type": "string",
+          "description": "分区列(RANGE 分区)"
+        },
+        "distributionColumns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "分桶键(DISTRIBUTED BY HASH)"
+        },
+        "keyColumns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "KEY 列(表模型 KEY(...),顺序敏感)"
+        },
+        "dorisClusterId": {
+          "type": "integer",
+          "description": "目标 Doris 集群/数据源 ID;执行建表必填,预览可省"
+        },
+        "syncToDoris": {
+          "type": "boolean",
+          "description": "是否在引擎执行建表;默认执行,置 false 仅登记元数据"
+        },
+        "dorisDdl": {
+          "type": "string",
+          "description": "高级:直接提供完整 Doris CREATE TABLE DDL"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "dbName",
+        "columns"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_create_table",
+    "description": "Create a new target table: persist metadata and execute the DDL on the engine (Doris). High-risk and irreversible; requires dorisClusterId to execute. Preview first with odw_preview_create_table.",
+    "readOnly": false,
+    "destructive": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "dbName": {
+          "type": "string",
+          "description": "目标数据库名"
+        },
+        "columns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "columnName": {
+                "type": "string",
+                "description": "列名"
+              },
+              "dataType": {
+                "type": "string",
+                "description": "数据类型,如 BIGINT/VARCHAR/DECIMAL/DATETIME/STRING"
+              },
+              "typeParams": {
+                "type": "string",
+                "description": "类型参数,如 '64'(VARCHAR)或 '18,2'(DECIMAL)"
+              },
+              "nullable": {
+                "type": "boolean",
+                "description": "是否可空,默认可空"
+              },
+              "primaryKey": {
+                "type": "boolean",
+                "description": "是否为 KEY/主键列"
+              },
+              "partitionColumn": {
+                "type": "boolean",
+                "description": "是否为分区列"
+              },
+              "defaultValue": {
+                "type": "string",
+                "description": "默认值"
+              },
+              "comment": {
+                "type": "string",
+                "description": "列注释"
+              }
+            },
+            "required": [
+              "columnName",
+              "dataType"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "description": "列定义(至少一列),每列建议带 comment"
+        },
+        "layer": {
+          "type": "string",
+          "description": "数仓分层:ods/dwd/dws/dim/ads,用于生成表名"
+        },
+        "businessDomain": {
+          "type": "string",
+          "description": "业务域,用于生成表名"
+        },
+        "dataDomain": {
+          "type": "string",
+          "description": "数据域,用于生成表名"
+        },
+        "customIdentifier": {
+          "type": "string",
+          "description": "自定义标识,用于生成表名"
+        },
+        "statisticsCycle": {
+          "type": "string",
+          "description": "统计周期,用于生成表名"
+        },
+        "updateType": {
+          "type": "string",
+          "description": "刷新方式,如 di(按日增量)/df(按日全量)"
+        },
+        "tableComment": {
+          "type": "string",
+          "description": "表注释"
+        },
+        "owner": {
+          "type": "string",
+          "description": "负责人,可选(默认取调用者身份)"
+        },
+        "tableModel": {
+          "type": "string",
+          "description": "Doris 表模型:DUPLICATE(默认/明细)/AGGREGATE/UNIQUE"
+        },
+        "bucketNum": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "分桶数,默认 10"
+        },
+        "replicaNum": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "副本数,默认 3(本地/测试用 1)"
+        },
+        "partitionColumn": {
+          "type": "string",
+          "description": "分区列(RANGE 分区)"
+        },
+        "distributionColumns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "分桶键(DISTRIBUTED BY HASH)"
+        },
+        "keyColumns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "KEY 列(表模型 KEY(...),顺序敏感)"
+        },
+        "dorisClusterId": {
+          "type": "integer",
+          "description": "目标 Doris 集群/数据源 ID;执行建表必填,预览可省"
+        },
+        "syncToDoris": {
+          "type": "boolean",
+          "description": "是否在引擎执行建表;默认执行,置 false 仅登记元数据"
+        },
+        "dorisDdl": {
+          "type": "string",
+          "description": "高级:直接提供完整 Doris CREATE TABLE DDL"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "dbName",
+        "columns",
+        "dorisClusterId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_update_table_metadata",
+    "description": "Complete the metadata of an existing table: table comment, controlled attributes (layer / business-domain / data-domain), per-field comments, and the data-freshness contract. Locate the table by tableId (preferred) or database + table. Discover weak/missing metadata first with odw_search_tables / odw_export_metadata, then read context with odw_get_table_ddl. Controlled values outside the platform lists are dropped server-side; freshness loadedAtField must be a real column. Each section is applied independently and the result lists applied / skipped / failed.",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tableId": {
+          "type": "integer",
+          "description": "表 ID(优先)"
+        },
+        "database": {
+          "type": "string",
+          "description": "库名(与 table 一起在缺 table_id 时定位)"
+        },
+        "table": {
+          "type": "string",
+          "description": "表名(与 database 一起在缺 table_id 时定位)"
+        },
+        "tableComment": {
+          "type": "string",
+          "description": "表业务描述"
+        },
+        "attributes": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "description": "数仓分层:ODS/DWD/DIM/DWS/ADS(清单外一律丢弃)"
+            },
+            "businessDomain": {
+              "type": "string",
+              "description": "业务域编码(必须是平台已有编码)"
+            },
+            "dataDomain": {
+              "type": "string",
+              "description": "数据域编码(必须存在且归属所选业务域)"
+            }
+          },
+          "required": [],
+          "additionalProperties": false,
+          "description": "受控属性:分层/业务域/数据域"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fieldName": {
+                "type": "string",
+                "description": "字段名(与 field_id 二选一)"
+              },
+              "fieldId": {
+                "type": "integer",
+                "description": "字段 ID(与 field_name 二选一)"
+              },
+              "comment": {
+                "type": "string",
+                "description": "字段业务注释"
+              }
+            },
+            "required": [
+              "comment"
+            ],
+            "additionalProperties": false
+          },
+          "description": "逐字段注释"
+        },
+        "freshness": {
+          "type": "object",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": [
+                "column",
+                "custom_sql",
+                "metadata"
+              ],
+              "description": "取值方式,默认 column"
+            },
+            "loadedAtField": {
+              "type": "string",
+              "description": "column 模式:取最大值的时间列(必须是真实字段)"
+            },
+            "loadedAtQuery": {
+              "type": "string",
+              "description": "custom_sql 模式:返回最新时间的 SQL"
+            },
+            "filterExpr": {
+              "type": "string",
+              "description": "可选 WHERE 谓词"
+            },
+            "warnAfterCount": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "预警阈值数量,默认 1"
+            },
+            "warnAfterPeriod": {
+              "type": "string",
+              "enum": [
+                "minute",
+                "hour",
+                "day"
+              ],
+              "description": "预警阈值单位,默认 day"
+            },
+            "errorAfterCount": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "过期阈值数量,默认 1"
+            },
+            "errorAfterPeriod": {
+              "type": "string",
+              "enum": [
+                "minute",
+                "hour",
+                "day"
+              ],
+              "description": "过期阈值单位,默认 day"
+            },
+            "enabled": {
+              "type": "boolean",
+              "description": "是否启用,默认 true"
+            }
+          },
+          "required": [],
+          "additionalProperties": false,
+          "description": "数据新鲜度契约"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [],
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "tableId"
+          ]
+        },
+        {
+          "required": [
+            "database",
+            "table"
+          ]
+        }
+      ]
+    }
+  },
+  {
+    "name": "odw_create_task",
+    "description": "Create a draft data-development task (e.g. a SQL task). Both input_tableIds and output_tableIds must be provided explicitly; pass [] for no inputs, and at least one output id.",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "type": "object",
+          "properties": {
+            "taskName": {
+              "type": "string"
+            },
+            "taskCode": {
+              "type": "string"
+            },
+            "taskType": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "dolphinNodeType": {
+              "type": "string"
+            },
+            "datasourceName": {
+              "type": "string"
+            },
+            "datasourceType": {
+              "type": "string"
+            },
+            "taskGroupName": {
+              "type": "string"
+            },
+            "targetDatasourceName": {
+              "type": "string"
+            },
+            "sourceTable": {
+              "type": "string"
+            },
+            "targetTable": {
+              "type": "string"
+            },
+            "columnMapping": {
+              "type": "string"
+            },
+            "taskSql": {
+              "type": "string"
+            },
+            "taskDesc": {
+              "type": "string"
+            },
+            "scheduleCron": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "type": "integer"
+            },
+            "retryTimes": {
+              "type": "integer"
+            },
+            "retryInterval": {
+              "type": "integer"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "dolphinFlag": {
+              "type": "string"
+            },
+            "workflowId": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "inputTableIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "输入表 ID 列表(维护血缘);无输入表时显式传 []"
+        },
+        "outputTableIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "输出表 ID 列表(维护血缘);至少一个",
+          "minItems": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "task",
+        "inputTableIds",
+        "outputTableIds"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_update_task",
+    "description": "Update a draft task definition. Lineage lists are full replacements: omit a side to keep its existing lineage, pass a full array to replace it. Never pass a partial list — omitted table ids are deleted.",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "integer",
+          "description": "任务 ID"
+        },
+        "task": {
+          "type": "object",
+          "properties": {
+            "taskName": {
+              "type": "string"
+            },
+            "taskCode": {
+              "type": "string"
+            },
+            "taskType": {
+              "type": "string"
+            },
+            "engine": {
+              "type": "string"
+            },
+            "dolphinNodeType": {
+              "type": "string"
+            },
+            "datasourceName": {
+              "type": "string"
+            },
+            "datasourceType": {
+              "type": "string"
+            },
+            "taskGroupName": {
+              "type": "string"
+            },
+            "targetDatasourceName": {
+              "type": "string"
+            },
+            "sourceTable": {
+              "type": "string"
+            },
+            "targetTable": {
+              "type": "string"
+            },
+            "columnMapping": {
+              "type": "string"
+            },
+            "taskSql": {
+              "type": "string"
+            },
+            "taskDesc": {
+              "type": "string"
+            },
+            "scheduleCron": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "integer"
+            },
+            "timeoutSeconds": {
+              "type": "integer"
+            },
+            "retryTimes": {
+              "type": "integer"
+            },
+            "retryInterval": {
+              "type": "integer"
+            },
+            "owner": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "dolphinFlag": {
+              "type": "string"
+            },
+            "workflowId": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "inputTableIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "输入表 ID 全量列表;省略表示保留原有输入血缘,传数组表示全量替换,传 [] 表示清空"
+        },
+        "outputTableIds": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "description": "输出表 ID 全量列表;省略表示保留原有输出血缘,传数组表示全量替换;不可清空",
+          "minItems": 1
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "taskId",
+        "task"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_get_task",
+    "description": "Get a task's detail by id.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "taskId": {
+          "type": "integer",
+          "description": "任务 ID"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "taskId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_list_tasks",
+    "description": "List tasks with optional keyword/status filters.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "keyword": {
+          "type": "string",
+          "description": "名称/编码关键字,可选"
+        },
+        "status": {
+          "type": "string",
+          "description": "状态过滤,可选"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "返回数量上限"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_create_workflow",
+    "description": "Create a draft workflow with its task bindings and edges.",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflow": {
+          "type": "object",
+          "properties": {
+            "workflowName": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "definitionJson": {
+              "type": "string"
+            },
+            "globalParams": {
+              "type": "string"
+            },
+            "taskGroupName": {
+              "type": "string"
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "taskId": {
+                    "type": "integer"
+                  },
+                  "entry": {
+                    "type": "boolean"
+                  },
+                  "exit": {
+                    "type": "boolean"
+                  },
+                  "nodeAttrs": {
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "triggerSource": {
+              "type": "string"
+            },
+            "dolphinConfigId": {
+              "type": "integer"
+            },
+            "projectCode": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflow"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_update_workflow",
+    "description": "Update a draft workflow's structure.",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "workflow": {
+          "type": "object",
+          "properties": {
+            "workflowName": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "definitionJson": {
+              "type": "string"
+            },
+            "globalParams": {
+              "type": "string"
+            },
+            "taskGroupName": {
+              "type": "string"
+            },
+            "tasks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "taskId": {
+                    "type": "integer"
+                  },
+                  "entry": {
+                    "type": "boolean"
+                  },
+                  "exit": {
+                    "type": "boolean"
+                  },
+                  "nodeAttrs": {
+                    "type": "object"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "triggerSource": {
+              "type": "string"
+            },
+            "dolphinConfigId": {
+              "type": "integer"
+            },
+            "projectCode": {
+              "type": "integer"
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflowId",
+        "workflow"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_get_workflow",
+    "description": "Get a workflow's detail (tasks, edges, latest instance).",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_list_workflows",
+    "description": "List workflows with optional keyword/status filters.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "keyword": {
+          "type": "string",
+          "description": "名称/编码关键字,可选"
+        },
+        "status": {
+          "type": "string",
+          "description": "状态过滤,可选"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "返回数量上限"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_preview_publish",
+    "description": "Preview publish validation, runtime differences, warnings, and whether confirmation is required. Publishing always runs validation again.",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_publish_workflow",
+    "description": "Deploy, bring online, or take offline a workflow in DolphinScheduler. Preview first and obtain user confirmation. Set confirmDiff=true only after accepting the displayed differences; execution reruns validation.",
+    "readOnly": false,
+    "destructive": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "operation": {
+          "type": "string",
+          "enum": [
+            "deploy",
+            "online",
+            "offline"
+          ],
+          "description": "发布操作"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        },
+        "confirmDiff": {
+          "type": "boolean",
+          "default": false,
+          "description": "显式接受当前发布差异；不代表用户审批"
+        }
+      },
+      "required": [
+        "workflowId",
+        "operation"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_upsert_schedule",
+    "description": "Create or update a workflow's schedule configuration (cron/timezone/etc.).",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "schedule": {
+          "type": "object",
+          "properties": {
+            "scheduleCron": {
+              "type": "string"
+            },
+            "scheduleTimezone": {
+              "type": "string"
+            },
+            "scheduleStartTime": {
+              "type": "string"
+            },
+            "scheduleEndTime": {
+              "type": "string"
+            },
+            "scheduleFailureStrategy": {
+              "type": "string"
+            },
+            "scheduleWarningType": {
+              "type": "string"
+            },
+            "scheduleWarningGroupId": {
+              "type": "integer"
+            },
+            "scheduleProcessInstancePriority": {
+              "type": "string"
+            },
+            "scheduleWorkerGroup": {
+              "type": "string"
+            },
+            "scheduleTenantCode": {
+              "type": "string"
+            },
+            "scheduleEnvironmentCode": {
+              "type": "integer"
+            },
+            "scheduleAutoOnline": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": false
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflowId",
+        "schedule"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_workflow_schedule_online",
+    "description": "Enable the workflow cron schedule after user confirmation. Execution runs the current publish and schedule checks again.",
+    "readOnly": false,
+    "destructive": true,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_workflow_schedule_offline",
+    "description": "Disable a workflow's schedule.",
+    "readOnly": false,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "workflowId": {
+          "type": "integer",
+          "description": "工作流 ID"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "workflowId"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "odw_analyze_sql",
+    "description": "Analyze a SQL statement: input/output tables, operation type, and warnings (for SQL polish and lineage).",
+    "readOnly": true,
+    "destructive": false,
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "description": "待分析 SQL"
+        },
+        "database": {
+          "type": "string",
+          "description": "数据库名,可选"
+        },
+        "clusterId": {
+          "type": "integer",
+          "description": "集群 ID,可选"
+        },
+        "description": {
+          "type": "string",
+          "description": "本次工具调用的简短中文意图，仅用于展示"
+        }
+      },
+      "required": [
+        "sql"
+      ],
+      "additionalProperties": false
+    }
+  }
+]

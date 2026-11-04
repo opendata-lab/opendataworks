@@ -1,7 +1,7 @@
 # 后端与门户历史冗余深度清理执行计划：持久化收口、Dolphin 目标显式传递与废弃接口下线
 
 - 日期：2026-11-03
-- 状态：已按熵减评审（R8、N1）修订，待执行
+- 状态：已实施；Java / Vue / Python、真实 MySQL / Dolphin / HTTP MCP 验证通过。外部引擎及独立 DataAgent 完整问答覆盖边界见[实施报告](../reports/2026-11-03-backend-consolidation-validation.md)。
 - 关联设计：`docs/design/2026-11-03-backend-legacy-redundancy-cleanup-design.md`
 - 前置/协同计划：`docs/plans/2026-11-03-backend-mcp-auth-consolidation-plan.md`（认证过滤链、白名单收窄、匿名回退移除、数据源主体访问与只读 SQL 守卫归属主收敛计划；本计划专注平台表 Mapper 收口、Dolphin 双 `ThreadLocal` 消除与 `RestClient` 切换、以及废弃接口/死代码清理）
 - 受影响栈：
@@ -23,7 +23,7 @@
 3. **新增 `ServiceAccountToken` 实体、`ServiceAccountTokenDto` 与 `ServiceAccountTokenMapper`**：
    - 将 `ServiceAccountTokenService` 中的 `list`、`insert`、`selectByTokenHash`、`revoke`、`authenticate` 及 `touchLastUsedAt` 全部收口至 `ServiceAccountTokenMapper`，移除 `JdbcTemplate` 与弱类型 `Map<String, Object>`。
 4. **收口权限中心 5 张表至 MyBatis Mapper 并删除 `PermissionJdbc`**：
-   - 为 `datasource_access_role`、`datasource_access_grant`、`datasource_access_member`、`datasource_access_member_role`、`datasource_access_audit_log` 建立对应的 Entity / Mapper（含成员不确定状态计数子查询），移除 `DatasourcePermissionService` 中的裸 `JdbcTemplate`；
+   - 为 `datasource_access_role`、`datasource_access_grant`、`datasource_access_member`、`datasource_access_member_role`、`datasource_access_audit_log` 通过固定、命名明确的参数化 Mapper 语句收口（含成员不确定状态计数子查询），保留既有权限中心动态视图 Map 契约以避免额外改写前端接口，移除 `DatasourcePermissionService` 中的裸 `JdbcTemplate`；
    - 外部数据源连接上的原生权限回读统一调用数据源连接层提供的标准 JDBC 查询方法，删除 `PermissionJdbc.java`。
 5. **编写 DuckDB 内存 SQL 契约单测**：
    - 通过反射读取新增 Mapper 方法上的 `@Select`/`@Update` 注解 SQL，在内存 DuckDB（`jdbc:duckdb:`）中验证语法与结果契约。
@@ -40,7 +40,7 @@
    - 将 `DolphinConfig` 显式作为参数传递给 `DolphinOpenApiClient` 的所有请求方法，`DolphinOpenApiClient` 内部不再自行回退查询默认配置。
 2. **用 Spring Boot 3.5 原生同步 `RestClient` 替换 `WebClient`（回应 R8）**：
    - 将 `DolphinOpenApiClient` 中的 `WebClient` 缓存与 `.retrieve().bodyToMono(...).block()` 全部替换为基于 `JdkClientHttpRequestFactory` 的同步 `RestClient` 与 `.retrieve().body(...)`；
-   - 将 `GlobalExceptionHandler` 中的 `WebClientResponseException` 替换为 `RestClientResponseException`，删除 `WebClientConfig.java`；
+   - 同步迁移 `HealthCheckService` 的健康检查请求到 `RestClient`，保留 5 秒/10 秒超时与异常状态；将 `GlobalExceptionHandler` 中的 `WebClientResponseException` 替换为 `RestClientResponseException`，删除 `WebClientConfig.java`；
    - 从 `pom.xml` 移除 `spring-boot-starter-webflux`（注：验证时确认 `spring-boot-starter-webflux` 与 `reactor-netty` 已移除；`mcp-server` 因官方 `mcp-core` SDK 传递引入 `reactor-core` 属正常依赖，不做排除）。
 3. **重命名通用 JDBC 配置类**：
    - 将多引擎共用的 `DorisJdbcProperties` 重命名为 `DatasourceJdbcProperties`。
@@ -101,3 +101,7 @@
 
 1. **上线**：随主收敛计划在同一交付周期内按“Task 1（Mapper 收口）→ Task 3（死代码清理）→ 主计划 Boot 3 升级 → Task 2（Dolphin 显式目标与 `RestClient`）”顺序推进并验收。
 2. **回滚**：若出现异常，整体回退至上一版前后端构建产物与配置。
+
+## 本机真实 Dolphin 3.2.2 验证调整（2026-11-03）
+
+真实 standalone 3.2.2 镜像缺少 MySQL 驱动，验收环境补入 Connector/J 8.0.33 后再运行 SQL DAG。`updateProcessDefinitionBasicInfo` 仅被集成测试使用，3.2.2 没有该端点；删除这条生产死方法，测试通过现有导出和完整定义更新接口模拟外部修改，不增加回退链。导入测试显式传入目标 Dolphin 配置，与当前导入接口契约保持一致。

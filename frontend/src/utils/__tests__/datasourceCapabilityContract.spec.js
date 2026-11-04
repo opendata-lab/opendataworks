@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const sourceRoot = resolve(process.cwd(), 'src')
-const baseline = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/src/test/resources/datasource-descriptors.json'), 'utf8'))
+const baseline = JSON.parse(readFileSync(resolve(process.cwd(), '../backend/app/src/test/resources/datasource-descriptors.json'), 'utf8'))
 const files = directory => readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
   if (entry.name === '__tests__') return []
   const path = join(directory, entry.name)

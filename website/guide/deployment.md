@@ -45,7 +45,7 @@ docker compose -f deploy/docker-compose.dev.yml up -d
 3. **服务状态验证**：
    * 前端 UI: `http://<服务器IP>:8081`
    * 后端 API: `http://<服务器IP>:8080/api`
-   * ODW MCP Server: `http://<服务器IP>:8801/health`
+   * 内置 MCP（与后端共用健康检查）: `http://<服务器IP>:8080/api/v1/health`
 
 ---
 

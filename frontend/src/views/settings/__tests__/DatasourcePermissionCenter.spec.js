@@ -279,7 +279,7 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     return wrapper
   }
 
-  it('默认打开成员页签，支持成员分配多个角色，且禁止服务账号选择含写入的角色', async () => {
+  it('默认打开成员页签，支持成员分配多个角色，服务账号也可选择获授权的读写角色', async () => {
     const wrapper = await mountCenter()
     const vm = feature(wrapper, 'memberState')
 
@@ -301,13 +301,14 @@ describe('DatasourcePermissionCenter 组件测试', () => {
       expectedRevision: 4,
     })
 
-    // 服务账号尝试选择读写角色应被拦截
+    // 服务账号写权限由所分配的原生角色决定
     const agentMember = wrapper.vm.overview.members[1]
     vm.openRoleAssignDialog(agentMember)
     vm.roleAssignForm.roleIds = [101, 103]
     await vm.submitRoleAssign()
-    expect(vm.roleAssignError).toContain('服务账号只能分配只读角色')
-    expect(permissionsApiMock.assignMemberRoles).toHaveBeenCalledTimes(1)
+    expect(vm.roleAssignError).toBe('')
+    expect(permissionsApiMock.assignMemberRoles).toHaveBeenCalledTimes(2)
+    expect(permissionsApiMock.assignMemberRoles).toHaveBeenLastCalledWith(10, 'SERVICE', agentMember.subjectId, { roleIds: [101, 103], expectedRevision: agentMember.revision ?? 0 })
   })
 
   it('授权用户支持新建用户两步提交：创建用户成功但分配角色失败时明确提示已创建用户并切回已有用户', async () => {

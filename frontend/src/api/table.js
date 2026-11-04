@@ -11,9 +11,7 @@ export const tableApi = {
   },
 
   // 获取所有表
-  listAll() {
-    return request.get('/v1/tables/all')
-  },
+
 
   // 获取所有数据库列表
   listDatabases(clusterId = null) {
@@ -87,11 +85,7 @@ export const tableApi = {
   },
 
   // 获取数据库所有表的统计信息
-  getDatabaseStatistics(database, clusterId = null) {
-    return request.get(`/v1/tables/statistics/database/${database}`, {
-      params: { clusterId }
-    })
-  },
+
 
   // 获取表统计历史记录
   getStatisticsHistory(id, limit = 30) {
@@ -101,14 +95,10 @@ export const tableApi = {
   },
 
   // 获取最近7天统计历史
-  getLast7DaysHistory(id) {
-    return request.get(`/v1/tables/${id}/statistics/history/last7days`)
-  },
+
 
   // 获取最近30天统计历史
-  getLast30DaysHistory(id) {
-    return request.get(`/v1/tables/${id}/statistics/history/last30days`)
-  },
+
 
   // 获取表的DDL（建表语句）
   getTableDdl(id, clusterId = null) {
@@ -141,9 +131,7 @@ export const tableApi = {
   },
 
   // 创建表
-  create(data) {
-    return request.post('/v1/tables', data)
-  },
+
 
   // 更新表
   update(id, data, clusterId = null) {
