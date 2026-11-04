@@ -55,3 +55,11 @@ Java 命令：`mvn -B -ntp -f backend/pom.xml -Dtest='*Test,!*IntegrationTest' -
 本轮未启动独立仓库 DataAgent，也未执行真实模型问答、最终消息持久化或其生产沙箱容器链路；HTTP MCP 协议与工具行为已单独验证。PostgreSQL / Doris 真实权限与 DDL、生产数据库快照升级及生产代理网络拓扑未在本机重跑，不能由 MySQL / SQL 契约替代。上述覆盖缺口已登记[统一待办](../TODO.md)。历史浏览器可信委托和平台功能级 RBAC 仍保留原待办，不由本轮访问身份合并自动解决。
 
 升级须同步替换 Java / Vue 镜像，更新外部 MCP URL 和工具 Schema 缓存，使用管理中心签发的 SERVICE Token；旧 Python 服务、共享内部 Token、Agent REST URL 和 snake-case / params 包装不兼容。先备份平台库、配置和镜像版本。回退时恢复成套旧镜像与外部调用配置，不混用新旧工具契约；本轮未增加 Flyway 迁移，不对线上数据执行 repair 或重建。
+
+## 授权管理连接权限不足提示补充（2026-11-03）
+
+用户在新建角色的授权预览中遇到 MySQL 1142：采集账号无权读取 mysql.user。权限管理错误现在明确提示当前账号权限不足，并指向当前数据源「权限配置 → 授权管理连接」，说明应配置专用管理账号或联系 DBA 补齐系统授权表读取、角色管理和目标对象授权权限，同时保留数据库原始错误。
+
+错误分类采用 MySQL 权限错误码及 PostgreSQL insufficient_privilege SQLState；语法、登录认证及网络错误不归入权限不足。授权记录中的 FAILED / PARTIAL / UNKNOWN 状态及步骤不改变，资源盘点错误也保留同样指引和原始异常。成员自身权限检查仍沿用成员连接诊断。同页权限手册同步移除已失效的 SERVICE 恒定只读／开发接口 403 说明。
+
+验证：DatasourcePermissionErrorMessageTest 新增 11 项，连同 DatasourcePermissionInspectionTest、NativePermissionInspectionTest 共 20 项通过；四模块重新打包成功。已在运行中的本机后端通过真实 MySQL 无系统表读取权限账号触发角色预览 HTTP 400，确认响应包含设置路径和 SELECT command denied 原始信息，随后恢复测试源原有管理连接并删除临时角色。本地后端已重启到新包，未修改采集账号权限。

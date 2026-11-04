@@ -333,7 +333,7 @@ public class DatasourcePermissionService {
             }
             return map("databases", namespaces, "objects", objects);
         } catch (SQLException e) {
-            throw new IllegalArgumentException("管理连接无法盘点资源，请检查连接与权限");
+            throw new IllegalArgumentException("管理连接无法盘点资源：" + safeMessage(e), e);
         }
     }
 
@@ -664,7 +664,7 @@ public class DatasourcePermissionService {
         } catch (SQLException error) {
             log.warn(
                     "Native permission inspection failed: source={}, subjectType={}, subject={},"
-                        + " stage={}, sqlState={}, errorCode={}",
+                            + " stage={}, sqlState={}, errorCode={}",
                     source,
                     type,
                     subject,
@@ -1084,7 +1084,29 @@ public class DatasourcePermissionService {
 
     private static String safeMessage(Exception e) {
         String text = e.getMessage() == null ? "操作失败，请检查管理账号与原生权限" : e.getMessage();
+        if (insufficientManagementPrivileges(e)) {
+            text =
+                    "当前用于权限管理的数据库账号权限不足。请在当前数据源「权限配置 → 授权管理连接」配置专用管理账号，"
+                            + "或联系 DBA 补齐该管理账号的系统授权表读取、角色管理及目标对象授权权限。数据库返回："
+                            + text;
+        }
         return text.substring(0, Math.min(text.length(), 900));
+    }
+
+    private static boolean insufficientManagementPrivileges(Exception error) {
+        for (Throwable cause = error; cause != null; cause = cause.getCause()) {
+            if (cause instanceof SQLException sql) {
+                // MySQL/Doris privilege errors and PostgreSQL insufficient_privilege.
+                int code = sql.getErrorCode();
+                if ("42501".equals(sql.getSQLState())
+                        || code == 1044
+                        || code == 1142
+                        || code == 1143
+                        || code == 1227
+                        || code == 1370) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean uncertain(SQLException e) {
