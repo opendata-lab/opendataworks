@@ -496,3 +496,32 @@ agent-api模块定义小型ServiceAccountAuthenticator SPI，主backend实现摘
 验证Java定向与打包、MCP Python测试、静态残留搜索；本机更新Java／MCP后用既有服务账号进行只读链路及伪造旧头／写403冒烟，不重新建立完整业务工作流。测试外部操作启动／重启，不把环境操作嵌入测试代码。完成后同步报告及PR #491；回退为还原代码并运行旧版本，无数据库回退。
 
 14.1结果（2026-11-03）：清理完成，生产目录不再引用两个旧头或operator上下文；Controller业务审计参数保留并取已认证服务账号ID，写接口继续403。Java23项及打包、MCP43项、真实Java／MCP／MySQL22项通过。负向安全测试有意保留旧头；可信自然人委托仍为独立待办。见[报告](../reports/2026-11-03-legacy-agent-header-cleanup.md)。
+
+
+## 15. 分配角色时自动创建数据库登录账号（2026-11-03）
+
+状态：2026-11-04已实施，MySQL／PG真实验收及边界见[报告](../reports/2026-11-04-managed-database-accounts-validation.md)；本节覆盖10.2、10.6及手册中“新成员必须手工准备／绑定数据库账号”的约定。影响Java17／Boot3.5 core与app Flyway、Vue3／Element Plus权限页；独立DataAgent代码不变，其MCP查询复用同一主体连接。
+
+### 15.1 主路径与模型
+
+管理员一次配置源内「授权管理连接」。给USER或SERVICE首次分配至少一个已ACTIVE的角色时，若无账号映射，后端自动创建唯一、无额外管理权限的原生登录账号，生成32字节随机密码并AES-GCM加密保存；授予并激活所有所选角色，使用成员新连接核验后才返回ACTIVE。不要求前端输入数据库账号或密码，不复用门户密码，不创建共享角色登录账号。一个主体在一个源只有一个账号，多角色及后续增删均复用它。
+
+V58向datasource_subject_account增加managed布尔列，既有映射默认false，保持DBA现有账号与凭据不变。新托管账号managed=true，password保存既有ODW_CREDENTIAL_KEY加密信封；两处集中连接入口按managed读取凭据，不修改现有人工映射密码格式。此单一兼容分支只为真实既有映射保留。新用户名使用源标识和随机后缀，限制32字符，绝不认领同名外部账号或覆盖其密码。
+
+### 15.2 执行、失败与重试
+
+沿用源级GET_LOCK、Mapper、操作记录和短事务。原生DDL之前，先持久化加密账号映射、APPLYING成员、所选角色与操作意图，使超时或中途失败后可恢复同一账号；密码不进入操作payload、SQL步骤、接口响应或日志。CREATE USER语句使用局部JDBC执行，审计仅存脱敏步骤，异常移除密码，保留SQLState／错误码。不自动重放失败SQL。
+
+MySQL／Doris创建独立USER，PostgreSQL创建LOGIN ROLE；继承／默认角色沿用现有适配器。重试使用已记录托管账号：原生账号缺失则创建，已存在则必须能以保存的密码登录并核对原生身份；不得通过IF NOT EXISTS认领外部账号或自动重置密码。失败保留ERROR成员、加密映射与FAILED／PARTIAL／UNKNOWN步骤，查询入口继续拒绝不确定成员，管理员重新提交当前角色集合才能恢复。已有人工映射沿原路径下发角色，不创建或改密。
+
+### 15.3 移除与界面
+
+清空角色集合撤销平台角色，保留账号映射；新成员空角色集合不创建账号。移除成员时，人工映射只撤销平台角色并移除映射，不删除DBA账号；托管账号先撤销角色，再DROP USER／DROP ROLE，核验不存在后删除成员与映射。PostgreSQL有业务对象所有权／依赖时明确失败并保留恢复记录，绝不DROP OWNED、CASCADE或自动转移所有权。只删除本平台明确标记managed且已核验所有权的账号；尚无已验证native_identity的失败记录，移除前必须能以保存的随机密码核验登录，否则拒绝删除，避免误删同名外部账号。
+
+成员表显示「平台自动创建」及只读账号名；托管账号不提供手动换绑或改密入口，既有人工映射继续显示绑定编辑入口。授权弹窗、分配角色与移除确认文案说明自动创建／复用及托管账号删除行为。NEEDS_ACCOUNT老成员通过再次分配角色进入自动创建主路径。
+
+### 15.4 验证与回退
+
+覆盖USER／SERVICE首授、两角色共用一个登录、幂等重试、撤权、移除、外部同名拒绝、既有映射不变、加密／脱敏、缺密钥及管理权限不足失败隔离。执行Java／Vue定向回归和构建；真实MySQL新建平台用户→授角色→新连接查询→撤权／删除闭环，条件允许补PG；Doris无实例时只声明SQL契约覆盖并登记缺口。部署必须保留ODW_CREDENTIAL_KEY；V58向前添加列，旧版本不能解密托管密码，回退前先处理新托管映射和原生账号，不能直接降级后把密文当密码。
+
+原生语法依据：[MySQL CREATE USER](https://dev.mysql.com/doc/refman/8.0/en/create-user.html)、[PostgreSQL16 CREATE ROLE](https://www.postgresql.org/docs/16/sql-createrole.html)、[Doris CREATE USER](https://doris.apache.org/docs/3.x/sql-manual/sql-statements/account-management/CREATE-USER/)。

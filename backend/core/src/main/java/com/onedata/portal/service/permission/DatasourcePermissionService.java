@@ -25,6 +25,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.util.StringUtils;
 
+import java.security.SecureRandom;
 import java.sql.*;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -438,6 +439,8 @@ public class DatasourcePermissionService {
         DatasourceSubjectAccount previous = findAccount(source, type, subject),
                 candidate = previous;
         if (accountInput != null) {
+            if (previous != null && Boolean.TRUE.equals(previous.getManaged()))
+                throw new IllegalArgumentException("平台自动创建的数据库账号由平台管理，无须手动绑定；请直接分配角色");
             if (!StringUtils.hasText(accountInput.getUsername()))
                 throw new IllegalArgumentException("数据库账号不能为空");
             String password = accountInput.getPassword();
@@ -459,22 +462,10 @@ public class DatasourcePermissionService {
             candidate.setUsername(accountInput.getUsername());
             candidate.setPassword(password);
         }
-        if (candidate == null && !remove) {
-            final Long memberId = old == null ? null : longNumber(old.get("id"));
-            platformTransaction()
-                    .execute(
-                            tx -> {
-                                Long id =
-                                        memberId == null
-                                                ? permissions.createMember(source, type, subject)
-                                                : memberId;
-                                saveBindings(id, desiredIds);
-                                permissions.markMemberNeedsAccount(id);
-                                return null;
-                            });
-            permissions.recordMemberChange(
-                    source, type, subject, operator(), "已保存角色分配，绑定账号后才下发到数据库");
-            return memberView(source, member(source, type, subject));
+        boolean createManaged = candidate == null && !remove;
+        if (createManaged) {
+            if (desiredIds.isEmpty()) throw new IllegalArgumentException("请至少选择一个角色以自动创建数据库账号");
+            candidate = newManagedAccount(source, type, subject);
         }
         Long op =
                 permissions.createMemberOperation(
@@ -487,9 +478,24 @@ public class DatasourcePermissionService {
         NativePermissionAdapter adapter = nativeAdapter(cluster);
         List<Map<String, Object>> steps = new ArrayList<>();
         final DatasourceSubjectAccount saved = candidate;
-        boolean attempted = false;
+        final Long[] preparedMemberId = {null};
         try {
-            if (old != null) permissions.markMemberApplying(old.get("id"));
+            if (createManaged) {
+                preparedMemberId[0] =
+                        platformTransaction()
+                                .execute(
+                                        tx -> {
+                                            Long id =
+                                                    old == null
+                                                            ? permissions.createMember(
+                                                                    source, type, subject)
+                                                            : longNumber(old.get("id"));
+                                            saveMapping(source, saved);
+                                            saveBindings(id, desiredIds);
+                                            permissions.markMemberApplying(id);
+                                            return id;
+                                        });
+            } else if (old != null) permissions.markMemberApplying(old.get("id"));
             List<Map<String, Object>> allRoles = query(permissions.listRoleSnapshots(source));
             Set<String> managed =
                     allRoles.stream()
@@ -501,20 +507,42 @@ public class DatasourcePermissionService {
                             .collect(Collectors.toCollection(LinkedHashSet::new));
             final Identity[] verifiedIdentity = {null};
             if (candidate != null) {
+                if (Boolean.TRUE.equals(candidate.getManaged()) && !remove)
+                    try (Connection manager = management(source)) {
+                        provisionManagedLogin(manager, adapter, candidate, steps, op);
+                    }
                 Identity identity;
                 boolean legacyUnmanagedRemoval =
                         remove
+                                && !Boolean.TRUE.equals(candidate.getManaged())
                                 && storedIdentity(old) == null
                                 && (old == null || roleIds(old).isEmpty());
                 if (legacyUnmanagedRemoval) identity = null;
+                else if (remove && Boolean.TRUE.equals(candidate.getManaged()))
+                    identity = managedIdentity(adapter, candidate);
                 else if (remove && storedIdentity(old) != null) identity = storedIdentity(old);
                 else
                     try (Connection target = accountConnection(cluster, candidate)) {
                         identity = adapter.identity(target, candidate.getUsername());
+                        if (Boolean.TRUE.equals(candidate.getManaged())
+                                && !identity.equals(managedIdentity(adapter, candidate)))
+                            throw new IllegalArgumentException("托管数据库账号实际身份不匹配，未认领其他登录身份");
                     }
                 verifiedIdentity[0] = identity;
-                if (identity != null && !managed.isEmpty()) {
+                if (identity != null
+                        && (!managed.isEmpty() || Boolean.TRUE.equals(candidate.getManaged()))) {
                     try (Connection manager = management(source)) {
+                        // A staged mapping alone does not prove that CREATE USER succeeded.
+                        if (remove
+                                && Boolean.TRUE.equals(candidate.getManaged())
+                                && storedIdentity(old) == null
+                                && adapter.identityExists(manager, identity)) {
+                            try (Connection target = accountConnection(cluster, candidate)) {
+                                if (!identity.equals(
+                                        adapter.identity(target, candidate.getUsername())))
+                                    throw new IllegalArgumentException("无法核验待恢复托管账号的所有权，未删除数据库账号");
+                            }
+                        }
                         synchronizeMembership(
                                 manager,
                                 adapter,
@@ -540,6 +568,23 @@ public class DatasourcePermissionService {
                                     managed,
                                     steps,
                                     op);
+                        if (remove
+                                && Boolean.TRUE.equals(candidate.getManaged())
+                                && adapter.identityExists(manager, identity)) {
+                            Map<String, Object> step =
+                                    map("sql", adapter.dropLogin(identity), "state", "UNKNOWN");
+                            steps.add(step);
+                            permissions.recordOperationSteps(write(steps), op);
+                            try {
+                                execute(manager, adapter.dropLogin(identity));
+                                step.put("state", "SUCCESS");
+                            } catch (SQLException error) {
+                                step.put("state", uncertain(error) ? "UNKNOWN" : "FAILED");
+                                throw error;
+                            }
+                            if (adapter.identityExists(manager, identity))
+                                throw new SQLException("托管数据库账号删除后仍存在");
+                        }
                     }
                 }
                 if (!remove)
@@ -559,23 +604,35 @@ public class DatasourcePermissionService {
                                         accountMapper.deleteById(previous.getId());
                                 } else {
                                     Long memberId =
-                                            old == null
-                                                    ? permissions.createMember(
-                                                            source, type, subject)
-                                                    : longNumber(old.get("id"));
+                                            preparedMemberId[0] != null
+                                                    ? preparedMemberId[0]
+                                                    : old == null
+                                                            ? permissions.createMember(
+                                                                    source, type, subject)
+                                                            : longNumber(old.get("id"));
                                     if (accountInput != null) saveMapping(source, saved);
                                     saveBindings(memberId, desiredIds);
                                     permissions.activateMember(
                                             write(verifiedIdentity[0]), memberId);
                                 }
                                 permissions.completeOperation(
-                                        remove ? "已撤销托管角色并移除平台账号映射" : "角色已下发并核验", write(steps), op);
+                                        remove
+                                                ? (saved != null
+                                                                && Boolean.TRUE.equals(
+                                                                        saved.getManaged())
+                                                        ? "已撤销角色并删除平台创建的数据库登录"
+                                                        : "已撤销托管角色并移除平台账号映射")
+                                                : "数据库账号与角色已配置并核验",
+                                        write(steps),
+                                        op);
                                 return null;
                             });
         } catch (Exception e) {
             String state = failureState(e, steps, !steps.isEmpty());
             permissions.finishOperation(state, safeMessage(e), write(steps), op);
-            if (old != null)
+            if (preparedMemberId[0] != null)
+                permissions.setMemberStatus("ERROR", preparedMemberId[0]);
+            else if (old != null)
                 permissions.setMemberStatus(
                         "FAILED".equals(state) ? old.get("status") : "ERROR", old.get("id"));
             throw new IllegalArgumentException(
@@ -916,7 +973,9 @@ public class DatasourcePermissionService {
                         "username",
                         account == null ? null : account.getUsername(),
                         "configured",
-                        account != null));
+                        account != null,
+                        "managed",
+                        account != null && Boolean.TRUE.equals(account.getManaged())));
         result.put("externalAccess", account != null && ids.isEmpty());
         if (account == null && !"ERROR".equals(result.get("status")))
             result.put("status", "NEEDS_ACCOUNT");
@@ -939,6 +998,72 @@ public class DatasourcePermissionService {
                 .orElse(null);
     }
 
+    private DatasourceSubjectAccount newManagedAccount(Long source, String type, String subject) {
+        byte[] random = new byte[32];
+        new SecureRandom().nextBytes(random);
+        DatasourceSubjectAccount account = new DatasourceSubjectAccount();
+        account.setSourceId(source);
+        account.setSubjectType(type);
+        account.setSubjectId(subject);
+        account.setUsername(
+                "odw_m_"
+                        + Long.toString(source, 36)
+                        + "_"
+                        + UUID.randomUUID().toString().replace("-", "").substring(0, 12));
+        account.setManaged(true);
+        account.setPassword(
+                cipher.encrypt(
+                        "Aa1!" + Base64.getUrlEncoder().withoutPadding().encodeToString(random)));
+        return account;
+    }
+
+    private Identity managedIdentity(
+            NativePermissionAdapter adapter, DatasourceSubjectAccount account) {
+        return new Identity(account.getUsername(), adapter.postgres() ? null : "%");
+    }
+
+    private void provisionManagedLogin(
+            Connection manager,
+            NativePermissionAdapter adapter,
+            DatasourceSubjectAccount account,
+            List<Map<String, Object>> steps,
+            Long operation)
+            throws SQLException {
+        Identity identity = managedIdentity(adapter, account);
+        if (adapter.identityExists(manager, identity))
+            return; // Existing logins must still authenticate below.
+        String password = cipher.decrypt(account.getPassword());
+        Map<String, Object> step =
+                map(
+                        "sql",
+                        "CREATE LOGIN " + adapter.account(identity) + " (密码已隐藏)",
+                        "state",
+                        "UNKNOWN");
+        steps.add(step);
+        permissions.recordOperationSteps(write(steps), operation);
+        // Keep secret-bearing SQL out of JdbcTemplate logging and operation payloads.
+        try (Statement statement = manager.createStatement()) {
+            statement.execute(adapter.createLogin(identity, password));
+            step.put("state", "SUCCESS");
+        } catch (SQLException error) {
+            step.put("state", uncertain(error) ? "UNKNOWN" : "FAILED");
+            throw credentialFailure(error, password);
+        }
+        permissions.recordOperationSteps(write(steps), operation);
+    }
+
+    static SQLException credentialFailure(SQLException error, String password) {
+        String message =
+                error.getMessage() == null
+                        ? "创建数据库登录失败"
+                        : error.getMessage().replace(password, "[REDACTED]");
+        // Retain uncertainty even when a driver timeout has no SQLState. Do not attach
+        // the original cause: its message may contain the secret-bearing statement.
+        return uncertain(error)
+                ? new SQLRecoverableException(message, error.getSQLState(), error.getErrorCode())
+                : new SQLException(message, error.getSQLState(), error.getErrorCode());
+    }
+
     private Connection accountConnection(DorisCluster cluster, DatasourceSubjectAccount account)
             throws SQLException {
         return connections.open(
@@ -946,7 +1071,9 @@ public class DatasourcePermissionService {
                 ConnectionConfig.from(cluster),
                 null,
                 account.getUsername(),
-                account.getPassword(),
+                Boolean.TRUE.equals(account.getManaged())
+                        ? cipher.decrypt(account.getPassword())
+                        : account.getPassword(),
                 "SERVICE".equals(account.getSubjectType()));
     }
 

@@ -83,6 +83,22 @@ public final class NativePermissionAdapter {
                 : literal(identity.getUser()) + "@" + literal(identity.getHost());
     }
 
+    public String createLogin(Identity identity, String password) {
+        return postgres()
+                ? "CREATE ROLE "
+                        + identifier(identity.getUser())
+                        + " LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION"
+                        + " NOBYPASSRLS PASSWORD "
+                        + literal(password)
+                : "CREATE USER " + account(identity) + " IDENTIFIED BY " + literal(password);
+    }
+
+    public String dropLogin(Identity identity) {
+        return postgres()
+                ? "DROP ROLE " + identifier(identity.getUser())
+                : "DROP USER " + account(identity);
+    }
+
     public String createRole(String name) {
         return "CREATE ROLE " + role(name) + (postgres() ? " NOLOGIN" : "");
     }
@@ -291,14 +307,14 @@ public final class NativePermissionAdapter {
                     rows(
                             c,
                             "SELECT TABLE_SCHEMA AS db,TABLE_NAME AS obj,PRIVILEGE_TYPE AS priv"
-                                + " FROM information_schema.TABLE_PRIVILEGES WHERE GRANTEE=?",
+                                    + " FROM information_schema.TABLE_PRIVILEGES WHERE GRANTEE=?",
                             grantee))
                 result.add(new Atom("TABLE", string(r, "db"), string(r, "obj"), string(r, "priv")));
             for (Map<String, Object> r :
                     rows(
                             c,
                             "SELECT PRIVILEGE_TYPE AS priv FROM information_schema.USER_PRIVILEGES"
-                                + " WHERE GRANTEE=?",
+                                    + " WHERE GRANTEE=?",
                             grantee))
                 if (!"USAGE".equals(string(r, "priv")))
                     throw new IllegalArgumentException("托管角色存在全局权限，请先在数据库核对");
@@ -394,15 +410,15 @@ public final class NativePermissionAdapter {
                     rows(
                             c,
                             "SELECT r.rolname AS name FROM pg_auth_members m JOIN pg_roles r ON"
-                                + " r.oid=m.roleid JOIN pg_roles u ON u.oid=m.member WHERE"
-                                + " u.rolname=?",
+                                    + " r.oid=m.roleid JOIN pg_roles u ON u.oid=m.member WHERE"
+                                    + " u.rolname=?",
                             identity.getUser())) result.add(string(r, "name"));
         else if (!doris())
             for (Map<String, Object> r :
                     rows(
                             c,
                             "SELECT FROM_USER AS name FROM mysql.role_edges WHERE TO_USER=? AND"
-                                + " TO_HOST=?",
+                                    + " TO_HOST=?",
                             identity.getUser(),
                             identity.getHost())) result.add(string(r, "name"));
         else
@@ -438,7 +454,7 @@ public final class NativePermissionAdapter {
                 rows(
                         c,
                         "SELECT DEFAULT_ROLE_USER AS name,DEFAULT_ROLE_HOST AS host FROM"
-                            + " mysql.default_roles WHERE USER=? AND HOST=?",
+                                + " mysql.default_roles WHERE USER=? AND HOST=?",
                         identity.getUser(),
                         identity.getHost())) {
             if (!managedBefore.contains(string(r, "name")))
@@ -497,8 +513,8 @@ public final class NativePermissionAdapter {
                         rows(
                                 c,
                                 "SELECT ROLE_NAME AS name, ROLE_HOST AS host FROM"
-                                    + " information_schema.ENABLED_ROLES ORDER BY ROLE_NAME,"
-                                    + " ROLE_HOST")) {
+                                        + " information_schema.ENABLED_ROLES ORDER BY ROLE_NAME,"
+                                        + " ROLE_HOST")) {
                     enabled.add(account(new Identity(string(row, "name"), string(row, "host"))));
                 }
                 if (!enabled.isEmpty()) sql += " USING " + String.join(", ", enabled);

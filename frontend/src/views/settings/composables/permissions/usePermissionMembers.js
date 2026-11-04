@@ -380,7 +380,7 @@ export function usePermissionMembers({
     const request = captureRequest()
     try {
       await ElMessageBox.confirm(
-        `确认移除成员「${getMemberDisplayName(member)}」吗？将撤销其托管角色并删除该数据源账号映射（不删除平台用户与数据库账号）。`,
+        `确认移除成员「${getMemberDisplayName(member)}」吗？${member.account?.managed ? '将撤销角色并删除平台自动创建的数据库登录账号，不删除平台用户。' : '将撤销其托管角色并删除该数据源账号映射，不删除平台用户与 DBA 数据库账号。'}`,
         '移除成员',
         {
           type: 'warning',

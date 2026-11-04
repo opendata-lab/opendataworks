@@ -772,4 +772,15 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     await roles.handleApplyGrants()
     expect(permissionsApiMock.applyRoleGrants).not.toHaveBeenCalled()
   })
+  it('托管账号显示自动创建且不提供手工绑定入口，移除时明确删除数据库登录', async () => {
+    const data = makeOverview()
+    data.members = [{ ...data.members[0], account: { username: 'odw_managed', configured: true, managed: true } }]
+    permissionsApiMock.getOverview.mockResolvedValue(data)
+    const wrapper = await mountCenter()
+    expect(wrapper.text()).toContain('平台自动创建')
+    expect(wrapper.find('[data-testid="bind-account-link"]').exists()).toBe(false)
+    await feature(wrapper, 'memberState').handleRemoveMember(data.members[0])
+    expect(confirmMock.mock.calls.at(-1)[0]).toContain('删除平台自动创建的数据库登录账号')
+  })
+
 })

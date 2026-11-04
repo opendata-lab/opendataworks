@@ -92,16 +92,14 @@ class Smoke:
             self.save()
         return result
 
-    def bind(self, kind, user, name):
-        password = secrets.token_urlsafe(24)
-        native_name = 'odwsvc' + name + self.state['suffix']
-        self.state['native_users'].append(native_name)
-        self.save()
-        self.native('CREATE USER %s@%s IDENTIFIED BY %s', (native_name, '%', password))
-        m = self.member(kind, user['id'])
-        row = self.api('POST', self.base + f"/members/{kind}/{user['id']}/account",
-                       {'username': native_name, 'password': password, 'expectedRevision': m['revision']})
-        assert row['status'] == 'ACTIVE'
+    def check_account(self, kind, user):
+        member = self.member(kind, user['id'])
+        assert member['status'] == 'ACTIVE'
+        assert member['account']['managed'] and member['account']['configured']
+        native_name = member['account']['username']
+        if native_name not in self.state['native_users']:
+            self.state['native_users'].append(native_name)
+            self.save()
 
     def issue(self, user, name):
         r = self.admin.post(f"/v1/users/{user['id']}/tokens", json={'name': name})
@@ -176,11 +174,11 @@ class Smoke:
         self.save()
         human, service, other = s['users'][:3]
         self.assign('USER', human['id'], [s['roles'][0]])
-        self.bind('USER', human, 'human')
+        self.check_account('USER', human)
         self.assign('SERVICE', service['id'], s['roles'])
-        self.bind('SERVICE', service, 'one')
+        self.check_account('SERVICE', service)
         self.assign('SERVICE', other['id'], [s['roles'][1]])
-        self.bind('SERVICE', other, 'two')
+        self.check_account('SERVICE', other)
         for letter in ('a', 'b'):
             result = self.api('POST', f"/v1/tables/sync-metadata/database/{s[letter]}?clusterId={s['source']}")
             assert str(result.get('status')).upper() in ('SUCCESS', 'COMPLETED')

@@ -25,6 +25,7 @@
       </label>
     </div>
     <div class="picker-count">已选 {{ roleAssignForm.roleIds.length }} 个角色</div>
+    <p class="field-hint">未绑定账号时自动创建数据库登录，已有账号保持不变；保存后核验角色权限。</p>
     <p v-if="roleAssignError" role="alert" class="form-error">{{ roleAssignError }}</p>
     <template #footer>
       <el-button :disabled="roleAssignSaving" @click="roleAssignDialogVisible = false"

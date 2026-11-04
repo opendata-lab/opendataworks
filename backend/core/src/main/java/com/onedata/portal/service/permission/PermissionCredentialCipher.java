@@ -11,7 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 
-/** Only the source permission-management credential uses this store. */
+/** Encrypt management credentials and platform-created member login passwords. */
 @Component
 public class PermissionCredentialCipher {
     private final String configuredKey;
@@ -24,7 +24,7 @@ public class PermissionCredentialCipher {
             if (key.length != 32) throw new IllegalArgumentException();
             return new SecretKeySpec(key, "AES");
         } catch (RuntimeException e) {
-            throw new IllegalStateException("请配置ODW_CREDENTIAL_KEY（32字节随机密钥的Base64），不能保存或读取管理凭据");
+            throw new IllegalStateException("请配置ODW_CREDENTIAL_KEY（32字节随机密钥的Base64），不能保存或读取数据库凭据");
         }
     }
     public String encrypt(String value) {
@@ -35,7 +35,7 @@ public class PermissionCredentialCipher {
             cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
             byte[] encrypted = cipher.doFinal(value.getBytes(StandardCharsets.UTF_8));
             return "v1:" + Base64.getEncoder().encodeToString(ByteBuffer.allocate(iv.length + encrypted.length).put(iv).put(encrypted).array());
-        } catch (Exception e) { throw new IllegalStateException("管理凭据加密失败"); }
+        } catch (Exception e) { throw new IllegalStateException("数据库凭据加密失败"); }
     }
     public String decrypt(String value) {
         SecretKeySpec key = key();
@@ -47,6 +47,6 @@ public class PermissionCredentialCipher {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
             return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
-        } catch (Exception e) { throw new IllegalStateException("管理凭据解密失败，请核对密钥；不会改用其他账号"); }
+        } catch (Exception e) { throw new IllegalStateException("数据库凭据解密失败，请核对密钥；不会改用其他账号"); }
     }
 }

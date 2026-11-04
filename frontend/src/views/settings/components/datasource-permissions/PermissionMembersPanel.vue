@@ -87,7 +87,12 @@
       </el-table-column>
       <el-table-column label="数据库账号" min-width="160">
         <template #default="{ row }">
+          <template v-if="row.account?.managed">
+            <span class="managed-account-name" :title="row.account.username">{{ row.account.username }}</span>
+            <el-tag size="small" effect="plain">平台自动创建</el-tag>
+          </template>
           <el-button
+            v-else
             link
             type="primary"
             data-testid="bind-account-link"
@@ -117,7 +122,7 @@
           >
             分配角色
           </el-button>
-          <el-button type="primary" text size="small" @click="openAccountDialog(row)">
+          <el-button v-if="!row.account?.managed" type="primary" text size="small" @click="openAccountDialog(row)">
             账号
           </el-button>
           <el-button
@@ -198,5 +203,11 @@ const {
   padding-top: 12px;
   font-size: 12px;
   color: #667085;
+}
+.managed-account-name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

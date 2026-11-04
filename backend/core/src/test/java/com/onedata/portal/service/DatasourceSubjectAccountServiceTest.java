@@ -1,13 +1,16 @@
 package com.onedata.portal.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.baomidou.mybatisplus.core.MybatisConfiguration;
@@ -37,6 +40,9 @@ class DatasourceSubjectAccessServiceTest {
     private final DatasourceConnectionFactory factory = mock(DatasourceConnectionFactory.class);
     private final com.onedata.portal.mapper.DatasourceAccessPermissionMapper permissions =
             mock(com.onedata.portal.mapper.DatasourceAccessPermissionMapper.class);
+    private final com.onedata.portal.service.permission.PermissionCredentialCipher cipher =
+            new com.onedata.portal.service.permission.PermissionCredentialCipher(
+                    java.util.Base64.getEncoder().encodeToString(new byte[32]));
     private final DatasourceSubjectAccessService service =
             new DatasourceSubjectAccessService(
                     mock(com.onedata.portal.mapper.DataTableMapper.class),
@@ -45,6 +51,7 @@ class DatasourceSubjectAccessServiceTest {
                     users,
                     factory,
                     permissions,
+                    cipher,
                     DatasourceAdapterFixtures.registry(
                             new com.onedata.portal.config.DatasourceJdbcProperties()));
 
@@ -114,6 +121,64 @@ class DatasourceSubjectAccessServiceTest {
                 IllegalArgumentException.class,
                 () -> service.open(1L, "SERVICE", "19", "sales", true));
         verify(factory, never()).open(any(), any(), any(), any(), any(), anyBoolean());
+    }
+
+    @Test
+    void managedConnectionDecryptsOnlyAtTheConnectionBoundary() throws Exception {
+        DorisCluster cluster = new DorisCluster();
+        cluster.setSourceType("MYSQL");
+        when(clusters.selectById(1L)).thenReturn(cluster);
+        DatasourceSubjectAccount account = new DatasourceSubjectAccount();
+        account.setUsername("odw_managed");
+        account.setManaged(true);
+        account.setPassword(cipher.encrypt("private-native-password"));
+        when(accounts.selectOne(any())).thenReturn(account);
+        service.open(1L, "SERVICE", "19", "sales", true);
+        verify(factory)
+                .open(
+                        eq("MYSQL"),
+                        any(),
+                        eq("sales"),
+                        eq("odw_managed"),
+                        eq("private-native-password"),
+                        eq(true));
+        assertFalse(
+                new com.fasterxml.jackson.databind.ObjectMapper()
+                        .writeValueAsString(account)
+                        .contains("password"));
+    }
+
+    @Test
+    void invalidManagedCiphertextNeverOpensAConnection() throws Exception {
+        when(clusters.selectById(1L)).thenReturn(new DorisCluster());
+        DatasourceSubjectAccount account = new DatasourceSubjectAccount();
+        account.setManaged(true);
+        account.setPassword("not-an-envelope");
+        when(accounts.selectOne(any())).thenReturn(account);
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.open(1L, "SERVICE", "19", "sales", true));
+        verifyNoInteractions(factory);
+    }
+
+    @Test
+    void existingExternalPasswordIsNeverInterpretedAsCiphertext() throws Exception {
+        DorisCluster cluster = new DorisCluster();
+        cluster.setSourceType("MYSQL");
+        when(clusters.selectById(1L)).thenReturn(cluster);
+        DatasourceSubjectAccount account = new DatasourceSubjectAccount();
+        account.setUsername("legacy");
+        account.setPassword("v1:external-plaintext-password");
+        when(accounts.selectOne(any())).thenReturn(account);
+        service.open(1L, "SERVICE", "19", "sales", true);
+        verify(factory)
+                .open(
+                        eq("MYSQL"),
+                        any(),
+                        eq("sales"),
+                        eq("legacy"),
+                        eq("v1:external-plaintext-password"),
+                        eq(true));
     }
 
     private SysUser user() {

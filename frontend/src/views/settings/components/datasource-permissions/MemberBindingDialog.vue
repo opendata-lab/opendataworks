@@ -31,7 +31,7 @@
       </el-form-item>
     </el-form>
     <p class="field-hint">
-      每个成员在当前数据源绑定唯一登录账号，连接时自动激活其所属平台角色集合。
+      此入口用于已有 DBA 账号；新成员分配角色时由平台自动创建数据库登录账号，无须手工绑定。
     </p>
     <p v-if="accountError" role="alert" class="form-error">{{ accountError }}</p>
     <template #footer>

@@ -41,6 +41,7 @@ public class DatasourceSubjectAccessService {
     private final SysUserMapper userMapper;
     private final DatasourceConnectionFactory connectionFactory;
     private final com.onedata.portal.mapper.DatasourceAccessPermissionMapper permissions;
+    private final com.onedata.portal.service.permission.PermissionCredentialCipher credentialCipher;
 
     public DatasourceSubjectAccount require(Long sourceId, String type, String subjectId) {
         validateSubject(type, subjectId);
@@ -156,7 +157,9 @@ public class DatasourceSubjectAccessService {
                 ConnectionConfig.from(cluster),
                 namespace,
                 account.getUsername(),
-                account.getPassword(),
+                Boolean.TRUE.equals(account.getManaged())
+                        ? credentialCipher.decrypt(account.getPassword())
+                        : account.getPassword(),
                 readOnly);
     }
 

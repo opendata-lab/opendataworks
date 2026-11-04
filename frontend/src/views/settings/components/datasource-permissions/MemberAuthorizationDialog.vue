@@ -123,6 +123,8 @@
       </el-form-item>
     </el-form>
 
+    <p class="field-hint">首次授权会自动创建数据库登录账号并配置所选角色，后续分配复用同一账号，无须手工建号。</p>
+
     <p v-if="authorizeError" role="alert" class="form-error">{{ authorizeError }}</p>
 
     <template #footer>

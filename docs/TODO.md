@@ -11,7 +11,13 @@
 
 ## 权限与数据源
 
+
+
+
 ### 权限中心剩余验证与边界
+
+- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。标准后端镜像重建两次因Docker Hub解析基础镜像超时而未完成，registry和auth直接连接同样超时；当前jar已用缓存运行镜像离线封装用于容器检查，网络恢复后仍须重跑正式Dockerfile构建。来源：[本轮报告](reports/2026-11-04-managed-database-accounts-validation.md)。
+
 
 - **本轮后端收敛的外部完整链路覆盖（2026-11-03）**：真实 MySQL、Dolphin 3.2.2 与全部 23 个 HTTP MCP handler 已验证；本机当前没有可调用的独立 DataAgent 8900 服务或 Doris 实例，本轮未复跑真实模型最终消息和 PostgreSQL/Doris 权限、DDL 全流程。需在独立 DataAgent 完成 MCP URL/Schema 刷新后验证完整问答及消息持久化，在 PostgreSQL/Doris 环境复跑原生权限与 DDL；生产快照升级、生产代理拓扑也需部署环境验收。没有将这些路径计为本轮通过。来源：[实施报告](reports/2026-11-03-backend-consolidation-validation.md)，关联[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)。
 
@@ -23,7 +29,7 @@
 
 - **Doris原生验收**（2026-11-02环境缺口）：已实现统一动作和原生角色适配，但本机无真实Doris实例，仅有SQL契约测试。需在内网核验Schema／表／视图授权、Load_priv、角色继承与回读、EXPLAIN拒绝和只读Agent；[本轮报告](reports/2026-11-02-users-and-permissions-verification.md)。
 - **跨源实例别名**（2026-10-30设计确认，2026-11-02保留）：同源禁止多个成员复用同一个数据库账号；同物理实例被登记为不同源仍未去重，不能承诺跨sourceId隔离，需另行设计物理实例与原生身份唯一约束。
-- **能力扩展**（2026-10-30确认延期）：用户组、用户直接资源授权、字段／行级与脱敏、ABAC、审批、数据库账号自动生命周期、所有权移交、PG按创建者设置未来默认权限、Dolphin身份统一、定时漂移对账及全量直连审计。已有直接授权／外部角色可能扩大范围，不由平台自动撤销。原生按名称授权无法检测两次观测间的同名删除重建，严格代际隔离需DDL审计。见同主题设计第10节与[使用说明](handbook/features/users-and-data-permissions.md)。
+- **能力扩展**（2026-10-30确认延期）：用户组、用户直接资源授权、字段／行级与脱敏、ABAC、审批、所有权移交、PG按创建者设置未来默认权限、Dolphin身份统一、定时漂移对账及全量直连审计。已有直接授权／外部角色可能扩大范围，不由平台自动撤销。原生按名称授权无法检测两次观测间的同名删除重建，严格代际隔离需DDL审计。见同主题设计第10节与[使用说明](handbook/features/users-and-data-permissions.md)。
 - **源软删除端点唯一键**（2026-11-01真实验收发现）：doris_cluster按host/port唯一，软删除仍占用该坐标，导致同端点重建冲突。本轮未修改业务删除语义；需设计唯一约束与源恢复／重建的关联数据规则。测试源清理只对自有临时记录改坐标后软删除，见[报告](reports/2026-11-02-users-and-permissions-verification.md)。
 
 ### 主体映射的验证与使用限制
@@ -90,6 +96,11 @@
 - **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份；2026-10-29 统一权限设计已选定短期签名身份断言与 DataAgent 验签，不再同时规划 nginx auth_request 后备路径。该修复已按用户2026-11-01要求延期，并非本轮本机功能验收前置；生产可信委托仍需实施[统一权限中心设计](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)的交付前提，尚未实施。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
 
 ## 已完成
+
+### 角色分配自动创建数据库账号
+
+2026-11-04完成用户要求：首次角色分配为USER／SERVICE自动创建独立数据库登录、加密凭据、分配并核验角色；复用同一账号，失败可恢复，保护同名外部账号，移除仅删除核验过的托管登录。保留既有DBA映射。Java615、Vue481、Python13、真实MySQL20及PG11验收通过，本机保留演示成员。见[设计15](design/2026-10-26-dataagent-datasource-identity-design.md#15-分配角色时自动创建数据库登录账号2026-11-03)、[计划11](plans/2026-10-26-dataagent-datasource-identity-plan.md#11-自动创建数据库登录账号2026-11-03)、[报告](reports/2026-11-04-managed-database-accounts-validation.md)。
+
 
 ### Backend 四模块、内置 MCP 与认证收敛
 
