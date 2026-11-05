@@ -16,7 +16,8 @@
 
 ### 权限中心剩余验证与边界
 
-- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。标准后端镜像重建两次因Docker Hub解析基础镜像超时而未完成，registry和auth直接连接同样超时；当前jar已用缓存运行镜像离线封装用于容器检查，网络恢复后仍须重跑正式Dockerfile构建。来源：[本轮报告](reports/2026-11-04-managed-database-accounts-validation.md)。
+
+- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。此前Docker Hub超时已在后续评审修复中解决，正式Dockerfile构建与Nginx／TLS代理验收通过；当前剩余为Doris真实环境验证。来源：[建号报告](reports/2026-11-04-managed-database-accounts-validation.md)、[评审修复报告](reports/2026-11-04-backend-pr-review-fixes.md)。
 
 
 - **本轮后端收敛的外部完整链路覆盖（2026-11-03）**：真实 MySQL、Dolphin 3.2.2 与全部 23 个 HTTP MCP handler 已验证；本机当前没有可调用的独立 DataAgent 8900 服务或 Doris 实例，本轮未复跑真实模型最终消息和 PostgreSQL/Doris 权限、DDL 全流程。需在独立 DataAgent 完成 MCP URL/Schema 刷新后验证完整问答及消息持久化，在 PostgreSQL/Doris 环境复跑原生权限与 DDL；生产快照升级、生产代理拓扑也需部署环境验收。没有将这些路径计为本轮通过。来源：[实施报告](reports/2026-11-03-backend-consolidation-validation.md)，关联[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)。
@@ -96,6 +97,10 @@
 - **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份；2026-10-29 统一权限设计已选定短期签名身份断言与 DataAgent 验签，不再同时规划 nginx auth_request 后备路径。该修复已按用户2026-11-01要求延期，并非本轮本机功能验收前置；生产可信委托仍需实施[统一权限中心设计](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)的交付前提，尚未实施。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
 
 ## 已完成
+
+### PR #493 评审回归修复
+
+2026-11-04修复矩阵参数鉴权、门户MCP代理边界、任务半边血缘、显式导出限额、空arguments、委托查询审计与owner归属，以及权限部分成功的角色意图保护、失败刷新／APPLYING状态、错误连接指引、创建超时、列标签和文档残留。Java633、Vue487、Python14、真实HTTP／MySQL／PG及Nginx／TLS共65项通过，正式Dockerfile构建成功，见[报告](reports/2026-11-04-backend-pr-review-fixes.md)；外部生产拓扑仍按部署验收执行。
 
 ### 角色分配自动创建数据库账号
 

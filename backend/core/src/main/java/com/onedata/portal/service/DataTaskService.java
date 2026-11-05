@@ -1587,7 +1587,7 @@ public class DataTaskService {
     }
 
     private void applyAuditDefaults(DataTask task, String operator, boolean creating) {
-        if (StringUtils.hasText(operator)) {
+        if (creating && !StringUtils.hasText(task.getOwner()) && StringUtils.hasText(operator)) {
             task.setOwner(operator);
         }
         if (creating && !StringUtils.hasText(task.getStatus())) {

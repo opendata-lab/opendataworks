@@ -62,3 +62,5 @@ MySQL 脚本使用 service_accounts_smoke.py --keep 创建的自有测试源，�
 必须保留 ODW_CREDENTIAL_KEY 并同步发布 Java / Vue。现有人工映射不改密；旧后端不能使用新托管密文，降级前应核对并处理托管账号／映射，不能仅回滚 jar。具体步骤见[运行说明](../handbook/backend-runtime.md)与[权限手册](../handbook/features/users-and-data-permissions.md)。
 
 完整 backend/Dockerfile 构建两次在解析 maven / eclipse-temurin 基础镜像时遇到 Docker Hub 网络 DeadlineExceeded；registry-1.docker.io 和 auth.docker.io 的直接连接也超时，未将这项记为通过。当前 jar 已用先前成功构建的本机 Java17 运行镜像离线封装；容器启动、健康、管理员登录和V58托管成员响应均通过，临时容器已清理。这不替代完整 Dockerfile 构建。待网络恢复后需重跑标准镜像构建。Doris 真实自动建号／删除与生产管理账号权限、网络拓扑仍需部署环境验证，已登记[统一待办](../TODO.md)。
+
+后续状态（2026-11-04）：网络恢复后正式 backend/Dockerfile 构建已成功，并完成当前代码的真实Nginx／TLS代理与权限评审回归；上述Docker网络阻塞记录为历史验证状态。见[评审修复报告](2026-11-04-backend-pr-review-fixes.md)。

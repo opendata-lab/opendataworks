@@ -32,11 +32,11 @@ VITE_BACKEND_PROXY_TARGET=http://localhost:8082 npm --prefix frontend run dev --
 
 ## 内置 MCP 与访问身份
 
-MCP Streamable HTTP 地址为 `http://127.0.0.1:8082/api/mcp/`，无尾斜杠的 `/api/mcp` 也直接接受 POST，无重定向和会话状态；GET / DELETE 返回 405。请求使用 `Accept: application/json, text/event-stream` 和 `Authorization: Bearer <odw_sa_服务账号Token>`。管理员在账号管理中创建 SERVICE 并签发 Token；同一 Token 不允许访问门户 USER API。23 个工具的 `arguments` 顶层扁平，固定参数使用 camelCase，未知参数拒绝。预览不产生凭据，发布差异确认需要显式 `confirmDiff: true`。
+MCP Streamable HTTP 地址为 `http://127.0.0.1:8082/api/mcp/`，无尾斜杠的 `/api/mcp` 也直接接受 POST，无重定向和会话状态；GET / DELETE 返回 405。请求使用 `Accept: application/json, text/event-stream` 和 `Authorization: Bearer <odw_sa_服务账号Token>`。管理员在账号管理中创建 SERVICE 并签发 Token；同一 Token 不允许访问门户 USER API。23 个工具的 `arguments` 顶层扁平，固定参数使用 camelCase，未知参数拒绝；无必填参数的工具可省略 `arguments`。表／数据源／血缘导出超过5000行明确失败，需缩小范围。预览不产生凭据，发布差异确认需要显式 `confirmDiff: true`。
 
 在数据源权限页配置一次授权管理连接，为 USER / SERVICE 分配角色；首次分配自动创建并核验独立数据库账号，凭据使用 ODW_CREDENTIAL_KEY 加密，后续角色变更复用账号。已有 DBA 账号映射保持原样。只读查询可通过 `X-Agent-User-Id` 收窄到人工权限交集；物理 DDL 始终使用当前主体自己的映射，不借用委托用户或采集账号。SERVICE 可被明确授予原生写权限。管理凭据仅用于权限配置，不能补足缺失的主体映射。
 
-独立 DataAgent 需要在其仓库启动并把 MCP URL 更新为上述后端地址，同时刷新工具 Schema；智能问数还需要其模型及助手配置。本仓库不启动独立 DataAgent。部署时按实际门户来源设置 `ODW_HTTP_ALLOWED_ORIGINS`；MCP 默认仅允许私网客户端，受信代理必须显式列出，解析转发链时从右向左剥离受信地址。
+独立 DataAgent 需要在其仓库启动并把 MCP URL 更新为上述后端地址，同时刷新工具 Schema；智能问数还需要其模型及助手配置。本仓库不启动独立 DataAgent。门户 Nginx 拒绝 `/api/mcp` 及其子路径，外部 MCP 使用受限后端入口。TLS 在前置代理终止时，即使浏览器与门户同源，也必须将实际 HTTPS 来源填写到 `ODW_HTTP_ALLOWED_ORIGINS`，后端不隐式信任 `X-Forwarded-Proto`；MCP 默认仅允许私网客户端，受信代理必须显式列出，解析转发链时从右向左剥离受信地址。
 
 ## 验证
 

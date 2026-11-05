@@ -549,11 +549,11 @@
         },
         "database": {
           "type": "string",
-          "description": "库名(与 table 一起在缺 table_id 时定位)"
+          "description": "库名(与 table 一起在缺 tableId 时定位)"
         },
         "table": {
           "type": "string",
-          "description": "表名(与 database 一起在缺 table_id 时定位)"
+          "description": "表名(与 database 一起在缺 tableId 时定位)"
         },
         "tableComment": {
           "type": "string",
@@ -586,11 +586,11 @@
             "properties": {
               "fieldName": {
                 "type": "string",
-                "description": "字段名(与 field_id 二选一)"
+                "description": "字段名(与 fieldId 二选一)"
               },
               "fieldId": {
                 "type": "integer",
-                "description": "字段 ID(与 field_name 二选一)"
+                "description": "字段 ID(与 fieldName 二选一)"
               },
               "comment": {
                 "type": "string",
@@ -689,7 +689,7 @@
   },
   {
     "name": "odw_create_task",
-    "description": "Create a draft data-development task (e.g. a SQL task). Both input_tableIds and output_tableIds must be provided explicitly; pass [] for no inputs, and at least one output id.",
+    "description": "Create a draft data-development task (e.g. a SQL task). Both inputTableIds and outputTableIds must be provided explicitly; pass [] for no inputs, and at least one output id.",
     "readOnly": false,
     "destructive": false,
     "inputSchema": {

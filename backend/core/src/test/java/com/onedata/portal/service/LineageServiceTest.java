@@ -237,4 +237,45 @@ class LineageServiceTest {
         }
         return result;
     }
+    @Mock private DatasourceSubjectAccessService datasourceAccess;
+
+    @Test
+    void taskHalfEdgesRemainVisibleButHiddenOrMissingNonNullEndpointsDoNotLeak() {
+        DataTable visible = new DataTable();
+        visible.setId(1L);
+        visible.setClusterId(7L);
+        visible.setDbName("demo");
+        visible.setTableName("allowed");
+        DataTable hidden = new DataTable();
+        hidden.setId(2L);
+        hidden.setClusterId(7L);
+        hidden.setDbName("demo");
+        hidden.setTableName("hidden");
+        when(datasourceAccess.isVisible(7L, "demo", "allowed")).thenReturn(true);
+        when(dataTableMapper.selectBatchIds(any())).thenReturn(List.of(visible, hidden));
+        List<DataLineage> rows = new ArrayList<>();
+        Long[][] endpoints = {
+            {1L, null}, {null, 1L}, {1L, 2L}, {2L, null}, {null, null}, {1L, 99L}, {99L, null}
+        };
+        for (int i = 0; i < endpoints.length; i++) {
+            DataLineage row = new DataLineage();
+            row.setId((long) i);
+            row.setUpstreamTableId(endpoints[i][0]);
+            row.setDownstreamTableId(endpoints[i][1]);
+            row.setLineageType(i == 0 ? "input" : "output");
+            rows.add(row);
+        }
+        when(dataLineageMapper.selectList(any())).thenReturn(rows);
+        var exported = lineageService.exportLineage("demo");
+        assertEquals(
+                List.of(0L, 1L),
+                exported.stream().map(row -> row.get("id")).collect(Collectors.toList()));
+        org.junit.jupiter.api.Assertions.assertNull(exported.get(0).get("downstream_table"));
+        org.junit.jupiter.api.Assertions.assertNull(exported.get(1).get("upstream_table"));
+        assertEquals(
+                List.of(0L, 1L),
+                lineageService.inspectRecordsForTables(List.of(1L), 100).stream()
+                        .map(row -> row.getId())
+                        .collect(Collectors.toList()));
+    }
 }

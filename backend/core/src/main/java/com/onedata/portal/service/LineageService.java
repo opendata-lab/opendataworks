@@ -407,7 +407,7 @@ public class LineageService {
         for (DataLineage lineage : lineages) {
             DataTable upstream = tableMap.get(lineage.getUpstreamTableId());
             DataTable downstream = tableMap.get(lineage.getDownstreamTableId());
-            if (!isTableAllowed(upstream) || !isTableAllowed(downstream)) {
+            if (!isLineageAllowed(lineage, upstream, downstream)) {
                 continue;
             }
             if (StringUtils.hasText(normalizedDatabase)) {
@@ -488,7 +488,7 @@ public class LineageService {
             LineageRecordDto record = new LineageRecordDto();
             record.setId(lineage.getId());
             record.setLineageType(lineage.getLineageType());
-            if (!isTableAllowed(upstream) || !isTableAllowed(downstream)) {
+            if (!isLineageAllowed(lineage, upstream, downstream)) {
                 continue;
             }
             record.setUpstreamDb(upstream == null ? null : upstream.getDbName());
@@ -551,6 +551,13 @@ public class LineageService {
 
     private List<DataTable> filterVisibleTables(List<DataTable> tables) {
         return tables.stream().filter(this::isTableAllowed).collect(Collectors.toList());
+    }
+
+    private boolean isLineageAllowed(
+            DataLineage lineage, DataTable upstream, DataTable downstream) {
+        return (lineage.getUpstreamTableId() != null || lineage.getDownstreamTableId() != null)
+                && (lineage.getUpstreamTableId() == null || isTableAllowed(upstream))
+                && (lineage.getDownstreamTableId() == null || isTableAllowed(downstream));
     }
 
     private boolean isTableAllowed(DataTable table) {

@@ -131,4 +131,54 @@ class DataQueryServiceTest {
             PrincipalContextHolder.clear();
         }
     }
+
+    @Test
+    void delegatedReadAuditRecordsResolvedUserAndExplainAccountWithServiceExecutor()
+            throws Exception {
+        var access = mock(DatasourceSubjectAccessService.class);
+        var histories = mock(DataQueryHistoryMapper.class);
+        var ds = new com.onedata.portal.dto.DatasourceResolutionDto();
+        ds.setClusterId(1L);
+        ds.setDatabase("demo");
+        ds.setEngine("mysql");
+        ds.setSourceType("MYSQL");
+        when(access.resolveDatasource("demo", null)).thenReturn(ds);
+        when(access.checkReadAccess(1L, "demo", "SELECT 1", 30))
+                .thenReturn(
+                        new DatasourceSubjectAccessService.ReadAccessIdentity(
+                                "17", "alice_native"));
+        var serviceAccount = new com.onedata.portal.entity.DatasourceSubjectAccount();
+        serviceAccount.setUsername("service_native");
+        when(access.require(1L, "SERVICE", "19")).thenReturn(serviceAccount);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+        when(access.openPrincipalConnection(1L, "demo", true)).thenReturn(connection);
+        when(connection.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY))
+                .thenReturn(statement);
+        when(statement.executeQuery("SELECT 1")).thenReturn(rows);
+        when(rows.getMetaData()).thenReturn(mock(ResultSetMetaData.class));
+        var queries =
+                new DataQueryService(
+                        mock(DorisConnectionService.class),
+                        mock(DorisClusterService.class),
+                        histories,
+                        new ObjectMapper(),
+                        access);
+        var request = new com.onedata.portal.dto.ReadOnlyQueryRequest();
+        request.setDatabase("demo");
+        request.setSql("SELECT 1");
+        PrincipalContextHolder.setContext(CurrentPrincipal.service(19L, "local:alice"));
+        try {
+            queries.readQuery(request);
+            var captured = ArgumentCaptor.forClass(DataQueryHistory.class);
+            verify(histories).insert(captured.capture());
+            assertEquals("17", captured.getValue().getExecutedBy());
+            assertEquals("alice_native", captured.getValue().getCheckAccount());
+            assertEquals("19", captured.getValue().getAgentId());
+            assertEquals("service_native", captured.getValue().getExecutionAccount());
+        } finally {
+            PrincipalContextHolder.clear();
+        }
+    }
 }

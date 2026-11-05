@@ -461,12 +461,7 @@ public class DataTableQueryService {
         if (rows == null || rows.size() <= EXPORT_MAX_ROWS) {
             return rows;
         }
-        log.warn(
-                "agent metadata export '{}' truncated from {} to {} rows",
-                exportKind,
-                rows.size(),
-                EXPORT_MAX_ROWS);
-        return new ArrayList<>(rows.subList(0, EXPORT_MAX_ROWS));
+        throw new IllegalArgumentException("导出结果超过5000行，请缩小范围");
     }
 
     private List<DataTable> findTables(

@@ -181,4 +181,22 @@ class TaskDefinitionUpdateTest {
 
         verify(dataTaskService).create(any(), any(), any(), eq(LineageValidationMode.STRICT));
     }
+
+    @Test
+    void taskOwnerKeepsExplicitBusinessOwnershipAndOnlyDefaultsOnCreation() {
+        TaskDefinitionRequest explicit = new TaskDefinitionRequest();
+        explicit.setTask(Map.of("taskName", "new", "owner", "data-team"));
+        service().createFromDefinition(explicit, "7");
+        ArgumentCaptor<DataTask> created = ArgumentCaptor.forClass(DataTask.class);
+        verify(dataTaskService)
+                .create(created.capture(), any(), any(), eq(LineageValidationMode.STRICT));
+        assertEquals("data-team", created.getValue().getOwner());
+        TaskDefinitionRequest update = new TaskDefinitionRequest();
+        update.setTask(Map.of("taskName", "renamed"));
+        service().updateFromDefinition(7L, update, "7");
+        ArgumentCaptor<DataTask> updated = ArgumentCaptor.forClass(DataTask.class);
+        verify(dataTaskService)
+                .update(updated.capture(), any(), any(), eq(LineageValidationMode.STRICT));
+        assertNull(updated.getValue().getOwner(), "Omitted owner must remain a sparse update");
+    }
 }

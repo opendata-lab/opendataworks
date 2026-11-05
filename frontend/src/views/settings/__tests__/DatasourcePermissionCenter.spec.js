@@ -203,6 +203,91 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     ])
   })
 
+  it.each(['existing', 'service'])('首次 %s 授权失败后刷新 ERROR 成员和授权记录并保留原始错误', async (mode) => {
+    const wrapper = await mountCenter()
+    const vm = feature(wrapper, 'memberState')
+    vm.openAuthorizeDialog(mode)
+    vm.authorizeForm.roleIds = [101]
+    vm.authorizeForm.userId = '3'
+    vm.authorizeForm.serviceAccountId = '7'
+    const failed = makeOverview()
+    failed.members.push({ subjectType: mode === 'service' ? 'SERVICE' : 'USER', subjectId: mode === 'service' ? '7' : '3', name: '失败成员', roleIds: [101], status: 'ERROR', account: { configured: true, managed: true, username: 'odw_failed' } })
+    permissionsApiMock.getOverview.mockResolvedValueOnce(failed)
+    permissionsApiMock.assignMemberRoles.mockRejectedValueOnce(new Error('操作123 UNKNOWN：创建登录超时'))
+    await vm.submitAuthorize()
+    expect(vm.authorizeError).toContain('操作123 UNKNOWN')
+    expect(wrapper.vm.overview.members.some((m) => m.status === 'ERROR')).toBe(true)
+    expect(permissionsApiMock.listOperations).toHaveBeenCalledWith(10)
+    expect(vm.authorizeDialogVisible).toBe(true)
+    expect(messagesMock.success).not.toHaveBeenCalled()
+  })
+
+  it('角色分配部分成功失败后更新异常状态与重试 revision', async () => {
+    const wrapper = await mountCenter()
+    const vm = feature(wrapper, 'memberState')
+    vm.openRoleAssignDialog(wrapper.vm.overview.members[0])
+    vm.roleAssignForm.roleIds = [101, 102]
+    const failed = makeOverview()
+    failed.members[0].status = 'ERROR'
+    failed.members[0].roleIds = [101, 102]
+    failed.members[0].revision = 5
+    permissionsApiMock.getOverview.mockResolvedValueOnce(failed)
+    permissionsApiMock.assignMemberRoles.mockRejectedValueOnce(new Error('操作124 PARTIAL：激活失败'))
+    await vm.submitRoleAssign()
+    expect(vm.roleAssignError).toContain('操作124 PARTIAL')
+    expect(wrapper.vm.overview.members[0].status).toBe('ERROR')
+    expect(vm.roleAssignTarget.revision).toBe(5)
+    expect(wrapper.text()).toContain('状态异常')
+    await vm.submitRoleAssign()
+    expect(permissionsApiMock.assignMemberRoles).toHaveBeenLastCalledWith(10, 'USER', '2', { roleIds: [101, 102], expectedRevision: 5 })
+  })
+
+  it('移除成员失败已撤销原生角色时刷新并展示数据库错误', async () => {
+    const wrapper = await mountCenter()
+    confirmMock.mockResolvedValue('confirm')
+    const failed = makeOverview()
+    failed.members[0].status = 'ERROR'
+    permissionsApiMock.getOverview.mockResolvedValueOnce(failed)
+    permissionsApiMock.removeMember.mockRejectedValueOnce(new Error('操作125 PARTIAL：登录仍拥有对象 2BP01'))
+    await feature(wrapper, 'memberState').handleRemoveMember(wrapper.vm.overview.members[0])
+    expect(messagesMock.error).toHaveBeenCalledWith(expect.stringContaining('2BP01'))
+    expect(messagesMock.success).not.toHaveBeenCalled()
+    expect(wrapper.vm.overview.members[0].status).toBe('ERROR')
+    expect(permissionsApiMock.listOperations).toHaveBeenCalledWith(10)
+    expect(wrapper.text()).toContain('状态异常')
+  })
+
+  it('APPLYING 成员显示执行中且不会进入正常筛选', async () => {
+    const pending = makeOverview()
+    pending.members = [{ ...pending.members[0], status: 'APPLYING' }]
+    permissionsApiMock.getOverview.mockResolvedValueOnce(pending)
+    const wrapper = await mountCenter()
+    expect(wrapper.text()).toContain('执行中')
+    feature(wrapper, 'memberState').memberFilters.status = 'ready'
+    await flushPromises()
+    expect(feature(wrapper, 'memberState').filteredMembers).toHaveLength(0)
+  })
+
+  it('旧源迟到授权失败不刷新新源也不覆盖新源错误', async () => {
+    let rejectOld
+    permissionsApiMock.assignMemberRoles.mockImplementationOnce(() => new Promise((resolve, reject) => { rejectOld = reject }))
+    const clusters = [{ id: 10, clusterName: '旧源 PG', sourceType: 'POSTGRESQL' }, { id: 20, clusterName: '新源', sourceType: 'MYSQL' }]
+    const wrapper = await mountCenter(clusters[0], clusters)
+    const vm = feature(wrapper, 'memberState')
+    vm.openRoleAssignDialog(wrapper.vm.overview.members[0])
+    const pending = vm.submitRoleAssign()
+    permissionsApiMock.getOverview.mockResolvedValueOnce(makeOverview(20))
+    wrapper.vm.handleSourceSwitch(20)
+    await flushPromises()
+    const reads = permissionsApiMock.getOverview.mock.calls.length
+    rejectOld(new Error('旧源授权失败'))
+    await pending
+    expect(permissionsApiMock.getOverview).toHaveBeenCalledTimes(reads)
+    expect(wrapper.vm.overview.sourceId).toBe(20)
+    expect(vm.roleAssignError).toBe('')
+    expect(messagesMock.error).not.toHaveBeenCalled()
+  })
+
   it('角色删除部分成功时展示操作记录，不能提示已删除', async () => {
     confirmMock.mockResolvedValue('confirm')
     permissionsApiMock.deleteRole.mockResolvedValue({
@@ -348,6 +433,8 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     expect(vm.authorizeError).toContain('已创建平台用户「王宁」（wangning）')
     expect(vm.authorizeError).toContain('原生 ROLE 授权超时')
     expect(messagesMock.warning).toHaveBeenCalled()
+    expect(permissionsApiMock.getOverview).toHaveBeenCalledTimes(2)
+    expect(permissionsApiMock.listOperations).toHaveBeenCalledWith(10)
   })
 
   it('授权服务账号使用平台数值 ID，不访问 DataAgent，拒绝停用账号及用户类型混用', async () => {

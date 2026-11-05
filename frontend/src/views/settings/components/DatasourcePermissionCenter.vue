@@ -167,6 +167,7 @@ const memberState = usePermissionMembers({
   getRoleName: scopeState.getRoleName,
   platformUsers: scopeState.platformUsers,
   loadAllForSource: loadAllForSource,
+  loadOperations: operationState.loadOperations,
 })
 const roleState = usePermissionRoleActions({
   captureRequest: scopeState.captureRequest,

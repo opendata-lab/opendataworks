@@ -187,4 +187,38 @@ class DatasourceSubjectAccessServiceTest {
         user.setEnabled(true);
         return user;
     }
+
+    @Test
+    void resolvingDatasourceRejectsMissingDisabledOrUnmappedDelegates() {
+        DorisCluster source = new DorisCluster();
+        source.setId(1L);
+        source.setSourceType("MYSQL");
+        when(clusters.selectById(1L)).thenReturn(source);
+        when(accounts.selectOne(any())).thenReturn(new DatasourceSubjectAccount());
+        PrincipalContextHolder.setContext(CurrentPrincipal.service(19L, "local:alice"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.resolveClusterDatasource(1L, "demo", null, "test"));
+        SysUser delegate = user();
+        delegate.setEnabled(false);
+        when(users.selectOne(any())).thenReturn(delegate);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.resolveClusterDatasource(1L, "demo", null, "test"));
+        delegate.setEnabled(true);
+        when(users.selectById(17L)).thenReturn(delegate);
+        when(accounts.selectOne(any()))
+                .thenAnswer(
+                        call -> {
+                            LambdaQueryWrapper<?> query = call.getArgument(0);
+                            query.getSqlSegment();
+                            return query.getParamNameValuePairs().containsValue("17")
+                                    ? null
+                                    : new DatasourceSubjectAccount();
+                        });
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> service.resolveClusterDatasource(1L, "demo", null, "test"));
+        verifyNoInteractions(factory);
+    }
 }

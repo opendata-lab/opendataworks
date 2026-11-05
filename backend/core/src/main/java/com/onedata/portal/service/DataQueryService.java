@@ -1375,9 +1375,11 @@ public class DataQueryService {
         history.setClusterName(datasource.getClusterName());
         history.setDatabaseName(database);
         history.setSqlText(sql);
-        history.setExecutedBy(PrincipalContextHolder.require().getDelegatedUserKey());
+        history.setExecutedBy(
+                execution.checkIdentity() == null ? null : execution.checkIdentity().userId());
         history.setAgentId(PrincipalContextHolder.getCurrentUserId());
-        history.setCheckAccount(null);
+        history.setCheckAccount(
+                execution.checkIdentity() == null ? null : execution.checkIdentity().account());
         history.setExecutionAccount(
                 datasourceAccess
                         .require(
@@ -1605,12 +1607,17 @@ public class DataQueryService {
     }
 
     private record ReadExecutionResult(
-            List<Map<String, Object>> rows, boolean hasMore, boolean truncated, int durationMs) {}
+            List<Map<String, Object>> rows,
+            boolean hasMore,
+            boolean truncated,
+            int durationMs,
+            DatasourceSubjectAccessService.ReadAccessIdentity checkIdentity) {}
 
     private ReadExecutionResult executeReadOnlyRows(
             DatasourceResolutionDto ds, String sql, int limit, int timeout) {
         long start = System.currentTimeMillis();
-        datasourceAccess.checkReadAccess(ds.getClusterId(), ds.getDatabase(), sql, timeout);
+        var checkIdentity =
+                datasourceAccess.checkReadAccess(ds.getClusterId(), ds.getDatabase(), sql, timeout);
         try (Connection c =
                 datasourceAccess.openPrincipalConnection(
                         ds.getClusterId(), ds.getDatabase(), true)) {
@@ -1629,7 +1636,8 @@ public class DataQueryService {
                             read.rows(),
                             read.hasMore(),
                             read.truncated(),
-                            (int) (System.currentTimeMillis() - start));
+                            (int) (System.currentTimeMillis() - start),
+                            checkIdentity);
                 }
             }
         } catch (SQLException e) {

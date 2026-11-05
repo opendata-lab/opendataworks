@@ -94,3 +94,10 @@ def test_mysql_probe_uses_the_container_password_after_customization(render, tmp
     result = subprocess.run(["sh", "-c", command], capture_output=True, text=True, check=True,
                             env={**os.environ, **service["environment"], "PATH": f"{tmp_path}:{os.environ['PATH']}"})
     assert result.stdout == "changed root password"
+
+
+def test_portal_proxy_does_not_turn_public_mcp_clients_into_private_peers():
+    config = (ROOT / "deploy/docker/nginx/frontend.conf").read_text()
+    assert re.search(r"location\s+=\s+/api/mcp\s*\{\s*return 404;\s*\}", config)
+    assert re.search(r"location\s+\^~\s+/api/mcp/\s*\{\s*return 404;\s*\}", config)
+    assert re.search(r"(?m)^    location /api/ \{", config)

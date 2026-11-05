@@ -462,6 +462,10 @@ public class DatasourcePermissionService {
             candidate.setUsername(accountInput.getUsername());
             candidate.setPassword(password);
         }
+        Set<Long> previousRoleIds =
+                old == null ? Collections.emptySet() : new LinkedHashSet<>(roleIds(old));
+        Set<Long> protectedRoleIds = new LinkedHashSet<>(previousRoleIds);
+        protectedRoleIds.addAll(desiredIds);
         boolean createManaged = candidate == null && !remove;
         if (createManaged) {
             if (desiredIds.isEmpty()) throw new IllegalArgumentException("请至少选择一个角色以自动创建数据库账号");
@@ -479,8 +483,9 @@ public class DatasourcePermissionService {
         List<Map<String, Object>> steps = new ArrayList<>();
         final DatasourceSubjectAccount saved = candidate;
         final Long[] preparedMemberId = {null};
+        boolean managementContext = true;
         try {
-            if (createManaged) {
+            if (createManaged || old == null && !remove) {
                 preparedMemberId[0] =
                         platformTransaction()
                                 .execute(
@@ -490,12 +495,20 @@ public class DatasourcePermissionService {
                                                             ? permissions.createMember(
                                                                     source, type, subject)
                                                             : longNumber(old.get("id"));
-                                            saveMapping(source, saved);
-                                            saveBindings(id, desiredIds);
+                                            if (createManaged) saveMapping(source, saved);
+                                            saveBindings(id, protectedRoleIds);
                                             permissions.markMemberApplying(id);
                                             return id;
                                         });
-            } else if (old != null) permissions.markMemberApplying(old.get("id"));
+            } else if (old != null) {
+                platformTransaction()
+                        .execute(
+                                tx -> {
+                                    saveBindings(longNumber(old.get("id")), protectedRoleIds);
+                                    permissions.markMemberApplying(old.get("id"));
+                                    return null;
+                                });
+            }
             List<Map<String, Object>> allRoles = query(permissions.listRoleSnapshots(source));
             Set<String> managed =
                     allRoles.stream()
@@ -511,6 +524,7 @@ public class DatasourcePermissionService {
                     try (Connection manager = management(source)) {
                         provisionManagedLogin(manager, adapter, candidate, steps, op);
                     }
+                managementContext = false;
                 Identity identity;
                 boolean legacyUnmanagedRemoval =
                         remove
@@ -531,18 +545,21 @@ public class DatasourcePermissionService {
                 verifiedIdentity[0] = identity;
                 if (identity != null
                         && (!managed.isEmpty() || Boolean.TRUE.equals(candidate.getManaged()))) {
+                    managementContext = true;
                     try (Connection manager = management(source)) {
                         // A staged mapping alone does not prove that CREATE USER succeeded.
                         if (remove
                                 && Boolean.TRUE.equals(candidate.getManaged())
                                 && storedIdentity(old) == null
                                 && adapter.identityExists(manager, identity)) {
+                            managementContext = false;
                             try (Connection target = accountConnection(cluster, candidate)) {
                                 if (!identity.equals(
                                         adapter.identity(target, candidate.getUsername())))
                                     throw new IllegalArgumentException("无法核验待恢复托管账号的所有权，未删除数据库账号");
                             }
                         }
+                        managementContext = true;
                         synchronizeMembership(
                                 manager,
                                 adapter,
@@ -554,11 +571,14 @@ public class DatasourcePermissionService {
                         Identity oldIdentity = storedIdentity(old);
                         if (oldIdentity == null
                                 && previous != null
-                                && !previous.getUsername().equals(candidate.getUsername()))
+                                && !previous.getUsername().equals(candidate.getUsername())) {
+                            managementContext = false;
                             try (Connection oldConnection = accountConnection(cluster, previous)) {
                                 oldIdentity =
                                         adapter.identity(oldConnection, previous.getUsername());
                             }
+                        }
+                        managementContext = true;
                         if (oldIdentity != null && !oldIdentity.equals(identity))
                             synchronizeMembership(
                                     manager,
@@ -587,10 +607,12 @@ public class DatasourcePermissionService {
                         }
                     }
                 }
-                if (!remove)
+                if (!remove) {
+                    managementContext = false;
                     try (Connection fresh = accountConnection(cluster, candidate)) {
                         adapter.verifyActiveRoles(fresh, desired);
                     }
+                }
             }
             platformTransaction()
                     .execute(
@@ -629,14 +651,27 @@ public class DatasourcePermissionService {
                             });
         } catch (Exception e) {
             String state = failureState(e, steps, !steps.isEmpty());
-            permissions.finishOperation(state, safeMessage(e), write(steps), op);
+            String message = safeMessage(e, managementContext);
+            permissions.finishOperation(state, message, write(steps), op);
             if (preparedMemberId[0] != null)
                 permissions.setMemberStatus("ERROR", preparedMemberId[0]);
-            else if (old != null)
-                permissions.setMemberStatus(
-                        "FAILED".equals(state) ? old.get("status") : "ERROR", old.get("id"));
+            else if (old != null) {
+                platformTransaction()
+                        .execute(
+                                tx -> {
+                                    if ("FAILED".equals(state))
+                                        saveBindings(longNumber(old.get("id")), previousRoleIds);
+                                    permissions.setMemberStatus(
+                                            "FAILED".equals(state)
+                                                            && "ACTIVE".equals(old.get("status"))
+                                                    ? "ACTIVE"
+                                                    : "ERROR",
+                                            old.get("id"));
+                                    return null;
+                                });
+            }
             throw new IllegalArgumentException(
-                    "操作" + op + " " + state + "：" + safeMessage(e) + "；请核对授权记录，未报告成功");
+                    "操作" + op + " " + state + "：" + message + "；请核对授权记录，未报告成功");
         }
         return remove ? map("removed", true) : memberView(source, member(source, type, subject));
     }
@@ -1043,6 +1078,7 @@ public class DatasourcePermissionService {
         permissions.recordOperationSteps(write(steps), operation);
         // Keep secret-bearing SQL out of JdbcTemplate logging and operation payloads.
         try (Statement statement = manager.createStatement()) {
+            statement.setQueryTimeout(20);
             statement.execute(adapter.createLogin(identity, password));
             step.put("state", "SUCCESS");
         } catch (SQLException error) {
@@ -1210,17 +1246,23 @@ public class DatasourcePermissionService {
     }
 
     private static String safeMessage(Exception e) {
+        return safeMessage(e, true);
+    }
+
+    private static String safeMessage(Exception e, boolean managementContext) {
         String text = e.getMessage() == null ? "操作失败，请检查管理账号与原生权限" : e.getMessage();
-        if (insufficientManagementPrivileges(e)) {
+        if (insufficientPrivileges(e)) {
             text =
-                    "当前用于权限管理的数据库账号权限不足。请在当前数据源「权限配置 → 授权管理连接」配置专用管理账号，"
-                            + "或联系 DBA 补齐该管理账号的系统授权表读取、角色管理及目标对象授权权限。数据库返回："
-                            + text;
+                    managementContext
+                            ? "当前用于权限管理的数据库账号权限不足。请在当前数据源「权限配置 → 授权管理连接」配置专用管理账号，"
+                                    + "或联系 DBA 补齐该管理账号的系统授权表读取、角色管理及目标对象授权权限。数据库返回："
+                                    + text
+                            : "成员数据库账号权限不足，请检查该成员账号对目标数据库的 CONNECT／连接及角色激活权限。数据库返回：" + text;
         }
         return text.substring(0, Math.min(text.length(), 900));
     }
 
-    private static boolean insufficientManagementPrivileges(Exception error) {
+    private static boolean insufficientPrivileges(Exception error) {
         for (Throwable cause = error; cause != null; cause = cause.getCause()) {
             if (cause instanceof SQLException sql) {
                 // MySQL/Doris privilege errors and PostgreSQL insufficient_privilege.
@@ -1293,7 +1335,11 @@ public class DatasourcePermissionService {
                     (key, value) -> {
                         StringBuilder camel = new StringBuilder();
                         boolean upper = false;
-                        for (char ch : key.toCharArray())
+                        for (char ch :
+                                (key.contains("_") || key.equals(key.toUpperCase(Locale.ROOT))
+                                                ? key.toLowerCase(Locale.ROOT)
+                                                : key)
+                                        .toCharArray())
                             if (ch == '_') upper = true;
                             else {
                                 camel.append(upper ? Character.toUpperCase(ch) : ch);

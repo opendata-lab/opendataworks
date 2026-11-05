@@ -21,6 +21,8 @@ class McpContractTest {
     private final DataTaskService tasks = mock(DataTaskService.class);
     private final WorkflowPublishService publish = mock(WorkflowPublishService.class);
     private final DataQueryService queries = mock(DataQueryService.class);
+    private final TableCreateService createTable = mock(TableCreateService.class);
+    private final DataTableQueryService tables = mock(DataTableQueryService.class);
     private final WorkflowService workflows = mock(WorkflowService.class);
 
     @BeforeEach
@@ -30,12 +32,12 @@ class McpContractTest {
                 new McpToolHandlers(
                         schemas,
                         mapper,
-                        mock(DataTableQueryService.class),
+                        tables,
                         mock(DataTableService.class),
                         mock(LineageService.class),
                         queries,
                         mock(DatasourceSubjectAccessService.class),
-                        mock(TableCreateService.class),
+                        createTable,
                         tasks,
                         workflows,
                         publish,
@@ -181,5 +183,39 @@ class McpContractTest {
         var response = handlers.call("odw_list_workflows", Map.of());
         assertTrue(response.isError());
         verify(workflows, times(1)).list(any());
+    }
+
+    @Test
+    void omittedArgumentsAreEmptyObjectsButRequiredArgumentsStillFail() {
+        when(tables.inspect(any(), any(), any(), anyInt()))
+                .thenReturn(new com.onedata.portal.dto.TableInspectionResponse());
+        when(tasks.listTasks(any(), any(), anyInt())).thenReturn(List.of());
+        when(workflows.list(any()))
+                .thenReturn(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>());
+        for (String tool : List.of("odw_search_tables", "odw_list_tasks", "odw_list_workflows"))
+            assertFalse(handlers.call(tool, null).isError(), tool);
+        assertTrue(handlers.call("odw_get_task", null).isError());
+        verify(tasks, never()).getTaskOrThrow(any());
+    }
+
+    @Test
+    void tableBusinessOwnerIsExplicitOrDefaultsToAuthenticatedCaller() {
+        when(createTable.preview(any()))
+                .thenReturn(new com.onedata.portal.dto.TableDesignPreviewResponse());
+        var columns = List.of(Map.of("columnName", "id", "dataType", "BIGINT"));
+        assertFalse(
+                handlers.call(
+                                "odw_preview_create_table",
+                                Map.of("dbName", "demo", "columns", columns, "owner", "data-team"))
+                        .isError());
+        assertFalse(
+                handlers.call(
+                                "odw_preview_create_table",
+                                Map.of("dbName", "demo", "columns", columns))
+                        .isError());
+        var captured = ArgumentCaptor.forClass(com.onedata.portal.dto.TableCreateRequest.class);
+        verify(createTable, times(2)).preview(captured.capture());
+        assertEquals("data-team", captured.getAllValues().get(0).getOwner());
+        assertEquals("7", captured.getAllValues().get(1).getOwner());
     }
 }

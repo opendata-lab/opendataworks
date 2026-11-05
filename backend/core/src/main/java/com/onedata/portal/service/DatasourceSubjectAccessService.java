@@ -225,15 +225,21 @@ public class DatasourceSubjectAccessService {
         return namespace + "\u0000" + table;
     }
 
-    public void checkReadAccess(Long sourceId, String database, String sql, int timeout) {
+    public record ReadAccessIdentity(String userId, String account) {}
+
+    public ReadAccessIdentity checkReadAccess(
+            Long sourceId, String database, String sql, int timeout) {
         CurrentPrincipal p = PrincipalContextHolder.require();
         if (p.getAccountType() != CurrentPrincipal.AccountType.SERVICE
-                || p.getDelegatedUserKey() == null) return;
+                || p.getDelegatedUserKey() == null) return null;
         SysUser user = resolveUser(p.getDelegatedUserKey());
         try (Connection c = open(sourceId, "USER", String.valueOf(user.getId()), database, true);
                 java.sql.Statement st = c.createStatement()) {
             st.setQueryTimeout(timeout);
             try (java.sql.ResultSet ignored = st.executeQuery("EXPLAIN " + sql)) {}
+            return new ReadAccessIdentity(
+                    String.valueOf(user.getId()),
+                    require(sourceId, "USER", String.valueOf(user.getId())).getUsername());
         } catch (SQLException e) {
             throw new IllegalArgumentException("用户数据库权限检查失败", e);
         }
@@ -307,6 +313,12 @@ public class DatasourceSubjectAccessService {
                 response.getClusterId(),
                 com.onedata.auth.context.PrincipalContextHolder.require().getAccountType().name(),
                 com.onedata.auth.context.PrincipalContextHolder.require().getUserId());
+        CurrentPrincipal principal = PrincipalContextHolder.require();
+        if (principal.getAccountType() == CurrentPrincipal.AccountType.SERVICE
+                && principal.getDelegatedUserKey() != null) {
+            SysUser delegate = resolveUser(principal.getDelegatedUserKey());
+            require(clusterId, "USER", String.valueOf(delegate.getId()));
+        }
         return response;
     }
 

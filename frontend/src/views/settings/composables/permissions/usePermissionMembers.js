@@ -12,6 +12,7 @@ export function usePermissionMembers({
   getRoleName,
   platformUsers,
   loadAllForSource,
+  loadOperations,
 }) {
   const memberFilters = reactive({
     keyword: '',
@@ -125,6 +126,21 @@ export function usePermissionMembers({
     authorizeForm.roleIds = [...set]
   }
 
+  async function refreshAfterFailure(request) {
+    if (!request.isCurrent()) return
+    try {
+      await Promise.all([loadAllForSource(request.sourceId), loadOperations(request.sourceId)])
+      if (!request.isCurrent()) return
+      const refreshed = (target) => overview.members.find(
+        (m) => m.subjectType === target?.subjectType && String(m.subjectId) === String(target?.subjectId)
+      ) || target
+      roleAssignTarget.value = refreshed(roleAssignTarget.value)
+      accountTarget.value = refreshed(accountTarget.value)
+    } catch {
+      // Preserve the original operation error; overview loading reports its own failure.
+    }
+  }
+
   async function submitAuthorize() {
     const request = captureRequest()
     if (authorizing.value) return
@@ -166,6 +182,7 @@ export function usePermissionMembers({
       } catch (error) {
         if (!request.isCurrent()) return
         authorizeError.value = error?.message || '服务账号授权失败'
+        await refreshAfterFailure(request)
       } finally {
         if (request.isCurrent()) {
           authorizing.value = false
@@ -203,6 +220,7 @@ export function usePermissionMembers({
       } catch (error) {
         if (!request.isCurrent()) return
         authorizeError.value = error?.message || '用户授权失败'
+        await refreshAfterFailure(request)
       } finally {
         if (request.isCurrent()) {
           authorizing.value = false
@@ -259,6 +277,7 @@ export function usePermissionMembers({
       const msg = `已创建平台用户「${createdUser.nickname || createdUser.username}」（${createdUser.username}），但分配数据源角色失败：${error?.message || '请求失败'}。已为您切换至已有用户模式，可直接重试确认授权。`
       authorizeError.value = msg
       ElMessage.warning(msg)
+      await refreshAfterFailure(request)
     } finally {
       if (request.isCurrent()) {
         authorizing.value = false
@@ -305,6 +324,7 @@ export function usePermissionMembers({
     } catch (error) {
       if (!request.isCurrent()) return
       roleAssignError.value = error?.message || '保存角色分配失败'
+      await refreshAfterFailure(request)
     } finally {
       if (request.isCurrent()) {
         roleAssignSaving.value = false
@@ -369,6 +389,7 @@ export function usePermissionMembers({
     } catch (error) {
       if (!request.isCurrent()) return
       accountError.value = error?.message || '绑定数据库账号失败'
+      await refreshAfterFailure(request)
     } finally {
       if (request.isCurrent()) {
         accountSaving.value = false
@@ -393,11 +414,16 @@ export function usePermissionMembers({
       return
     }
 
-    await permissionsApi.removeMember(request.sourceId, member.subjectType, member.subjectId)
-    if (!request.isCurrent()) return
-    ElMessage.success('成员已移除')
-    await loadAllForSource(request.sourceId)
-    if (!request.isCurrent()) return
+    try {
+      await permissionsApi.removeMember(request.sourceId, member.subjectType, member.subjectId)
+      if (!request.isCurrent()) return
+      ElMessage.success('成员已移除')
+      await loadAllForSource(request.sourceId)
+    } catch (error) {
+      if (!request.isCurrent()) return
+      ElMessage.error(error?.message || '移除成员失败')
+      await refreshAfterFailure(request)
+    }
   }
 
   const normalizedInspectGrants = computed(() => {

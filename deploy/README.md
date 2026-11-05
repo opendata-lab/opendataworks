@@ -142,7 +142,7 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 
 使用专用「授权管理连接」前，在部署的`.env`配置`ODW_CREDENTIAL_KEY`（`openssl rand -base64 32`生成）。Compose开发／生产配置均传给backend；独立Java启动时同样设置该环境变量。它是AES-256-GCM密钥，不得提交版本库或发到前端；备份时与平台库分开保管。不要直接替换密钥：旧管理连接将不能解密，需明确重录或设计密钥轮换后再替换。未配置密钥时拒绝保存专用管理连接，不保存明文。
 
-管理账号需要创建／删除成员登录账号、盘点资源、创建／删除ROLE、给ROLE授予并撤销选定对象权限、管理成员关系及回读权限的实际原生能力。MySQL回读涉及mysql.user／db／tables_priv／role_edges／default_roles等；PG涉及角色、成员和ACL目录。最简单的本机验证可用DBA账号，生产应由DBA限制可管理资源与网络范围。不要把管理连接绑定给普通用户或智能体；智能体账号只能只读且无管理／转授权能力。
+管理账号需要创建／删除成员登录账号、盘点资源、创建／删除ROLE、给ROLE授予并撤销选定对象权限、管理成员关系及回读权限的实际原生能力。MySQL回读涉及mysql.user／db／tables_priv／role_edges／default_roles等；PG涉及角色、成员和ACL目录。最简单的本机验证可用DBA账号，生产应由DBA限制可管理资源与网络范围。不要把管理连接绑定给普通用户或智能体；智能体账号应按用途分配最小权限且无管理／转授权能力；问数用途仅分配只读角色。
 
 原生库与平台记录无分布式事务。非SUCCESS必须查授权记录和远端实际状态，重新预览后明确恢复；回滚时先停止权限写入，再按操作步骤核对原生授权与平台备份，不能仅换旧镜像，也不能自动重授已撤权限。停用／删除平台用户不会删除数据库账号；DBA直连访问需单独管理。
 
@@ -154,7 +154,7 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 
 升级前备份平台库和 DataAgent 会话库（DataAgent 侧为 Alembic `20261026_000029`），检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
 
-1. DBA 为每个数据源配置一次授权管理连接；平台在首次分配角色时自动创建人的账号和服务账号登录。V55起可用角色中心管理托管授权并核验Agent只读能力；账号已有直接授权仍由DBA核对。Doris 使用 `Select_priv`，不依赖驱动只读事务。
+1. DBA 为每个数据源配置一次授权管理连接；平台在首次分配角色时自动创建人的账号和服务账号登录。V55起可用角色中心管理托管授权并核验成员原生权限；账号已有直接授权仍由DBA核对。Doris 使用 `Select_priv`，不依赖驱动只读事务。
 2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。门户内嵌问数时由门户上报当前用户（`/auth/me` 的 `agentUserId`），DataAgent 以该用户执行，不再要求单独登录 DataAgent；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
 3. 管理员在数据源页「权限配置 → 成员」选择人（平台 `sys_user.id`）或服务账号（同为平台 `sys_user.id`，V57后不接受外部agent_id），分配角色，平台自动创建并核验数据库登录；既有手工映射保留。读接口不回传密码，编辑留空保留密码。数据源原账号只用于采集和运维，不用于主体查询；人的目录、查询、写入和结构编辑均由其受限账号执行。
 4. MCP 内置于 Java 后端 `/api/mcp/`（也支持 `/api/mcp`），外部仅使用 `Authorization: Bearer <服务账号Token>`。全部 23 个工具可用；物理 DDL 使用 SERVICE 自身数据库映射，用户头只用于只读权限交集。按部署填写 `ODW_HTTP_ALLOWED_ORIGINS` 与受信代理 IP，MCP 默认只允许私网访问。
@@ -173,7 +173,7 @@ V57增加USER／SERVICE及用途字段和Token摘要表。账号创建时选择�
 
 Token明文只存外部应用的安全配置；平台记录名称、前缀、到期／撤销／最后使用时间。轮换时先创建新Token并更新调用方，验证后撤销旧Token，不需要改角色或数据库账号。已签发Token不允许再次查看。账号停用不自动撤销数据库直连权限，DBA生命周期仍独立。
 
-本期服务Token对agent API仅开放元数据GET与只读查询POST；现有开发写工具仍有工具定义，但会明确403，必须另行设计写权限与可信委托后启用，不能沿用可伪造operator头执行。回滚需同时恢复平台备份、旧版本和调用方旧凭据，不能只回退前端。操作见[账号手册](../docs/handbook/features/users-and-data-permissions.md)。
+服务Token只用于 MCP 入口，全部23个工具可用；开发写操作使用 SERVICE 自身数据库映射和领域预检，operator来自已认证主体，不能沿用可伪造operator头执行。回滚需同时恢复平台备份、旧版本和调用方旧凭据，不能只回退前端。操作见[账号手册](../docs/handbook/features/users-and-data-permissions.md)。
 
 ## Common Operations
 
@@ -228,7 +228,7 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
    在 DataAgent「Widget 接入」中登记站点 `opendataworks-portal`，允许来源填门户的访问地址（如 `https://portal.example.com`）。
    门户 widget 以该站点身份上报当前用户：本地登录为 `local:<用户名>`，第三方登录为 `<来源>:<external_id>`；DataAgent 按此用户选择数据库账号。
    注意：这个用户标识来自浏览器，登录门户的用户可以篡改它冒充他人，按冒充对象的数据库账号权限查数。只在可信内网使用，并保证 DataAgent 的 8900 端口不对外暴露（风险已记入 `docs/TODO.md`）。
-3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页分配只读角色，平台自动创建受限数据库账号。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8080/api/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
+3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页按用途分配最小权限角色（问数仅需只读），平台自动创建受限数据库账号。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8080/api/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
 4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
    在门户「配置管理 → 智能助手」把「智能问数助手」选为这个智能体；未选择时，门户问数页会提示先配置，不会自动挑选。
 5. 平台根据服务Token识别服务账号，不查询外部助手目录、不信任调用方agent_id。无用户头时按服务账号自身权限查询；代人问数时可提供`X-Agent-User-Id: local:alice`等原有标识，并要求该普通用户的源内映射，查询范围取双方交集。可信用户委托仍延期，未签名用户头不构成可信人身份认证。
@@ -239,3 +239,5 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
 ### V58 托管数据库登录升级
 
 给新成员分配角色自动创建独立原生登录，管理连接须有 CREATE USER／CREATEROLE、角色管理和所选对象授权能力。生成密码用 ODW_CREDENTIAL_KEY 加密保存，原有 DBA 映射不改密、不认领为托管账号。保留密钥；移除成员仅删除平台创建且已核验所有权的登录，PG对象依赖会明确阻止删除，不级联删业务数据。回退前先核对并处理新托管映射／登录，旧后端不能使用这些加密密码。
+
+门户 Nginx 默认拒绝 `/api/mcp` 及子路径，避免将公网客户端经 Docker 桥接地址误判为私网；外部 MCP 使用独立受限的后端入口。TLS 在前置代理终止时，必须设置 `ODW_HTTP_ALLOWED_ORIGINS=https://<门户域名>`（多个来源逗号分隔），即使浏览器与门户同源；后端不隐式信任 `X-Forwarded-Proto`。

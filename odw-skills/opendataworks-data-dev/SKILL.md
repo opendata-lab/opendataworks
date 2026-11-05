@@ -75,7 +75,7 @@ tools: [Bash, Read]
    - 先 `odw_preview_publish`，把 `diffSummary` / `errors` / `warnings` 摘要展示给用户；存在 error 级 issue 时**禁止**继续，转为修复建议。
    - 调用 `odw_publish_workflow(operation="deploy", confirmDiff=true)`。仅在调用方明确接受差异时传 `confirmDiff=true`；缺省 false。
    - deploy 成功后再 `odw_publish_workflow(operation="online", confirmDiff=true)` 上线。
-   - 工具仅接受 Schema 声明的参数；展示意图使用可选 `description`，不要添加 description。执行时重新预检，不把预览当作审批凭证。
+   - 工具仅接受 Schema 声明的参数；展示意图使用可选 `description`，不要添加 `title` / `summary`。执行时重新预检，不把预览当作审批凭证。
 
 6. **调度**
    - `odw_upsert_schedule` 配置 cron/时区等；`odw_workflow_schedule_online`（高危）启用；`odw_workflow_schedule_offline` 停用。

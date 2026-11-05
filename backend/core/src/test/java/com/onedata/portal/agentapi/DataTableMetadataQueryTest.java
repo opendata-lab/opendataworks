@@ -414,4 +414,23 @@ class DataTableMetadataQueryTest {
                 IllegalArgumentException.class,
                 () -> dataTableService.completeMetadata(request, null));
     }
+
+    @Test
+    void oversizedMetadataExportFailsExplicitlyRatherThanLosingRows() {
+        List<DataTable> tables = new java.util.ArrayList<>();
+        for (long i = 1; i <= 5001; i++) {
+            DataTable table = new DataTable();
+            table.setId(i);
+            table.setClusterId(3L);
+            table.setDbName("demo");
+            table.setTableName("table" + i);
+            tables.add(table);
+        }
+        when(dataTableMapper.selectList(any())).thenReturn(tables);
+        IllegalArgumentException error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> backendAgentMetadataService.exportTables("demo"));
+        assertTrue(error.getMessage().contains("5000"));
+    }
 }

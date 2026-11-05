@@ -132,4 +132,60 @@ class HttpAuthenticationFilterTest {
         req.addHeader("X-Forwarded-For", "10.0.0.2");
         assertTrue(filter.privateClient(req));
     }
+
+    @Test
+    void ambiguousPathsNeverReachHandlersOrUserSessionAuthentication() throws Exception {
+        for (String path :
+                List.of(
+                        "/mcp;v=1",
+                        "/mcp%3bv=1",
+                        "/mcp/../mcp",
+                        "/mcp/%2e%2e/mcp",
+                        "//mcp",
+                        "/mcp%2f%2fmcp",
+                        "/mcp%5cv=1",
+                        "/mcp/./",
+                        "/mcp%ZZ")) {
+            var req = request(path);
+            req.setCookies(new Cookie("odw_session", "valid"));
+            var res = new MockHttpServletResponse();
+            filter.doFilter(req, res, (r, s) -> fail("Ambiguous path reached handler: " + path));
+            assertEquals(400, res.getStatus(), path);
+        }
+        verifyNoInteractions(jwt, users, tokens);
+    }
+
+    @Test
+    void encodedMcpNameStillRequiresServiceCredentials() throws Exception {
+        var req = request("/m%63p");
+        req.setCookies(new Cookie("odw_session", "valid"));
+        when(tokens.authenticate(null)).thenThrow(new IllegalArgumentException());
+        var res = new MockHttpServletResponse();
+        filter.doFilter(req, res, (r, s) -> fail("User cookie reached MCP"));
+        assertEquals(401, res.getStatus());
+        verifyNoInteractions(jwt, users);
+    }
+
+    @Test
+    void tlsTerminationRequiresAnExplicitBrowserOriginWithoutTrustingForwardedProto()
+            throws Exception {
+        var req = request("/auth/login");
+        req.addHeader("Host", "portal.example");
+        req.addHeader("Origin", "https://portal.example");
+        req.addHeader("X-Forwarded-Proto", "https");
+        var rejected = new MockHttpServletResponse();
+        filter.doFilter(req, rejected, new MockFilterChain());
+        assertEquals(403, rejected.getStatus());
+        policy.setAllowedOrigins(List.of("https://portal.example"));
+        var accepted = new MockHttpServletResponse();
+        filter.doFilter(requestWithOrigin(), accepted, (r, s) -> s.getWriter().write("accepted"));
+        assertEquals("accepted", accepted.getContentAsString());
+    }
+
+    private MockHttpServletRequest requestWithOrigin() {
+        var req = request("/auth/login");
+        req.addHeader("Host", "portal.example");
+        req.addHeader("Origin", "https://portal.example");
+        return req;
+    }
 }

@@ -35,8 +35,9 @@ public class McpToolHandlers {
             CurrentPrincipal principal = PrincipalContextHolder.require();
             if (principal.getAccountType() != CurrentPrincipal.AccountType.SERVICE)
                 throw new IllegalArgumentException("需要服务账号身份");
-            schemas.validate(name, mapper.valueToTree(input));
-            Map<String, Object> args = new LinkedHashMap<>(input);
+            Map<String, Object> safeInput = input == null ? Map.of() : input;
+            schemas.validate(name, mapper.valueToTree(safeInput));
+            Map<String, Object> args = new LinkedHashMap<>(safeInput);
             args.remove("description");
             Object result = dispatch(name, args, principal.getUserId());
             String json = mapper.writeValueAsString(result);
@@ -105,7 +106,8 @@ public class McpToolHandlers {
                     queries.analyzeQuery(mapper.convertValue(a, SqlAnalyzeRequest.class));
             case "odw_preview_create_table", "odw_create_table" -> {
                 TableCreateRequest request = mapper.convertValue(a, TableCreateRequest.class);
-                request.setOwner(operator);
+                if (request.getOwner() == null || request.getOwner().isBlank())
+                    request.setOwner(operator);
                 yield name.equals("odw_create_table")
                         ? createTable.create(request)
                         : createTable.preview(request);
