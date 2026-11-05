@@ -1,7 +1,7 @@
 # 账号与数据源访问控制中心执行计划
 
 - 日期：2026-11-05
-- 状态：实施中（PR 1 按人查看与回收已完成）
+- 状态：实施中（PR 1 按人查看与回收、PR 2 服务账号一步完成已完成）
 - 关联设计：[访问控制中心设计](../design/2026-11-05-access-control-center-design.md)
 - 来源：[统一待办 · 权限中心交互体验](../TODO.md#权限中心交互体验2026-11-05-ux走查)、[快速修复报告](../reports/2026-11-05-permission-ux-quick-fixes.md)
 - 受影响栈：前端 `frontend/src/views/settings/**`、`frontend/src/api/{users,permissions}.js`；后端 `backend/api` 的 `PlatformUserManagementController`、`DatasourcePermissionController`、`DorisClusterController`，`backend/core` 的 `PlatformUserManagementService`、`DatasourcePermissionService`。无 Flyway 迁移、无部署变更、不涉及 DataAgent。
@@ -21,10 +21,10 @@
 
 ## PR 2：服务账号一步完成
 
-1. `UserManagement.vue` 新建服务账号弹窗：可选「立即生成首枚 Token」，完成态展示明文 Token、复制、MCP 端点与 `Authorization: Bearer` 示例，以及「配置数据权限」（打开 PR 1 的抽屉）；新建普通用户完成态同样提供「配置数据权限」。
+1. 新建服务账号后沿用已有行为直接打开 Token 窗口（首个 Token 预填名称，一次点击即签发），不在新建弹窗里再做一套签发表单；签发后展示明文 Token、MCP 端点与 `Authorization: Bearer` 示例及「配置数据权限」（打开 PR 1 的抽屉）。新建普通用户成功后直接打开该用户的数据权限抽屉。
 2. `ServiceAccountTokens.vue` 签发成功区域加入 MCP 接入示例与「配置数据权限」入口。
 3. `MemberAuthorizationDialog.vue` 服务账号模式支持「新建服务账号」，创建后回到该源授权表单。
-4. 验证：组件测试覆盖建号成功但签发 Token 失败时保留已建账号并可重试；浏览器走一遍服务账号流程（只在本地演示源）。
+4. 验证：组件测试覆盖源内新建服务账号后分配失败时选中已建账号重试（不重复建号）、首个 Token 预填与 MCP 示例；浏览器走一遍两条服务账号流程（只在本地演示源，结束后清理）。
 
 ## PR 3：角色矩阵定位、可读预览与模板编辑
 
