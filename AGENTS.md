@@ -29,9 +29,9 @@ When working in this repository, optimize for:
 ### Backend stack
 
 - Main backend:
-  - `Java 8`
-  - `Spring Boot 2.7`
-  - `Spring MVC` + `WebFlux`
+  - `Java 17`
+  - `Spring Boot 3.5`
+  - `Spring MVC` + synchronous `RestClient`
   - `MyBatis-Plus`
   - `MySQL 8`
   - `Flyway`
@@ -71,12 +71,12 @@ When working in this repository, optimize for:
 
 ### Python baseline
 
-- Python code in this repository is `odw-mcp-server/` and the scripts and tests under `odw-skills/`; use Python `>=3.10`.
+- Python code in this repository is the scripts and tests under `odw-skills/` and local verification scripts; use Python `>=3.10`.
 - Do not assume the first `python3` on `PATH` is the right interpreter. Use a dedicated virtualenv with the touched module's `requirements.txt` installed, and verify it can import the packages the tests need before concluding a module is broken.
 
 ## Architecture Overview
 
-- `backend/src`: core platform logic for data assets, workflow orchestration, and lineage
+- `backend/{core,api,mcp-server,app}/src`: core platform logic for data assets, workflow orchestration, and lineage
 - `frontend/src`: main UI for workflows, lineage, Data Studio, and intelligent-query entrypoints
 - `docs/design`: active technical design documents for medium and large changes
 - `docs/plans`: execution plans paired with design documents
@@ -129,7 +129,7 @@ When working in this repository, optimize for:
 
 ## DataAgent
 
-DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent)。本仓库仅维护 `odw-mcp-server/` 与 `odw-skills/`，通过普通 HTTP MCP 与 Skill 导入接入。
+DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent)。本仓库维护 `backend/mcp-server/` 与 `odw-skills/`，通过普通 HTTP MCP 与 Skill 导入接入。
 
 ## Verification Expectations
 
@@ -141,8 +141,8 @@ DataAgent 源码、运行时与通用 Skill 已迁往独立仓库 [opendataagent
   - run the smallest relevant backend test or compile check for the touched area
   - for mapper-layer SQL contract tests, prefer an in-memory DuckDB (`jdbc:duckdb:`) so the test needs no local MySQL and no Spring context; the existing `@SpringBootTest` integration tests require a real MySQL on `localhost:3306` and are not a fit for a focused SQL guard
   - lock the production SQL itself, not a copy: reflect the `@Select`/`@Update` value off the mapper method, swap `#{param}` for a JDBC `?`, then execute it against DuckDB (see `TableTaskRelationMapperWriteTablesSqlTest`)
-  - keep the DuckDB driver at a Java-8-compatible line (`org.duckdb:duckdb_jdbc:0.10.x`) to match the backend baseline; write DuckDB-portable DDL in the test (`BIGINT`/`VARCHAR`/`INTEGER`, no MySQL-only types)
-- ODW MCP server or `odw-skills/` changes:
+  - keep the currently verified DuckDB driver line (`org.duckdb:duckdb_jdbc:0.10.x`) unless a tested upgrade is needed; write DuckDB-portable DDL in the test (`BIGINT`/`VARCHAR`/`INTEGER`, no MySQL-only types)
+- Built-in Java MCP server or `odw-skills/` changes:
   - prefer focused `pytest` coverage for the touched module or contract
   - when a tool name, argument, or skill invocation changes, update the skill docs and their regression tests in the same change
 - Cross-layer changes:

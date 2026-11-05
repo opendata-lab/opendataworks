@@ -38,7 +38,7 @@ MySQL               ← 持久化
 
 ## DolphinScheduler 集成
 
-后端通过 WebFlux 异步调用 DolphinScheduler OpenAPI：
+后端通过 RestClient 同步调用 DolphinScheduler OpenAPI：
 
 1. 创建/更新工作流定义
 2. 上线/下线工作流
@@ -51,6 +51,6 @@ MySQL               ← 持久化
 
 使用 Flyway 管理数据库 schema 变更：
 
-- 迁移脚本位于 `backend/src/main/resources/db/migration/`
+- 迁移脚本位于 `backend/app/src/main/resources/db/migration/`
 - 命名规则：`V{version}__{description}.sql`
 - 服务启动时自动执行未应用的迁移

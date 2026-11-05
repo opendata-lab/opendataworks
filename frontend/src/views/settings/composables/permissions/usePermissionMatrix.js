@@ -107,7 +107,6 @@ export function usePermissionMatrix({
 
   const isSelectedRoleReadonlyLocked = computed(
     () =>
-      isRoleAssignedToService.value ||
       String(selectedRole.value?.template || '').toUpperCase() === 'READONLY'
   )
 
@@ -118,9 +117,7 @@ export function usePermissionMatrix({
 
   const getCellTooltip = (col) => {
     if (isActionDisabledForRole(col)) {
-      return isRoleAssignedToService.value
-        ? '该角色已分配给服务账号成员，仅允许查询/只读权限'
-        : '只读模板角色仅允许查询与查看视图定义'
+      return '只读模板角色仅允许查询与查看视图定义'
     }
     const parts = []
     if (col.nativeActions?.length) parts.push(`原生权限: ${col.nativeActions.join(', ')}`)

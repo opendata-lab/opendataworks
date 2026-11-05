@@ -24,8 +24,8 @@
 
 ## 血缘字段（与 task 平级）
 
-- `input_table_ids`: 输入表 ID 列表（来自 `odw_analyze_sql` 的输入表）。
-- `output_table_ids`: 输出表 ID 列表（来自 analyze 的输出表）。
+- `inputTableIds`: 输入表 ID 列表（来自 `odw_analyze_sql` 的输入表）。
+- `outputTableIds`: 输出表 ID 列表（来自 analyze 的输出表）。
 
 用 `odw_search_tables` 把表名解析为表 ID。
 

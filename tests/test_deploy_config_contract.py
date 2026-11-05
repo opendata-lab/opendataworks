@@ -68,13 +68,17 @@ def test_dataagent_is_deployed_outside_this_stack(render):
     assert any(volume.get("target") == "/etc/nginx/conf.d/default.conf" for volume in frontend["volumes"])
 
 
-def test_mcp_tokens_are_owned_by_opendataworks(render):
-    services = render(AGENT_API_SERVICE_TOKEN="service-test", ODW_MCP_SERVER_TOKEN="mcp-test",
-                      ODW_MCP_SERVER_TOKEN_HEADER_NAME="X-Test-MCP")
-    env = services["odw-mcp-server"]["environment"]
-    assert env["ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN"] == services["backend"]["environment"]["AGENT_API_SERVICE_TOKEN"] == "service-test"
-    assert env["ODW_MCP_SERVER_FRONTDOOR_TOKEN"] == "mcp-test"
-    assert env["ODW_MCP_SERVER_FRONTDOOR_TOKEN_HEADER_NAME"] == "X-Test-MCP"
+def test_mcp_is_served_by_backend_without_shared_forwarding_tokens(render):
+    services = render(ODW_HTTP_ALLOWED_ORIGINS="https://portal.example",
+                      ODW_HTTP_REQUIRE_PRIVATE_NETWORK="true",
+                      ODW_HTTP_TRUSTED_PROXIES="10.0.0.2")
+    assert "odw-mcp-server" not in services
+    env = services["backend"]["environment"]
+    assert "AGENT_API_SERVICE_TOKEN" not in env
+    assert env["ODW_HTTP_ALLOWED_ORIGINS"] == "https://portal.example"
+    assert env["ODW_HTTP_REQUIRE_PRIVATE_NETWORK"] == "true"
+    assert env["ODW_HTTP_TRUSTED_PROXIES"] == "10.0.0.2"
+    assert not any("8801" in str(port) for svc in services.values() for port in svc.get("ports", []))
 
 
 
@@ -90,3 +94,10 @@ def test_mysql_probe_uses_the_container_password_after_customization(render, tmp
     result = subprocess.run(["sh", "-c", command], capture_output=True, text=True, check=True,
                             env={**os.environ, **service["environment"], "PATH": f"{tmp_path}:{os.environ['PATH']}"})
     assert result.stdout == "changed root password"
+
+
+def test_portal_proxy_does_not_turn_public_mcp_clients_into_private_peers():
+    config = (ROOT / "deploy/docker/nginx/frontend.conf").read_text()
+    assert re.search(r"location\s+=\s+/api/mcp\s*\{\s*return 404;\s*\}", config)
+    assert re.search(r"location\s+\^~\s+/api/mcp/\s*\{\s*return 404;\s*\}", config)
+    assert re.search(r"(?m)^    location /api/ \{", config)

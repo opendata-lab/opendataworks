@@ -8,31 +8,24 @@
       <label
         v-for="r in overview.roles"
         :key="r.id"
-        :class="[
-          'role-check-item',
-          { disabled: roleAssignTarget?.subjectType === 'SERVICE' && isWriteRole(r) },
-        ]"
+        class="role-check-item"
       >
         <input
           type="checkbox"
           :data-testid="`member-role-check-${r.id}`"
           :checked="roleAssignForm.roleIds.includes(r.id)"
-          :disabled="roleAssignTarget?.subjectType === 'SERVICE' && isWriteRole(r)"
           @change="toggleMemberRole(r.id, $event.target.checked)"
         />
         <div class="role-check-meta">
           <strong>{{ r.name }}</strong>
           <small>
-            {{
-              roleAssignTarget?.subjectType === 'SERVICE' && isWriteRole(r)
-                ? '服务账号仅可分配只读角色'
-                : summarizeRoleGrants(r)
-            }}
+            {{ summarizeRoleGrants(r) }}
           </small>
         </div>
       </label>
     </div>
     <div class="picker-count">已选 {{ roleAssignForm.roleIds.length }} 个角色</div>
+    <p class="field-hint">未绑定账号时自动创建数据库登录，已有账号保持不变；保存后核验角色权限。</p>
     <p v-if="roleAssignError" role="alert" class="form-error">{{ roleAssignError }}</p>
     <template #footer>
       <el-button :disabled="roleAssignSaving" @click="roleAssignDialogVisible = false"
@@ -57,7 +50,6 @@ import { toRefs } from 'vue'
 const props = defineProps({ model: { type: Object, required: true } })
 // The feature composable owns these drafts and operations; this view only renders its contract.
 const {
-  isWriteRole,
   overview,
   activeClusterName,
   getMemberDisplayName,

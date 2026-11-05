@@ -9,20 +9,15 @@
 
 ## 两边如何连接
 
-```
-浏览器 ──► OpenDataWorks 门户 nginx ──► DataAgent（/dataagent/widget/、/api/v1/nl2sql/ 等）
-                                           │
-                                           │ HTTP MCP：X-ODW-MCP-Token + X-Agent-User-Id / X-Agent-Id
-                                           ▼
-                                   odw-mcp-server :8801 ──► backend-agent-api ──► 数据源
+```text
+浏览器 → Portal（Vue） → DataAgent（独立部署）
+                        → Backend /api/mcp/ → 核心领域服务 → 数据源
 ```
 
 - **门户内嵌**：主前端「智能查询」页加载 DataAgent 的 widget。widget 脚本和 DataAgent API 经门户 nginx 转发，
   转发规则写在 `deploy/docker/nginx/frontend.conf`（默认注释，填 DataAgent 地址后启用）。
-- **平台能力**：DataAgent 通过普通 HTTP MCP 连接 `odw-mcp-server`，调用 `odw_*` 工具查询元数据、执行只读 SQL、
+- **平台能力**：DataAgent 通过普通 HTTP MCP 连接后端内置 `/api/mcp/`，调用 `odw_*` 工具查询元数据、执行只读 SQL、
   管理任务与工作流。平台专属知识与操作指南在仓库 `odw-skills/` 中，用 DataAgent 的 Skill 导入使用。
-- **身份与权限**：DataAgent 在每次 MCP 调用中带上登录用户（`local:<用户名>` 或 `<provider>:<sub>`）和智能体 ID。
-  平台把人和智能体分别映射到数据源上的数据库账号：先用人的账号 `EXPLAIN`，再用智能体的账号执行，
-  能访问的数据是两者权限的交集，没有映射即拒绝。
+- **身份与权限**：MCP 使用 `Authorization: Bearer odw_sa_*` 认证平台 SERVICE 账号，令牌在管理中心签发。可选 `X-Agent-User-Id`（`local:<用户名>` 或 `<provider>:<sub>`）仅收窄只读权限：先用人的账号 `EXPLAIN`，再用 SERVICE 映射账号执行。物理 DDL 始终使用 SERVICE 自身映射账号；没有映射或原生权限即拒绝。智能体 ID 和旧 operator 请求头不参与认证。
 
 具体步骤见仓库 `deploy/README.md` 的「接入 DataAgent」。

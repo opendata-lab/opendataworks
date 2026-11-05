@@ -1,0 +1,184 @@
+package com.onedata.portal.service;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.onedata.auth.context.CurrentPrincipal;
+import com.onedata.auth.context.PrincipalContextHolder;
+import com.onedata.portal.dto.SqlAnalyzeRequest;
+import com.onedata.portal.dto.SqlAnalyzeResponse;
+import com.onedata.portal.dto.SqlQueryRequest;
+import com.onedata.portal.entity.DataQueryHistory;
+import com.onedata.portal.mapper.DataQueryHistoryMapper;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.Statement;
+
+class DataQueryServiceTest {
+
+    private DataQueryService service;
+
+    @BeforeEach
+    void setUp() {
+        service =
+                new DataQueryService(
+                        mock(DorisConnectionService.class),
+                        mock(DorisClusterService.class),
+                        mock(DataQueryHistoryMapper.class),
+                        new ObjectMapper(),
+                        mock(DatasourceSubjectAccessService.class));
+    }
+
+    @Test
+    void validateSqlAllowsSemicolonsInsideStringLiterals() {
+        assertDoesNotThrow(() -> service.validateSql("SELECT ';drop table' AS col"));
+    }
+
+    @Test
+    void validateSqlAllowsDangerousWordsInsideComments() {
+        String sql = "SELECT * FROM users -- drop table";
+        assertDoesNotThrow(() -> service.validateSql(sql));
+    }
+
+    @Test
+    void validateSqlAllowsMultipleSafeStatements() {
+        assertDoesNotThrow(() -> service.validateSql("SELECT 1; SELECT 2"));
+    }
+
+    @Test
+    void validateSqlRequiresConfirmForDangerousStatement() {
+        RuntimeException ex =
+                assertThrows(RuntimeException.class, () -> service.validateSql("DROP TABLE users"));
+        assertEquals("高风险 SQL 需强确认后执行", ex.getMessage());
+    }
+
+    @Test
+    void analyzeQueryReturnsConfirmChallengeForDelete() {
+        SqlAnalyzeRequest request = new SqlAnalyzeRequest();
+        request.setClusterId(1L);
+        request.setDatabase("db1");
+        request.setSql("DELETE FROM db1.t_user WHERE id = 1");
+
+        SqlAnalyzeResponse response = service.analyzeQuery(request);
+        assertFalse(response.isBlocked());
+        assertNotNull(response.getConfirmChallenges());
+        assertTrue(response.getConfirmChallenges().size() == 1);
+        assertNotNull(response.getConfirmChallenges().get(0).getConfirmToken());
+    }
+
+    @Test
+    void analyzeQueryBlocksWhenTargetCannotBeResolved() {
+        SqlAnalyzeRequest request = new SqlAnalyzeRequest();
+        request.setClusterId(1L);
+        request.setDatabase("db1");
+        request.setSql("DELETE");
+
+        SqlAnalyzeResponse response = service.analyzeQuery(request);
+        assertTrue(response.isBlocked());
+        assertNotNull(response.getBlockedReason());
+    }
+
+    @Test
+    void studioHistoryRecordsMappedConnectionAccountAndPlatformOwner() throws Exception {
+        DorisConnectionService connections = mock(DorisConnectionService.class);
+        DataQueryHistoryMapper histories = mock(DataQueryHistoryMapper.class);
+        Connection connection = mock(Connection.class);
+        DatabaseMetaData metadata = mock(DatabaseMetaData.class);
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+        when(connections.getConnection(1L, "demo")).thenReturn(connection);
+        when(connection.getMetaData()).thenReturn(metadata);
+        when(metadata.getUserName()).thenReturn("mapped-person");
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.execute("SELECT 1 WHERE 1 = 0")).thenReturn(true);
+        when(statement.getResultSet()).thenReturn(rows);
+        when(rows.getMetaData()).thenReturn(mock(ResultSetMetaData.class));
+        DataQueryService queries =
+                new DataQueryService(
+                        connections,
+                        mock(DorisClusterService.class),
+                        histories,
+                        new ObjectMapper(),
+                        mock(DatasourceSubjectAccessService.class));
+        SqlQueryRequest request = new SqlQueryRequest();
+        request.setClusterId(1L);
+        request.setDatabase("demo");
+        request.setSql("SELECT 1 WHERE 1 = 0");
+        PrincipalContextHolder.setContext(new CurrentPrincipal("2", "alice", "user", "local"));
+        try {
+            queries.executeQuery(request);
+            ArgumentCaptor<DataQueryHistory> history =
+                    ArgumentCaptor.forClass(DataQueryHistory.class);
+            verify(histories).insert(history.capture());
+            assertEquals("mapped-person", history.getValue().getExecutionAccount());
+            assertEquals("2", history.getValue().getExecutedBy());
+        } finally {
+            PrincipalContextHolder.clear();
+        }
+    }
+
+    @Test
+    void delegatedReadAuditRecordsResolvedUserAndExplainAccountWithServiceExecutor()
+            throws Exception {
+        var access = mock(DatasourceSubjectAccessService.class);
+        var histories = mock(DataQueryHistoryMapper.class);
+        var ds = new com.onedata.portal.dto.DatasourceResolutionDto();
+        ds.setClusterId(1L);
+        ds.setDatabase("demo");
+        ds.setEngine("mysql");
+        ds.setSourceType("MYSQL");
+        when(access.resolveDatasource("demo", null)).thenReturn(ds);
+        when(access.checkReadAccess(1L, "demo", "SELECT 1", 30))
+                .thenReturn(
+                        new DatasourceSubjectAccessService.ReadAccessIdentity(
+                                "17", "alice_native"));
+        var serviceAccount = new com.onedata.portal.entity.DatasourceSubjectAccount();
+        serviceAccount.setUsername("service_native");
+        when(access.require(1L, "SERVICE", "19")).thenReturn(serviceAccount);
+        Connection connection = mock(Connection.class);
+        Statement statement = mock(Statement.class);
+        ResultSet rows = mock(ResultSet.class);
+        when(access.openPrincipalConnection(1L, "demo", true)).thenReturn(connection);
+        when(connection.createStatement(ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY))
+                .thenReturn(statement);
+        when(statement.executeQuery("SELECT 1")).thenReturn(rows);
+        when(rows.getMetaData()).thenReturn(mock(ResultSetMetaData.class));
+        var queries =
+                new DataQueryService(
+                        mock(DorisConnectionService.class),
+                        mock(DorisClusterService.class),
+                        histories,
+                        new ObjectMapper(),
+                        access);
+        var request = new com.onedata.portal.dto.ReadOnlyQueryRequest();
+        request.setDatabase("demo");
+        request.setSql("SELECT 1");
+        PrincipalContextHolder.setContext(CurrentPrincipal.service(19L, "local:alice"));
+        try {
+            queries.readQuery(request);
+            var captured = ArgumentCaptor.forClass(DataQueryHistory.class);
+            verify(histories).insert(captured.capture());
+            assertEquals("17", captured.getValue().getExecutedBy());
+            assertEquals("alice_native", captured.getValue().getCheckAccount());
+            assertEquals("19", captured.getValue().getAgentId());
+            assertEquals("service_native", captured.getValue().getExecutionAccount());
+        } finally {
+            PrincipalContextHolder.clear();
+        }
+    }
+}

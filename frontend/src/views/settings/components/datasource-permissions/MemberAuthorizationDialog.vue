@@ -101,26 +101,18 @@
           <label
             v-for="r in overview.roles"
             :key="r.id"
-            :class="[
-              'role-check-item',
-              { disabled: authorizeForm.mode === 'service' && isWriteRole(r) },
-            ]"
+            class="role-check-item"
           >
             <input
               type="checkbox"
               :data-testid="`auth-role-${r.id}`"
               :checked="authorizeForm.roleIds.includes(r.id)"
-              :disabled="authorizeForm.mode === 'service' && isWriteRole(r)"
               @change="toggleAuthorizeRole(r.id, $event.target.checked)"
             />
             <div class="role-check-meta">
               <strong>{{ r.name }}</strong>
               <small>
-                {{
-                  authorizeForm.mode === 'service' && isWriteRole(r)
-                    ? '服务账号仅可分配只读角色'
-                    : summarizeRoleGrants(r)
-                }}
+                {{ summarizeRoleGrants(r) }}
               </small>
             </div>
           </label>
@@ -130,6 +122,8 @@
         </div>
       </el-form-item>
     </el-form>
+
+    <p class="field-hint">首次授权会自动创建数据库登录账号并配置所选角色，后续分配复用同一账号，无须手工建号。</p>
 
     <p v-if="authorizeError" role="alert" class="form-error">{{ authorizeError }}</p>
 
@@ -154,7 +148,6 @@ import { toRefs } from 'vue'
 const props = defineProps({ model: { type: Object, required: true } })
 // The feature composable owns these drafts and operations; this view only renders its contract.
 const {
-  isWriteRole,
   overview,
   platformUsers,
   activeClusterName,

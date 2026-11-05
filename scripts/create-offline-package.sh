@@ -174,16 +174,12 @@ rewrite_offline_env_file() {
         -e "s|^OPENDATAWORKS_BACKEND_IMAGE=.*|OPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:${PARSER_TAG}|" \
         -e "s|^# *OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
         -e "s|^OPENDATAWORKS_FRONTEND_IMAGE=.*|OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}|" \
-        -e "s|^# *OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
-        -e "s|^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=.*|OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}|" \
         "$env_file" > "${env_file}.tmp" && mv "${env_file}.tmp" "$env_file"
 
     grep -q '^OPENDATAWORKS_BACKEND_IMAGE=' "$env_file" 2>/dev/null || \
         { echo ""; echo "# 离线部署镜像（由 create-offline-package 自动设置）"; echo "OPENDATAWORKS_BACKEND_IMAGE=opendataworks-backend:${PARSER_TAG}"; } >> "$env_file"
     grep -q '^OPENDATAWORKS_FRONTEND_IMAGE=' "$env_file" 2>/dev/null || \
         echo "OPENDATAWORKS_FRONTEND_IMAGE=opendataworks-frontend:${PARSER_TAG}" >> "$env_file"
-    grep -q '^OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=' "$env_file" 2>/dev/null || \
-        echo "OPENDATAWORKS_ODW_MCP_SERVER_IMAGE=opendataworks-odw-mcp-server:${PARSER_TAG}" >> "$env_file"
 }
 
 rewrite_offline_env_file "$PACKAGED_DEPLOY_DIR/.env.example"
@@ -247,7 +243,6 @@ OP_TAG="$PARSER_TAG"
 MAIN_IMAGES=(
     "opendataworks-frontend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-frontend:${OP_TAG}|opendataworks-frontend:${OP_TAG}"
     "opendataworks-backend.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-backend:${OP_TAG}|opendataworks-backend:${OP_TAG}"
-    "opendataworks-odw-mcp-server.tar|${PARSER_REGISTRY}/${PARSER_NAMESPACE}/opendataworks-odw-mcp-server:${OP_TAG}|opendataworks-odw-mcp-server:${OP_TAG}"
 )
 
 EXTRA_IMAGES=(

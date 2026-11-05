@@ -1,0 +1,100 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: opendataworks
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 数据库连接通过环境变量外部化，默认值仅用于本地开发，与部署 .env 的 SPRING_DATASOURCE_* 约定一致
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/opendataworks?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:opendataworks}
+    password: ${SPRING_DATASOURCE_PASSWORD:opendataworks123}
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+
+doris:
+  jdbc:
+    url-template: jdbc:mysql://%s:%d/%s?useUnicode=true&characterEncoding=UTF-8&useTimezone=true&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true&connectTimeout=5000&socketTimeout=300000
+    default-database: information_schema
+    session-charset-enabled: true
+    session-charset: utf8mb4
+    session-charset-fallback: utf8
+  audit-access-sync:
+    enabled: ${DORIS_AUDIT_ACCESS_SYNC_ENABLED:true}
+    fixed-delay-ms: ${DORIS_AUDIT_ACCESS_SYNC_FIXED_DELAY_MS:600000}
+    safety-lag-minutes: ${DORIS_AUDIT_ACCESS_SYNC_SAFETY_LAG_MINUTES:2}
+    overlap-minutes: ${DORIS_AUDIT_ACCESS_SYNC_OVERLAP_MINUTES:10}
+    batch-size: ${DORIS_AUDIT_ACCESS_SYNC_BATCH_SIZE:5000}
+    summary-retention-days: ${DORIS_AUDIT_ACCESS_SYNC_SUMMARY_RETENTION_DAYS:400}
+    processed-event-retention-days: ${DORIS_AUDIT_ACCESS_SYNC_EVENT_RETENTION_DAYS:7}
+
+metadata:
+  statistics-sync:
+    fixed-delay-ms: 600000
+
+# 数据新鲜度检查（事件驱动）：工作流完成后检查其写出表。阈值由表级契约声明。
+freshness:
+  check:
+    enabled: ${FRESHNESS_CHECK_ENABLED:true}
+    query-timeout-seconds: ${FRESHNESS_CHECK_QUERY_TIMEOUT_SECONDS:30}
+    max-concurrent-per-cluster: ${FRESHNESS_CHECK_MAX_CONCURRENT_PER_CLUSTER:4}
+
+# MyBatis Plus 配置
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.onedata.portal.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    # 走 SLF4J 而非直接打印到 stdout，便于按日志级别统一管理（生产可关闭 SQL 日志）
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+# DolphinScheduler 配置由数据库 dolphin_config 表管理，可在系统管理界面配置
+
+# 日志配置
+logging:
+  level:
+    com.onedata.portal: debug
+    org.springframework.web: info
+
+# core 身份领域配置；HTTP 入口策略在 app 装配
+odw:
+  auth:
+    jwt:
+      secret: ${AUTH_JWT_SECRET:opendataworks-dev-jwt-secret-change-me}
+      issuer: ${AUTH_JWT_ISSUER:opendataworks}
+      ttl: ${AUTH_JWT_TTL:8h}
+    session:
+      cookie-name: odw_session
+      same-site: Lax
+      secure: ${AUTH_COOKIE_SECURE:false}
+  http:
+    allowed-origins: ${ODW_HTTP_ALLOWED_ORIGINS:}
+    require-private-network: ${ODW_HTTP_REQUIRE_PRIVATE_NETWORK:true}
+    trusted-proxies: ${ODW_HTTP_TRUSTED_PROXIES:}
+
+workflow:
+  runtime-sync:
+    enabled: true
+    ingest-mode: export_only
+  lineage-consistency:
+    # warn: 只提示，不改变既有工作流的发布能力（默认）
+    # block-missing: 仅阻断 SQL 已明确匹配但关系表缺失的情况
+    # 切换前先用 GET /v1/workflows/{id}/lineage-consistency 扫描存量
+    enforcement-mode: ${WORKFLOW_LINEAGE_CONSISTENCY_MODE:warn}

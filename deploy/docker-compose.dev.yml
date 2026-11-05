@@ -54,7 +54,9 @@ services:
       SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL:-jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-opendataworks}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
       SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${MYSQL_USER:-opendataworks}}
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${MYSQL_PASSWORD:-opendataworks123}}
-      AGENT_API_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
+      ODW_HTTP_ALLOWED_ORIGINS: ${ODW_HTTP_ALLOWED_ORIGINS:-}
+      ODW_HTTP_REQUIRE_PRIVATE_NETWORK: ${ODW_HTTP_REQUIRE_PRIVATE_NETWORK:-true}
+      ODW_HTTP_TRUSTED_PROXIES: ${ODW_HTTP_TRUSTED_PROXIES:-}
       ODW_CREDENTIAL_KEY: ${ODW_CREDENTIAL_KEY:-}
     # DolphinScheduler 不包含在本 Compose 中，配置请在系统管理界面进行
     ports:
@@ -91,26 +93,6 @@ services:
       timeout: 10s
       retries: 3
 
-  odw-mcp-server:
-    image: ${OPENDATAWORKS_ODW_MCP_SERVER_IMAGE:-mikefan2019/opendataworks-odw-mcp-server:latest}
-    pull_policy: always
-    container_name: opendataworks-odw-mcp-server
-    restart: always
-    env_file:
-      - ./.env
-    environment:
-      ODW_MCP_SERVER_BACKEND_SERVICE_TOKEN: ${AGENT_API_SERVICE_TOKEN:-odw-agent-service-token}
-    ports:
-      - "8801:8801"
-    depends_on:
-      backend:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8801/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
 
 volumes:
   mysql-data:

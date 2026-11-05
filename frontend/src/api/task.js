@@ -22,14 +22,10 @@ export const taskApi = {
   },
 
   // 执行任务（单任务测试执行）
-  execute(id) {
-    return request.post(`/v1/tasks/${id}/execute`)
-  },
+
 
   // 执行工作流（完整工作流执行）
-  executeWorkflow(id) {
-    return request.post(`/v1/tasks/${id}/execute-workflow`)
-  },
+
 
   // 删除任务
   delete(id) {
@@ -37,9 +33,7 @@ export const taskApi = {
   },
 
   // 获取任务执行状态
-  getExecutionStatus(id) {
-    return request.get(`/v1/tasks/${id}/execution-status`)
-  },
+
 
   // 获取 DolphinScheduler WebUI 配置
   getDolphinWebuiConfig(params = {}) {

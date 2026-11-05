@@ -31,7 +31,6 @@ PLATFORMS="linux/amd64,linux/arm64"
 PUSH=false
 BUILD_FRONTEND=true
 BUILD_BACKEND=true
-BUILD_ODW_MCP_SERVER=true
 
 usage() {
     echo "用法: $0 [选项]"
@@ -44,7 +43,6 @@ usage() {
     echo "  --push                  构建后推送到 Docker Hub"
     echo "  --no-frontend           跳过前端镜像构建"
     echo "  --no-backend            跳过后端镜像构建"
-    echo "  --no-odw-mcp-server         跳过 ODW MCP Server 镜像构建"
     echo "  --platform PLATFORMS    目标平台 (默认: linux/amd64,linux/arm64)"
     echo "  -h, --help              显示此帮助信息"
     echo ""
@@ -84,10 +82,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-backend)
             BUILD_BACKEND=false
-            shift
-            ;;
-        --no-odw-mcp-server)
-            BUILD_ODW_MCP_SERVER=false
             shift
             ;;
         --platform)
@@ -162,7 +156,6 @@ fi
 # 定义镜像名称
 FRONTEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-frontend"
 BACKEND_IMAGE="$DEFAULT_NAMESPACE/opendataworks-backend"
-ODW_MCP_SERVER_IMAGE="$DEFAULT_NAMESPACE/opendataworks-odw-mcp-server"
 
 # 构建参数
 BUILD_ARGS="--platform=$PLATFORMS"
@@ -195,7 +188,6 @@ echo "命名空间:   $DEFAULT_NAMESPACE"
 echo "推送镜像:   $PUSH"
 echo "构建前端:   $BUILD_FRONTEND"
 echo "构建后端:   $BUILD_BACKEND"
-echo "构建 ODW MCP Server: $BUILD_ODW_MCP_SERVER"
 [ -n "${PIP_INDEX_URL:-}" ] && echo "Pip 镜像源: $PIP_INDEX_URL"
 echo "========================================="
 echo ""
@@ -246,25 +238,6 @@ if [ "$BUILD_BACKEND" = true ]; then
     echo ""
 fi
 
-if [ "$BUILD_ODW_MCP_SERVER" = true ]; then
-    echo -e "${YELLOW}📦 构建 ODW MCP Server 镜像...${NC}"
-    echo "镜像: $ODW_MCP_SERVER_IMAGE:$VERSION"
-    echo "平台: $PLATFORMS"
-
-    cd "$REPO_ROOT"
-    if docker buildx build $BUILD_ARGS "${PYTHON_BUILD_ARGS[@]}" \
-        -t $ODW_MCP_SERVER_IMAGE:$VERSION \
-        -t $ODW_MCP_SERVER_IMAGE:latest \
-        --file odw-mcp-server/Dockerfile \
-        . ; then
-        echo -e "${GREEN}✅ ODW MCP Server 镜像构建成功${NC}"
-        ((SUCCESSFUL_BUILDS++))
-    else
-        echo -e "${RED}❌ ODW MCP Server 镜像构建失败${NC}"
-    fi
-    ((TOTAL_BUILDS++))
-    echo ""
-fi
 
 # 总结
 echo "========================================="
@@ -281,12 +254,10 @@ if [ $SUCCESSFUL_BUILDS -eq $TOTAL_BUILDS ]; then
         echo "✅ 镜像已推送到 Docker Hub:"
         [ "$BUILD_FRONTEND" = true ] && echo "  - $FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_BACKEND" = true ] && echo "  - $BACKEND_IMAGE:$VERSION"
-        [ "$BUILD_ODW_MCP_SERVER" = true ] && echo "  - $ODW_MCP_SERVER_IMAGE:$VERSION"
         echo ""
         echo "📝 拉取镜像命令:"
         [ "$BUILD_FRONTEND" = true ] && echo "  docker pull $FRONTEND_IMAGE:$VERSION"
         [ "$BUILD_BACKEND" = true ] && echo "  docker pull $BACKEND_IMAGE:$VERSION"
-        [ "$BUILD_ODW_MCP_SERVER" = true ] && echo "  docker pull $ODW_MCP_SERVER_IMAGE:$VERSION"
     else
         echo "ℹ️  镜像已构建到本地 Docker 镜像仓库"
         echo ""

@@ -44,7 +44,6 @@ COMBINED_ARCHIVE="$IMAGE_DIR/all-images.tar"
 LEGACY_IMAGES=(
     "opendataworks-frontend.tar"
     "opendataworks-backend.tar"
-    "opendataworks-odw-mcp-server.tar"
     "mysql-8.0.tar"
     "redis-7.2-alpine.tar"
 )
@@ -100,10 +99,8 @@ fi
 IMAGES=(
     "opendataworks-frontend:${IMAGE_TAG}"
     "opendataworks-backend:${IMAGE_TAG}"
-    "opendataworks-odw-mcp-server:${IMAGE_TAG}"
     "opendataworks-frontend:latest"
     "opendataworks-backend:latest"
-    "opendataworks-odw-mcp-server:latest"
     "mysql:8.0"
     "redis:7.2-alpine"
     "docker:27.5.1-cli"

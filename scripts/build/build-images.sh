@@ -31,7 +31,6 @@ echo ""
 # 定义镜像名称和版本
 FRONTEND_IMAGE="opendataworks-frontend:latest"
 BACKEND_IMAGE="opendataworks-backend:latest"
-ODW_MCP_SERVER_IMAGE="opendataworks-odw-mcp-server:latest"
 MYSQL_IMAGE="mysql:8.0"
 REDIS_IMAGE="redis:7.2-alpine"
 LOG_COLLECTOR_IMAGE="docker:27.5.1-cli"
@@ -62,15 +61,6 @@ $CONTAINER_CMD build --platform linux/amd64 -t $BACKEND_IMAGE \
 echo "✅ 后端镜像构建完成"
 echo ""
 
-echo "📦 步骤 8/8: 构建 ODW MCP Server 镜像 (AMD64 架构)..."
-cd "$REPO_ROOT"
-$CONTAINER_CMD build --platform linux/amd64 -t $ODW_MCP_SERVER_IMAGE \
-  "${PIP_BUILD_ARGS[@]}" \
-  -f odw-mcp-server/Dockerfile \
-  .
-echo "✅ ODW MCP Server 镜像构建完成"
-echo ""
-
 echo "📦 拉取 MySQL、Redis 与日志收集运行时镜像..."
 for image in $MYSQL_IMAGE $REDIS_IMAGE $LOG_COLLECTOR_IMAGE; do
     $CONTAINER_CMD pull --platform linux/amd64 "$image"
@@ -83,7 +73,6 @@ echo "📦 导出镜像为去重合并归档 all-images.tar ..."
 ALL_IMAGES=(
     "$FRONTEND_IMAGE"
     "$BACKEND_IMAGE"
-    "$ODW_MCP_SERVER_IMAGE"
     "$MYSQL_IMAGE"
     "$REDIS_IMAGE"
     "$LOG_COLLECTOR_IMAGE"
@@ -107,7 +96,6 @@ echo ""
 echo "镜像清单："
 echo "  ✓ $FRONTEND_IMAGE"
 echo "  ✓ $BACKEND_IMAGE"
-echo "  ✓ $ODW_MCP_SERVER_IMAGE"
 echo "  ✓ $REDIS_IMAGE"
 echo ""
 echo "📝 下一步："

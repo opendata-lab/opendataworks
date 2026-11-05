@@ -41,11 +41,6 @@ jobs:
             context: .
             dockerfile: ./backend/Dockerfile
             build_args: ""
-          - name: odw-mcp-server
-            image: opendataworks-odw-mcp-server
-            context: .
-            dockerfile: ./odw-mcp-server/Dockerfile
-            build_args: ""
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -136,12 +131,10 @@ jobs:
             echo "### Docker 镜像 (Docker Images)"
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${VERSION})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${VERSION})"
-            echo "- [ODW MCP Server](https://hub.docker.com/r/${NS}/opendataworks-odw-mcp-server/tags?name=${VERSION})"
             echo ""
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${VERSION}"
             echo "docker pull ${NS}/opendataworks-backend:${VERSION}"
-            echo "docker pull ${NS}/opendataworks-odw-mcp-server:${VERSION}"
             echo '```'
           } > release_body.md
           echo "RELEASE_BODY_FILE=release_body.md" >> $GITHUB_ENV
@@ -203,12 +196,10 @@ jobs:
             echo "### Docker 镜像 (Docker Images)"
             echo "- [Frontend](https://hub.docker.com/r/${NS}/opendataworks-frontend/tags?name=${IMAGE_TAG})"
             echo "- [Backend](https://hub.docker.com/r/${NS}/opendataworks-backend/tags?name=${IMAGE_TAG})"
-            echo "- [ODW MCP Server](https://hub.docker.com/r/${NS}/opendataworks-odw-mcp-server/tags?name=${IMAGE_TAG})"
             echo ""
             echo '```bash'
             echo "docker pull ${NS}/opendataworks-frontend:${IMAGE_TAG}"
             echo "docker pull ${NS}/opendataworks-backend:${IMAGE_TAG}"
-            echo "docker pull ${NS}/opendataworks-odw-mcp-server:${IMAGE_TAG}"
             echo '```'
           } > latest_release_body.md
 
@@ -249,7 +240,6 @@ jobs:
           echo "### Images pushed to Docker Hub:" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend\`" >> $GITHUB_STEP_SUMMARY
           echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-backend\`" >> $GITHUB_STEP_SUMMARY
-          echo "- \`${{ secrets.DOCKER_USERNAME }}/opendataworks-odw-mcp-server\`" >> $GITHUB_STEP_SUMMARY
 
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Platforms supported:" >> $GITHUB_STEP_SUMMARY
@@ -260,6 +250,5 @@ jobs:
           echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-frontend:latest" >> $GITHUB_STEP_SUMMARY
           echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-backend:latest" >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ secrets.DOCKER_USERNAME }}/opendataworks-odw-mcp-server:latest" >> $GITHUB_STEP_SUMMARY
 
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

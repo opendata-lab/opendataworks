@@ -11,16 +11,28 @@
 
 ## 权限与数据源
 
+
+
+
 ### 权限中心剩余验证与边界
 
-- **服务账号的开发写授权**（2026-11-02边界确认）：当前服务账号仅能访问元数据与只读SQL；agent开发写接口统一403，不接受调用方operator头提升为管理员。后续需分别设计工具动作、平台资源和数据库原生写入能力的授权与审计，再开放写工具；不能复用服务Token就默认获得开发管理员权限。[设计11](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)、[验收报告](reports/2026-11-02-service-accounts-verification.md)。
+- **成员部分授权后的角色删除关联（2026-11-04 用户要求精简）**：既有成员失败统一ERROR并刷新页面，不再预写新旧角色并集。若原生GRANT成功而后续失败，新角色可能尚未计入平台memberCount，ERROR状态本身不会阻止该角色删除。当前需先核对授权记录并恢复成员，再删除角色；若后续要自动保护，需另行确定简洁规则。本轮按用户选择不增加保护机制。关联[当前设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md#pr评审后契约修正2026-11-04)与[报告](reports/2026-11-04-backend-pr-review-fixes.md)。
+
+
+- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。此前Docker Hub超时已在后续评审修复中解决，正式Dockerfile构建通过；当前剩余为Doris真实环境验证。来源：[建号报告](reports/2026-11-04-managed-database-accounts-validation.md)、[评审修复报告](reports/2026-11-04-backend-pr-review-fixes.md)。
+
+
+- **本轮后端收敛的外部完整链路覆盖（2026-11-03）**：真实 MySQL、Dolphin 3.2.2 与全部 23 个 HTTP MCP handler 已验证；本机当前没有可调用的独立 DataAgent 8900 服务或 Doris 实例，本轮未复跑真实模型最终消息和 PostgreSQL/Doris 权限、DDL 全流程。需在独立 DataAgent 完成 MCP URL/Schema 刷新后验证完整问答及消息持久化，在 PostgreSQL/Doris 环境复跑原生权限与 DDL；生产快照升级、生产代理拓扑也需部署环境验收。没有将这些路径计为本轮通过。来源：[实施报告](reports/2026-11-03-backend-consolidation-validation.md)，关联[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)。
+
+
+- **平台用户与服务账号功能权限模型（RBAC）**（2026-11-03 用户决策登记）：在尚未设计平台级用户功能权限的前提下，23 个 MCP 工具（含工作流/任务查询、SQL 分析、表设计、草稿编辑及执行时重新预检的发布/上线）对已通过认证的服务账号保持可用，不再硬编码拦截为 403（数据源原生库/表/列权限与物理 DDL 映射账号校验仍严格生效）。后续需独立设计平台级功能权限体系（涵盖门户用户与服务账号对工作流、任务、建表、元数据修改等平台资源与 MCP 工具动作的细粒度授权与审计）。关联：[主收敛设计 §2.2](design/2026-11-03-backend-mcp-auth-consolidation-design.md#22-非目标与待办边界out-of-scope)、[历史验证报告](reports/2026-11-03-dataagent-widget-question-verification.md)、[设计11](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)。
 - **PG／Doris服务Token真实回归**（2026-11-02验证范围）：本轮服务账号Bearer到MCP与原生库的完整验收使用MySQL；PG此前原生角色／问数已验收，但新SERVICE身份与Token链路未在本轮重新建立真实PG环境，Doris仍无实例。需在对应环境复跑服务独立查询、可选人交集、视图、撤销和只读拒绝；当前不将SQL契约及MySQL结果记作这些引擎的真实验收。[报告](reports/2026-11-02-service-accounts-verification.md)。
 
 用户管理和源内多角色中心已实现并完成本机验收，结果移至「已完成」。当前模型以[设计第10节](design/2026-10-26-dataagent-datasource-identity-design.md#implementation-contract)为准，历史单角色／共享角色账号草案不适用。
 
 - **Doris原生验收**（2026-11-02环境缺口）：已实现统一动作和原生角色适配，但本机无真实Doris实例，仅有SQL契约测试。需在内网核验Schema／表／视图授权、Load_priv、角色继承与回读、EXPLAIN拒绝和只读Agent；[本轮报告](reports/2026-11-02-users-and-permissions-verification.md)。
 - **跨源实例别名**（2026-10-30设计确认，2026-11-02保留）：同源禁止多个成员复用同一个数据库账号；同物理实例被登记为不同源仍未去重，不能承诺跨sourceId隔离，需另行设计物理实例与原生身份唯一约束。
-- **能力扩展**（2026-10-30确认延期）：用户组、用户直接资源授权、字段／行级与脱敏、ABAC、审批、数据库账号自动生命周期、所有权移交、PG按创建者设置未来默认权限、Dolphin身份统一、定时漂移对账及全量直连审计。已有直接授权／外部角色可能扩大范围，不由平台自动撤销。原生按名称授权无法检测两次观测间的同名删除重建，严格代际隔离需DDL审计。见同主题设计第10节与[使用说明](handbook/features/users-and-data-permissions.md)。
+- **能力扩展**（2026-10-30确认延期）：用户组、用户直接资源授权、字段／行级与脱敏、ABAC、审批、所有权移交、PG按创建者设置未来默认权限、Dolphin身份统一、定时漂移对账及全量直连审计。已有直接授权／外部角色可能扩大范围，不由平台自动撤销。原生按名称授权无法检测两次观测间的同名删除重建，严格代际隔离需DDL审计。见同主题设计第10节与[使用说明](handbook/features/users-and-data-permissions.md)。
 - **源软删除端点唯一键**（2026-11-01真实验收发现）：doris_cluster按host/port唯一，软删除仍占用该坐标，导致同端点重建冲突。本轮未修改业务删除语义；需设计唯一约束与源恢复／重建的关联数据规则。测试源清理只对自有临时记录改坐标后软删除，见[报告](reports/2026-11-02-users-and-permissions-verification.md)。
 
 ### 主体映射的验证与使用限制
@@ -87,6 +99,20 @@
 - **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份；2026-10-29 统一权限设计已选定短期签名身份断言与 DataAgent 验签，不再同时规划 nginx auth_request 后备路径。该修复已按用户2026-11-01要求延期，并非本轮本机功能验收前置；生产可信委托仍需实施[统一权限中心设计](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)的交付前提，尚未实施。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
 
 ## 已完成
+
+### PR #493 评审回归修复
+
+2026-11-04修复矩阵参数鉴权、门户MCP代理边界、任务半边血缘、显式导出限额、空arguments、委托查询审计与owner归属，以及失败刷新／APPLYING状态、错误连接指引、创建超时、列标签和文档残留。首次评审修复验证通过；用户随后要求精简TLS验证、URL解析与角色并集逻辑，当前行为和复验结果见[报告](reports/2026-11-04-backend-pr-review-fixes.md)。
+
+### 角色分配自动创建数据库账号
+
+2026-11-04完成用户要求：首次角色分配为USER／SERVICE自动创建独立数据库登录、加密凭据、分配并核验角色；复用同一账号，失败可恢复，保护同名外部账号，移除仅删除核验过的托管登录。保留既有DBA映射。Java615、Vue481、Python13、真实MySQL20及PG11验收通过，本机保留演示成员。见[设计15](design/2026-10-26-dataagent-datasource-identity-design.md#15-分配角色时自动创建数据库登录账号2026-11-03)、[计划11](plans/2026-10-26-dataagent-datasource-identity-plan.md#11-自动创建数据库登录账号2026-11-03)、[报告](reports/2026-11-04-managed-database-accounts-validation.md)。
+
+
+### Backend 四模块、内置 MCP 与认证收敛
+
+2026-11-03 完成 PR #493 的代码实施：Java 17 / Boot 3.5.7 四模块、统一主体上下文和 HTTP 认证、23 个内置 MCP 工具、原生访问身份守恒、完整行查询预算、平台 Mapper 与显式 Dolphin 目标、历史接口及部署清理。Java 596 项、真实 Dolphin/MySQL 集成 7 项、Vue 480 项、Python 13 项以及真实 HTTP 验收通过；工具/Skill 同步为顶层 camelCase 参数。设计复核 R1～R8、N1～N3、F1～F5 的结果见[实施报告](reports/2026-11-03-backend-consolidation-validation.md)、[主设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md)、[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)、[清理设计](design/2026-11-03-backend-legacy-redundancy-cleanup-design.md)、[清理计划](plans/2026-11-03-backend-legacy-redundancy-cleanup-plan.md)。原“代码待实施”条目迁至此处；外部环境剩余验证另列下方待办。
+
 
 ### 废弃智能体身份请求头残留清理
 

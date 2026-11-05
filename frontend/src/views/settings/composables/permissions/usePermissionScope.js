@@ -96,12 +96,13 @@ export function usePermissionScope({ props }) {
     if (member.enabled === false || upperStatus === 'DISABLED') {
       return { key: 'disabled', label: '已停用', tagType: 'danger' }
     }
+    if (upperStatus === 'APPLYING') return { key: 'pending', label: '执行中', tagType: 'warning' }
     if (upperStatus === 'ERROR') {
       return { key: 'pending', label: '状态异常', tagType: 'danger' }
     }
     const hasRoles = Array.isArray(member.roleIds) && member.roleIds.length > 0
     const hasAccount = Boolean(member.account?.configured && member.account?.username)
-    if (hasRoles && hasAccount && !['PENDING', 'NEEDS_ACCOUNT'].includes(upperStatus)) {
+    if (hasRoles && hasAccount && upperStatus === 'ACTIVE') {
       return { key: 'ready', label: '正常', tagType: 'success' }
     }
     if (!hasRoles) {
