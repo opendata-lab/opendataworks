@@ -1,7 +1,7 @@
 # 账号与数据源访问控制中心执行计划
 
 - 日期：2026-11-05
-- 状态：实施中（PR 1 按人查看与回收、PR 2 服务账号一步完成已完成）
+- 状态：实施中（PR 1 按人查看与回收、PR 2 服务账号一步完成已完成；PR 3 矩阵定位／可读预览／模板编辑已实现并通过定向验证，待评审合并）
 - 关联设计：[访问控制中心设计](../design/2026-11-05-access-control-center-design.md)
 - 来源：[统一待办 · 权限中心交互体验](../TODO.md#权限中心交互体验2026-11-05-ux走查)、[快速修复报告](../reports/2026-11-05-permission-ux-quick-fixes.md)
 - 受影响栈：前端 `frontend/src/views/settings/**`、`frontend/src/api/{users,permissions}.js`；后端 `backend/api` 的 `PlatformUserManagementController`、`DatasourcePermissionController`、`DorisClusterController`，`backend/core` 的 `PlatformUserManagementService`、`DatasourcePermissionService`。无 Flyway 迁移、无部署变更、不涉及 DataAgent。
@@ -27,6 +27,8 @@
 4. 验证：组件测试覆盖源内新建服务账号后分配失败时选中已建账号重试（不重复建号）、首个 Token 预填与 MCP 示例；浏览器走一遍两条服务账号流程（只在本地演示源，结束后清理）。
 
 ## PR 3：角色矩阵定位、可读预览与模板编辑
+
+实施与验证：[PR 3 报告](../reports/2026-11-05-access-control-matrix-preview.md)；本地 PostgreSQL 16 服务层预览 → 执行通过，未重启现有服务，完整 HTTP／浏览器闭环待补。
 
 1. 后端：`PATCH /roles/{id}` 支持修改 `template`；改为 `READONLY` 时校验已保存授权只含只读动作，否则 400。`preview` 响应增加结构化 `changes`。
 2. 前端：`RoleMatrixPanel.vue` 资源类型按钮与数据库下拉显示已授权／待变更计数，「仅看已授权/变更」跨库展示（由 `roleDraftMap` 与 `grants` 合成行，不额外加载其他库表目录）；「改名」改为「编辑角色」；批量按钮改为「按模板勾选」；保存栏显示新增／撤销数。

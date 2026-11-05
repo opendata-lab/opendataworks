@@ -24,14 +24,29 @@
         </p>
       </div>
 
-      <div class="sql-preview-section">
-        <span class="section-mini-label"
-          >待执行原生 SQL ({{ (previewResult.sql || []).length }} 条)</span
-        >
+      <p>本次权限变更清单（{{ (previewResult.changes || []).length }} 项资源变更）</p>
+      <el-table :data="previewResult.changes || []" border data-testid="preview-changes" empty-text="无资源动作变更；请核对原生 SQL 与警告后激活角色">
+        <el-table-column label="变更类型" width="90">
+          <template #default="{ row }">{{ { ADD: '新增', REMOVE: '撤销', UPDATE: '调整' }[row.changeType] }}</template>
+        </el-table-column>
+        <el-table-column label="资源对象">
+          <template #default="{ row }">{{ getResourceTypeLabel(row.resourceType) }} {{ row.database }}{{ row.tableName ? `.${row.tableName}` : '.*' }}</template>
+        </el-table-column>
+        <el-table-column label="权限动作变化">
+          <template #default="{ row }">
+            <div>变更前：{{ actionLabels(row.beforeActions) }}</div>
+            <div>变更后：{{ actionLabels(row.afterActions) }}</div>
+            <div v-if="row.addedActions.length">+ {{ actionLabels(row.addedActions) }}</div>
+            <div v-if="row.removedActions.length">− {{ actionLabels(row.removedActions) }}</div>
+          </template>
+        </el-table-column>
+      </el-table>
+      <details class="sql-preview-section">
+        <summary>查看待执行原生 SQL（{{ (previewResult.sql || []).length }} 条）</summary>
         <pre class="native-sql" data-testid="preview-sql">{{
           (previewResult.sql || []).join('\n') || '-- 无 SQL 变更'
         }}</pre>
-      </div>
+      </details>
     </template>
     <template #footer>
       <el-button :disabled="applying" @click="previewDialogVisible = false">返回修改</el-button>
@@ -50,11 +65,17 @@
 
 <script setup>
 import { toRefs } from 'vue'
+import { DEFAULT_ACTIONS } from '../../composables/permissions/permissionLabels'
+
+const SUB_DML_LABELS = { INSERT: '新增数据', UPDATE: '更新数据', DELETE: '删除数据' }
+const actionLabels = (actions) => (actions || []).map((key) =>
+  DEFAULT_ACTIONS.find((a) => a.key === key)?.label || SUB_DML_LABELS[key] || key).join('、') || '无'
 
 const props = defineProps({ model: { type: Object, required: true } })
 // The feature composable owns these drafts and operations; this view only renders its contract.
 const {
   formatDateTime,
+  getResourceTypeLabel,
   countRoleMembers,
   selectedRole,
   applying,

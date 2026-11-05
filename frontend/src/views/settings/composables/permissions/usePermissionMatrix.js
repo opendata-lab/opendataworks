@@ -17,6 +17,7 @@ export function usePermissionMatrix({
   const selectedDatabase = ref('')
 
   const resourceSearch = ref('')
+  const onlyGranted = ref(false)
 
   const capabilityNoteVisible = ref(false)
 
@@ -176,6 +177,10 @@ export function usePermissionMatrix({
       }))
     }
 
+    if (onlyGranted.value) {
+      rows = grantRows.value.filter((row) => row.resourceType === rt)
+    }
+
     if (!kw) return rows
     return rows.filter((r) => `${r.displayName} ${r.subLabel}`.toLowerCase().includes(kw))
   })
@@ -188,6 +193,41 @@ export function usePermissionMatrix({
     }
     return map
   }
+
+  const baseGrantMap = computed(() => buildGrantsMapFromRole(selectedRole.value))
+  const grantRows = computed(() => {
+    const keys = new Set([...Object.keys(baseGrantMap.value), ...Object.keys(roleDraftMap.value)])
+    return [...keys].filter((key) =>
+      baseGrantMap.value[key]?.length || roleDraftMap.value[key]?.length
+    ).sort().map((key) => {
+      const [resourceType, database, tableName] = key.split('|')
+      // Compare WRITE as INSERT/UPDATE/DELETE so refining it counts only the real sub-action change.
+      const expandWrite = (list) =>
+        [...new Set(list.flatMap((a) => (a === 'WRITE' ? [...SUB_DML_KEYS] : [a])))]
+      const before = expandWrite(baseGrantMap.value[key] || [])
+      const after = expandWrite(roleDraftMap.value[key] || [])
+      return {
+        rowKey: key, resourceType, database, tableName,
+        displayName: tableName || database,
+        subLabel: tableName ? `${database}.${tableName}` : `${database}.*`,
+        granted: before.length > 0,
+        changed: [...new Set([...before, ...after])].some((a) => before.includes(a) !== after.includes(a)),
+        added: after.filter((a) => !before.includes(a)).length,
+        removed: before.filter((a) => !after.includes(a)).length,
+      }
+    })
+  })
+  const grantCounts = (resourceType, database) => {
+    const rows = grantRows.value.filter((row) =>
+      (!resourceType || row.resourceType === resourceType) && (!database || row.database === database))
+    return { granted: rows.filter((r) => r.granted).length, changed: rows.filter((r) => r.changed).length }
+  }
+  const databaseOptions = computed(() => [...new Set([
+    ...resourcesState.databases, ...grantRows.value.map((row) => row.database),
+  ])].sort())
+  const draftChangeCounts = computed(() => grantRows.value.reduce((counts, row) => ({
+    added: counts.added + row.added, removed: counts.removed + row.removed,
+  }), { added: 0, removed: 0 }))
 
   function syncDraftFromSelectedRole() {
     roleDraftMap.value = buildGrantsMapFromRole(selectedRole.value)
@@ -286,12 +326,13 @@ export function usePermissionMatrix({
     refineDialogVisible.value = true
   }
 
-  function batchSelectQuery() {
-    const queryCol = matrixActionColumns.value.find((c) => c.key === 'QUERY')
-    if (!queryCol) return
+  function batchSelectTemplate() {
+    const template = selectedRole.value?.template
+    const keys = template === 'ADMIN' ? null
+      : template === 'READWRITE' ? ['QUERY', 'WRITE'] : ['QUERY', 'SHOW_VIEW']
     for (const row of currentResourceRows.value) {
-      if (isActionSupported(queryCol, row.resourceType)) {
-        toggleMatrixAction(row, queryCol, true)
+      for (const col of matrixActionColumns.value) {
+        if (!keys || keys.includes(col.key)) toggleMatrixAction(row, col, true)
       }
     }
   }
@@ -374,6 +415,8 @@ export function usePermissionMatrix({
   function selectRole(roleId) {
     selectedRoleId.value = roleId
     syncDraftFromSelectedRole()
+    // A role without saved grants has nothing to show under "only granted".
+    if (!selectedRole.value?.grants?.length) onlyGranted.value = false
     const firstGrant = selectedRole.value?.grants?.[0]
     if (firstGrant) currentResourceType.value = firstGrant.resourceType
     loadResources(firstGrant?.database || selectedDatabase.value, activeSourceId.value)
@@ -396,6 +439,7 @@ export function usePermissionMatrix({
     currentResourceType.value = 'SCHEMA'
     selectedDatabase.value = ''
     resourceSearch.value = ''
+    onlyGranted.value = false
     capabilityNoteVisible.value = false
     roleDraftMap.value = {}
     refineDialogVisible.value = false
@@ -441,7 +485,11 @@ export function usePermissionMatrix({
     isNativeSubActionChecked,
     toggleNativeSubAction,
     openRefineDialog,
-    batchSelectQuery,
+    batchSelectTemplate,
+    onlyGranted,
+    grantCounts,
+    databaseOptions,
+    draftChangeCounts,
     resetRoleDraft,
     serializeGrantMap,
     hasDraftChanges,

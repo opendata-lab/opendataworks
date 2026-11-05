@@ -124,14 +124,30 @@ public class DatasourcePermissionService {
     }
 
     public Map<String, Object> renameRole(Long source, Long id, RoleRequest input) {
-        validateRoleName(input.getName());
+        if (input.getName() != null) validateRoleName(input.getName());
+        if (input.getTemplate() != null
+                && !Arrays.asList("READONLY", "READWRITE", "ADMIN", "CUSTOM")
+                        .contains(input.getTemplate()))
+            throw new IllegalArgumentException("无效角色模板");
+        if (input.getName() == null && input.getTemplate() == null)
+            throw new IllegalArgumentException("请提供角色名称或模板");
         return locked(
                 source,
                 () -> {
-                    role(source, id);
-                    permissions.renameRole(input.getName().trim(), id, source);
+                    Map<String, Object> current = role(source, id);
+                    String name =
+                            input.getName() == null
+                                    ? text(current, "name")
+                                    : input.getName().trim();
+                    String template =
+                            input.getTemplate() == null
+                                    ? text(current, "template")
+                                    : input.getTemplate();
+                    if ("READONLY".equals(template) && !readOnly(grants(id)))
+                        throw new IllegalArgumentException("请先移除已保存的写入／结构权限，再切换为只读模板");
+                    permissions.updateRole(name, template, id, source);
                     permissions.recordRoleChange(
-                            source, id, operator(), "修改角色名称：" + input.getName().trim());
+                            source, id, operator(), "编辑角色：" + name + "，模板：" + template);
                     return roleView(role(source, id));
                 });
     }
@@ -210,6 +226,8 @@ public class DatasourcePermissionService {
                                 operation,
                                 "sql",
                                 sql,
+                                "changes",
+                                PermissionGrantChanges.between(grants(id), input.getGrants()),
                                 "warnings",
                                 warnings,
                                 "memberCount",

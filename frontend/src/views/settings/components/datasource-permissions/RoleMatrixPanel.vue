@@ -56,7 +56,7 @@
                   type="primary"
                   @click="openRenameRoleDialog(selectedRole)"
                 >
-                  改名
+                  编辑角色
                 </el-button>
               </div>
               <p class="role-meta-line">
@@ -107,7 +107,7 @@
                 :class="['rt-btn', { active: currentResourceType === rt }]"
                 @click="switchResourceType(rt)"
               >
-                {{ getResourceTypeLabel(rt) }}
+                {{ getResourceTypeLabel(rt) }} · {{ grantCounts(rt).granted }} 已授权 / {{ grantCounts(rt).changed }} 待变更
               </button>
             </div>
             <el-button
@@ -149,6 +149,7 @@
                 <span>{{ isPostgresEngine ? 'Schema' : '数据库' }}</span>
                 <el-select
                   v-model="selectedDatabase"
+                  :disabled="onlyGranted"
                   filterable
                   placeholder="选择数据库/Schema"
                   aria-label="选择数据库"
@@ -156,9 +157,9 @@
                   @change="handleDatabaseChange"
                 >
                   <el-option
-                    v-for="db in resourcesState.databases"
+                    v-for="db in databaseOptions"
                     :key="db"
-                    :label="db"
+                    :label="`${db} · ${grantCounts(currentResourceType, db).granted} 已授权 / ${grantCounts(currentResourceType, db).changed} 待变更`"
                     :value="db"
                   />
                 </el-select>
@@ -172,14 +173,15 @@
               />
             </div>
             <div class="toolbar-actions">
+              <el-checkbox v-model="onlyGranted">仅看已授权/变更</el-checkbox>
               <el-button
                 v-if="currentResourceRows.length"
                 text
                 size="small"
                 type="primary"
-                @click="batchSelectQuery"
+                @click="batchSelectTemplate"
               >
-                批量勾选查询
+                按模板勾选当前列表
               </el-button>
             </div>
           </div>
@@ -270,7 +272,7 @@
           </div>
 
           <div v-if="hasDraftChanges" class="sticky-savebar" data-testid="role-savebar">
-            <span>已修改角色权限草稿（待预览确认后生效）</span>
+            <span>待生效变更：新增 {{ draftChangeCounts.added }} 项动作 · 撤销 {{ draftChangeCounts.removed }} 项动作（待预览确认）</span>
             <div class="savebar-actions">
               <el-button size="small" :disabled="previewing || applying" @click="resetRoleDraft">
                 重置
@@ -332,7 +334,11 @@ const {
   toggleMatrixAction,
   hasRefinableActions,
   openRefineDialog,
-  batchSelectQuery,
+  batchSelectTemplate,
+  onlyGranted,
+  grantCounts,
+  databaseOptions,
+  draftChangeCounts,
   resetRoleDraft,
   hasDraftChanges,
   loadResources,
@@ -533,7 +539,7 @@ const {
 }
 
 .db-select {
-  width: 160px;
+  width: 300px;
 }
 
 .resource-search-input {

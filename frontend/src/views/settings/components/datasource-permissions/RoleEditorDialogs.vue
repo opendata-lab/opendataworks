@@ -38,10 +38,16 @@
     </template>
   </el-dialog>
 
-  <el-dialog v-model="renameRoleDialogVisible" title="修改角色名称" width="420px" append-to-body>
+  <el-dialog v-model="renameRoleDialogVisible" title="编辑角色" width="420px" append-to-body>
     <el-form label-width="90px" @submit.prevent="submitRenameRole">
       <el-form-item label="角色名称" required>
         <el-input v-model="renameRoleForm.name" placeholder="输入新的角色显示名" />
+      </el-form-item>
+      <el-form-item label="权限模板" required>
+        <el-select v-model="renameRoleForm.template" aria-label="编辑权限模板">
+          <el-option v-for="tpl in ROLE_TEMPLATES" :key="tpl.value" :label="tpl.label" :value="tpl.value" />
+        </el-select>
+        <p class="field-hint">切换只读模板前，请先移除并保存写入／结构权限。</p>
       </el-form-item>
     </el-form>
     <p v-if="renameRoleError" role="alert" class="form-error">{{ renameRoleError }}</p>
