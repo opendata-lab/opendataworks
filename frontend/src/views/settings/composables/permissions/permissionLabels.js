@@ -90,15 +90,6 @@ export const getTemplateLabel = (tpl) => {
   return item ? item.label : tpl
 }
 
-export const isWriteRole = (role) => {
-  if (!role) return false
-  const tpl = String(role.template || '').toUpperCase()
-  if (tpl === 'READWRITE' || tpl === 'ADMIN') return true
-  return (role.grants || []).some((g) =>
-    (g.actions || []).some((act) => !READONLY_ACTION_KEYS.has(act))
-  )
-}
-
 export const SUB_DML_KEYS = new Set(['INSERT', 'UPDATE', 'DELETE'])
 
 export const getOperationStateMeta = (state) => {

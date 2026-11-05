@@ -35,12 +35,16 @@
       <el-table-column label="对象" min-width="160">
         <template #default="{ row }">
           <span v-if="row.roleId">角色：{{ getRoleName(row.roleId) }}</span>
-          <span v-else-if="row.subjectId">{{ row.subjectType }}：{{ row.subjectId }}</span>
+          <span v-else-if="row.subjectId"
+            >{{ row.subjectType === 'SERVICE' ? '服务账号' : '用户' }}：{{
+              getPlatformUserName(row.subjectId)
+            }}</span
+          >
           <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="操作人" width="120">
-        <template #default="{ row }">{{ row.operatorId || '-' }}</template>
+        <template #default="{ row }">{{ getPlatformUserName(row.operatorId) || '-' }}</template>
       </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="{ row }">
@@ -72,6 +76,7 @@ const {
   formatDateTime,
   getOperationStateMeta,
   getRoleName,
+  getPlatformUserName,
   operationsState,
   loadOperations,
   openOperationDetail,

@@ -80,14 +80,16 @@ export function usePermissionScope({ props }) {
     ).length
   }
 
+  // USER and SERVICE subjects, and operators, are all sys_user ids.
+  const getPlatformUserName = (id) => {
+    if (id === null || id === undefined || id === '') return ''
+    const u = platformUsers.value.find((item) => String(item.id) === String(id))
+    return u ? u.nickname || u.username : String(id)
+  }
+
   const getMemberDisplayName = (member) => {
     if (!member) return ''
-    if (member.name) return member.name
-    if (member.subjectType === 'USER') {
-      const u = platformUsers.value.find((item) => String(item.id) === String(member.subjectId))
-      if (u) return u.nickname || u.username
-    }
-    return String(member.subjectId || '')
+    return member.name || getPlatformUserName(member.subjectId)
   }
 
   const getMemberStatus = (member) => {
@@ -119,14 +121,27 @@ export function usePermissionScope({ props }) {
         ? `${getTemplateLabel(role.template)}模板 · 待配置资源`
         : '尚未配置资源权限'
     }
-    const byDb = new Map()
+    // Group by database and action set, so each object list shows its own actions.
+    const MAX_OBJECTS = 3
+    const groups = new Map()
     for (const g of grants) {
       const db = g.database || '*'
-      if (!byDb.has(db)) byDb.set(db, new Set())
-      for (const a of g.actions || []) byDb.get(db).add(a)
+      const actions = [...new Set(g.actions || [])].sort()
+      const key = `${db}|${actions.join(',')}`
+      if (!groups.has(key)) groups.set(key, { objects: new Set(), actions })
+      groups
+        .get(key)
+        .objects.add(
+          g.resourceType === 'SCHEMA' || !g.tableName ? `${db}.*` : `${db}.${g.tableName}`
+        )
     }
-    return [...byDb.entries()]
-      .map(([db, acts]) => `${db} (${[...acts].map(actionLabel).join('、')})`)
+    return [...groups.values()]
+      .map(({ objects, actions }) => {
+        const list = [...objects]
+        const shown = list.slice(0, MAX_OBJECTS).join('、')
+        const more = list.length > MAX_OBJECTS ? ` 等 ${list.length} 项` : ''
+        return `${shown}${more} (${actions.map(actionLabel).join('、')})`
+      })
       .join('；')
   }
 
@@ -158,6 +173,7 @@ export function usePermissionScope({ props }) {
     getRoleName,
     countRoleMembers,
     getMemberDisplayName,
+    getPlatformUserName,
     getMemberStatus,
     summarizeRoleGrants,
     actionLabel,

@@ -114,9 +114,20 @@ export function usePermissionMembers({
     authorizeForm.email = ''
     authorizeForm.password = ''
     authorizeForm.serviceAccountId = ''
-    authorizeForm.roleIds = []
+    // Coming from a role's "管理成员" keeps that role preselected.
+    const filteredRole = (overview.roles || []).find(
+      (r) => memberFilters.roleId !== 'all' && String(r.id) === String(memberFilters.roleId)
+    )
+    authorizeForm.roleIds = filteredRole ? [filteredRole.id] : []
     authorizeError.value = ''
     authorizeDialogVisible.value = true
+  }
+
+  // Authorizing adds roles; an existing member keeps the roles they already hold.
+  function withExistingRoles(member, roleIds) {
+    const merged = [...(member?.roleIds || [])]
+    for (const id of roleIds) if (!merged.some((x) => String(x) === String(id))) merged.push(id)
+    return merged
   }
 
   function toggleAuthorizeRole(roleId, checked) {
@@ -171,7 +182,7 @@ export function usePermissionMembers({
           (m) => m.subjectType === 'SERVICE' && String(m.subjectId) === serviceAccountId
         )
         await permissionsApi.assignMemberRoles(request.sourceId, 'SERVICE', serviceAccountId, {
-          roleIds: authorizeForm.roleIds,
+          roleIds: withExistingRoles(existingMember, authorizeForm.roleIds),
           expectedRevision: existingMember?.revision ?? 0,
         })
         if (!request.isCurrent()) return
@@ -209,7 +220,7 @@ export function usePermissionMembers({
           (m) => m.subjectType === 'USER' && String(m.subjectId) === userId
         )
         await permissionsApi.assignMemberRoles(request.sourceId, 'USER', userId, {
-          roleIds: authorizeForm.roleIds,
+          roleIds: withExistingRoles(existingMember, authorizeForm.roleIds),
           expectedRevision: existingMember?.revision ?? 0,
         })
         if (!request.isCurrent()) return
@@ -304,6 +315,10 @@ export function usePermissionMembers({
     if (roleAssignSaving.value || !roleAssignTarget.value) return
     roleAssignError.value = ''
     const target = roleAssignTarget.value
+    if (!roleAssignForm.roleIds.length) {
+      roleAssignError.value = '请至少保留一个角色；如需收回全部权限，请使用“移除”'
+      return
+    }
 
     roleAssignSaving.value = true
     try {

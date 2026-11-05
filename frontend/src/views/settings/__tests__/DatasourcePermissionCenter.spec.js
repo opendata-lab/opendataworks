@@ -668,6 +668,46 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     expect(wrapper.find('.members-panel .el-table').text()).not.toContain('张明')
   })
 
+  it('新建模板角色不自动生成整库授权草稿', async () => {
+    const wrapper = await mountCenter()
+    const roles = feature(wrapper, 'roleState')
+    const matrix = feature(wrapper, 'matrixState')
+    expect(matrix.selectedDatabase).toBe('public')
+    const created = makeOverview()
+    created.roles.push({ id: 201, name: '新只读', template: 'READONLY', revision: 0, status: 'DRAFT', grants: [] })
+    permissionsApiMock.createRole.mockResolvedValueOnce({ id: 201 })
+    permissionsApiMock.getOverview.mockResolvedValueOnce(created)
+    roles.openCreateRoleDialog()
+    roles.createRoleForm.name = '新只读'
+    await roles.submitCreateRole()
+    expect(matrix.selectedRoleId).toBe(201)
+    expect(matrix.roleDraftMap).toEqual({})
+  })
+
+  it('分配角色不能保存为空；从角色进入授权时预选该角色', async () => {
+    const wrapper = await mountCenter()
+    const vm = feature(wrapper, 'memberState')
+    vm.openRoleAssignDialog(wrapper.vm.overview.members[0])
+    vm.roleAssignForm.roleIds = []
+    await vm.submitRoleAssign()
+    expect(vm.roleAssignError).toContain('移除')
+    expect(permissionsApiMock.assignMemberRoles).not.toHaveBeenCalled()
+
+    vm.memberFilters.roleId = '102'
+    vm.openAuthorizeDialog('existing')
+    expect(vm.authorizeForm.roleIds).toEqual([102])
+
+    // 授权已有成员只追加角色，不收回其原有角色
+    const member = wrapper.vm.overview.members[0]
+    vm.authorizeForm.userId = String(member.subjectId)
+    permissionsApiMock.assignMemberRoles.mockResolvedValueOnce({})
+    await vm.submitAuthorize()
+    expect(permissionsApiMock.assignMemberRoles).toHaveBeenCalledWith(10, 'USER', String(member.subjectId), {
+      roleIds: [...member.roleIds, 102],
+      expectedRevision: member.revision,
+    })
+  })
+
   it('拆分后的权限矩阵点击生成草稿并打开预览', async () => {
     permissionsApiMock.previewRoleGrants.mockResolvedValueOnce({
       previewId: 'DOM-PREVIEW',
