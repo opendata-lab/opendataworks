@@ -49,15 +49,6 @@ export function usePermissionMatrix({
     () => overview.roles.find((r) => String(r.id) === String(selectedRoleId.value)) || null
   )
 
-  const isRoleAssignedToService = computed(() => {
-    if (!selectedRole.value) return false
-    return overview.members.some(
-      (m) =>
-        m.subjectType === 'SERVICE' &&
-        (m.roleIds || []).some((id) => String(id) === String(selectedRole.value.id))
-    )
-  })
-
   const availableResourceTypes = computed(() => {
     const rts = overview.capabilities?.resourceTypes
     return Array.isArray(rts) && rts.length ? rts : ['SCHEMA', 'TABLE', 'VIEW']
@@ -426,7 +417,6 @@ export function usePermissionMatrix({
     refineTarget,
     filteredRoles,
     selectedRole,
-    isRoleAssignedToService,
     availableResourceTypes,
     normalizedCapabilityActions,
     matrixActionColumns,

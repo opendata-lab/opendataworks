@@ -9,11 +9,6 @@ export function usePermissionRoleActions({
   loadAllForSource,
   selectedRoleId,
   syncDraftFromSelectedRole,
-  selectedDatabase,
-  roleDraftMap,
-  makeGrantKey,
-  normalizedCapabilityActions,
-  isActionSupported,
   countRoleMembers,
   operationDetail,
   operationDetailVisible,
@@ -103,24 +98,8 @@ export function usePermissionRoleActions({
       if (created?.id !== undefined) {
         selectedRoleId.value = created.id
         syncDraftFromSelectedRole()
-        // 若后端新建模板角色尚未预置资源行，且当前已选中某库，则按模板生成本地草稿供管理员直接预览确认
-        const tpl = ROLE_TEMPLATES.find((t) => t.value === createRoleForm.template)
-        if (
-          tpl?.actions?.length &&
-          selectedDatabase.value &&
-          !Object.keys(roleDraftMap.value).length
-        ) {
-          const schemaKey = makeGrantKey('SCHEMA', selectedDatabase.value, '')
-          const supportedKeys = tpl.actions.filter((actKey) => {
-            const col = normalizedCapabilityActions.value.find((c) => c.key === actKey)
-            return col && isActionSupported(col, 'SCHEMA')
-          })
-          if (supportedKeys.length) {
-            roleDraftMap.value = { [schemaKey]: supportedKeys }
-          }
-        }
       }
-      ElMessage.success('角色已创建，请确认资源范围并预览保存')
+      ElMessage.success('角色已创建，请勾选资源后预览保存')
     } catch (error) {
       if (!request.isCurrent()) return
       createRoleError.value = error?.message || '创建角色失败'

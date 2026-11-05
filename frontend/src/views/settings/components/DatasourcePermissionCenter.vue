@@ -116,7 +116,6 @@ import {
   getTemplateLabel,
   formatDateTime,
   getOperationStateMeta,
-  isWriteRole,
   ROLE_TEMPLATES,
   getOperationDialogTitle,
 } from '../composables/permissions/permissionLabels'
@@ -175,11 +174,6 @@ const roleState = usePermissionRoleActions({
   loadAllForSource: loadAllForSource,
   selectedRoleId: matrixState.selectedRoleId,
   syncDraftFromSelectedRole: matrixState.syncDraftFromSelectedRole,
-  selectedDatabase: matrixState.selectedDatabase,
-  roleDraftMap: matrixState.roleDraftMap,
-  makeGrantKey: matrixState.makeGrantKey,
-  normalizedCapabilityActions: matrixState.normalizedCapabilityActions,
-  isActionSupported: matrixState.isActionSupported,
   countRoleMembers: scopeState.countRoleMembers,
   operationDetail: operationState.operationDetail,
   operationDetailVisible: operationState.operationDetailVisible,
@@ -391,13 +385,13 @@ const permissionOperationsPanelView = reactive({
   formatDateTime: formatDateTime,
   getOperationStateMeta: getOperationStateMeta,
   getRoleName: scopeState.getRoleName,
+  getPlatformUserName: scopeState.getPlatformUserName,
   operationsState: operationState.operationsState,
   loadOperations: operationState.loadOperations,
   openOperationDetail: operationState.openOperationDetail,
 })
 
 const memberAuthorizationDialogView = reactive({
-  isWriteRole: isWriteRole,
   overview: scopeState.overview,
   platformUsers: scopeState.platformUsers,
   activeClusterName: scopeState.activeClusterName,
@@ -412,7 +406,6 @@ const memberAuthorizationDialogView = reactive({
 })
 
 const memberRolesDialogView = reactive({
-  isWriteRole: isWriteRole,
   overview: scopeState.overview,
   activeClusterName: scopeState.activeClusterName,
   getMemberDisplayName: scopeState.getMemberDisplayName,

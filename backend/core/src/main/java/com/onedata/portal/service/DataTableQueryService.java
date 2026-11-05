@@ -708,6 +708,10 @@ public class DataTableQueryService {
         metadata.setDbName(table.getDbName());
         metadata.setTableName(table.getTableName());
         metadata.setTableComment(table.getTableComment());
+        metadata.setLayer(table.getLayer());
+        metadata.setBusinessDomain(table.getBusinessDomain());
+        metadata.setDataDomain(table.getDataDomain());
+        metadata.setStatus(table.getStatus());
         metadata.setFields(
                 fields.stream()
                         .map(
@@ -806,6 +810,10 @@ public class DataTableQueryService {
         row.put("db_name", table.getDbName());
         row.put("table_name", table.getTableName());
         row.put("table_comment", table.getTableComment());
+        row.put("layer", table.getLayer());
+        row.put("business_domain", table.getBusinessDomain());
+        row.put("data_domain", table.getDataDomain());
+        row.put("status", table.getStatus());
         row.put("field_name", field == null ? null : field.getFieldName());
         row.put("field_type", field == null ? null : field.getFieldType());
         row.put("field_comment", field == null ? null : field.getFieldComment());
