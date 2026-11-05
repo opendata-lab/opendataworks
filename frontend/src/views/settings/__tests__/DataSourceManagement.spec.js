@@ -5,7 +5,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
 
 const api = vi.hoisted(() => ({
-  types: vi.fn(), list: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), testConnection: vi.fn()
+  types: vi.fn(), list: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(), testConnection: vi.fn(),
+  permissionSummary: vi.fn(), setDefault: vi.fn()
 }))
 const messages = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 vi.mock('@/api/doris', () => ({ dorisClusterApi: api }))
@@ -171,5 +172,24 @@ describe('DataSourceManagement PostgreSQL', () => {
     wrapper.vm.openPermissions(row)
     expect(wrapper.vm.permissionVisible).toBe(true)
     expect(wrapper.vm.permissionCluster).toEqual(row)
+  })
+
+  it('shows per-source permission counts for admins and routes 更多 commands', async () => {
+    setActivePinia(createPinia())
+    try {
+      useAuthStore().currentUser = { id: 1, username: 'admin', role: 'admin' }
+      api.permissionSummary.mockResolvedValue([{ sourceId: 3, memberCount: 4, roleCount: 2, errorCount: 1 }])
+      api.setDefault.mockResolvedValue({})
+      const wrapper = mountView()
+      await flushPromises()
+      expect(wrapper.vm.permissionSummaryText(3)).toBe('4 位成员 · 2 个角色')
+      expect(wrapper.vm.permissionSummaryText(99)).toBe('-')
+      wrapper.vm.handleMoreCommand('setDefault', { id: 3 })
+      await flushPromises()
+      expect(api.setDefault).toHaveBeenCalledWith(3)
+      wrapper.unmount()
+    } finally {
+      setActivePinia(undefined)
+    }
   })
 })

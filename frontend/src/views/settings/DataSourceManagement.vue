@@ -30,6 +30,16 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column v-if="authStore.isAdmin" label="数据权限" min-width="180">
+          <template #default="{ row }">
+            <el-button text size="small" type="primary" data-testid="permission-summary" @click="openPermissions(row)">
+              {{ permissionSummaryText(row.id) }}
+            </el-button>
+            <el-tag v-if="permissionSummaries[row.id]?.errorCount" size="small" type="danger">
+              {{ permissionSummaries[row.id].errorCount }} 异常
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column label="连接信息" min-width="220">
           <template #default="{ row }">
             <div class="host-info">
@@ -58,16 +68,21 @@
             <span>{{ formatDateTime(row.updatedAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="authStore.isAdmin" label="操作" fixed="right" width="430">
+        <el-table-column v-if="authStore.isAdmin" label="操作" fixed="right" width="290">
           <template #default="{ row }">
             <el-button type="primary" text size="small" @click="openEdit(row.id)">编辑</el-button>
             <el-button type="success" text size="small" :disabled="row.typeDefinition?.driverStatus !== 'AVAILABLE'" :title="row.typeDefinition?.driverStatus !== 'AVAILABLE' ? '所需 JDBC 驱动不可用' : ''" @click="handleTestConnection(row.id)">测试连接</el-button>
-            <el-button type="warning" text size="small" :disabled="row.isDefault === 1" @click="handleSetDefault(row.id)"
-              >设为默认</el-button
-            >
-            <el-button text size="small" data-testid="open-permissions-btn" @click="openPermissions(row)">权限配置</el-button>
-            <el-button v-if="authStore.isAdmin" type="info" text size="small" @click="router?.push({ path: '/metadata-sync', query: { sourceId: row.id } })">元数据采集</el-button>
-            <el-button type="danger" text size="small" @click="handleDelete(row)">删除</el-button>
+            <el-button type="primary" text size="small" data-testid="open-permissions-btn" @click="openPermissions(row)">权限配置</el-button>
+            <el-dropdown trigger="click" @command="command => handleMoreCommand(command, row)">
+              <el-button text size="small" data-testid="more-actions-btn">更多</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="setDefault" :disabled="row.isDefault === 1">设为默认</el-dropdown-item>
+                  <el-dropdown-item command="metadataSync">元数据采集</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -148,6 +163,28 @@ function openPermissions(row) {
   permissionVisible.value = true
 }
 
+const permissionSummaries = ref({})
+
+function permissionSummaryText(id) {
+  const summary = permissionSummaries.value[id]
+  return summary ? `${summary.memberCount} 位成员 · ${summary.roleCount} 个角色` : '-'
+}
+
+async function loadPermissionSummaries() {
+  if (!authStore.isAdmin) return
+  const rows = await dorisClusterApi.permissionSummary()
+  permissionSummaries.value = Object.fromEntries(rows.map(row => [row.sourceId, row]))
+}
+
+// Counts change inside the permission drawer; refresh them when it closes.
+watch(permissionVisible, visible => { if (!visible) loadPermissionSummaries() })
+
+function handleMoreCommand(command, row) {
+  if (command === 'setDefault') handleSetDefault(row.id)
+  else if (command === 'metadataSync') router?.push({ path: '/metadata-sync', query: { sourceId: row.id } })
+  else if (command === 'delete') handleDelete(row)
+}
+
 function handlePermissionSourceChange(newSourceId) {
   const found = clusters.value.find(c => String(c.id) === String(newSourceId))
   if (found) permissionCluster.value = found
@@ -191,7 +228,8 @@ const formatDateTime = value => {
 async function loadClusters() {
   loading.value = true
   try {
-    clusters.value = await dorisClusterApi.list()
+    const [list] = await Promise.all([dorisClusterApi.list(), loadPermissionSummaries()])
+    clusters.value = list
   } finally {
     loading.value = false
   }

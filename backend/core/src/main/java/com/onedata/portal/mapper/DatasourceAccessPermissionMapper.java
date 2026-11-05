@@ -374,4 +374,20 @@ public interface DatasourceAccessPermissionMapper {
                     + " WHERE m.source_id=a.source_id AND m.subject_type=a.subject_type AND"
                     + " m.subject_id=a.subject_id) ORDER BY source_id, role_name")
     List<Map<String, Object>> listAccessSummaryRows();
+
+    /**
+     * Per live source: members as the overview lists them (member rows plus account bindings
+     * without one), roles, and members in ERROR. Aliases are the JSON keys.
+     */
+    @Select(
+            "SELECT c.id AS sourceId, (SELECT COUNT(*) FROM datasource_access_member m WHERE"
+                    + " m.source_id=c.id) + (SELECT COUNT(*) FROM datasource_subject_account a"
+                    + " WHERE a.source_id=c.id AND NOT EXISTS (SELECT 1 FROM"
+                    + " datasource_access_member m WHERE m.source_id=a.source_id AND"
+                    + " m.subject_type=a.subject_type AND m.subject_id=a.subject_id)) AS"
+                    + " memberCount, (SELECT COUNT(*) FROM datasource_access_role r WHERE"
+                    + " r.source_id=c.id) AS roleCount, (SELECT COUNT(*) FROM"
+                    + " datasource_access_member m WHERE m.source_id=c.id AND m.status='ERROR') AS"
+                    + " errorCount FROM doris_cluster c WHERE c.deleted=0")
+    List<Map<String, Object>> listSourceSummaries();
 }

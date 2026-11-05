@@ -53,7 +53,8 @@ class DorisClusterControllerTest {
                 dorisConnectionService,
                 dataTableService,
                 metadataSyncHistoryService,
-                schemaBackupService);
+                schemaBackupService,
+                null);
         mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
     }
 
