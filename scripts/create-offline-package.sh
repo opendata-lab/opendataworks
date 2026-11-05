@@ -122,12 +122,14 @@ mkdir -p "$PACKAGED_DEPLOY_DIR"
 mkdir -p "$PACKAGED_SCRIPTS_DIR"
 mkdir -p "$DEPLOY_IMAGE_DIR"
 
-# 1. 复制 deploy/ 下的内容
+# 1. 复制 deploy/ 下的内容（排除运行时 .env、预置镜像 tar 与评测专用的 opik 目录）
 log "Copying deploy/ content to package deploy/"
 tar -C "$REPO_ROOT/deploy" \
     --exclude='./.env' \
     --exclude='.env' \
     --exclude='docker-images/*.tar' \
+    --exclude='opik' \
+    --exclude='./opik' \
     -cf - . | tar -C "$PACKAGED_DEPLOY_DIR" -xf -
 
 # 2. 复制 scripts/ 下的内容 (excluding build/ which is for dev)
@@ -136,16 +138,6 @@ tar -C "$REPO_ROOT/scripts" --exclude='build' -cf - . | tar -C "$PACKAGED_SCRIPT
 
 # 4. 清理旧的 tar 包（如果不知何故被复制了）
 rm -f "$DEPLOY_IMAGE_DIR/"*.tar 2>/dev/null || true
-
-if [[ -d "$REPO_ROOT/database/mysql" ]]; then
-    # 注意：database/mysql 已被删除，此逻辑仅作兼容保留，或应移除
-    # 既然V2迁移已包含数据，可能不再需要，但保留以防万一用户重建了目录
-    if [ "$(ls -A $REPO_ROOT/database/mysql)" ]; then
-        log "Copying database/mysql scripts"
-        mkdir -p "$PACKAGE_ROOT/database/mysql"
-        tar -C "$REPO_ROOT/database/mysql" -cf - . | tar -C "$PACKAGE_ROOT/database/mysql" -xf -
-    fi
-fi
 
 # 5. 复制文档
 cp "$REPO_ROOT/deploy/README.md" "$PACKAGE_ROOT/README.md"
@@ -247,7 +239,6 @@ MAIN_IMAGES=(
 
 EXTRA_IMAGES=(
     "mysql-8.0.tar|docker.io/library/mysql:8.0|mysql:8.0"
-    "redis-7.2-alpine.tar|docker.io/library/redis:7.2-alpine|redis:7.2-alpine"
     "docker-27.5.1-cli.tar|docker.io/library/docker:27.5.1-cli|docker:27.5.1-cli"
 )
 

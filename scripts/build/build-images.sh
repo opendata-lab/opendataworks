@@ -32,49 +32,39 @@ echo ""
 FRONTEND_IMAGE="opendataworks-frontend:latest"
 BACKEND_IMAGE="opendataworks-backend:latest"
 MYSQL_IMAGE="mysql:8.0"
-REDIS_IMAGE="redis:7.2-alpine"
 LOG_COLLECTOR_IMAGE="docker:27.5.1-cli"
 
 # 创建输出目录
 OUTPUT_DIR="$REPO_ROOT/deploy/docker-images"
 mkdir -p "$OUTPUT_DIR"
 
-PIP_BUILD_ARGS=()
-if [ -n "${PIP_INDEX_URL:-}" ]; then
-    PIP_BUILD_ARGS+=(--build-arg "PIP_INDEX_URL=$PIP_INDEX_URL")
-fi
-if [ -n "${PIP_TRUSTED_HOST:-}" ]; then
-    PIP_BUILD_ARGS+=(--build-arg "PIP_TRUSTED_HOST=$PIP_TRUSTED_HOST")
-fi
-
-echo "📦 步骤 1/8: 构建前端镜像 (AMD64 架构)..."
+echo "📦 步骤 1/3: 构建前端镜像 (AMD64 架构)..."
 cd "$REPO_ROOT/frontend"
 $CONTAINER_CMD build --platform linux/amd64 -t $FRONTEND_IMAGE .
 cd "$REPO_ROOT"
 echo "✅ 前端镜像构建完成"
 echo ""
 
-echo "📦 步骤 2/8: 构建后端镜像 (AMD64 架构)..."
+echo "📦 步骤 2/3: 构建后端镜像 (AMD64 架构)..."
 $CONTAINER_CMD build --platform linux/amd64 -t $BACKEND_IMAGE \
   -f backend/Dockerfile \
   .
 echo "✅ 后端镜像构建完成"
 echo ""
 
-echo "📦 拉取 MySQL、Redis 与日志收集运行时镜像..."
-for image in $MYSQL_IMAGE $REDIS_IMAGE $LOG_COLLECTOR_IMAGE; do
+echo "📦 步骤 3/3: 拉取 MySQL 与日志收集运行时镜像..."
+for image in $MYSQL_IMAGE $LOG_COLLECTOR_IMAGE; do
     $CONTAINER_CMD pull --platform linux/amd64 "$image"
 done
 echo "✅ 运行时镜像拉取完成"
 echo ""
 
 echo "📦 导出镜像为去重合并归档 all-images.tar ..."
-# 一次性保存全部镜像，使共享 base layer（python:3.11-slim、nginx:alpine 等）去重
+# 一次性保存全部镜像，使共享 base layer（nginx:alpine 等）去重
 ALL_IMAGES=(
     "$FRONTEND_IMAGE"
     "$BACKEND_IMAGE"
     "$MYSQL_IMAGE"
-    "$REDIS_IMAGE"
     "$LOG_COLLECTOR_IMAGE"
 )
 if [ "$CONTAINER_CMD" = "podman" ]; then
@@ -96,7 +86,8 @@ echo ""
 echo "镜像清单："
 echo "  ✓ $FRONTEND_IMAGE"
 echo "  ✓ $BACKEND_IMAGE"
-echo "  ✓ $REDIS_IMAGE"
+echo "  ✓ $MYSQL_IMAGE"
+echo "  ✓ $LOG_COLLECTOR_IMAGE"
 echo ""
 echo "📝 下一步："
 echo "  1. 将 $OUTPUT_DIR/ 目录下的所有 tar 文件传输到内网服务器"
