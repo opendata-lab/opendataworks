@@ -35,7 +35,12 @@ class MetadataCollectionAuthorizationTest {
     private DorisClusterController controller() {
         return proxy(
                 new DorisClusterController(
-                        clusters, connections, tables, history, mock(SchemaBackupService.class)));
+                        clusters,
+                        connections,
+                        tables,
+                        history,
+                        mock(SchemaBackupService.class),
+                        null));
     }
 
     @AfterEach

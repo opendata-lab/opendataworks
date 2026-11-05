@@ -14,7 +14,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Runs the real {@link DatasourceAccessPermissionMapper#listAccessSummaryRows} SQL on DuckDB. */
+/** Runs the real {@link DatasourceAccessPermissionMapper} summary SQL on DuckDB. */
 class DatasourceAccessSummarySqlTest {
     private Connection conn;
 
@@ -32,7 +32,9 @@ class DatasourceAccessSummarySqlTest {
             st.execute(
                     "CREATE TABLE datasource_access_member_role (member_id BIGINT, role_id"
                             + " BIGINT)");
-            st.execute("CREATE TABLE datasource_access_role (id BIGINT, name VARCHAR)");
+            st.execute(
+                    "CREATE TABLE datasource_access_role (id BIGINT, name VARCHAR, source_id"
+                            + " BIGINT)");
             st.execute(
                     "CREATE TABLE datasource_subject_account (source_id BIGINT, subject_type"
                             + " VARCHAR, subject_id VARCHAR)");
@@ -41,7 +43,7 @@ class DatasourceAccessSummarySqlTest {
                     "INSERT INTO datasource_subject_account VALUES (1, 'USER', '7'), (1, 'USER',"
                             + " '9'), (2, 'USER', '9')");
             st.execute("INSERT INTO doris_cluster VALUES (1, 'MySQL A', 0), (2, 'Old PG', 1)");
-            st.execute("INSERT INTO datasource_access_role VALUES (10, 'B只读'), (11, 'A只读')");
+            st.execute("INSERT INTO datasource_access_role VALUES (10, 'B只读', 1), (11, 'A只读', 1)");
             // member 100: two roles on live source 1; member 101: no roles; member 102: deleted
             // source
             st.execute(
@@ -78,6 +80,31 @@ class DatasourceAccessSummarySqlTest {
                         "USER/7@1 MySQL A ACTIVE B只读",
                         "USER/9@1 MySQL A ACTIVE null"),
                 rows);
+    }
+
+    @Test
+    void countsMembersRolesAndErrorsPerLiveSource() throws Exception {
+        String sql =
+                DatasourceAccessPermissionMapper.class
+                        .getMethod("listSourceSummaries")
+                        .getAnnotation(Select.class)
+                        .value()[0];
+        List<String> rows = new ArrayList<>();
+        try (Statement st = conn.createStatement();
+                ResultSet rs = st.executeQuery(sql)) {
+            while (rs.next())
+                rows.add(
+                        rs.getLong("sourceId")
+                                + ": "
+                                + rs.getLong("memberCount")
+                                + " members, "
+                                + rs.getLong("roleCount")
+                                + " roles, "
+                                + rs.getLong("errorCount")
+                                + " errors");
+        }
+        // Source 1: members 7 and 8 plus bound-only 9; deleted source 2 is left out.
+        assertEquals(List.of("1: 3 members, 2 roles, 1 errors"), rows);
     }
 
     private static void addRow(List<String> rows, ResultSet rs) throws Exception {

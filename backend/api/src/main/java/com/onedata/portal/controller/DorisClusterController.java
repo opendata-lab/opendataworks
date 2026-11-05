@@ -20,6 +20,7 @@ import com.onedata.portal.service.DorisClusterService;
 import com.onedata.portal.service.DorisConnectionService;
 import com.onedata.portal.service.MetadataSyncHistoryService;
 import com.onedata.portal.service.SchemaBackupService;
+import com.onedata.portal.service.permission.DatasourcePermissionService;
 
 import jakarta.validation.Valid;
 
@@ -49,10 +50,17 @@ public class DorisClusterController {
     private final DataTableService dataTableService;
     private final MetadataSyncHistoryService metadataSyncHistoryService;
     private final SchemaBackupService schemaBackupService;
+    private final DatasourcePermissionService datasourcePermissionService;
 
     @GetMapping
     public Result<List<DorisCluster>> list() {
         return Result.success(dorisClusterService.listAll());
+    }
+
+    @RequireRole("admin")
+    @GetMapping("/permission-summary")
+    public Result<List<Map<String, Object>>> permissionSummary() {
+        return Result.success(datasourcePermissionService.sourceSummaries());
     }
 
     @GetMapping("/{id}")

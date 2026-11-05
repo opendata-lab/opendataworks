@@ -12,6 +12,9 @@ export const dorisClusterApi = {
   list() {
     return request.get('/v1/doris-clusters')
   },
+  permissionSummary() {
+    return request.get('/v1/doris-clusters/permission-summary')
+  },
 
   getById(id) {
     return request.get(`/v1/doris-clusters/${id}`)

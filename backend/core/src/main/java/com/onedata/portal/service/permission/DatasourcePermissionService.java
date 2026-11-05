@@ -48,6 +48,11 @@ public class DatasourcePermissionService {
     private final PermissionCredentialCipher cipher;
     private final ObjectMapper json;
 
+    /** Member, role and error counts per live source, for the datasource list. */
+    public List<Map<String, Object>> sourceSummaries() {
+        return permissions.listSourceSummaries();
+    }
+
     public Map<String, Object> overview(Long source) {
         DorisCluster cluster = source(source);
         List<Map<String, Object>> roles = roleViews(source);
