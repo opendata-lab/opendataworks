@@ -41,6 +41,22 @@ describe('ServiceAccountTokens', () => {
     wrapper.unmount()
   })
 
+  it('首个 Token 预填名称，签发后展示 MCP 接入示例并可转去配置数据权限', async () => {
+    api.listTokens.mockResolvedValue([])
+    const wrapper = await view()
+    expect(wrapper.vm.draft.name).toBe('默认 Token')
+    expect(wrapper.find('[data-testid="configure-access-btn"]').exists()).toBe(false)
+    await wrapper.vm.createToken()
+    expect(api.createToken).toHaveBeenCalledWith(7, { name: '默认 Token', expiresInDays: 90 })
+    const example = wrapper.find('[data-testid="mcp-example"]').text()
+    expect(example).toContain('/api/mcp/')
+    expect(example).toContain('Authorization: Bearer test-only-secret')
+    await wrapper.setProps({ showAccessLink: true })
+    await wrapper.find('[data-testid="configure-access-btn"]').trigger('click')
+    expect(wrapper.emitted('configure-access')[0][0].id).toBe(7)
+    wrapper.unmount()
+  })
+
   it('停用账号不能签发但仍可撤销；取消撤销不发送请求', async () => {
     const wrapper = await view(false)
     wrapper.vm.draft.name = 'disabled'

@@ -245,7 +245,12 @@
       </template>
     </el-dialog>
 
-    <ServiceAccountTokens v-model="tokensVisible" :account="tokenTarget" />
+    <ServiceAccountTokens
+      v-model="tokensVisible"
+      :account="tokenTarget"
+      show-access-link
+      @configure-access="configureAccessFromTokens"
+    />
     <SubjectAccessDrawer v-model="accessVisible" :account="accessTarget" @changed="loadUsers" />
 
     <el-dialog
@@ -384,6 +389,7 @@ function openTokens(row) { tokenTarget.value = row; tokensVisible.value = true }
 const accessVisible = ref(false)
 const accessTarget = ref(null)
 function openAccess(row) { accessTarget.value = row; accessVisible.value = true }
+function configureAccessFromTokens(account) { tokensVisible.value = false; openAccess(account) }
 
 // Delete / disable: optionally revoke datasource access first; any failed source stops the action.
 const accessAction = reactive({
@@ -627,7 +633,7 @@ async function submitUser() {
 
   saving.value = true
   try {
-    await usersApi.create({
+    const created = await usersApi.create({
       accountType: 'USER',
       username: form.username.trim(),
       nickname: form.nickname.trim(),
@@ -638,8 +644,10 @@ async function submitUser() {
     })
     form.password = ''
     dialogVisible.value = false
-    ElMessage.success('用户已创建')
+    ElMessage.success('用户已创建，可在此分配数据权限')
     await loadUsers()
+    // Onboarding continues straight into the per-person access drawer.
+    if (created?.id !== undefined) openAccess(created)
   } catch (error) {
     formError.value = error?.message || '创建用户失败'
   } finally {

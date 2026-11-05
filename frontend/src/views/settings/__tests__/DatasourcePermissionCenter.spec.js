@@ -708,6 +708,38 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     })
   })
 
+  it('授权服务账号时可就地新建；分配失败后选中新账号重试，成功后打开 Token 签发', async () => {
+    const wrapper = await mountCenter()
+    const vm = feature(wrapper, 'memberState')
+    vm.openAuthorizeDialog('service')
+    vm.authorizeForm.serviceCreate = true
+    vm.authorizeForm.serviceName = '新问数服务'
+    vm.authorizeForm.serviceDescription = '报表'
+    vm.authorizeForm.roleIds = [101]
+    const createdSvc = { id: 50, accountType: 'SERVICE', nickname: '新问数服务', enabled: true }
+    usersApiMock.create.mockResolvedValueOnce(createdSvc)
+    // After creation the platform list (reloaded on failure) contains the new account.
+    usersApiMock.list.mockResolvedValue([...(await usersApiMock.list()), createdSvc])
+    permissionsApiMock.assignMemberRoles.mockRejectedValueOnce(new Error('锁超时'))
+    await vm.submitAuthorize()
+    expect(usersApiMock.create).toHaveBeenCalledWith({ accountType: 'SERVICE', nickname: '新问数服务', description: '报表', enabled: true })
+    expect(vm.authorizeError).toContain('已创建服务账号「新问数服务」')
+    expect(vm.authorizeForm.serviceCreate).toBe(false)
+    expect(vm.authorizeForm.serviceAccountId).toBe('50')
+    expect(vm.createdServiceAccount).toBe(null)
+
+    permissionsApiMock.assignMemberRoles.mockResolvedValueOnce({})
+    await vm.submitAuthorize()
+    expect(usersApiMock.create).toHaveBeenCalledTimes(1)
+    expect(permissionsApiMock.assignMemberRoles).toHaveBeenLastCalledWith(10, 'SERVICE', '50', { roleIds: [101], expectedRevision: 0 })
+    expect(vm.authorizeDialogVisible).toBe(false)
+    expect(vm.createdServiceAccount).toEqual(createdSvc)
+    // 切换数据源等重置会关闭 Token 窗口并清空就地新建表单
+    vm.reset()
+    expect(vm.createdServiceAccount).toBe(null)
+    expect(vm.authorizeForm.serviceName).toBe('')
+  })
+
   it('拆分后的权限矩阵点击生成草稿并打开预览', async () => {
     permissionsApiMock.previewRoleGrants.mockResolvedValueOnce({
       previewId: 'DOM-PREVIEW',

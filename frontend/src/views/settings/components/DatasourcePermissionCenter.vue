@@ -105,6 +105,10 @@
     <RoleRefineDialog :model="roleRefineDialogView" />
     <RolePreviewDialog :model="rolePreviewDialogView" />
     <PermissionOperationDetail :model="permissionOperationDetailView" />
+    <ServiceAccountTokens
+      v-model="newServiceTokensVisible"
+      :account="memberState.createdServiceAccount.value"
+    />
   </el-drawer>
 </template>
 
@@ -137,6 +141,7 @@ import RoleEditorDialogs from './datasource-permissions/RoleEditorDialogs.vue'
 import RoleRefineDialog from './datasource-permissions/RoleRefineDialog.vue'
 import RolePreviewDialog from './datasource-permissions/RolePreviewDialog.vue'
 import PermissionOperationDetail from './datasource-permissions/PermissionOperationDetail.vue'
+import ServiceAccountTokens from './ServiceAccountTokens.vue'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: true },
@@ -167,6 +172,12 @@ const memberState = usePermissionMembers({
   platformUsers: scopeState.platformUsers,
   loadAllForSource: loadAllForSource,
   loadOperations: operationState.loadOperations,
+})
+const newServiceTokensVisible = computed({
+  get: () => Boolean(memberState.createdServiceAccount.value),
+  set: (open) => {
+    if (!open) memberState.createdServiceAccount.value = null
+  },
 })
 const roleState = usePermissionRoleActions({
   captureRequest: scopeState.captureRequest,

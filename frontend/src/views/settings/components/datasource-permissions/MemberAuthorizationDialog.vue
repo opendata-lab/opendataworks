@@ -75,7 +75,11 @@
 
       <template v-else>
         <el-form-item label="服务账号" required>
+          <el-checkbox v-model="authorizeForm.serviceCreate" data-testid="service-create-toggle">
+            新建服务账号
+          </el-checkbox>
           <el-select
+            v-if="!authorizeForm.serviceCreate"
             v-model="authorizeForm.serviceAccountId"
             filterable
             placeholder="选择平台服务账号"
@@ -90,10 +94,23 @@
               :disabled="u.enabled === false"
             />
           </el-select>
-          <p v-if="!platformUsers.some((u) => u.accountType === 'SERVICE')" class="sub-cell-text">
-            暂无服务账号，请先在管理中心的账号管理中创建。
-          </p>
+          <el-input
+            v-else
+            v-model="authorizeForm.serviceName"
+            maxlength="100"
+            placeholder="账号名称，例如：智能问数服务"
+            aria-label="新服务账号名称"
+          />
         </el-form-item>
+        <el-form-item v-if="authorizeForm.serviceCreate" label="用途">
+          <el-input
+            v-model="authorizeForm.serviceDescription"
+            maxlength="500"
+            placeholder="例如：DataAgent 访问生产数据"
+            aria-label="新服务账号用途"
+          />
+        </el-form-item>
+        <p v-if="authorizeForm.serviceCreate" class="sub-cell-text">创建并授权后会打开 Token 签发窗口。</p>
       </template>
 
       <el-form-item label="分配角色" required>

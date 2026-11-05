@@ -9,6 +9,12 @@
         <el-button type="primary" @click="copyToken">复制 Token</el-button>
         <el-button @click="clearSecret">我已保存</el-button>
       </div>
+      <div class="mcp-example" data-testid="mcp-example">
+        <p>在调用方（如 DataAgent）的 MCP 配置中填写：</p>
+        <pre>地址：http://&lt;后端主机&gt;:8080/api/mcp/
+请求头：Authorization: Bearer {{ generatedToken }}</pre>
+        <p class="muted">MCP 由后端服务直接提供，门户地址不转发 /api/mcp；端口以部署配置为准。</p>
+      </div>
     </div>
     <el-form v-else class="issue-form" :model="draft" label-width="76px" @submit.prevent="createToken">
       <div class="issue-fields">
@@ -34,7 +40,10 @@
       <el-table-column label="最后使用" min-width="155"><template #default="{ row }">{{ formatTime(row.lastUsedAt) }}</template></el-table-column>
       <el-table-column label="操作" width="76" fixed="right"><template #default="{ row }"><el-button text type="danger" size="small" :disabled="!!row.revokedAt || revoking !== null" :loading="revoking === row.id" @click="revokeToken(row)">撤销</el-button></template></el-table-column>
     </el-table>
-    <template #footer><el-button :disabled="issuing" @click="visible = false">关闭</el-button></template>
+    <template #footer>
+      <el-button v-if="showAccessLink" type="primary" plain :disabled="issuing" data-testid="configure-access-btn" @click="emit('configure-access', account)">配置数据权限</el-button>
+      <el-button :disabled="issuing" @click="visible = false">关闭</el-button>
+    </template>
   </el-dialog>
 </template>
 
@@ -44,8 +53,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import { usersApi } from '@/api/users'
 
-const props = defineProps({ modelValue: Boolean, account: { type: Object, default: null } })
-const emit = defineEmits(['update:modelValue'])
+const props = defineProps({ modelValue: Boolean, account: { type: Object, default: null }, showAccessLink: Boolean })
+const emit = defineEmits(['update:modelValue', 'configure-access'])
+const DEFAULT_TOKEN_NAME = '默认 Token'
 const visible = computed({ get: () => props.modelValue, set: value => emit('update:modelValue', value) })
 const tokens = ref([])
 const loading = ref(false)
@@ -68,7 +78,11 @@ async function loadTokens() {
   loading.value = true; listError.value = ''
   try {
     const rows = await usersApi.listTokens(props.account.id)
-    if (current === generation) tokens.value = Array.isArray(rows) ? rows : []
+    if (current === generation) {
+      tokens.value = Array.isArray(rows) ? rows : []
+      // First token for this account: prefill a name so issuing is one click.
+      if (!tokens.value.length && !draft.name) draft.name = DEFAULT_TOKEN_NAME
+    }
   } catch (error) {
     if (current === generation) listError.value = error?.message || '加载 Token 失败，请刷新重试'
   } finally { if (current === generation) loading.value = false }
@@ -130,4 +144,6 @@ onBeforeUnmount(() => { generation++; clearSecret() })
 .token-reveal p { line-height: 1.6; }
 .reveal-actions { display: flex; gap: 8px; margin-top: 12px; }
 .error { color: var(--el-color-danger); }
+.mcp-example { margin-top: 16px; }
+.mcp-example pre { margin: 8px 0; padding: 10px 12px; background: var(--el-fill-color-light); border-radius: 4px; white-space: pre-wrap; word-break: break-all; font-size: 12px; line-height: 1.6; }
 </style>

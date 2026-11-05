@@ -34,8 +34,16 @@ export function usePermissionMembers({
     email: '',
     password: '',
     serviceAccountId: '',
+    serviceCreate: false,
+    serviceName: '',
+    serviceDescription: '',
     roleIds: [],
   })
+
+  // Service account created from this dialog; the center opens its token dialog after authorizing.
+  const createdServiceAccount = ref(null)
+  // Created here but not yet authorized; a retry after a failed assignment still ends in the token dialog.
+  let pendingServiceAccount = null
 
   const roleAssignDialogVisible = ref(false)
 
@@ -114,6 +122,12 @@ export function usePermissionMembers({
     authorizeForm.email = ''
     authorizeForm.password = ''
     authorizeForm.serviceAccountId = ''
+    // With no service account yet, creating one is the only way forward.
+    authorizeForm.serviceCreate =
+      defaultMode === 'service' && !platformUsers.value.some((u) => u.accountType === 'SERVICE')
+    authorizeForm.serviceName = ''
+    authorizeForm.serviceDescription = ''
+    pendingServiceAccount = null
     // Coming from a role's "管理成员" keeps that role preselected.
     const filteredRole = (overview.roles || []).find(
       (r) => memberFilters.roleId !== 'all' && String(r.id) === String(memberFilters.roleId)
@@ -163,6 +177,35 @@ export function usePermissionMembers({
     }
 
     if (authorizeForm.mode === 'service') {
+      let created = null
+      if (authorizeForm.serviceCreate) {
+        const name = authorizeForm.serviceName.trim()
+        if (!name || name.length > 100) {
+          authorizeError.value = '服务账号名称不能为空且最多100字'
+          return
+        }
+        authorizing.value = true
+        try {
+          created = await usersApi.create({
+            accountType: 'SERVICE',
+            nickname: name,
+            description: authorizeForm.serviceDescription.trim(),
+            enabled: true,
+          })
+        } catch (error) {
+          if (!request.isCurrent()) return
+          authorizeError.value = error?.message || '创建服务账号失败'
+          authorizing.value = false
+          return
+        }
+        if (!request.isCurrent()) return
+        authorizing.value = false
+        platformUsers.value = [created, ...platformUsers.value]
+        pendingServiceAccount = created
+        // A retry after a failed assignment reuses this account instead of creating another.
+        authorizeForm.serviceCreate = false
+        authorizeForm.serviceAccountId = String(created.id)
+      }
       const serviceAccountId = String(authorizeForm.serviceAccountId ?? '').trim()
       if (!serviceAccountId) {
         authorizeError.value = '请选择平台服务账号'
@@ -187,12 +230,20 @@ export function usePermissionMembers({
         })
         if (!request.isCurrent()) return
         authorizeDialogVisible.value = false
-        ElMessage.success('服务账号角色已保存')
+        const fresh =
+          pendingServiceAccount && String(pendingServiceAccount.id) === serviceAccountId
+            ? pendingServiceAccount
+            : null
+        pendingServiceAccount = null
+        ElMessage.success(fresh ? '服务账号已创建并授权，请签发 Token' : '服务账号角色已保存')
+        if (fresh) createdServiceAccount.value = fresh
         await loadAllForSource(request.sourceId)
         if (!request.isCurrent()) return
       } catch (error) {
         if (!request.isCurrent()) return
-        authorizeError.value = error?.message || '服务账号授权失败'
+        authorizeError.value = created
+          ? `已创建服务账号「${created.nickname}」，但分配角色失败：${error?.message || '请求失败'}。已选中该账号，可直接重试。`
+          : error?.message || '服务账号授权失败'
         await refreshAfterFailure(request)
       } finally {
         if (request.isCurrent()) {
@@ -505,9 +556,14 @@ export function usePermissionMembers({
       email: '',
       password: '',
       serviceAccountId: '',
+      serviceCreate: false,
+      serviceName: '',
+      serviceDescription: '',
       roleIds: [],
     })
     authorizeError.value = ''
+    createdServiceAccount.value = null
+    pendingServiceAccount = null
     roleAssignDialogVisible.value = false
     roleAssignSaving.value = false
     roleAssignError.value = ''
@@ -525,6 +581,7 @@ export function usePermissionMembers({
 
   return {
     reset,
+    createdServiceAccount,
     memberFilters,
     authorizeDialogVisible,
     authorizing,

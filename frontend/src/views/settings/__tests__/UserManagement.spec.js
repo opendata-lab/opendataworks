@@ -156,7 +156,7 @@ describe('UserManagement 用户管理组件测试', () => {
       enabled: true
     })
     expect(vm.form.password).toBe('')
-    expect(messagesMock.success).toHaveBeenCalledWith('用户已创建')
+    expect(messagesMock.success).toHaveBeenCalledWith('用户已创建，可在此分配数据权限')
   })
 
   it('编辑用户时不回显密码、本地用户名只读，且禁止停用/删除/降级自己或最后一个管理员', async () => {
@@ -184,6 +184,18 @@ describe('UserManagement 用户管理组件测试', () => {
       role: 'admin',
       enabled: true
     })
+  })
+
+  it('新建普通用户后直接打开该用户的数据权限抽屉', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm
+    usersApiMock.datasourceAccess.mockResolvedValue({ userId: 4, accountType: 'USER', sources: [] })
+    vm.openCreate()
+    Object.assign(vm.form, { username: 'newuser', nickname: '新用户', password: 'Password123!' })
+    await vm.submitUser()
+    expect(usersApiMock.create).toHaveBeenCalled()
+    expect(vm.accessVisible).toBe(true)
+    expect(vm.accessTarget.id).toBe(4)
   })
 
   it('重置密码仅允许本地账号并校验 至少 8 位，最多 72 字节，第三方账号拒绝设置本地密码', async () => {
