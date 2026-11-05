@@ -756,16 +756,10 @@ public class DatasourcePermissionService {
 
         @SuppressWarnings("unchecked")
         List<Long> roleIds = (List<Long>) memberView.get("roleIds");
+        List<Long> assigned = roleIds == null ? Collections.emptyList() : roleIds;
         List<Map<String, Object>> expectedRoles = new ArrayList<>();
-        if (roleIds != null && !roleIds.isEmpty()) {
-            for (Long rid : roleIds) {
-                try {
-                    expectedRoles.add(roleView(role(source, rid)));
-                } catch (Exception ignored) {
-                }
-            }
-        }
-        Map<String, Object> lastFailedOp = lastFailedOperation(source, type, subject);
+        for (Long rid : assigned) expectedRoles.add(roleView(role(source, rid)));
+        Map<String, Object> lastFailedOp = lastFailedOperation(source, type, subject, assigned);
 
         DatasourceSubjectAccount account = findAccount(source, type, subject);
         if (account == null) {
@@ -882,13 +876,28 @@ public class DatasourcePermissionService {
         }
     }
 
-    private Map<String, Object> lastFailedOperation(Long source, String type, String subject) {
+    /**
+     * Newest failed operation whose target is still in that failed state: the member itself or one
+     * of its assigned roles. A later successful operation on the same target clears its failure.
+     */
+    private Map<String, Object> lastFailedOperation(
+            Long source, String type, String subject, List<Long> roleIds) {
         Set<String> failedStates = Set.of("FAILED", "PARTIAL", "UNKNOWN");
-        for (Map<String, Object> op : operations(source)) {
-            if (type.equals(op.get("subjectType"))
-                    && subject.equals(String.valueOf(op.get("subjectId")))) {
-                return failedStates.contains(String.valueOf(op.get("state"))) ? op : null;
-            }
+        Set<String> seen = new HashSet<>();
+        for (Map<String, Object> op : operations(source)) { // newest first
+            String target;
+            if (op.get("roleId") != null
+                    && roleIds.stream()
+                            .anyMatch(
+                                    id ->
+                                            String.valueOf(id)
+                                                    .equals(String.valueOf(op.get("roleId")))))
+                target = "ROLE:" + op.get("roleId");
+            else if (type.equals(op.get("subjectType"))
+                    && subject.equals(String.valueOf(op.get("subjectId")))) target = "MEMBER";
+            else continue;
+            if (seen.add(target) && failedStates.contains(String.valueOf(op.get("state"))))
+                return op;
         }
         return null;
     }

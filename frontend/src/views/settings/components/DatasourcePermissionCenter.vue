@@ -468,7 +468,7 @@ const memberGrantInspectDialogView = reactive({
   inspectState: memberState.inspectState,
   normalizedInspectGrants: memberState.normalizedInspectGrants,
   diagnosisIssues: memberState.diagnosisIssues,
-  diagnosisRows: memberState.diagnosisRows,
+  expectedGrantRows: memberState.expectedGrantRows,
   reapplying: memberState.reapplying,
   handleReapplyRoles: memberState.handleReapplyRoles,
   openOperationDetail: operationState.openOperationDetail,

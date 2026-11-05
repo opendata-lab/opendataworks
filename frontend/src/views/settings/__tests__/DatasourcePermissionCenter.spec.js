@@ -992,18 +992,32 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     expect(wrapper.text()).toContain('GRANT Role 失败 (SQLState=42000)')
     expect(wrapper.text()).toContain('所属角色「财务分析」处于 [草稿（待预览激活）]')
 
-    // Check comparison rows
-    expect(wrapper.text()).toContain('sales.orders')
-    expect(wrapper.text()).toContain('fin.ledger')
-    expect(wrapper.text()).toContain('test_db.*')
-    expect(wrapper.text()).toContain('一致')
-    expect(wrapper.text()).toContain('草稿未生效')
-    expect(wrapper.text()).toContain('外部授权')
+    // Expected (from roles) and native read-back are listed side by side, without a computed verdict
+    const expected = wrapper.find('[data-testid="expected-grants-table"]').text()
+    expect(expected).toContain('sales.orders')
+    expect(expected).toContain('fin.ledger')
+    expect(expected).toContain('草稿未生效')
+    const native = wrapper.find('[data-testid="native-grants-table"]').text()
+    expect(native).toContain('test_db')
+    expect(wrapper.text()).not.toContain('一致')
 
-    // Test filter diff
-    await wrapper.find('[data-testid="inspect-diff-filter"]').trigger('click')
+    // Reapply resubmits the member's current roles with its revision
+    const member = wrapper.vm.overview.members[0]
+    permissionsApiMock.assignMemberRoles.mockResolvedValueOnce({})
+    permissionsApiMock.inspectMember.mockResolvedValueOnce({ expectedRoles: [], grants: [] })
+    await wrapper.find('[data-testid="reapply-roles-btn"]').trigger('click')
     await flushPromises()
-    expect(members.diagnosisRows.filter((r) => r.status !== 'consistent').length).toBe(2)
+    expect(permissionsApiMock.assignMemberRoles).toHaveBeenCalledWith(10, member.subjectType, member.subjectId, {
+      roleIds: member.roleIds,
+      expectedRevision: member.revision ?? 0,
+    })
+    permissionsApiMock.inspectMember.mockResolvedValueOnce({
+      expectedRoles: [{ id: 102, name: '财务分析', status: 'DRAFT', grants: [] }],
+      grants: [],
+      lastFailedOperation: { operationId: 108, state: 'FAILED', steps: [] },
+    })
+    await members.openInspectDialog(member)
+    await flushPromises()
 
     // Test view op steps
     await wrapper.find('[data-testid="view-op-steps-btn"]').trigger('click')

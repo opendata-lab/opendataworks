@@ -207,7 +207,20 @@ class DatasourcePermissionInspectionTest {
         opRow.put("state", "FAILED");
         opRow.put("message", "GRANT Role 失败 (SQLState=42000)");
         opRow.put("steps", "[{\"sql\":\"GRANT odv_fin_ro TO reader\",\"state\":\"FAILED\"}]");
-        when(permissions.listOperations(1L)).thenReturn(Collections.singletonList(opRow));
+        // A newer partial failure on the member's assigned role (role operations carry no subject)
+        Map<String, Object> roleOpRow = new LinkedHashMap<>();
+        roleOpRow.put("id", 110L);
+        roleOpRow.put("source_id", 1L);
+        roleOpRow.put("role_id", 101L);
+        roleOpRow.put("state", "PARTIAL");
+        roleOpRow.put("message", "部分资源授权失败");
+        roleOpRow.put("steps", "[]");
+        // Another role's newer failure is unrelated to this member
+        Map<String, Object> otherRoleOp = new LinkedHashMap<>(roleOpRow);
+        otherRoleOp.put("id", 111L);
+        otherRoleOp.put("role_id", 999L);
+        otherRoleOp.put("state", "FAILED");
+        when(permissions.listOperations(1L)).thenReturn(List.of(otherRoleOp, roleOpRow, opRow));
 
         PermissionInspectionJdbc nativeJdbc = nativeConnection();
         when(connections.open(anyString(), any(), isNull(), anyString(), anyString(), anyBoolean()))
@@ -228,9 +241,8 @@ class DatasourcePermissionInspectionTest {
         Map<String, Object> lastFailedOp =
                 (Map<String, Object>) response.get("lastFailedOperation");
         assertNotNull(lastFailedOp);
-        assertEquals(108L, lastFailedOp.get("operationId"));
-        assertEquals("FAILED", lastFailedOp.get("state"));
-        assertTrue(String.valueOf(lastFailedOp.get("message")).contains("GRANT Role"));
+        assertEquals(110L, lastFailedOp.get("operationId"));
+        assertEquals("PARTIAL", lastFailedOp.get("state"));
     }
 
     private PermissionInspectionJdbc nativeConnection() throws Exception {

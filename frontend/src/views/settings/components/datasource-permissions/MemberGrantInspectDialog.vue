@@ -103,54 +103,47 @@
         </div>
       </div>
 
-      <!-- Filter toolbar -->
       <div class="inspect-toolbar">
         <el-input
           v-model="filterKeyword"
           clearable
-          placeholder="搜索库名、表名或权限动作 (如 sales.orders)"
+          placeholder="搜索库名、表名或权限 (如 sales.orders)"
           class="inspect-search-input"
           data-testid="inspect-search-input"
         />
-        <el-radio-group v-model="filterTab" size="small" class="inspect-filter-radios">
-          <el-radio-button value="all">全部 ({{ diagnosisRows?.length || 0 }})</el-radio-button>
-          <el-radio-button value="diff" data-testid="inspect-diff-filter">
-            仅差异项 ({{ diffCount }})
-          </el-radio-button>
-          <el-radio-button value="external">仅外部授权 ({{ externalCount }})</el-radio-button>
-        </el-radio-group>
       </div>
 
-      <!-- Comparison Table -->
+      <h4 class="inspect-section-title">平台期望权限（来自所属角色）</h4>
       <el-table
-        :data="filteredDiagnosisRows"
+        :data="filteredExpected"
         border
-        empty-text="暂无权限比对记录"
+        empty-text="所属角色未配置资源"
         style="width: 100%"
         class="diagnosis-table"
+        data-testid="expected-grants-table"
       >
-        <el-table-column label="资源范围 / 对象" min-width="210">
+        <el-table-column prop="scope" label="资源" min-width="200" />
+        <el-table-column prop="actionsText" label="权限" min-width="180" />
+        <el-table-column label="来源角色" min-width="160">
           <template #default="{ row }">
-            <span class="resource-scope-text">{{ row.displayScope }}</span>
+            {{ row.roleName }}
+            <el-tag v-if="row.isDraft" size="small" type="warning">草稿未生效</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="平台期望权限 (角色来源)" min-width="220">
-          <template #default="{ row }">
-            <div>{{ row.expectedActionsText }}</div>
-            <div class="sub-cell-text">来源: {{ row.roleSourceText }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="数据库实际回读权限" min-width="190">
-          <template #default="{ row }">
-            <div>{{ row.actualActionsText }}</div>
-            <div class="sub-cell-text">来源: {{ row.actualSourceText }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column label="诊断状态" width="140">
-          <template #default="{ row }">
-            <el-tag :type="row.statusTagType" size="small">{{ row.statusLabel }}</el-tag>
-          </template>
-        </el-table-column>
+      </el-table>
+
+      <h4 class="inspect-section-title">数据库实际回读</h4>
+      <el-table
+        :data="filteredNative"
+        border
+        :empty-text="inspectState.data?.connectionError ? '未能连接数据库，见上方原因' : '未回读到授权'"
+        style="width: 100%"
+        class="diagnosis-table"
+        data-testid="native-grants-table"
+      >
+        <el-table-column prop="scope" label="回读记录" min-width="320" show-overflow-tooltip />
+        <el-table-column prop="actionsText" label="权限" min-width="120" />
+        <el-table-column prop="sourceText" label="来源" min-width="120" />
       </el-table>
 
       <p
@@ -182,7 +175,8 @@ const {
   inspectTarget,
   inspectState,
   diagnosisIssues,
-  diagnosisRows,
+  expectedGrantRows,
+  normalizedInspectGrants,
   reapplying,
   handleReapplyRoles,
   openOperationDetail,
@@ -190,7 +184,6 @@ const {
 } = toRefs(props.model)
 
 const filterKeyword = ref('')
-const filterTab = ref('all')
 
 const dialogTitle = computed(() => {
   const memberName = inspectTarget.value && getMemberDisplayName.value
@@ -228,29 +221,16 @@ const isManagedAccount = computed(() => {
   )
 })
 
-const diffCount = computed(() => {
-  return (diagnosisRows.value || []).filter((r) => r.status !== 'consistent').length
-})
-
-const externalCount = computed(() => {
-  return (diagnosisRows.value || []).filter((r) => r.status === 'external').length
-})
-
-const filteredDiagnosisRows = computed(() => {
+const matches = (row, fields) => {
   const kw = String(filterKeyword.value || '').trim().toLowerCase()
-  return (diagnosisRows.value || []).filter((r) => {
-    if (filterTab.value === 'diff' && r.status === 'consistent') return false
-    if (filterTab.value === 'external' && r.status !== 'external') return false
-    if (!kw) return true
-    return (
-      r.displayScope.toLowerCase().includes(kw) ||
-      r.expectedActionsText.toLowerCase().includes(kw) ||
-      r.roleSourceText.toLowerCase().includes(kw) ||
-      r.actualActionsText.toLowerCase().includes(kw) ||
-      r.actualSourceText.toLowerCase().includes(kw)
-    )
-  })
-})
+  return !kw || fields.some((f) => String(row[f] || '').toLowerCase().includes(kw))
+}
+const filteredExpected = computed(() =>
+  (expectedGrantRows.value || []).filter((r) => matches(r, ['scope', 'actionsText', 'roleName']))
+)
+const filteredNative = computed(() =>
+  (normalizedInspectGrants.value || []).filter((r) => matches(r, ['scope', 'actionsText', 'sourceText']))
+)
 
 function goToRole(roleId) {
   inspectDialogVisible.value = false
@@ -336,6 +316,12 @@ function goToRole(roleId) {
       margin-left: 8px;
     }
   }
+}
+
+.inspect-section-title {
+  margin: 16px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .inspect-toolbar {
