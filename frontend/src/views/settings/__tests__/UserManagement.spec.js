@@ -9,8 +9,12 @@ const usersApiMock = vi.hoisted(() => ({
   update: vi.fn(),
   resetPassword: vi.fn(),
   remove: vi.fn(),
-  listTokens: vi.fn(), createToken: vi.fn(), revokeToken: vi.fn()
+  listTokens: vi.fn(), createToken: vi.fn(), revokeToken: vi.fn(),
+  datasourceAccess: vi.fn()
 }))
+
+const permissionsApiMock = vi.hoisted(() => ({ removeMember: vi.fn() }))
+vi.mock('@/api/permissions', () => ({ permissionsApi: permissionsApiMock }))
 
 const messagesMock = vi.hoisted(() => ({
   success: vi.fn(),
@@ -210,16 +214,12 @@ describe('UserManagement 用户管理组件测试', () => {
   it('新建服务账号只提交名称用途，隐藏密码和管理员选项，成功后打开 Token 管理', async () => {
     const wrapper = await mountView()
     const vm = wrapper.vm
-    vm.openCreate()
-    vm.form.password = 'discarded-draft'
-    vm.form.accountType = 'SERVICE'
-    vm.handleAccountTypeChange()
+    vm.openCreate('SERVICE')
     await flushPromises()
     const dialog = wrapper.find('.dialog-stub')
     expect(dialog.find('[aria-label="平台用户名"]').exists()).toBe(false)
     expect(dialog.find('[aria-label="初始登录密码"]').exists()).toBe(false)
     expect(dialog.find('[aria-label="平台角色"]').exists()).toBe(false)
-    expect(vm.form.password).toBe('')
     usersApiMock.create.mockResolvedValueOnce({ id: 7, accountType: 'SERVICE', nickname: '问数服务', enabled: true })
     vm.form.nickname = '问数服务'
     vm.form.description = 'DataAgent 查询'
@@ -240,8 +240,60 @@ describe('UserManagement 用户管理组件测试', () => {
     vm.form.nickname = '问数生产'
     await vm.submitUser()
     expect(usersApiMock.update).toHaveBeenCalledWith(7, { nickname: '问数生产', description: '', enabled: true })
-    confirmMock.mockResolvedValue('confirm')
+    usersApiMock.datasourceAccess.mockResolvedValueOnce({ userId: 7, accountType: 'SERVICE', sources: [] })
     await vm.handleToggleEnabled(service)
+    expect(vm.accessAction.visible).toBe(true)
+    await vm.confirmAccessAction()
     expect(usersApiMock.update).toHaveBeenLastCalledWith(7, { enabled: false })
+  })
+
+  it('读取数据源权限失败时不能确认删除，可重试', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm
+    usersApiMock.datasourceAccess.mockRejectedValueOnce(new Error('网络错误'))
+    await vm.handleDelete(sampleUsers[1])
+    expect(vm.accessAction.loadError).toContain('网络错误')
+    await vm.confirmAccessAction()
+    expect(usersApiMock.remove).not.toHaveBeenCalled()
+    usersApiMock.datasourceAccess.mockResolvedValueOnce({ userId: 2, accountType: 'USER', sources: [] })
+    await vm.openAccessAction(sampleUsers[1], 'delete')
+    await vm.confirmAccessAction()
+    expect(usersApiMock.remove).toHaveBeenCalledWith(2)
+  })
+
+  it('删除账号前逐源回收数据源权限，任一源失败则不删除账号', async () => {
+    const wrapper = await mountView()
+    const vm = wrapper.vm
+    const access = {
+      userId: 2,
+      accountType: 'USER',
+      sources: [
+        { sourceId: 10, clusterName: 'MySQL A', member: { roleIds: [1] } },
+        { sourceId: 11, clusterName: 'PG B', member: { roleIds: [2] } },
+        { sourceId: 12, clusterName: 'Doris C', member: null }
+      ]
+    }
+    usersApiMock.datasourceAccess.mockResolvedValue(access)
+    permissionsApiMock.removeMember.mockResolvedValueOnce({}).mockRejectedValueOnce(new Error('管理连接不可用'))
+
+    await vm.handleDelete(sampleUsers[1])
+    expect(vm.accessActionSources.map((x) => x.sourceId)).toEqual([10, 11])
+    expect(vm.accessAction.revoke).toBe(true)
+    await vm.confirmAccessAction()
+    expect(permissionsApiMock.removeMember).toHaveBeenCalledWith(10, 'USER', '2')
+    expect(permissionsApiMock.removeMember).toHaveBeenCalledWith(11, 'USER', '2')
+    expect(usersApiMock.remove).not.toHaveBeenCalled()
+    expect(vm.accessAction.failures).toEqual([{ sourceId: 11, clusterName: 'PG B', message: '管理连接不可用' }])
+    expect(vm.accessAction.visible).toBe(true)
+    // 部分失败后重新读取权限，重试时只处理仍有权限的源
+    expect(usersApiMock.datasourceAccess).toHaveBeenCalledTimes(2)
+
+    // 不勾选回收：只删除平台账号，原生权限不变
+    permissionsApiMock.removeMember.mockClear()
+    vm.accessAction.revoke = false
+    await vm.confirmAccessAction()
+    expect(permissionsApiMock.removeMember).not.toHaveBeenCalled()
+    expect(usersApiMock.remove).toHaveBeenCalledWith(2)
+    expect(vm.accessAction.visible).toBe(false)
   })
 })

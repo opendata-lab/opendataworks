@@ -26,6 +26,7 @@ export const usersApi = {
     return request.post(`/v1/users/${id}/reset-password`, payload, config)
   },
 
+  datasourceAccess(id) { return request.get(`/v1/users/${id}/datasource-access`) },
   listTokens(id) { return request.get(`/v1/users/${id}/tokens`) },
   createToken(id, data) { return request.post(`/v1/users/${id}/tokens`, data) },
   revokeToken(id, tokenId) { return request.delete(`/v1/users/${id}/tokens/${tokenId}`) },

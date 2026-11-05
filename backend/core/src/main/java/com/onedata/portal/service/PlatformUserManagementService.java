@@ -149,9 +149,9 @@ public class PlatformUserManagementService {
         SysUser user = require(id);
         protectAdministrator(user, user.getRole(), false);
         users.softDeleteAndInvalidateSession(id);
-        // Native role memberships are not silently changed; disabled/deleted platform users cannot
-        // connect.
-        audit(id, "DELETE", "停用并软删除；数据源原生权限需在成员管理中撤销");
+        // Native role memberships are not changed here; the admin UI revokes datasource access per
+        // source before deleting when the admin keeps that option checked.
+        audit(id, "DELETE", "停用并软删除；数据源权限由删除前的逐源回收处理，未勾选时保持不变");
     }
 
     private SysUser require(Long id) {

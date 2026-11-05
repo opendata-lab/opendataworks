@@ -2,30 +2,32 @@
   <div class="user-management-page">
     <div class="page-heading-bar">
       <div>
-        <span class="sub-title">管理普通用户与服务账号；数据访问范围在对应数据源「权限配置」中分配</span>
+        <span class="sub-title">管理普通用户与服务账号；点「数据权限」可查看或调整其在全部数据源的角色</span>
       </div>
       <div class="actions">
-        <el-button type="primary" data-testid="new-user-btn" @click="openCreate">
+        <el-button type="primary" data-testid="new-user-btn" @click="openCreate()">
           <el-icon><Plus /></el-icon>
-          新增账号
+          {{ filters.accountType === 'SERVICE' ? '新增服务账号' : '新增普通用户' }}
         </el-button>
       </div>
     </div>
+
+    <el-tabs v-model="filters.accountType" class="account-tabs" @tab-change="loadUsers">
+      <el-tab-pane label="普通用户" name="USER" />
+      <el-tab-pane label="服务账号" name="SERVICE" />
+    </el-tabs>
 
     <div class="list-toolbar">
       <div class="filter-controls">
         <el-input
           v-model="filters.keyword"
           clearable
-          placeholder="搜索用户名、姓名、邮箱"
+          :placeholder="filters.accountType === 'SERVICE' ? '搜索名称、标识' : '搜索用户名、姓名、邮箱'"
           aria-label="搜索用户"
           class="search-input"
           @clear="loadUsers"
           @keyup.enter="loadUsers"
         />
-        <el-select v-model="filters.accountType" placeholder="全部类型" aria-label="账号类型筛选" class="status-select" @change="loadUsers">
-          <el-option label="全部类型" value="" /><el-option label="普通用户" value="USER" /><el-option label="服务账号" value="SERVICE" />
-        </el-select>
         <el-select
           v-model="filters.enabled"
           placeholder="全部状态"
@@ -55,47 +57,82 @@
 
     <el-table
       v-else
+      :key="filters.accountType"
       v-loading="loading"
       :data="displayedUsers"
       border
       empty-text="没有匹配的账号"
       style="width: 100%"
     >
-      <el-table-column prop="username" label="账号标识" min-width="180" show-overflow-tooltip />
-      <el-table-column label="名称" min-width="130">
+      <template v-if="filters.accountType === 'SERVICE'">
+        <el-table-column label="名称" min-width="170">
+          <template #default="{ row }">
+            <div>{{ row.nickname || '-' }}</div>
+            <div class="sub-cell">{{ row.username }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column label="用途" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.description || '-' }}</template>
+        </el-table-column>
+        <el-table-column label="有效 Token" min-width="150">
+          <template #default="{ row }">
+            <div>{{ row.activeTokenCount || 0 }} 个</div>
+            <div class="sub-cell">最近使用 {{ formatDateTime(row.lastTokenUsedAt) }}</div>
+          </template>
+        </el-table-column>
+      </template>
+      <template v-else>
+        <el-table-column prop="username" label="账号标识" min-width="150" show-overflow-tooltip />
+        <el-table-column label="姓名" min-width="130">
+          <template #default="{ row }">
+            <span>{{ row.nickname || row.name || '-' }}</span>
+            <el-tag v-if="isSelf(row)" size="small" type="info" class="self-tag">当前登录</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="平台角色" width="100">
+          <template #default="{ row }">
+            <el-tag :type="row.role === 'admin' ? 'warning' : 'info'" size="small">
+              {{ row.role === 'admin' ? '管理员' : '普通用户' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </template>
+      <el-table-column label="数据权限" min-width="220">
         <template #default="{ row }">
-          <span>{{ row.nickname || row.name || '-' }}</span>
-          <el-tag v-if="isSelf(row)" size="small" type="info" class="self-tag">当前登录</el-tag>
+          <button type="button" class="access-cell" :data-testid="`access-${row.id}`" @click="openAccess(row)">
+            <template v-if="row.accessSummary?.length">
+              <el-tag
+                v-for="a in row.accessSummary"
+                :key="a.sourceId"
+                size="small"
+                :type="a.status === 'ERROR' ? 'danger' : 'info'"
+                class="access-tag"
+              >
+                {{ a.clusterName }}：{{ a.roleNames?.length ? a.roleNames.join('、') : '无角色' }}
+              </el-tag>
+            </template>
+            <span v-else class="sub-cell">未授权</span>
+          </button>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="110"><template #default="{ row }"><el-tag :type="isService(row) ? 'primary' : 'info'" size="small">{{ isService(row) ? '服务账号' : '普通用户' }}</el-tag></template></el-table-column>
-      <el-table-column label="邮箱" min-width="180" show-overflow-tooltip>
-        <template #default="{ row }">{{ row.email || '-' }}</template>
-      </el-table-column>
-      <el-table-column label="平台角色" width="120">
+      <el-table-column v-if="filters.accountType !== 'SERVICE'" label="登录方式" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.role === 'admin' ? 'warning' : 'info'" size="small">
-            {{ isService(row) ? '无管理权限' : row.role === 'admin' ? '管理员' : '普通用户' }}
-          </el-tag>
+          {{ isLocalUser(row) ? '本地账号' : row.authSource }}
         </template>
       </el-table-column>
-      <el-table-column label="登录方式" width="120">
-        <template #default="{ row }">
-          {{ isService(row) ? 'Token' : isLocalUser(row) ? '本地账号' : row.authSource }}
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="100">
+      <el-table-column label="状态" width="90">
         <template #default="{ row }">
           <el-tag :type="row.enabled !== false ? 'success' : 'danger'" size="small">
             {{ row.enabled !== false ? '正常' : '已停用' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="最近登录" min-width="165">
+      <el-table-column v-if="filters.accountType !== 'SERVICE'" label="最近登录" min-width="160">
         <template #default="{ row }">{{ formatDateTime(row.lastLoginAt) }}</template>
       </el-table-column>
-      <el-table-column label="操作" fixed="right" width="250" class-name="user-actions">
+      <el-table-column label="操作" fixed="right" width="300" class-name="user-actions">
         <template #default="{ row }">
+          <el-button type="primary" text size="small" @click="openAccess(row)">数据权限</el-button>
           <el-button type="primary" text size="small" @click="openEdit(row)">编辑</el-button>
           <el-button
             :type="row.enabled !== false ? 'warning' : 'success'"
@@ -135,17 +172,11 @@
 
     <el-dialog
       v-model="dialogVisible"
-      :title="isEdit ? '编辑账号' : '新增账号'"
+      :title="`${isEdit ? '编辑' : '新增'}${form.accountType === 'SERVICE' ? '服务账号' : '普通用户'}`"
       width="480px"
       @closed="clearDialogState"
     >
       <el-form ref="formRef" :model="form" label-width="100px" @submit.prevent="submitUser">
-        <el-form-item label="账号类型">
-          <el-radio-group v-if="!isEdit" v-model="form.accountType" aria-label="新建账号类型" @change="handleAccountTypeChange">
-            <el-radio value="USER" label="USER">普通用户</el-radio><el-radio value="SERVICE" label="SERVICE">服务账号</el-radio>
-          </el-radio-group>
-          <el-text v-else>{{ form.accountType === 'SERVICE' ? '服务账号' : '普通用户' }}（不可修改）</el-text>
-        </el-form-item>
         <p v-if="!isEdit" class="account-type-hint">{{ form.accountType === 'SERVICE' ? '供 DataAgent 等应用通过 Token 调用，不能登录平台。' : '供人员登录平台，使用用户名和密码。' }}</p>
         <el-form-item v-if="form.accountType !== 'SERVICE'" label="用户名" required>
           <el-input
@@ -197,10 +228,9 @@
             aria-label="初始登录密码"
           />
         </el-form-item>
-        <el-form-item label="状态">
+        <el-form-item v-if="!isEdit" label="状态">
           <el-switch
             v-model="form.enabled"
-            :disabled="isEdit && !!getProtectionReason(editingUser, 'disable')"
             active-text="启用"
             inactive-text="停用"
           />
@@ -216,6 +246,53 @@
     </el-dialog>
 
     <ServiceAccountTokens v-model="tokensVisible" :account="tokenTarget" />
+    <SubjectAccessDrawer v-model="accessVisible" :account="accessTarget" @changed="loadUsers" />
+
+    <el-dialog
+      v-model="accessAction.visible"
+      :title="accessAction.action === 'delete' ? '删除账号' : '停用账号'"
+      width="520px"
+    >
+      <div v-if="accessAction.row" class="dialog-context">
+        确认{{ accessAction.action === 'delete' ? '删除' : '停用' }}「{{ accessAction.row.nickname || accessAction.row.username }}」？{{
+          accessAction.action === 'delete' ? '删除后该账号将无法使用平台。' : '停用后该账号无法登录或调用 Token。'
+        }}
+      </div>
+      <div v-loading="accessAction.loading" class="access-action-body">
+        <template v-if="accessActionSources.length">
+          <div class="dialog-context">该账号在以下数据源有访问权限：</div>
+          <ul class="access-source-list">
+            <li v-for="s in accessActionSources" :key="s.sourceId">
+              {{ s.clusterName }}<span v-if="s.member?.account?.username">（数据库账号 {{ s.member.account.username }}）</span>
+            </li>
+          </ul>
+          <el-checkbox v-model="accessAction.revoke" data-testid="revoke-with-action">
+            同时回收以上数据源权限，并删除平台创建的数据库登录账号
+          </el-checkbox>
+        </template>
+        <div v-else-if="!accessAction.loading && !accessAction.loadError" class="dialog-context">该账号没有数据源权限。</div>
+        <p v-if="accessAction.loadError" role="alert" class="form-error">
+          {{ accessAction.loadError }}
+          <el-button text type="primary" size="small" @click="openAccessAction(accessAction.row, accessAction.action)">重试</el-button>
+        </p>
+        <div v-if="accessAction.failures.length" role="alert" class="form-error">
+          以下数据源回收失败，账号未{{ accessAction.action === 'delete' ? '删除' : '停用' }}：
+          <div v-for="f in accessAction.failures" :key="f.sourceId">{{ f.clusterName }}：{{ f.message }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button :disabled="accessAction.working" @click="accessAction.visible = false">取消</el-button>
+        <el-button
+          type="danger"
+          data-testid="confirm-access-action"
+          :loading="accessAction.working"
+          :disabled="accessAction.loading || !!accessAction.loadError"
+          @click="confirmAccessAction"
+        >
+          确认{{ accessAction.action === 'delete' ? '删除' : '停用' }}
+        </el-button>
+      </template>
+    </el-dialog>
 
     <el-dialog
       v-model="resetDialogVisible"
@@ -252,11 +329,13 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { getActivePinia } from 'pinia'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { usersApi } from '@/api/users'
 import ServiceAccountTokens from './components/ServiceAccountTokens.vue'
+import SubjectAccessDrawer from './components/SubjectAccessDrawer.vue'
+import { revokeAllAccess, sourcesWithAccess } from './composables/permissions/subjectAccess'
 import { useAuthStore } from '@/stores/auth'
 import { validateNewUserDraft, validatePasswordBytes } from '@/utils/userValidation'
 
@@ -271,7 +350,7 @@ const users = ref([])
 const filters = reactive({
   keyword: '',
   enabled: '',
-  accountType: ''
+  accountType: 'USER'
 })
 
 const dialogVisible = ref(false)
@@ -301,7 +380,72 @@ const tokensVisible = ref(false)
 const tokenTarget = ref(null)
 const isService = user => user?.accountType === 'SERVICE'
 function openTokens(row) { tokenTarget.value = row; tokensVisible.value = true }
-function handleAccountTypeChange() { form.password = ''; form.email = ''; form.role = 'user'; formError.value = '' }
+
+const accessVisible = ref(false)
+const accessTarget = ref(null)
+function openAccess(row) { accessTarget.value = row; accessVisible.value = true }
+
+// Delete / disable: optionally revoke datasource access first; any failed source stops the action.
+const accessAction = reactive({
+  visible: false, action: 'delete', row: null, access: null,
+  loading: false, loadError: '', revoke: true, working: false, failures: []
+})
+const accessActionSources = computed(() => sourcesWithAccess(accessAction.access))
+
+let accessActionSeq = 0
+async function openAccessAction(row, action) {
+  const seq = ++accessActionSeq
+  Object.assign(accessAction, {
+    visible: true, action, row, access: null,
+    loading: true, loadError: '', revoke: true, working: false, failures: []
+  })
+  try {
+    const access = await usersApi.datasourceAccess(row.id)
+    if (seq === accessActionSeq) accessAction.access = access
+  } catch (error) {
+    if (seq === accessActionSeq) {
+      accessAction.loadError = `无法读取该账号的数据源权限：${error?.message || '加载失败'}`
+    }
+  } finally {
+    if (seq === accessActionSeq) accessAction.loading = false
+  }
+}
+
+// After a partial revoke, list only the sources still granted so a retry skips finished ones.
+async function reloadAccessActionSources(row) {
+  try {
+    accessAction.access = await usersApi.datasourceAccess(row.id)
+  } catch {
+    // Keep the previous list; removing an already removed member is reported by the backend.
+  }
+}
+
+async function confirmAccessAction() {
+  if (accessAction.working || accessAction.loading || accessAction.loadError || !accessAction.row) return
+  const { row, action } = accessAction
+  accessAction.working = true
+  accessAction.failures = []
+  try {
+    if (accessAction.revoke && accessActionSources.value.length) {
+      const failures = await revokeAllAccess(accessAction.access)
+      if (failures.length) {
+        accessAction.failures = failures
+        await reloadAccessActionSources(row)
+        return
+      }
+    }
+    if (action === 'delete') await usersApi.remove(row.id)
+    else await usersApi.update(row.id, { enabled: false })
+    accessAction.visible = false
+    ElMessage.success(action === 'delete' ? '账号已删除' : '账号已停用')
+  } catch (error) {
+    accessAction.failures = [{ sourceId: 'account', clusterName: '平台账号', message: error?.message || '操作失败' }]
+    await reloadAccessActionSources(row)
+  } finally {
+    accessAction.working = false
+    await loadUsers()
+  }
+}
 
 const isLocalUser = (user) => !user?.authSource || String(user.authSource).toLowerCase() === 'local'
 
@@ -318,7 +462,7 @@ const enabledAdminCount = computed(() =>
 )
 
 const isLastEnabledAdmin = (user) =>
-  Boolean(user && user.role === 'admin' && user.enabled !== false && !filters.keyword && filters.enabled === '' && !filters.accountType && enabledAdminCount.value <= 1)
+  Boolean(user && user.role === 'admin' && user.enabled !== false && !filters.keyword && filters.enabled === '' && filters.accountType !== 'SERVICE' && enabledAdminCount.value <= 1)
 
 const getProtectionReason = (user, action) => {
   if (!user) return ''
@@ -384,10 +528,10 @@ function clearDialogState() {
   formError.value = ''
 }
 
-function openCreate() {
+function openCreate(accountType = filters.accountType) {
   isEdit.value = false
   editingUser.value = null
-  form.accountType = 'USER'
+  form.accountType = accountType
   form.description = ''
   form.username = ''
   form.nickname = ''
@@ -512,11 +656,13 @@ async function handleToggleEnabled(row) {
       ElMessage.warning(reason)
       return
     }
+    await openAccessAction(row, 'disable')
+    return
   }
   saving.value = true
   try {
-    await usersApi.update(row.id, { enabled: targetEnabled })
-    ElMessage.success(targetEnabled ? '已启用用户' : '已停用用户')
+    await usersApi.update(row.id, { enabled: true })
+    ElMessage.success('已启用账号')
     await loadUsers()
   } finally {
     saving.value = false
@@ -570,35 +716,21 @@ async function handleDelete(row) {
     ElMessage.warning(reason)
     return
   }
-  try {
-    await ElMessageBox.confirm(
-      `确认删除用户「${row.nickname || row.username}」吗？删除后该用户将无法登录平台。`,
-      '删除用户',
-      {
-        type: 'warning',
-        confirmButtonText: '确认删除',
-        cancelButtonText: '取消'
-      }
-    )
-  } catch {
-    return
-  }
-
-  saving.value = true
-  try {
-    await usersApi.remove(row.id)
-    ElMessage.success('用户已删除')
-    await loadUsers()
-  } finally {
-    saving.value = false
-  }
+  await openAccessAction(row, 'delete')
 }
 
 onMounted(loadUsers)
 </script>
 
 <style scoped>
-.account-type-hint { margin: -8px 0 18px 100px; color: var(--el-text-color-secondary); line-height: 1.6; font-size: 12px; }
+.account-tabs { margin-bottom: 8px; }
+.sub-cell { color: var(--el-text-color-secondary); font-size: 12px; }
+.access-cell { all: unset; cursor: pointer; display: flex; flex-wrap: wrap; gap: 4px; }
+.access-cell:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.access-tag { max-width: 100%; }
+.access-source-list { margin: 0 0 12px; padding-left: 20px; line-height: 1.8; font-size: 13px; }
+.access-action-body { min-height: 40px; }
+.account-type-hint { margin: 0 0 18px 100px; color: var(--el-text-color-secondary); line-height: 1.6; font-size: 12px; }
 .user-management-page {
   min-width: 0;
 }

@@ -356,4 +356,21 @@ public interface DatasourceAccessPermissionMapper {
 
     @Select("SELECT * FROM datasource_access_member WHERE source_id=#{sourceId} ORDER BY id")
     List<Map<String, Object>> listMembers(@Param("sourceId") Object sourceId);
+
+    /**
+     * One row per member role (role columns null for a member without roles) on live sources, plus
+     * account bindings without a member row, which the source overview also lists as members.
+     */
+    @Select(
+            "SELECT m.subject_type, m.subject_id, m.source_id, c.cluster_name, m.status,"
+                    + " r.name AS role_name FROM datasource_access_member m JOIN doris_cluster c"
+                    + " ON c.id=m.source_id AND c.deleted=0 LEFT JOIN datasource_access_member_role"
+                    + " mr ON mr.member_id=m.id LEFT JOIN datasource_access_role r ON"
+                    + " r.id=mr.role_id UNION ALL SELECT a.subject_type, a.subject_id, a.source_id,"
+                    + " c.cluster_name, 'ACTIVE' AS status, NULL AS role_name FROM"
+                    + " datasource_subject_account a JOIN doris_cluster c ON c.id=a.source_id AND"
+                    + " c.deleted=0 WHERE NOT EXISTS (SELECT 1 FROM datasource_access_member m"
+                    + " WHERE m.source_id=a.source_id AND m.subject_type=a.subject_type AND"
+                    + " m.subject_id=a.subject_id) ORDER BY source_id, role_name")
+    List<Map<String, Object>> listAccessSummaryRows();
 }

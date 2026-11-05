@@ -1,7 +1,7 @@
 # 账号与数据源访问控制中心执行计划
 
 - 日期：2026-11-05
-- 状态：待实施
+- 状态：实施中（PR 1 按人查看与回收已完成）
 - 关联设计：[访问控制中心设计](../design/2026-11-05-access-control-center-design.md)
 - 来源：[统一待办 · 权限中心交互体验](../TODO.md#权限中心交互体验2026-11-05-ux走查)、[快速修复报告](../reports/2026-11-05-permission-ux-quick-fixes.md)
 - 受影响栈：前端 `frontend/src/views/settings/**`、`frontend/src/api/{users,permissions}.js`；后端 `backend/api` 的 `PlatformUserManagementController`、`DatasourcePermissionController`、`DorisClusterController`，`backend/core` 的 `PlatformUserManagementService`、`DatasourcePermissionService`。无 Flyway 迁移、无部署变更、不涉及 DataAgent。
