@@ -36,6 +36,7 @@ export function usePermissionRoleActions({
 
   const renameRoleForm = reactive({
     name: '',
+    template: 'CUSTOM',
   })
 
   const previewing = ref(false)
@@ -113,6 +114,7 @@ export function usePermissionRoleActions({
   function openRenameRoleDialog(role) {
     renameRoleTarget.value = role
     renameRoleForm.name = role.name || ''
+    renameRoleForm.template = role.template || 'CUSTOM'
     renameRoleError.value = ''
     renameRoleDialogVisible.value = true
   }
@@ -129,15 +131,15 @@ export function usePermissionRoleActions({
 
     renamingRole.value = true
     try {
-      await permissionsApi.updateRole(request.sourceId, renameRoleTarget.value.id, { name })
+      await permissionsApi.updateRole(request.sourceId, renameRoleTarget.value.id, { name, template: renameRoleForm.template })
       if (!request.isCurrent()) return
       renameRoleDialogVisible.value = false
-      ElMessage.success('角色名称已更新')
+      ElMessage.success('角色已更新')
       await loadAllForSource(request.sourceId)
       if (!request.isCurrent()) return
     } catch (error) {
       if (!request.isCurrent()) return
-      renameRoleError.value = error?.message || '修改角色名称失败'
+      renameRoleError.value = error?.message || '编辑角色失败'
     } finally {
       if (request.isCurrent()) {
         renamingRole.value = false

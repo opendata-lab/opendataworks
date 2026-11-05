@@ -327,10 +327,11 @@ public interface DatasourceAccessPermissionMapper {
     }
 
     @Update(
-            "UPDATE datasource_access_role SET name=#{name} WHERE id=#{roleId} AND"
+            "UPDATE datasource_access_role SET name=#{name},template=#{template},revision=revision+1 WHERE id=#{roleId} AND"
                     + " source_id=#{sourceId}")
-    int renameRole(
+    int updateRole(
             @Param("name") Object name,
+            @Param("template") Object template,
             @Param("roleId") Object roleId,
             @Param("sourceId") Object sourceId);
 
