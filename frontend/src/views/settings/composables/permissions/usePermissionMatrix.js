@@ -201,8 +201,11 @@ export function usePermissionMatrix({
       baseGrantMap.value[key]?.length || roleDraftMap.value[key]?.length
     ).sort().map((key) => {
       const [resourceType, database, tableName] = key.split('|')
-      const before = baseGrantMap.value[key] || []
-      const after = roleDraftMap.value[key] || []
+      // Compare WRITE as INSERT/UPDATE/DELETE so refining it counts only the real sub-action change.
+      const expandWrite = (list) =>
+        [...new Set(list.flatMap((a) => (a === 'WRITE' ? [...SUB_DML_KEYS] : [a])))]
+      const before = expandWrite(baseGrantMap.value[key] || [])
+      const after = expandWrite(roleDraftMap.value[key] || [])
       return {
         rowKey: key, resourceType, database, tableName,
         displayName: tableName || database,
@@ -412,6 +415,8 @@ export function usePermissionMatrix({
   function selectRole(roleId) {
     selectedRoleId.value = roleId
     syncDraftFromSelectedRole()
+    // A role without saved grants has nothing to show under "only granted".
+    if (!selectedRole.value?.grants?.length) onlyGranted.value = false
     const firstGrant = selectedRole.value?.grants?.[0]
     if (firstGrant) currentResourceType.value = firstGrant.resourceType
     loadResources(firstGrant?.database || selectedDatabase.value, activeSourceId.value)

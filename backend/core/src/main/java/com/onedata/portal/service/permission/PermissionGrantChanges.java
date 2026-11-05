@@ -15,8 +15,10 @@ final class PermissionGrantChanges {
         keys.addAll(next.keySet());
         List<Map<String, Object>> changes = new ArrayList<>();
         for (List<String> key : keys) {
-            Set<String> left = old.getOrDefault(key, Collections.emptySet());
-            Set<String> right = next.getOrDefault(key, Collections.emptySet());
+            // WRITE is INSERT+UPDATE+DELETE; compare per sub-action so refining shows only the real
+            // change.
+            Set<String> left = expand(old.getOrDefault(key, Collections.emptySet()));
+            Set<String> right = expand(next.getOrDefault(key, Collections.emptySet()));
             if (left.equals(right)) continue;
             Set<String> added = new TreeSet<>(right), removed = new TreeSet<>(left);
             added.removeAll(left);
@@ -27,13 +29,30 @@ final class PermissionGrantChanges {
             change.put("resourceType", key.get(0));
             change.put("database", key.get(1));
             change.put("tableName", key.get(2));
-            change.put("beforeActions", new ArrayList<>(left));
-            change.put("afterActions", new ArrayList<>(right));
-            change.put("addedActions", new ArrayList<>(added));
-            change.put("removedActions", new ArrayList<>(removed));
+            change.put("beforeActions", collapse(left));
+            change.put("afterActions", collapse(right));
+            change.put("addedActions", collapse(added));
+            change.put("removedActions", collapse(removed));
             changes.add(change);
         }
         return changes;
+    }
+
+    private static final List<String> WRITE_PARTS = List.of("INSERT", "UPDATE", "DELETE");
+
+    private static Set<String> expand(Set<String> actions) {
+        Set<String> result = new TreeSet<>(actions);
+        if (result.remove("WRITE")) result.addAll(WRITE_PARTS);
+        return result;
+    }
+
+    private static List<String> collapse(Set<String> actions) {
+        Set<String> result = new TreeSet<>(actions);
+        if (result.containsAll(WRITE_PARTS)) {
+            result.removeAll(WRITE_PARTS);
+            result.add("WRITE");
+        }
+        return new ArrayList<>(result);
     }
 
     private static Map<List<String>, Set<String>> group(List<GrantSelection> grants) {

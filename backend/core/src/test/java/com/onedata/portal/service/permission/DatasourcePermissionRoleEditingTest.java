@@ -145,6 +145,18 @@ class DatasourcePermissionRoleEditingTest {
                 PermissionGrantChanges.between(List.of(unchanged), List.of(unchanged)).isEmpty());
     }
 
+    @Test
+    void refiningWriteReportsOnlyTheRemovedSubAction() {
+        List<Map<String, Object>> changes =
+                PermissionGrantChanges.between(
+                        List.of(grant("TABLE", "sales", "orders", "QUERY", "WRITE")),
+                        List.of(grant("TABLE", "sales", "orders", "QUERY", "INSERT", "UPDATE")));
+        assertEquals(List.of(), changes.get(0).get("addedActions"));
+        assertEquals(List.of("DELETE"), changes.get(0).get("removedActions"));
+        assertEquals(List.of("QUERY", "WRITE"), changes.get(0).get("beforeActions"));
+        assertEquals(List.of("INSERT", "QUERY", "UPDATE"), changes.get(0).get("afterActions"));
+    }
+
     private GrantSelection grant(String type, String db, String table, String... actions) {
         GrantSelection grant = new GrantSelection();
         grant.setResourceType(type);

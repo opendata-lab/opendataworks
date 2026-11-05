@@ -131,12 +131,13 @@ export function usePermissionRoleActions({
 
     renamingRole.value = true
     try {
-      await permissionsApi.updateRole(request.sourceId, renameRoleTarget.value.id, { name, template: renameRoleForm.template })
+      const updated = await permissionsApi.updateRole(request.sourceId, renameRoleTarget.value.id, { name, template: renameRoleForm.template })
       if (!request.isCurrent()) return
       renameRoleDialogVisible.value = false
       ElMessage.success('角色已更新')
-      await loadAllForSource(request.sourceId)
-      if (!request.isCurrent()) return
+      // Update in place: a reload would reset the matrix position and drop unsaved drafts.
+      const index = overview.roles.findIndex((r) => String(r.id) === String(updated?.id))
+      if (index >= 0) overview.roles.splice(index, 1, { ...overview.roles[index], ...updated })
     } catch (error) {
       if (!request.isCurrent()) return
       renameRoleError.value = error?.message || '编辑角色失败'

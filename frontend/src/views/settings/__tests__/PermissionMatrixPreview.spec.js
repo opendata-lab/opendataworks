@@ -71,11 +71,31 @@ describe('PR 3 role matrix and preview', () => {
     const { state, overview } = matrix()
     const loadAllForSource = vi.fn()
     const roles = usePermissionRoleActions({ ...state, overview, captureRequest: () => ({ sourceId: 1, isCurrent: () => true }), loadAllForSource })
+    // An unsaved draft and the current matrix position survive the edit.
+    state.roleDraftMap.value['TABLE|sales|orders'] = []
+    state.selectedDatabase.value = 'archive'
+    permissionsApi.updateRole.mockResolvedValueOnce({ id: 1, name: 'Reader', template: 'READWRITE', revision: 9 })
     roles.openRenameRoleDialog({ id: 1, name: 'Reader', template: 'READONLY' })
     roles.renameRoleForm.template = 'READWRITE'
     await roles.submitRenameRole()
     expect(permissionsApi.updateRole).toHaveBeenCalledWith(1, 1, { name: 'Reader', template: 'READWRITE' })
-    expect(loadAllForSource).toHaveBeenCalledWith(1)
+    expect(loadAllForSource).not.toHaveBeenCalled()
+    expect(overview.roles[0]).toMatchObject({ template: 'READWRITE', revision: 9 })
+    expect(overview.roles[0].grants).toHaveLength(2)
+    expect(state.roleDraftMap.value['TABLE|sales|orders']).toEqual([])
+    expect(state.selectedDatabase.value).toBe('archive')
+  })
+
+  it('counts a refined WRITE as one removed sub-action and leaves only-granted for an empty role', () => {
+    const { state, overview } = matrix('READWRITE')
+    overview.roles[0].grants[0].actions = ['WRITE']
+    state.syncDraftFromSelectedRole()
+    state.roleDraftMap.value['TABLE|sales|orders'] = ['INSERT', 'UPDATE']
+    expect(state.draftChangeCounts.value).toMatchObject({ added: 0, removed: 1 })
+    overview.roles.push({ id: 2, template: 'CUSTOM', status: 'DRAFT', grants: [] })
+    state.onlyGranted.value = true
+    state.selectRole(2)
+    expect(state.onlyGranted.value).toBe(false)
   })
 
   it('renders readable changes before collapsed native SQL', async () => {

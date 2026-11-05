@@ -67,8 +67,9 @@
 import { toRefs } from 'vue'
 import { DEFAULT_ACTIONS } from '../../composables/permissions/permissionLabels'
 
+const SUB_DML_LABELS = { INSERT: '新增数据', UPDATE: '更新数据', DELETE: '删除数据' }
 const actionLabels = (actions) => (actions || []).map((key) =>
-  DEFAULT_ACTIONS.find((a) => a.key === key)?.label || key).join('、') || '无'
+  DEFAULT_ACTIONS.find((a) => a.key === key)?.label || SUB_DML_LABELS[key] || key).join('、') || '无'
 
 const props = defineProps({ model: { type: Object, required: true } })
 // The feature composable owns these drafts and operations; this view only renders its contract.
