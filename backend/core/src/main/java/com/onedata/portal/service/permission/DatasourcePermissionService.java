@@ -728,7 +728,7 @@ public class DatasourcePermissionService {
                     "grants",
                     adapter.inspect(connection, identity),
                     "notice",
-                    "使用成员绑定账号的新连接读取原生授权；MySQL展开当前连接已激活角色，未激活角色不计为当前有效权限。平台只管理本平台创建的角色，账号可能另有直接授权、外部角色或所有权。");
+                    "使用成员绑定账号的新连接读取原生授权；MySQL展开当前连接已激活角色，PostgreSQL包含经继承角色获得的表授权；未激活角色不计为当前有效权限。平台只管理本平台创建的角色，账号可能另有直接授权、外部角色或所有权。");
         } catch (SQLException error) {
             log.warn(
                     "Native permission inspection failed: source={}, subjectType={}, subject={},"

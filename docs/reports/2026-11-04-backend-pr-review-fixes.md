@@ -20,6 +20,10 @@
 
 这不承诺自动修复数据库与平台的部分成功差异：原生GRANT成功、后续失败时，新角色可能尚未计入平台memberCount；ERROR状态本身不会阻止该角色删除。当前由管理员先核对授权记录并恢复成员，再删除角色。按用户选择不增加其他保护机制，限制登记于[统一待办](../TODO.md)。
 
+## 追加评审修复
+
+- PostgreSQL实际权限检查此前只按登录名过滤`role_table_grants`，漏掉经平台角色继承的表授权。现改为在成员连接上读取`table_privileges`中grantee属于`enabled_roles`的授权，并返回grantee以区分直接授权与角色授权，与MySQL的`SHOW GRANTS ... USING`对齐。验证：PostgreSQL 16 实库对比（直接INSERT与经`odw_reader`继承的SELECT均返回，旧查询仅返回前者），core编译及权限相关单测29项通过。
+
 ## 精简后验证
 
 - Java四模块重新编译、测试与package：629项通过（core580、api18、mcp-server8、app23），零失败／错误／跳过。

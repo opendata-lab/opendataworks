@@ -495,13 +495,15 @@ public final class NativePermissionAdapter {
                                 + " r.rolname,r.rolsuper,r.rolcreaterole,r.rolcreatedb,r.rolbypassrls"
                                 + " FROM pg_roles r WHERE r.rolname=?",
                             identity.getUser())) result.add(r.toString());
+            // Member session: include grants inherited through enabled roles, like MySQL USING.
             for (Map<String, Object> r :
                     rows(
                             c,
-                            "SELECT table_schema,table_name,privilege_type FROM"
-                                + " information_schema.role_table_grants WHERE grantee=? ORDER BY"
-                                + " table_schema,table_name,privilege_type",
-                            identity.getUser())) result.add(r.toString());
+                            "SELECT grantee,table_schema,table_name,privilege_type FROM"
+                                + " information_schema.table_privileges WHERE grantee IN"
+                                + " (SELECT role_name FROM information_schema.enabled_roles)"
+                                + " ORDER BY table_schema,table_name,privilege_type,grantee"))
+                result.add(r.toString());
             result.add("原生角色：" + String.join(", ", memberships(c, identity)));
         } else {
             // Inspect the already verified member session, never another account through a manager.
