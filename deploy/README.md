@@ -24,7 +24,7 @@ MCP调用方使用账号管理生成的服务Token（`Authorization: Bearer`）�
 
 ## Deployment Topology
 
-本目录只部署 OpenDataWorks 门户：MySQL、Redis、backend、frontend
+本目录只部署 OpenDataWorks 门户：MySQL、backend、frontend
 和日志收集 sidecar。DataAgent（智能问数）由独立仓库
 [opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署，可以在另一台机器上；
 接入方式见文末“接入 DataAgent”。
@@ -207,7 +207,7 @@ docker-compose -f docker-compose.prod.yml logs -f backend
 - **服务日志（实时落盘）**：`log-collector` sidecar 自动把各服务日志实时写到包目录
   `deploy/logs/<container>.log`，打开目录即可查看，无需敲命令。
   - 默认只覆盖应用服务 `backend`。
-  - 不收集 mysql/redis 基础设施与 nginx 前端；如需增减，在 `deploy/.env` 设置 `LOG_COLLECTOR_CONTAINERS`（空格分隔容器名）。
+  - 不收集 mysql 基础设施与 nginx 前端；如需增减，在 `deploy/.env` 设置 `LOG_COLLECTOR_CONTAINERS`（空格分隔容器名）。
   - 收集器使用 `docker:27.5.1-cli` 镜像（离线包已包含），只读挂载 docker socket（`DOCKER_SOCKET`）。
 - **一键汇总/导出**：
   ```bash

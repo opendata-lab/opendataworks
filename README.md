@@ -40,7 +40,7 @@ OpenDataWorks 是一个面向数据平台团队的开源统一数据门户，提
 - **工作流编排**：可视化配置批处理和流处理任务，并深度集成 DolphinScheduler。
 - **数据血缘分析**：自动解析 SQL 血缘，在交互式图谱中查看上下游链路。
 - **智能问数**：在主门户内通过自然语言生成 SQL、执行分析并查看结果。
-- **快速部署**：通过现有 Docker Compose 一次性拉起前端、后端、Redis、MySQL 和 ODW MCP Server；智能问数的 DataAgent 由 [opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署。
+- **快速部署**：通过现有 Docker Compose 一次性拉起前端、后端和 MySQL；智能问数的 DataAgent 由 [opendataagent](https://github.com/opendata-lab/opendataagent) 单独部署。
 
 ## 功能亮点
 
@@ -80,7 +80,7 @@ OpenDataWorks 是一个面向数据平台团队的开源统一数据门户，提
 
 ### 开发环境快速启动
 
-如果希望一次性在本机拉起门户环境（前端、后端、Redis、MySQL、ODW MCP Server），可使用开发环境 Compose（DataAgent 另行部署，见 [部署文档](deploy/README.md) 的“接入 DataAgent”）：
+如果希望一次性在本机拉起门户环境（前端、后端、MySQL），可使用开发环境 Compose（DataAgent 另行部署，见 [部署文档](deploy/README.md) 的“接入 DataAgent”）：
 
 ```bash
 # 1. 准备配置

@@ -81,6 +81,13 @@ def test_mcp_is_served_by_backend_without_shared_forwarding_tokens(render):
     assert not any("8801" in str(port) for svc in services.values() for port in svc.get("ports", []))
 
 
+def test_redis_is_not_part_of_portal_stack(render):
+    services = render()
+    assert "redis" not in services
+    assert not any("redis" in service.get("image", "") for service in services.values())
+    assert not any("6379" in str(port) for svc in services.values() for port in svc.get("ports", []))
+
+
 
 def test_mysql_probe_uses_the_container_password_after_customization(render, tmp_path):
     service = render(MYSQL_ROOT_PASSWORD="changed root password")["mysql"]

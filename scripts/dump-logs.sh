@@ -48,7 +48,7 @@ pushd "$DEPLOY_DIR" >/dev/null
 # 解析服务列表（失败则回退到已知服务清单）
 SERVICES="$("${COMPOSE_CMD[@]}" -f "$COMPOSE_FILE_NAME" "${ENV_ARGS[@]}" config --services 2>/dev/null || true)"
 if [ -z "$SERVICES" ]; then
-    SERVICES="mysql redis backend frontend log-collector"
+    SERVICES="mysql backend frontend log-collector"
 fi
 
 echo "📦 导出服务日志 -> $SERVICES_DIR"

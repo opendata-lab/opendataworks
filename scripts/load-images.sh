@@ -45,7 +45,6 @@ LEGACY_IMAGES=(
     "opendataworks-frontend.tar"
     "opendataworks-backend.tar"
     "mysql-8.0.tar"
-    "redis-7.2-alpine.tar"
 )
 
 if [ -f "$COMBINED_ARCHIVE" ]; then
@@ -102,7 +101,6 @@ IMAGES=(
     "opendataworks-frontend:latest"
     "opendataworks-backend:latest"
     "mysql:8.0"
-    "redis:7.2-alpine"
     "docker:27.5.1-cli"
 )
 
@@ -132,7 +130,7 @@ echo ""
 
 # 显示已加载的镜像
 echo "📋 已加载的镜像列表："
-$CONTAINER_CMD images | grep -E "opendataworks|mysql|redis" | grep -E "latest|8.0|7.2-alpine|${IMAGE_TAG}"
+$CONTAINER_CMD images | grep -E "opendataworks|mysql|docker" | grep -E "latest|8.0|27.5.1-cli|${IMAGE_TAG}"
 echo ""
 
 echo "📝 下一步："

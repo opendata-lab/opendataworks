@@ -28,20 +28,6 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
 
-  redis:
-    image: redis:7.2-alpine
-    pull_policy: always
-    container_name: opendataworks-redis
-    restart: always
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # 后端服务
   backend:
     image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:latest}

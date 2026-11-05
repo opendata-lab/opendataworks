@@ -22,6 +22,12 @@ def test_main_offline_package_excludes_runtime_env():
     assert "assert_package_has_no_runtime_env" in script
 
 
+def test_main_offline_package_excludes_unused_assets():
+    script = (REPO_ROOT / "scripts" / "create-offline-package.sh").read_text(encoding="utf-8")
+    assert "--exclude='opik'" in script
+    assert "redis" not in script.lower()
+
+
 def test_offline_loaders_only_initialize_env_when_missing():
     script = (REPO_ROOT / "scripts" / "load-package-and-start.sh").read_text(encoding="utf-8")
     assert "! -f" in script

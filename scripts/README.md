@@ -32,20 +32,13 @@ Build the project using scripts in `build/`.
 # Build images (multi-arch, main frontend and Java backend with built-in MCP)
 bash scripts/build/build-multiarch.sh
 
-# Use a pip mirror for Python image build layers
-PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/ \
-PIP_TRUSTED_HOST=mirrors.aliyun.com \
+# Or build single-arch images locally
 bash scripts/build/build-images.sh
 
 # Or configure the multi-arch quick build
 cp scripts/build/docker-build.env.example scripts/build/docker-build.env
 bash scripts/build/build-quick.sh
 ```
-
-`PIP_INDEX_URL` and `PIP_TRUSTED_HOST` are build-only settings and are not
-persisted as runtime environment variables. Do not put credentials or tokens in
-the mirror URL. Prefer HTTPS; set `PIP_TRUSTED_HOST` only when the internal
-mirror requires it.
 
 ### DataAgent 评测
 

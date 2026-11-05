@@ -39,22 +39,6 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --default-authentication-plugin=mysql_native_password
 
-  redis:
-    image: redis:7.2-alpine
-    container_name: opendataworks-redis
-    logging: *default-logging
-    restart: always
-    command: ["redis-server", "--appendonly", "yes"]
-    ports:
-      - "6379:6379"
-    networks:
-      - opendataworks-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # 后端服务
   backend:
     image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.5.0}
@@ -114,7 +98,7 @@ services:
   # 日志收集 sidecar：用 docker CLI 镜像只读挂 docker socket，
   # 对每个目标容器实时 `docker logs --follow` 写到宿主机 deploy/logs/<container>.log。
   # 只收集应用服务（backend），无需改业务镜像、无各服务挂卷权限问题。
-  # 不收集 mysql/redis 基础设施与 nginx 前端；如需可在 .env 用 LOG_COLLECTOR_CONTAINERS 增减。
+  # 不收集 mysql 基础设施与 nginx 前端；如需可在 .env 用 LOG_COLLECTOR_CONTAINERS 增减。
   log-collector:
     image: ${LOG_COLLECTOR_IMAGE:-docker:27.5.1-cli}
     container_name: opendataworks-log-collector
