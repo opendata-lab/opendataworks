@@ -31,6 +31,8 @@
         >
           <el-option label="全部状态" value="all" />
           <el-option label="正常" value="ready" />
+          <el-option label="状态异常" value="error" />
+          <el-option label="执行中" value="applying" />
           <el-option label="待配置" value="pending" />
           <el-option label="已停用" value="disabled" />
         </el-select>
@@ -72,15 +74,21 @@
       <el-table-column label="角色" min-width="240">
         <template #default="{ row }">
           <div v-if="row.roleIds && row.roleIds.length" class="role-tags-wrap">
-            <el-tag
+            <span
               v-for="rid in row.roleIds"
               :key="rid"
-              size="small"
-              effect="plain"
-              class="role-tag-item"
+              class="clickable-tag"
+              data-testid="member-role-tag"
+              @click="handleRoleClick(rid)"
             >
-              {{ getRoleName(rid) }}
-            </el-tag>
+              <el-tag
+                size="small"
+                effect="plain"
+                class="role-tag-item"
+              >
+                {{ getRoleName(rid) }}
+              </el-tag>
+            </span>
           </div>
           <span v-else class="muted-text">未分配</span>
         </template>
@@ -106,9 +114,18 @@
       </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="{ row }">
-          <el-tag :type="getMemberStatus(row).tagType" size="small">
-            {{ getMemberStatus(row).label }}
-          </el-tag>
+          <span
+            :class="{ 'clickable-status-tag': getMemberStatus(row).key === 'error' }"
+            data-testid="member-status-tag"
+            @click="getMemberStatus(row).key === 'error' ? openInspectDialog(row) : null"
+          >
+            <el-tag
+              :type="getMemberStatus(row).tagType"
+              size="small"
+            >
+              {{ getMemberStatus(row).label }}
+            </el-tag>
+          </span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="240" fixed="right">
@@ -132,7 +149,7 @@
             data-testid="inspect-member-btn"
             @click="openInspectDialog(row)"
           >
-            实际权限
+            权限诊断
           </el-button>
           <el-button type="danger" text size="small" @click="handleRemoveMember(row)">
             移除
@@ -165,11 +182,34 @@ const {
   openAccountDialog,
   handleRemoveMember,
   openInspectDialog,
+  navigateToRole,
 } = toRefs(props.model)
+
+function handleRoleClick(rid) {
+  if (typeof navigateToRole?.value === 'function') {
+    navigateToRole.value(rid)
+  } else if (typeof props.model?.navigateToRole === 'function') {
+    props.model.navigateToRole(rid)
+  }
+}
 </script>
 
 <style scoped lang="scss">
 @use './permission-shared';
+
+.clickable-tag {
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+
+  &:hover {
+    color: var(--el-color-primary);
+    border-color: var(--el-color-primary-light-5);
+  }
+}
+
+.clickable-status-tag {
+  cursor: pointer;
+}
 
 .member-search-input {
   width: 210px;

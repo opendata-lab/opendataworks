@@ -3,6 +3,7 @@ import { permissionsApi } from '@/api/permissions'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { validateNewUserDraft } from '@/utils/userValidation'
 import { usersApi } from '@/api/users'
+import { DEFAULT_ACTIONS } from './permissionLabels'
 
 export function usePermissionMembers({
   captureRequest,
@@ -492,6 +493,98 @@ export function usePermissionMembers({
     }
   }
 
+  function formatActionLabels(actions) {
+    if (!actions || !actions.length) return '-'
+    return actions
+      .map((act) => {
+        const match = DEFAULT_ACTIONS.find((a) => a.key === act)
+        return match ? match.label : act
+      })
+      .join('、')
+  }
+
+  const reapplying = ref(false)
+
+  async function handleReapplyRoles() {
+    const member = inspectTarget.value
+    if (!member) return
+    const request = captureRequest()
+    reapplying.value = true
+    try {
+      // Re-submit the member's current roles with the latest revision from the overview.
+      const current =
+        overview.members.find(
+          (m) =>
+            m.subjectType === member.subjectType && String(m.subjectId) === String(member.subjectId)
+        ) || member
+      await permissionsApi.assignMemberRoles(request.sourceId, member.subjectType, member.subjectId, {
+        roleIds: current.roleIds || [],
+        expectedRevision: current.revision ?? 0,
+      })
+      ElMessage.success('角色已重新下发')
+      await loadAllForSource(request.sourceId)
+      await openInspectDialog(member)
+    } catch (error) {
+      ElMessage.error(error?.message || '下发失败')
+      await loadAllForSource(request.sourceId)
+    } finally {
+      reapplying.value = false
+    }
+  }
+
+  const diagnosisIssues = computed(() => {
+    const data = inspectState.data
+    if (!data) return []
+    const issues = []
+    if (data.connectionError) {
+      issues.push({
+        type: 'connection',
+        title: '数据库连接或账号异常',
+        message: data.connectionError,
+      })
+    }
+    if (data.lastFailedOperation) {
+      issues.push({
+        type: 'operation',
+        title: '最近一次操作失败',
+        operation: data.lastFailedOperation,
+      })
+    }
+    const expectedRoles = data.expectedRoles || []
+    for (const r of expectedRoles) {
+      if (r.status === 'DRAFT') {
+        issues.push({
+          type: 'draft',
+          title: `所属角色「${r.name}」处于草稿状态`,
+          role: r,
+          grantCount: (r.grants || []).length,
+        })
+      }
+    }
+    return issues
+  })
+
+  // Platform side of the diagnosis: what the member's roles grant, with draft roles marked.
+  // Matching it row by row against native read-back needs structured grants from the backend
+  // (tracked in docs/TODO.md), so the two sides are shown next to each other instead.
+  const expectedGrantRows = computed(() => {
+    const rows = []
+    for (const role of inspectState.data?.expectedRoles || []) {
+      for (const grant of role.grants || []) {
+        const db = grant.database || '*'
+        rows.push({
+          key: `${role.id}|${grant.resourceType}|${db}|${grant.tableName || ''}`,
+          scope:
+            grant.resourceType === 'SCHEMA' || !grant.tableName ? `${db}.*` : `${db}.${grant.tableName}`,
+          actionsText: formatActionLabels(grant.actions),
+          roleName: role.name,
+          isDraft: role.status === 'DRAFT',
+        })
+      }
+    }
+    return rows
+  })
+
   const normalizedInspectGrants = computed(() => {
     const raw = inspectState.data?.grants
     if (!Array.isArray(raw)) return []
@@ -614,6 +707,10 @@ export function usePermissionMembers({
     submitAccountBind,
     handleRemoveMember,
     normalizedInspectGrants,
+    diagnosisIssues,
+    expectedGrantRows,
+    reapplying,
+    handleReapplyRoles,
     openInspectDialog,
   }
 }
