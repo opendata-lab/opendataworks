@@ -162,6 +162,8 @@ const matrixState = usePermissionMatrix({
 const operationState = usePermissionOperations({
   captureRequest: scopeState.captureRequest,
   activeSourceId: scopeState.activeSourceId,
+  getRoleName: scopeState.getRoleName,
+  getPlatformUserName: scopeState.getPlatformUserName,
 })
 const memberState = usePermissionMembers({
   captureRequest: scopeState.captureRequest,
@@ -330,6 +332,11 @@ function jumpToRoleMembers(roleId) {
   activeTab.value = 'members'
 }
 
+function navigateToRole(roleId) {
+  activeTab.value = 'roles'
+  matrixState.selectRole(roleId)
+}
+
 const permissionMembersPanelView = reactive({
   loading: scopeState.loading,
   overview: scopeState.overview,
@@ -343,6 +350,7 @@ const permissionMembersPanelView = reactive({
   openAccountDialog: memberState.openAccountDialog,
   handleRemoveMember: memberState.handleRemoveMember,
   openInspectDialog: memberState.openInspectDialog,
+  navigateToRole: navigateToRole,
 })
 
 const roleMatrixPanelView = reactive({
@@ -404,6 +412,9 @@ const permissionOperationsPanelView = reactive({
   operationsState: operationState.operationsState,
   loadOperations: operationState.loadOperations,
   openOperationDetail: operationState.openOperationDetail,
+  opFilters: operationState.opFilters,
+  filteredOperations: operationState.filteredOperations,
+  overview: scopeState.overview,
 })
 
 const memberAuthorizationDialogView = reactive({
@@ -450,10 +461,18 @@ const memberBindingDialogView = reactive({
 const memberGrantInspectDialogView = reactive({
   activeClusterName: scopeState.activeClusterName,
   getMemberDisplayName: scopeState.getMemberDisplayName,
+  getMemberStatus: scopeState.getMemberStatus,
+  formatDateTime: formatDateTime,
   inspectDialogVisible: memberState.inspectDialogVisible,
   inspectTarget: memberState.inspectTarget,
   inspectState: memberState.inspectState,
   normalizedInspectGrants: memberState.normalizedInspectGrants,
+  diagnosisIssues: memberState.diagnosisIssues,
+  diagnosisRows: memberState.diagnosisRows,
+  reapplying: memberState.reapplying,
+  handleReapplyRoles: memberState.handleReapplyRoles,
+  openOperationDetail: operationState.openOperationDetail,
+  navigateToRole: navigateToRole,
 })
 
 const managementConnectionDialogView = reactive({

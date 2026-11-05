@@ -3,6 +3,7 @@ import { permissionsApi } from '@/api/permissions'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { validateNewUserDraft } from '@/utils/userValidation'
 import { usersApi } from '@/api/users'
+import { DEFAULT_ACTIONS } from './permissionLabels'
 
 export function usePermissionMembers({
   captureRequest,
@@ -492,6 +493,281 @@ export function usePermissionMembers({
     }
   }
 
+  function formatActionLabels(actions) {
+    if (!actions || !actions.length) return '-'
+    return actions
+      .map((act) => {
+        const match = DEFAULT_ACTIONS.find((a) => a.key === act)
+        return match ? match.label : act
+      })
+      .join('、')
+  }
+
+  const reapplying = ref(false)
+
+  async function handleReapplyRoles() {
+    const member = inspectTarget.value
+    if (!member) return
+    const request = captureRequest()
+    reapplying.value = true
+    try {
+      await permissionsApi.putMember(
+        request.sourceId,
+        member.subjectType,
+        member.subjectId,
+        {
+          roleIds: member.roleIds || [],
+          revision: member.revision,
+        }
+      )
+      ElMessage.success('角色已重新下发')
+      await loadAllForSource(request.sourceId)
+      await openInspectDialog(member)
+    } catch (error) {
+      ElMessage.error(error?.message || '下发失败')
+      await loadAllForSource(request.sourceId)
+    } finally {
+      reapplying.value = false
+    }
+  }
+
+  const diagnosisIssues = computed(() => {
+    const data = inspectState.data
+    if (!data) return []
+    const issues = []
+    if (data.connectionError) {
+      issues.push({
+        type: 'connection',
+        title: '数据库连接或账号异常',
+        message: data.connectionError,
+      })
+    }
+    if (data.lastFailedOperation) {
+      issues.push({
+        type: 'operation',
+        title: '最近一次操作失败',
+        operation: data.lastFailedOperation,
+      })
+    }
+    const expectedRoles = data.expectedRoles || []
+    for (const r of expectedRoles) {
+      if (r.status === 'DRAFT') {
+        issues.push({
+          type: 'draft',
+          title: `所属角色「${r.name}」处于草稿状态`,
+          role: r,
+          grantCount: (r.grants || []).length,
+        })
+      }
+    }
+    return issues
+  })
+
+  function parseNativeGrant(item) {
+    if (typeof item === 'string') {
+      const s = item.trim()
+      const pgMatch = s.match(
+        /table_schema=([^, }]+)[^}]*table_name=([^, }]+)[^}]*privilege_type=([^, }]+)/
+      )
+      if (pgMatch) {
+        const schema = pgMatch[1]
+        const table = pgMatch[2]
+        const priv = pgMatch[3]
+        const granteeMatch = s.match(/grantee=([^, }]+)/)
+        return {
+          target: `${schema}.${table}`,
+          displayScope: `表 ${schema}.${table}`,
+          actions: [priv],
+          source: granteeMatch ? granteeMatch[1] : '数据库原生',
+        }
+      }
+      const myMatch = s.match(/GRANT\s+([\w\s,]+)\s+ON\s+([^\s]+)\s+TO/i)
+      if (myMatch) {
+        const privText = myMatch[1].trim()
+        const objText = myMatch[2].replace(/[`"]/g, '').trim()
+        const isDb = objText.endsWith('.*')
+        return {
+          target: objText,
+          displayScope: `${isDb ? '库' : '表'} ${objText}`,
+          actions: privText.split(',').map((x) => x.trim()),
+          source: '数据库原生',
+        }
+      }
+      return {
+        target: s,
+        displayScope: s,
+        actions: ['-'],
+        source: '原生回读',
+      }
+    }
+    const target =
+      item.scope ||
+      item.object ||
+      [item.database, item.tableName || (item.resourceType === 'SCHEMA' ? '*' : '')]
+        .filter(Boolean)
+        .join('.') ||
+      item.resourceType ||
+      '-'
+    const resType =
+      item.resourceType === 'SCHEMA'
+        ? '库'
+        : item.resourceType === 'VIEW'
+          ? '视图'
+          : '表'
+    const actions = Array.isArray(item.actions)
+      ? item.actions
+      : item.privilege || item.action
+        ? [item.privilege || item.action]
+        : ['-']
+    const source = item.source || item.roleName || item.grantedBy || '数据库原生'
+    return {
+      target,
+      displayScope: `${resType} ${target}`,
+      actions,
+      source,
+    }
+  }
+
+  const diagnosisRows = computed(() => {
+    const data = inspectState.data
+    if (!data) return []
+
+    const rowsMap = new Map()
+
+    const expectedRoles = data.expectedRoles || []
+    for (const role of expectedRoles) {
+      const isDraft = role.status === 'DRAFT'
+      for (const grant of role.grants || []) {
+        const db = grant.database || '*'
+        const tbl = grant.tableName || (grant.resourceType === 'SCHEMA' ? '*' : '')
+        const target =
+          grant.resourceType === 'SCHEMA' || !tbl || tbl === '*' ? `${db}.*` : `${db}.${tbl}`
+        const resLabel =
+          grant.resourceType === 'SCHEMA'
+            ? '库'
+            : grant.resourceType === 'VIEW'
+              ? '视图'
+              : '表'
+        const key = target.toLowerCase()
+        if (!rowsMap.has(key)) {
+          rowsMap.set(key, {
+            key,
+            target,
+            displayScope: `${resLabel} ${target}`,
+            expectedActions: new Set(),
+            expectedRoles: [],
+            actualActions: new Set(),
+            actualSources: new Set(),
+          })
+        }
+        const row = rowsMap.get(key)
+        for (const act of grant.actions || []) {
+          row.expectedActions.add(act)
+        }
+        row.expectedRoles.push({
+          id: role.id,
+          name: role.name,
+          status: role.status,
+          isDraft,
+        })
+      }
+    }
+
+    const rawGrants = data.grants || []
+    for (const g of rawGrants) {
+      const parsed = parseNativeGrant(g)
+      const key = parsed.target.toLowerCase()
+      if (rowsMap.has(key)) {
+        const row = rowsMap.get(key)
+        parsed.actions.forEach((a) => a !== '-' && row.actualActions.add(a))
+        if (parsed.source) row.actualSources.add(parsed.source)
+      } else {
+        rowsMap.set(key, {
+          key,
+          target: parsed.target,
+          displayScope: parsed.displayScope,
+          expectedActions: new Set(),
+          expectedRoles: [],
+          actualActions: new Set(parsed.actions.filter((a) => a !== '-')),
+          actualSources: new Set(parsed.source ? [parsed.source] : []),
+        })
+      }
+    }
+
+    const list = []
+    const hasFailedOp = Boolean(data.lastFailedOperation)
+    for (const item of rowsMap.values()) {
+      const hasExpected = item.expectedRoles.length > 0
+      const hasActual = item.actualActions.size > 0
+      let status = 'consistent'
+      let statusLabel = '一致'
+      let statusTagType = 'success'
+
+      if (hasExpected && hasActual) {
+        const allDraft = item.expectedRoles.every((r) => r.isDraft)
+        if (allDraft) {
+          status = 'draft_pending'
+          statusLabel = '草稿未生效'
+          statusTagType = 'warning'
+        } else {
+          status = 'consistent'
+          statusLabel = '一致'
+          statusTagType = 'success'
+        }
+      } else if (hasExpected && !hasActual) {
+        const anyDraft = item.expectedRoles.some((r) => r.isDraft)
+        if (anyDraft) {
+          status = 'draft_pending'
+          statusLabel = '草稿未生效'
+          statusTagType = 'warning'
+        } else {
+          status = 'missing'
+          statusLabel = hasFailedOp ? '缺失/未生效 (下发失败)' : '缺失/未生效'
+          statusTagType = 'danger'
+        }
+      } else if (!hasExpected && hasActual) {
+        status = 'external'
+        statusLabel = '外部授权'
+        statusTagType = 'info'
+      }
+
+      const expectedActionsList = [...item.expectedActions]
+      const expectedActionsText = hasExpected
+        ? formatActionLabels(expectedActionsList)
+        : '未配置'
+
+      const roleSourceText = hasExpected
+        ? item.expectedRoles
+            .map((r) => `${r.name} [${r.isDraft ? '草稿!' : '已生效'}]`)
+            .join('、')
+        : '—'
+
+      const actualActionsText = hasActual
+        ? [...item.actualActions].join(', ')
+        : data.connectionError
+          ? '未连接数据库'
+          : '未回读到权限'
+
+      const actualSourceText =
+        item.actualSources.size > 0 ? [...item.actualSources].join('、') : '—'
+
+      list.push({
+        key: item.key,
+        target: item.target,
+        displayScope: item.displayScope,
+        expectedActionsText,
+        roleSourceText,
+        actualActionsText,
+        actualSourceText,
+        status,
+        statusLabel,
+        statusTagType,
+      })
+    }
+
+    return list
+  })
+
   const normalizedInspectGrants = computed(() => {
     const raw = inspectState.data?.grants
     if (!Array.isArray(raw)) return []
@@ -614,6 +890,10 @@ export function usePermissionMembers({
     submitAccountBind,
     handleRemoveMember,
     normalizedInspectGrants,
+    diagnosisIssues,
+    diagnosisRows,
+    reapplying,
+    handleReapplyRoles,
     openInspectDialog,
   }
 }

@@ -724,14 +724,72 @@ public class DatasourcePermissionService {
         if (!actual.equals(desired)) throw new SQLException("原生成员角色回读与目标不一致");
     }
 
+    private static final String INSPECT_NOTICE =
+            "使用成员绑定账号的新连接读取原生授权；MySQL展开当前连接已激活角色，PostgreSQL包含经继承角色获得的表授权；未激活角色不计为当前有效权限。平台只管理本平台创建的角色，账号可能另有直接授权、外部角色或所有权。";
+
     /**
      * Legacy HTTP account endpoints use this same mutation path, not a second credential writer.
      */
     public Map<String, Object> inspect(Long source, String type, String subject) {
         DorisCluster cluster = source(source);
         validateSubject(type, subject, false);
+        Map<String, Object> memberRow = member(source, type, subject);
+        Map<String, Object> memberView;
+        if (memberRow != null) {
+            memberView = memberView(source, memberRow);
+        } else {
+            Map<String, Object> row =
+                    map(
+                            "subjectType",
+                            type,
+                            "subjectId",
+                            subject,
+                            "revision",
+                            0,
+                            "status",
+                            "ACTIVE");
+            memberView = memberView(source, row);
+        }
+        String memberStatus = text(memberView, "status");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> accountMap = (Map<String, Object>) memberView.get("account");
+
+        @SuppressWarnings("unchecked")
+        List<Long> roleIds = (List<Long>) memberView.get("roleIds");
+        List<Map<String, Object>> expectedRoles = new ArrayList<>();
+        if (roleIds != null && !roleIds.isEmpty()) {
+            for (Long rid : roleIds) {
+                try {
+                    expectedRoles.add(roleView(role(source, rid)));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        Map<String, Object> lastFailedOp = lastFailedOperation(source, type, subject);
+
         DatasourceSubjectAccount account = findAccount(source, type, subject);
-        if (account == null) throw new IllegalArgumentException("尚未绑定数据库账号");
+        if (account == null) {
+            return map(
+                    "memberStatus",
+                    memberStatus,
+                    "account",
+                    accountMap,
+                    "username",
+                    null,
+                    "nativeIdentity",
+                    null,
+                    "connectionError",
+                    "尚未绑定数据库账号",
+                    "grants",
+                    Collections.emptyList(),
+                    "expectedRoles",
+                    expectedRoles,
+                    "lastFailedOperation",
+                    lastFailedOp,
+                    "notice",
+                    INSPECT_NOTICE);
+        }
+
         NativePermissionAdapter adapter = nativeAdapter(cluster);
         String stage = "连接成员数据库账号";
         try (Connection connection = accountConnection(cluster, account)) {
@@ -739,14 +797,24 @@ public class DatasourcePermissionService {
             Identity identity = adapter.identity(connection, account.getUsername());
             stage = "读取账号原生权限";
             return map(
+                    "memberStatus",
+                    memberStatus,
+                    "account",
+                    accountMap,
                     "username",
                     account.getUsername(),
                     "nativeIdentity",
                     adapter.account(identity),
+                    "connectionError",
+                    null,
                     "grants",
                     adapter.inspect(connection, identity),
+                    "expectedRoles",
+                    expectedRoles,
+                    "lastFailedOperation",
+                    lastFailedOp,
                     "notice",
-                    "使用成员绑定账号的新连接读取原生授权；MySQL展开当前连接已激活角色，PostgreSQL包含经继承角色获得的表授权；未激活角色不计为当前有效权限。平台只管理本平台创建的角色，账号可能另有直接授权、外部角色或所有权。");
+                    INSPECT_NOTICE);
         } catch (SQLException error) {
             log.warn(
                     "Native permission inspection failed: source={}, subjectType={}, subject={},"
@@ -757,14 +825,72 @@ public class DatasourcePermissionService {
                     stage,
                     error.getSQLState(),
                     error.getErrorCode());
-            throw new IllegalArgumentException(
+            String errorMsg =
                     stage
                             + "失败（SQLState="
                             + error.getSQLState()
                             + "，错误码="
                             + error.getErrorCode()
-                            + "），请核对成员连接及数据库权限");
+                            + "），请核对成员连接及数据库权限";
+            return map(
+                    "memberStatus",
+                    memberStatus,
+                    "account",
+                    accountMap,
+                    "username",
+                    account.getUsername(),
+                    "nativeIdentity",
+                    null,
+                    "connectionError",
+                    errorMsg,
+                    "grants",
+                    Collections.emptyList(),
+                    "expectedRoles",
+                    expectedRoles,
+                    "lastFailedOperation",
+                    lastFailedOp,
+                    "notice",
+                    INSPECT_NOTICE);
+        } catch (IllegalArgumentException error) {
+            log.warn(
+                    "Native permission inspection failed: source={}, subjectType={}, subject={},"
+                            + " stage={}, error={}",
+                    source,
+                    type,
+                    subject,
+                    stage,
+                    error.getMessage());
+            return map(
+                    "memberStatus",
+                    memberStatus,
+                    "account",
+                    accountMap,
+                    "username",
+                    account.getUsername(),
+                    "nativeIdentity",
+                    null,
+                    "connectionError",
+                    error.getMessage(),
+                    "grants",
+                    Collections.emptyList(),
+                    "expectedRoles",
+                    expectedRoles,
+                    "lastFailedOperation",
+                    lastFailedOp,
+                    "notice",
+                    INSPECT_NOTICE);
         }
+    }
+
+    private Map<String, Object> lastFailedOperation(Long source, String type, String subject) {
+        Set<String> failedStates = Set.of("FAILED", "PARTIAL", "UNKNOWN");
+        for (Map<String, Object> op : operations(source)) {
+            if (type.equals(op.get("subjectType"))
+                    && subject.equals(String.valueOf(op.get("subjectId")))) {
+                return failedStates.contains(String.valueOf(op.get("state"))) ? op : null;
+            }
+        }
+        return null;
     }
 
     public Map<String, Object> deleteRole(Long source, Long id) {

@@ -942,4 +942,186 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     expect(confirmMock.mock.calls.at(-1)[0]).toContain('删除平台自动创建的数据库登录账号')
   })
 
+  it('三合一诊断弹窗展示阻断异常、草稿未生效与对照表，支持去激活草稿与步骤详情', async () => {
+    permissionsApiMock.inspectMember.mockResolvedValueOnce({
+      memberStatus: 'ERROR',
+      account: { username: 'odw_m_1_3f2a', configured: true, managed: true },
+      username: 'odw_m_1_3f2a',
+      nativeIdentity: "'odw_m_1'@'%'",
+      connectionError: null,
+      expectedRoles: [
+        {
+          id: 101,
+          name: '销售只读',
+          status: 'ACTIVE',
+          grants: [
+            { resourceType: 'TABLE', database: 'sales', tableName: 'orders', actions: ['QUERY'] },
+          ],
+        },
+        {
+          id: 102,
+          name: '财务分析',
+          status: 'DRAFT',
+          grants: [
+            { resourceType: 'TABLE', database: 'fin', tableName: 'ledger', actions: ['QUERY'] },
+          ],
+        },
+      ],
+      grants: [
+        { database: 'sales', tableName: 'orders', actions: ['SELECT'], source: 'odw_1_9c8a' },
+        { database: 'test_db', tableName: '*', actions: ['SELECT', 'INSERT'], source: 'DBA 直接授权' },
+      ],
+      lastFailedOperation: {
+        id: 'OP-108',
+        operationId: 108,
+        state: 'FAILED',
+        message: 'GRANT Role 失败 (SQLState=42000)',
+        createdAt: '2026-11-05T10:12:00Z',
+        steps: [{ sql: 'GRANT role', state: 'FAILED' }],
+      },
+      notice: '平台只管理本平台创建的角色',
+    })
+
+    const wrapper = await mountCenter()
+    const members = feature(wrapper, 'memberState')
+    await members.openInspectDialog(wrapper.vm.overview.members[0])
+    await flushPromises()
+
+    expect(wrapper.find('.dialog-stub').attributes('data-title')).toContain('权限诊断与实际权限')
+    expect(wrapper.text()).toContain('诊断发现 2 项阻断或差异原因')
+    expect(wrapper.text()).toContain('GRANT Role 失败 (SQLState=42000)')
+    expect(wrapper.text()).toContain('所属角色「财务分析」处于 [草稿（待预览激活）]')
+
+    // Check comparison rows
+    expect(wrapper.text()).toContain('sales.orders')
+    expect(wrapper.text()).toContain('fin.ledger')
+    expect(wrapper.text()).toContain('test_db.*')
+    expect(wrapper.text()).toContain('一致')
+    expect(wrapper.text()).toContain('草稿未生效')
+    expect(wrapper.text()).toContain('外部授权')
+
+    // Test filter diff
+    await wrapper.find('[data-testid="inspect-diff-filter"]').trigger('click')
+    await flushPromises()
+    expect(members.diagnosisRows.filter((r) => r.status !== 'consistent').length).toBe(2)
+
+    // Test view op steps
+    await wrapper.find('[data-testid="view-op-steps-btn"]').trigger('click')
+    expect(feature(wrapper, 'operationState').operationDetailVisible).toBe(true)
+
+    // Test goto role draft
+    await wrapper.find('[data-testid="goto-role-btn"]').trigger('click')
+    await flushPromises()
+    expect(members.inspectDialogVisible).toBe(false)
+    expect(wrapper.vm.activeTab).toBe('roles')
+    expect(feature(wrapper, 'matrixState').selectedRoleId).toBe(102)
+  })
+
+  it('成员列表支持细化状态筛选、点击异常标签开诊断与角色标签跳角色', async () => {
+    const data = makeOverview()
+    data.members = [
+      {
+        id: 1,
+        subjectType: 'USER',
+        subjectId: '2',
+        roleIds: [101],
+        status: 'ERROR',
+        account: { username: 'err_user', configured: true, managed: false },
+      },
+      {
+        id: 2,
+        subjectType: 'USER',
+        subjectId: '3',
+        roleIds: [102],
+        status: 'ACTIVE',
+        account: { username: 'ok_user', configured: true, managed: false },
+      },
+    ]
+    permissionsApiMock.getOverview.mockResolvedValue(data)
+    permissionsApiMock.inspectMember.mockResolvedValue({
+      memberStatus: 'ERROR',
+      grants: [],
+      expectedRoles: [],
+    })
+
+    const wrapper = await mountCenter()
+    const members = feature(wrapper, 'memberState')
+
+    // Filter by error status
+    members.memberFilters.status = 'error'
+    await flushPromises()
+    expect(members.filteredMembers.length).toBe(1)
+    expect(members.filteredMembers[0].subjectId).toBe('2')
+
+    // Clicking role tag jumps to role
+    const roleTag = wrapper.find('[data-testid="member-role-tag"]')
+    expect(roleTag.exists()).toBe(true)
+    await roleTag.trigger('click')
+    await flushPromises()
+    expect(wrapper.vm.activeTab).toBe('roles')
+    expect(feature(wrapper, 'matrixState').selectedRoleId).toBe(101)
+
+    // Switch back to members
+    wrapper.vm.switchTab('members')
+    await flushPromises()
+
+    // Clicking error status tag opens inspect dialog
+    const statusTag = wrapper.find('[data-testid="member-status-tag"]')
+    expect(statusTag.exists()).toBe(true)
+    await statusTag.trigger('click')
+    await flushPromises()
+    expect(permissionsApiMock.inspectMember).toHaveBeenCalled()
+    expect(members.inspectDialogVisible).toBe(true)
+  })
+
+  it('授权记录支持关键字、对象类型与状态筛选', async () => {
+    const data = makeOverview()
+    permissionsApiMock.getOverview.mockResolvedValue(data)
+    permissionsApiMock.listOperations.mockResolvedValue([
+      {
+        id: 'OP-1001',
+        operationId: 1001,
+        sourceId: 10,
+        roleId: 101,
+        state: 'SUCCESS',
+        message: '授权生效',
+        createdAt: '2026-11-05T08:00:00Z',
+      },
+      {
+        id: 'OP-1002',
+        operationId: 1002,
+        sourceId: 10,
+        subjectType: 'USER',
+        subjectId: '2',
+        state: 'FAILED',
+        message: '账号授权超时',
+        createdAt: '2026-11-05T09:00:00Z',
+      },
+    ])
+
+    const wrapper = await mountCenter()
+    wrapper.vm.switchTab('operations')
+    await flushPromises()
+
+    const ops = feature(wrapper, 'operationState')
+    expect(ops.filteredOperations.length).toBe(2)
+
+    // Filter by state FAILED
+    ops.opFilters.state = 'FAILED'
+    expect(ops.filteredOperations.length).toBe(1)
+    expect(ops.filteredOperations[0].id).toBe('OP-1002')
+
+    // Filter by keyword
+    ops.opFilters.state = 'all'
+    ops.opFilters.keyword = '超时'
+    expect(ops.filteredOperations.length).toBe(1)
+    expect(ops.filteredOperations[0].id).toBe('OP-1002')
+
+    // Filter by target role
+    ops.opFilters.keyword = ''
+    ops.opFilters.target = 'role:101'
+    expect(ops.filteredOperations.length).toBe(1)
+    expect(ops.filteredOperations[0].id).toBe('OP-1001')
+  })
+
 })
