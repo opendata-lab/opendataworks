@@ -6,6 +6,7 @@ import com.onedata.portal.dto.Result;
 import com.onedata.portal.service.PlatformUserManagementService;
 import com.onedata.portal.service.PlatformUserManagementService.UserRequest;
 import com.onedata.portal.service.ServiceAccountTokenService;
+import com.onedata.portal.service.permission.SubjectAccessService;
 
 import jakarta.servlet.http.HttpServletResponse;
 
@@ -22,14 +23,21 @@ import java.util.Map;
 public class PlatformUserManagementController {
     private final PlatformUserManagementService service;
     private final ServiceAccountTokenService tokens;
+    private final SubjectAccessService access;
 
     @RequireRole("admin")
     @GetMapping
-    public Result<List<SysUser>> list(
+    public Result<List<SubjectAccessService.UserView>> list(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Boolean enabled,
             @RequestParam(required = false) String accountType) {
-        return Result.success(service.list(keyword, enabled, accountType));
+        return Result.success(access.listUsers(keyword, enabled, accountType));
+    }
+
+    @RequireRole("admin")
+    @GetMapping("/{id}/datasource-access")
+    public Result<Map<String, Object>> datasourceAccess(@PathVariable Long id) {
+        return Result.success(access.access(id));
     }
 
     @RequireRole("admin")

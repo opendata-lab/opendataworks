@@ -1,5 +1,5 @@
 import { ref, reactive, computed } from 'vue'
-import { getTemplateLabel, DEFAULT_ACTIONS } from './permissionLabels'
+import { DEFAULT_ACTIONS, memberStatus, summarizeGrants } from './permissionLabels'
 
 export function usePermissionScope({ props }) {
   const activeSourceId = ref(props.cluster?.id ?? null)
@@ -92,58 +92,11 @@ export function usePermissionScope({ props }) {
     return member.name || getPlatformUserName(member.subjectId)
   }
 
-  const getMemberStatus = (member) => {
-    if (!member) return { key: 'pending', label: '待配置', tagType: 'warning' }
-    const upperStatus = String(member.status || '').toUpperCase()
-    if (member.enabled === false || upperStatus === 'DISABLED') {
-      return { key: 'disabled', label: '已停用', tagType: 'danger' }
-    }
-    if (upperStatus === 'APPLYING') return { key: 'pending', label: '执行中', tagType: 'warning' }
-    if (upperStatus === 'ERROR') {
-      return { key: 'pending', label: '状态异常', tagType: 'danger' }
-    }
-    const hasRoles = Array.isArray(member.roleIds) && member.roleIds.length > 0
-    const hasAccount = Boolean(member.account?.configured && member.account?.username)
-    if (hasRoles && hasAccount && upperStatus === 'ACTIVE') {
-      return { key: 'ready', label: '正常', tagType: 'success' }
-    }
-    if (!hasRoles) {
-      return { key: 'pending', label: '待分配角色', tagType: 'warning' }
-    }
-    return { key: 'pending', label: '待绑定账号', tagType: 'warning' }
-  }
+  const getMemberStatus = memberStatus
 
-  const summarizeRoleGrants = (role) => {
-    if (!role) return ''
-    const grants = role.grants || []
-    if (!grants.length) {
-      return role.template
-        ? `${getTemplateLabel(role.template)}模板 · 待配置资源`
-        : '尚未配置资源权限'
-    }
-    // Group by database and action set, so each object list shows its own actions.
-    const MAX_OBJECTS = 3
-    const groups = new Map()
-    for (const g of grants) {
-      const db = g.database || '*'
-      const actions = [...new Set(g.actions || [])].sort()
-      const key = `${db}|${actions.join(',')}`
-      if (!groups.has(key)) groups.set(key, { objects: new Set(), actions })
-      groups
-        .get(key)
-        .objects.add(
-          g.resourceType === 'SCHEMA' || !g.tableName ? `${db}.*` : `${db}.${g.tableName}`
-        )
-    }
-    return [...groups.values()]
-      .map(({ objects, actions }) => {
-        const list = [...objects]
-        const shown = list.slice(0, MAX_OBJECTS).join('、')
-        const more = list.length > MAX_OBJECTS ? ` 等 ${list.length} 项` : ''
-        return `${shown}${more} (${actions.map(actionLabel).join('、')})`
-      })
-      .join('；')
-  }
+
+  const summarizeRoleGrants = (role) => summarizeGrants(role, overview.capabilities?.actions)
+
 
   const actionLabel = (key) =>
     (overview.capabilities?.actions || DEFAULT_ACTIONS).find((action) => action.key === key)

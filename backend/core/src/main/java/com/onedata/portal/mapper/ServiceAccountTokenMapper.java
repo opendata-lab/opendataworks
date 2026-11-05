@@ -23,6 +23,12 @@ public interface ServiceAccountTokenMapper extends BaseMapper<ServiceAccountToke
                 + " AND revoked_at IS NULL AND expires_at>UTC_TIMESTAMP()")
     int touchLastUsedAt(String hash);
 
+    @Select(
+            "SELECT user_id, SUM(CASE WHEN revoked_at IS NULL AND expires_at>UTC_TIMESTAMP() THEN 1"
+                + " ELSE 0 END) AS active_count, MAX(last_used_at) AS last_used_at FROM"
+                + " service_account_token GROUP BY user_id")
+    List<java.util.Map<String, Object>> tokenStats();
+
     @Update(
             "UPDATE service_account_token SET revoked_at=COALESCE(revoked_at,UTC_TIMESTAMP()) WHERE"
                 + " id=#{id} AND user_id=#{userId}")
