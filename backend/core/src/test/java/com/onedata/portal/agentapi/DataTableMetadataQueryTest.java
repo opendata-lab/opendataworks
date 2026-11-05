@@ -183,6 +183,8 @@ class DataTableMetadataQueryTest {
         fieldMatched.setTableName("sales_detail");
         fieldMatched.setTableComment("销售明细");
         fieldMatched.setStatus("active");
+        fieldMatched.setLayer("DWD");
+        fieldMatched.setBusinessDomain("sales");
 
         DataField field = new DataField();
         field.setTableId(22L);
@@ -205,6 +207,10 @@ class DataTableMetadataQueryTest {
         assertEquals("z_sales", response.getTables().get(0).getDbName());
         assertEquals("sales_detail", response.getTables().get(0).getTableName());
         assertEquals("order_id", response.getTables().get(0).getFields().get(0).getFieldName());
+        // Agents answer layer/domain/status questions from this projection.
+        assertEquals("DWD", response.getTables().get(0).getLayer());
+        assertEquals("sales", response.getTables().get(0).getBusinessDomain());
+        assertEquals("active", response.getTables().get(0).getStatus());
     }
 
     @Test
