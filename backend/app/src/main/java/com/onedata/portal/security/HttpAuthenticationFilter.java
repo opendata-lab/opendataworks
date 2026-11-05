@@ -41,24 +41,7 @@ public final class HttpAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             HttpServletRequest req, HttpServletResponse res, FilterChain chain)
             throws ServletException, IOException {
-        String path = req.getRequestURI().substring(req.getContextPath().length());
-        try {
-            String decoded =
-                    org.springframework.web.util.UriUtils.decode(
-                            path, java.nio.charset.StandardCharsets.UTF_8);
-            if (decoded.contains(";")
-                    || decoded.contains("\\")
-                    || decoded.contains("//")
-                    || Arrays.stream(decoded.split("/", -1))
-                            .anyMatch(segment -> segment.equals(".") || segment.equals(".."))) {
-                reject(res, 400, "请求路径不规范");
-                return;
-            }
-            path = decoded;
-        } catch (IllegalArgumentException invalidPath) {
-            reject(res, 400, "请求路径编码无效");
-            return;
-        }
+        String path = req.getServletPath();
         boolean service = routes.classify(path) == AuthenticationRoutePolicy.Route.SERVICE;
         String origin = req.getHeader("Origin");
         if (origin != null) {

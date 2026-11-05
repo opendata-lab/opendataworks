@@ -8,7 +8,8 @@ public final class AuthenticationRoutePolicy {
     }
 
     public Route classify(String path) {
-        if (path.equals("/mcp") || path.equals("/mcp/")) return Route.SERVICE;
+        if (path.equals("/mcp") || path.startsWith("/mcp/") || path.startsWith("/mcp;"))
+            return Route.SERVICE;
         if (path.equals("/auth/login")
                 || path.equals("/auth/logout")
                 || path.equals("/v1/health")

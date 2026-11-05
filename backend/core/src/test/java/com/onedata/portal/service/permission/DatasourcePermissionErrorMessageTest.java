@@ -158,4 +158,43 @@ class DatasourcePermissionErrorMessageTest {
         assertTrue(result.get("message").toString().contains("授权管理连接"));
         verify(permissions, never()).deleteRole(9L);
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"ACTIVE", "APPLYING", "ERROR"})
+    void memberFailureAlwaysEndsInErrorWithoutRewritingRoleBindings(String previousStatus)
+            throws Exception {
+        var users = mock(com.onedata.auth.user.SysUserMapper.class);
+        var accounts = mock(com.onedata.portal.mapper.DatasourceSubjectAccountMapper.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "users", users);
+        org.springframework.test.util.ReflectionTestUtils.setField(
+                service, "accountMapper", accounts);
+        var user = new com.onedata.auth.user.SysUser();
+        user.setId(7L);
+        user.setEnabled(true);
+        user.setAccountType("USER");
+        when(users.selectById(7L)).thenReturn(user);
+        var account = new com.onedata.portal.entity.DatasourceSubjectAccount();
+        account.setSourceId(2L);
+        account.setSubjectType("USER");
+        account.setSubjectId("7");
+        account.setUsername("member");
+        account.setPassword("private-member");
+        when(accounts.selectList(any())).thenReturn(List.of(account));
+        when(permissions.findMember(2L, "USER", "7"))
+                .thenReturn(List.of(Map.of("id", 31L, "revision", 0, "status", previousStatus)));
+        when(connections.open(eq("MYSQL"), any(), isNull(), eq("member"), anyString(), eq(false)))
+                .thenThrow(new SQLException("CONNECT denied", "42000", 1044));
+        var input = new com.onedata.portal.service.permission.PermissionModels.MemberRequest();
+        input.setExpectedRevision(0);
+        input.setRoleIds(List.of(9L));
+        var error =
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> service.putMember(2L, "USER", "7", input));
+        assertTrue(error.getMessage().contains("成员数据库账号权限不足"));
+        assertFalse(error.getMessage().contains("授权管理连接"));
+        verify(permissions).setMemberStatus("ERROR", 31L);
+        verify(permissions, never()).clearMemberRoles(any());
+        verify(permissions, never()).addMemberRole(any(), any());
+    }
 }

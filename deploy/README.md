@@ -234,10 +234,10 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
 5. 平台根据服务Token识别服务账号，不查询外部助手目录、不信任调用方agent_id。无用户头时按服务账号自身权限查询；代人问数时可提供`X-Agent-User-Id: local:alice`等原有标识，并要求该普通用户的源内映射，查询范围取双方交集。可信用户委托仍延期，未签名用户头不构成可信人身份认证。
 6. DataAgent侧应使用普通可编辑的HTTP MCP记录（configured），管理员更新MCP地址、Authorization头和提示词中的工具名。本机旧portal种子仍标记为plugin，需由DataAgent运维备份并转为configured后再编辑；不要通过平台访问外部助手目录或修改DataAgent源码来鉴别服务账号。
 
-服务账号Token由平台管理，可到期或单独撤销，账号停用后所有Token失效；两边跨机器时后端 8080 端口或门户 `/api/mcp/` 反向代理入口需对 DataAgent 主机可达，且应走内网或 HTTPS。
+服务账号Token由平台管理，可到期或单独撤销，账号停用后所有Token失效；两边跨机器时后端 8080 端口的 MCP 入口需通过内网对 DataAgent 主机可达，门户不代理此入口。
 
 ### V58 托管数据库登录升级
 
 给新成员分配角色自动创建独立原生登录，管理连接须有 CREATE USER／CREATEROLE、角色管理和所选对象授权能力。生成密码用 ODW_CREDENTIAL_KEY 加密保存，原有 DBA 映射不改密、不认领为托管账号。保留密钥；移除成员仅删除平台创建且已核验所有权的登录，PG对象依赖会明确阻止删除，不级联删业务数据。回退前先核对并处理新托管映射／登录，旧后端不能使用这些加密密码。
 
-门户 Nginx 默认拒绝 `/api/mcp` 及子路径，避免将公网客户端经 Docker 桥接地址误判为私网；外部 MCP 使用独立受限的后端入口。TLS 在前置代理终止时，必须设置 `ODW_HTTP_ALLOWED_ORIGINS=https://<门户域名>`（多个来源逗号分隔），即使浏览器与门户同源；后端不隐式信任 `X-Forwarded-Proto`。
+门户 Nginx 默认拒绝 `/api/mcp` 及子路径，避免将公网客户端经 Docker 桥接地址误判为私网；外部 MCP 使用独立受限的后端入口。

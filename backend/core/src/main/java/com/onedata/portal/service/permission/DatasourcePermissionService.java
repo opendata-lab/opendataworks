@@ -462,10 +462,6 @@ public class DatasourcePermissionService {
             candidate.setUsername(accountInput.getUsername());
             candidate.setPassword(password);
         }
-        Set<Long> previousRoleIds =
-                old == null ? Collections.emptySet() : new LinkedHashSet<>(roleIds(old));
-        Set<Long> protectedRoleIds = new LinkedHashSet<>(previousRoleIds);
-        protectedRoleIds.addAll(desiredIds);
         boolean createManaged = candidate == null && !remove;
         if (createManaged) {
             if (desiredIds.isEmpty()) throw new IllegalArgumentException("请至少选择一个角色以自动创建数据库账号");
@@ -496,19 +492,11 @@ public class DatasourcePermissionService {
                                                                     source, type, subject)
                                                             : longNumber(old.get("id"));
                                             if (createManaged) saveMapping(source, saved);
-                                            saveBindings(id, protectedRoleIds);
+                                            saveBindings(id, desiredIds);
                                             permissions.markMemberApplying(id);
                                             return id;
                                         });
-            } else if (old != null) {
-                platformTransaction()
-                        .execute(
-                                tx -> {
-                                    saveBindings(longNumber(old.get("id")), protectedRoleIds);
-                                    permissions.markMemberApplying(old.get("id"));
-                                    return null;
-                                });
-            }
+            } else if (old != null) permissions.markMemberApplying(old.get("id"));
             List<Map<String, Object>> allRoles = query(permissions.listRoleSnapshots(source));
             Set<String> managed =
                     allRoles.stream()
@@ -653,23 +641,11 @@ public class DatasourcePermissionService {
             String state = failureState(e, steps, !steps.isEmpty());
             String message = safeMessage(e, managementContext);
             permissions.finishOperation(state, message, write(steps), op);
-            if (preparedMemberId[0] != null)
-                permissions.setMemberStatus("ERROR", preparedMemberId[0]);
-            else if (old != null) {
-                platformTransaction()
-                        .execute(
-                                tx -> {
-                                    if ("FAILED".equals(state))
-                                        saveBindings(longNumber(old.get("id")), previousRoleIds);
-                                    permissions.setMemberStatus(
-                                            "FAILED".equals(state)
-                                                            && "ACTIVE".equals(old.get("status"))
-                                                    ? "ACTIVE"
-                                                    : "ERROR",
-                                            old.get("id"));
-                                    return null;
-                                });
-            }
+            Object failedMemberId =
+                    preparedMemberId[0] != null
+                            ? preparedMemberId[0]
+                            : old == null ? null : old.get("id");
+            if (failedMemberId != null) permissions.setMemberStatus("ERROR", failedMemberId);
             throw new IllegalArgumentException(
                     "操作" + op + " " + state + "：" + message + "；请核对授权记录，未报告成功");
         }
