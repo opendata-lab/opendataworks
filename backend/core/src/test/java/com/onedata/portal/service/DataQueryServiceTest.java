@@ -199,6 +199,18 @@ class DataQueryServiceTest {
         assertTrue(DataQueryService.isPermissionDenied(postgres));
         assertTrue(DataQueryService.permissionMessage(postgres).contains("表 orders "));
 
+        // Exact Doris 2.0.15 message (2026-11-06, local docker).
+        var doris =
+                new java.sql.SQLException(
+                        "errCode = 2, detailMessage = SELECT command denied to user"
+                                + " 'default_cluster:odw_m_9_x'@'172.30.80.1' for table"
+                                + " 'default_cluster:odw_chk.secret'",
+                        "42000",
+                        1142);
+        assertEquals(
+                "没有读取权限：表 odw_chk.secret 未授权给当前身份，请联系数据源管理员授权",
+                DataQueryService.permissionMessage(doris));
+
         var syntax = new java.sql.SQLException("You have an error in your SQL syntax", "42000", 1064);
         assertFalse(DataQueryService.isPermissionDenied(syntax));
     }
