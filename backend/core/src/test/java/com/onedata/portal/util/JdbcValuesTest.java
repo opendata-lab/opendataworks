@@ -45,4 +45,31 @@ class JdbcValuesTest {
         jsonb.setValue("{\"a\": 1}");
         assertEquals("{\"a\": 1}", JdbcValues.normalize(jsonb));
     }
+
+    @Test
+    void readsDatesAndTimesAsJavaTimeKeepingWallClockOrOffset() throws Exception {
+        java.sql.ResultSet rs = mock(java.sql.ResultSet.class);
+        java.sql.ResultSetMetaData meta = mock(java.sql.ResultSetMetaData.class);
+        when(rs.getMetaData()).thenReturn(meta);
+        Object[][] columns = {
+            {java.sql.Types.TIMESTAMP, "timestamp", LocalDateTime.class},
+            {java.sql.Types.TIMESTAMP, "timestamptz", java.time.OffsetDateTime.class},
+            {java.sql.Types.TIMESTAMP_WITH_TIMEZONE, "TIMESTAMP WITH TIME ZONE", java.time.OffsetDateTime.class},
+            {java.sql.Types.DATE, "date", java.time.LocalDate.class},
+            {java.sql.Types.TIME, "time", java.time.LocalTime.class},
+            {java.sql.Types.TIME, "timetz", java.time.OffsetTime.class},
+        };
+        for (int i = 0; i < columns.length; i++) {
+            int column = i + 1;
+            when(meta.getColumnType(column)).thenReturn((Integer) columns[i][0]);
+            when(meta.getColumnTypeName(column)).thenReturn((String) columns[i][1]);
+            Object marker = new Object();
+            when(rs.getObject(column, (Class<?>) columns[i][2])).thenAnswer(x -> marker);
+            assertSame(marker, JdbcValues.read(rs, column), String.valueOf(columns[i][1]));
+        }
+        when(meta.getColumnType(9)).thenReturn(java.sql.Types.DATE);
+        when(meta.getColumnTypeName(9)).thenReturn("YEAR");
+        when(rs.getObject(9, java.time.LocalDate.class)).thenReturn(java.time.LocalDate.of(2026, 1, 1));
+        assertEquals(2026, JdbcValues.read(rs, 9));
+    }
 }
