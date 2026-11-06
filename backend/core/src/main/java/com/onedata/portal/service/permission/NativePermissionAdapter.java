@@ -335,22 +335,33 @@ public final class NativePermissionAdapter {
                     throw new IllegalArgumentException("托管角色存在库表之外的权限，请先核对");
             for (String field : Arrays.asList("databaseprivs", "tableprivs")) {
                 String text = string(info, field);
-                if (emptyDoris(text)) continue;
-                for (String entry : text.split(";\\s*")) {
-                    int separator = entry.lastIndexOf(':');
-                    if (separator < 0) throw new SQLException("无法识别Doris权限回读格式");
-                    String[] path = entry.substring(0, separator).trim().split("\\.");
-                    if (path.length != 3 || !"internal".equals(path[0]))
-                        throw new SQLException("仅支持Doris internal目录的可核验库表权限");
-                    for (String priv : entry.substring(separator + 1).split(","))
-                        result.add(
-                                new Atom(
-                                        "*".equals(path[2]) ? "SCHEMA" : "TABLE",
-                                        path[1],
-                                        "*".equals(path[2]) ? null : path[2],
-                                        priv.trim().toUpperCase(Locale.ROOT)));
-                }
+                if (!emptyDoris(text)) result.addAll(dorisAtoms(text));
             }
+        }
+        return result;
+    }
+
+    /**
+     * Parses a Doris SHOW ROLES DatabasePrivs/TablePrivs value. 2.0 prints e.g. {@code
+     * internal.default_cluster:db.*: Select_priv Load_priv ; internal.default_cluster:db.t:
+     * Select_priv}: cluster-prefixed names and space-separated privileges.
+     */
+    static List<Atom> dorisAtoms(String text) throws SQLException {
+        List<Atom> result = new ArrayList<>();
+        for (String entry : withoutCluster(text).split(";\\s*")) {
+            int separator = entry.lastIndexOf(':');
+            if (separator < 0) throw new SQLException("无法识别Doris权限回读格式");
+            String[] path = entry.substring(0, separator).trim().split("\\.");
+            if (path.length != 3 || !"internal".equals(path[0]))
+                throw new SQLException("仅支持Doris internal目录的可核验库表权限");
+            boolean schema = "*".equals(path[2]);
+            for (String priv : entry.substring(separator + 1).trim().split("[,\\s]+"))
+                result.add(
+                        new Atom(
+                                schema ? "SCHEMA" : "TABLE",
+                                path[1],
+                                schema ? null : path[2],
+                                priv.toUpperCase(Locale.ROOT)));
         }
         return result;
     }
@@ -370,7 +381,7 @@ public final class NativePermissionAdapter {
 
     private Map<String, Object> dorisRole(Connection c, String name) throws SQLException {
         for (Map<String, Object> r : rows(c, "SHOW ROLES"))
-            if (name.equals(string(r, "name"))) return r;
+            if (name.equals(withoutCluster(string(r, "name")))) return r;
         return null;
     }
 
@@ -388,6 +399,7 @@ public final class NativePermissionAdapter {
                                                 : "SELECT CURRENT_USER() AS identity")
                                 .get(0)
                                 .get("identity"));
+        if (doris()) value = withoutCluster(value);
         if (postgres()) {
             if (!requestedName.equals(value)) throw new IllegalArgumentException("数据库实际身份与填写账号不一致");
             return new Identity(value, null);
@@ -400,6 +412,14 @@ public final class NativePermissionAdapter {
         literal(user);
         literal(host);
         return new Identity(user, host);
+    }
+
+    /**
+     * Doris 2.0 reports users, roles and databases as {@code default_cluster:name} but takes plain
+     * names in SQL; 2.1+ prints plain names. Names cannot contain ':', so stripping is safe.
+     */
+    static String withoutCluster(String value) {
+        return value == null ? null : value.replace("default_cluster:", "");
     }
 
     private String unquote(String value) {
@@ -428,7 +448,7 @@ public final class NativePermissionAdapter {
                             identity.getHost())) result.add(string(r, "name"));
         else
             for (Map<String, Object> r : rows(c, "SHOW GRANTS FOR " + account(identity)))
-                for (String part : string(r, "roles").split(","))
+                for (String part : withoutCluster(string(r, "roles")).split(","))
                     if (!part.trim().isEmpty()) result.add(unquote(part.trim()));
         return result;
     }
@@ -445,7 +465,7 @@ public final class NativePermissionAdapter {
                             identity.getHost())
                     .isEmpty();
         for (Map<String, Object> row : rows(c, "SHOW ALL GRANTS"))
-            if (account(identity).equals(string(row, "useridentity"))) return true;
+            if (account(identity).equals(withoutCluster(string(row, "useridentity")))) return true;
         return false;
     }
 
@@ -528,7 +548,7 @@ public final class NativePermissionAdapter {
             }
             for (Map<String, Object> r : rows(c, sql)) {
                 r.remove("password");
-                result.add(r.toString());
+                result.add(withoutCluster(r.toString()));
             }
         }
         return result;

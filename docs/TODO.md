@@ -27,7 +27,7 @@
 - **成员部分授权后的角色删除关联（2026-11-04 用户要求精简）**：既有成员失败统一ERROR并刷新页面，不再预写新旧角色并集。若原生GRANT成功而后续失败，新角色可能尚未计入平台memberCount，ERROR状态本身不会阻止该角色删除。当前需先核对授权记录并恢复成员，再删除角色；若后续要自动保护，需另行确定简洁规则。本轮按用户选择不增加保护机制。关联[当前设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md#pr评审后契约修正2026-11-04)与[报告](reports/2026-11-04-backend-pr-review-fixes.md)。
 
 
-- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。2026-11-05 用户在Doris上创建角色失败（`CREATE ROLE 'odw_…'` 报 STRING LITERAL，Expected IDENTIFIER）：Doris 2.1／3.0语法中 CREATE／DROP ROLE 要求标识符，GRANT … TO ROLE 与授予用户角色要求字符串，已改为反引号标识符（PR修复），仍需真实Doris回归建角色→授权→分配成员→删除。此前Docker Hub超时已在后续评审修复中解决，正式Dockerfile构建通过；当前剩余为Doris真实环境验证。来源：[建号报告](reports/2026-11-04-managed-database-accounts-validation.md)、[评审修复报告](reports/2026-11-04-backend-pr-review-fixes.md)。
+- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过。Doris 2.0.15（本机 docker，`~/.local/odw-doris`，2026-11-06）已通过平台 HTTP 全流程：保存管理账号、建角色、表级 SELECT 与库级 SELECT＋LOAD 授权并回读核验、分配成员（自动建 `odw_m_*` 登录）、诊断、撤销角色、删除登录与角色。过程中修复：CREATE／DROP ROLE 改用标识符（#503）；2.0 回读的用户／角色／库名带 `default_cluster:` 前缀、多个权限以空格分隔。剩余：Doris 2.1+／3.x 未实测（源码显示 2.1 起不再生成该前缀，去前缀对其无影响）。来源：[建号报告](reports/2026-11-04-managed-database-accounts-validation.md)、[评审修复报告](reports/2026-11-04-backend-pr-review-fixes.md)。
 
 
 - **本轮后端收敛的外部完整链路覆盖（2026-11-03）**：真实 MySQL、Dolphin 3.2.2 与全部 23 个 HTTP MCP handler 已验证；本机当前没有可调用的独立 DataAgent 8900 服务或 Doris 实例，本轮未复跑真实模型最终消息和 PostgreSQL/Doris 权限、DDL 全流程。需在独立 DataAgent 完成 MCP URL/Schema 刷新后验证完整问答及消息持久化，在 PostgreSQL/Doris 环境复跑原生权限与 DDL；生产快照升级、生产代理拓扑也需部署环境验收。没有将这些路径计为本轮通过。来源：[实施报告](reports/2026-11-03-backend-consolidation-validation.md)，关联[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)。
@@ -38,7 +38,7 @@
 
 用户管理和源内多角色中心已实现并完成本机验收，结果移至「已完成」。当前模型以[设计第10节](design/2026-10-26-dataagent-datasource-identity-design.md#implementation-contract)为准，历史单角色／共享角色账号草案不适用。
 
-- **Doris原生验收**（2026-11-02环境缺口）：已实现统一动作和原生角色适配，但本机无真实Doris实例，仅有SQL契约测试。需在内网核验Schema／表／视图授权、Load_priv、角色继承与回读、EXPLAIN拒绝和只读Agent；[本轮报告](reports/2026-11-02-users-and-permissions-verification.md)。
+- **Doris原生验收**（2026-11-02环境缺口）：已实现统一动作和原生角色适配，2026-11-06 起本机有 Doris 2.0.15 docker（`~/.local/odw-doris/up`），库／表授权、Load_priv、角色继承与回读已实测（见上条）。仍需核验视图授权、EXPLAIN拒绝和只读Agent；[本轮报告](reports/2026-11-02-users-and-permissions-verification.md)。
 - **跨源实例别名**（2026-10-30设计确认，2026-11-02保留）：同源禁止多个成员复用同一个数据库账号；同物理实例被登记为不同源仍未去重，不能承诺跨sourceId隔离，需另行设计物理实例与原生身份唯一约束。
 - **能力扩展**（2026-10-30确认延期）：用户组、用户直接资源授权、字段／行级与脱敏、ABAC、审批、所有权移交、PG按创建者设置未来默认权限、Dolphin身份统一、定时漂移对账及全量直连审计。已有直接授权／外部角色可能扩大范围，不由平台自动撤销。原生按名称授权无法检测两次观测间的同名删除重建，严格代际隔离需DDL审计。见同主题设计第10节与[使用说明](handbook/features/users-and-data-permissions.md)。
 - **源软删除端点唯一键**（2026-11-01真实验收发现）：doris_cluster按host/port唯一，软删除仍占用该坐标，导致同端点重建冲突。本轮未修改业务删除语义；需设计唯一约束与源恢复／重建的关联数据规则。测试源清理只对自有临时记录改坐标后软删除，见[报告](reports/2026-11-02-users-and-permissions-verification.md)。
