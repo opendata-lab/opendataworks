@@ -107,7 +107,7 @@ public final class NativePermissionAdapter {
         return "DROP ROLE " + declaredRole(name);
     }
 
-    /** Doris parses CREATE/DROP ROLE names as identifiers, but GRANT ... ROLE as string literals. */
+    /** Doris takes CREATE/DROP ROLE names as identifiers; GRANT ... ROLE takes literals. */
     private String declaredRole(String name) {
         return doris() ? identifier(name) : role(name);
     }
