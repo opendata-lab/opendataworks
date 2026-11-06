@@ -181,4 +181,25 @@ class DataQueryServiceTest {
             PrincipalContextHolder.clear();
         }
     }
+
+    @Test
+    void permissionDenialsSayNoPermissionAndNameOnlyTheTable() {
+        var mysql =
+                new java.sql.SQLException(
+                        "SELECT command denied to user 'svc_native'@'10.0.0.5' for table 'sys_user'",
+                        "42000",
+                        1142);
+        assertTrue(DataQueryService.isPermissionDenied(mysql));
+        String message = DataQueryService.permissionMessage(mysql);
+        assertEquals("没有读取权限：表 sys_user 未授权给当前身份，请联系数据源管理员授权", message);
+        assertFalse(message.contains("svc_native") || message.contains("10.0.0.5"));
+
+        var postgres =
+                new java.sql.SQLException("ERROR: permission denied for table orders", "42501", 0);
+        assertTrue(DataQueryService.isPermissionDenied(postgres));
+        assertTrue(DataQueryService.permissionMessage(postgres).contains("表 orders "));
+
+        var syntax = new java.sql.SQLException("You have an error in your SQL syntax", "42000", 1064);
+        assertFalse(DataQueryService.isPermissionDenied(syntax));
+    }
 }
