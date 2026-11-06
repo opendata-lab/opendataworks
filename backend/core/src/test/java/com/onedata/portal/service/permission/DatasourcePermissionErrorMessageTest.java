@@ -38,7 +38,7 @@ class DatasourcePermissionErrorMessageTest {
                     null,
                     null,
                     connections,
-                    null,
+                    PermissionTestAdapters.registry(),
                     null,
                     new ObjectMapper());
     private final PreviewRequest preview = new PreviewRequest();

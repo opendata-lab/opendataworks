@@ -48,7 +48,7 @@ class DatasourcePermissionRoleEditingTest {
                         null,
                         null,
                         null,
-                        null,
+                        PermissionTestAdapters.registry(),
                         null,
                         new ObjectMapper());
         PrincipalContextHolder.setContext(new CurrentPrincipal("1", "admin", "admin", "local"));

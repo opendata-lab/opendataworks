@@ -3,6 +3,7 @@ package com.onedata.portal.service.datasource.adapters.mysql;
 import com.onedata.portal.config.DatasourceJdbcProperties;
 import com.onedata.portal.service.datasource.adapters.Descriptors;
 import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
+import com.onedata.portal.service.permission.NativePermissionAdapter;
 
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -46,5 +47,10 @@ public class MysqlAdapter extends MysqlProtocolAdapter {
     @Override
     public DatasourceDescriptor descriptor() {
         return descriptor;
+    }
+
+    @Override
+    public NativePermissionAdapter permissions() {
+        return new MysqlPermissionAdapter();
     }
 }

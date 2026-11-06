@@ -40,7 +40,7 @@ class DatasourcePermissionInspectionTest {
                     users,
                     accounts,
                     connections,
-                    null,
+                    PermissionTestAdapters.registry(),
                     cipher,
                     new ObjectMapper());
     private final DatasourceSubjectAccount account = new DatasourceSubjectAccount();

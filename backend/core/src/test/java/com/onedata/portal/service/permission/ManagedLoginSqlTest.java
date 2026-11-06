@@ -1,5 +1,6 @@
 package com.onedata.portal.service.permission;
 
+import com.onedata.portal.service.datasource.adapters.mysql.MysqlPermissionAdapter;
 import static org.junit.jupiter.api.Assertions.*;
 
 import com.onedata.portal.service.permission.PermissionModels.Identity;
@@ -11,7 +12,7 @@ class ManagedLoginSqlTest {
     @ParameterizedTest
     @ValueSource(strings = {"MYSQL", "DORIS", "POSTGRESQL"})
     void loginDdlQuotesIdentityAndPasswordWithoutClaimingAnExistingAccount(String engine) {
-        NativePermissionAdapter adapter = NativePermissionAdapter.forType(engine);
+        NativePermissionAdapter adapter = PermissionTestAdapters.permissions(engine);
         Identity identity = new Identity("odw'login", adapter.postgres() ? null : "%");
         String create = adapter.createLogin(identity, "Aa1!secret'value");
         assertTrue(create.contains("'Aa1!secret''value'"));
@@ -70,7 +71,7 @@ class ManagedLoginSqlTest {
                         null,
                         null,
                         null,
-                        null,
+                        PermissionTestAdapters.registry(),
                         cipher,
                         new com.fasterxml.jackson.databind.ObjectMapper());
         String password = "Aa1!private-secret";
@@ -88,7 +89,7 @@ class ManagedLoginSqlTest {
                 service,
                 "provisionManagedLogin",
                 jdbc.connection,
-                NativePermissionAdapter.forType("MYSQL"),
+                new MysqlPermissionAdapter(),
                 account,
                 steps,
                 99L);
@@ -115,7 +116,7 @@ class ManagedLoginSqlTest {
                         null,
                         null,
                         null,
-                        null,
+                        PermissionTestAdapters.registry(),
                         null,
                         new com.fasterxml.jackson.databind.ObjectMapper());
         java.util.Map<String, Object> row = new java.util.LinkedHashMap<>();
