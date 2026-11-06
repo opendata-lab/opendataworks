@@ -3,6 +3,7 @@ package com.onedata.portal.service.datasource.adapters.doris;
 import com.onedata.portal.config.DatasourceJdbcProperties;
 import com.onedata.portal.service.datasource.adapters.Descriptors;
 import com.onedata.portal.service.datasource.adapters.mysql.MysqlProtocolAdapter;
+import com.onedata.portal.service.permission.NativePermissionAdapter;
 import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
 
 import org.springframework.core.annotation.Order;
@@ -59,4 +60,9 @@ public class DorisAdapter extends MysqlProtocolAdapter {
      */
     @Override
     public void applyReadOnly(Connection connection) {}
+
+    @Override
+    public NativePermissionAdapter permissions() {
+        return new DorisPermissionAdapter();
+    }
 }

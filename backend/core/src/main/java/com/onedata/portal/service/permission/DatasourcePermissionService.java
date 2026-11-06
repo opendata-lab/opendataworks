@@ -1270,7 +1270,7 @@ public class DatasourcePermissionService {
     }
 
     private NativePermissionAdapter nativeAdapter(DorisCluster cluster) {
-        return NativePermissionAdapter.forType(cluster.getSourceType());
+        return adapters.require(cluster.getSourceType()).permissions();
     }
 
     private Map<String, Object> role(Long source, Long id) {

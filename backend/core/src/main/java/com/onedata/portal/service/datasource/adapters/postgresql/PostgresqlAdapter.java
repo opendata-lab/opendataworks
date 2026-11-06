@@ -10,6 +10,7 @@ import com.onedata.portal.service.datasource.spi.DatasourceAdapter;
 import com.onedata.portal.service.datasource.spi.DatasourceMetadataReader;
 import com.onedata.portal.service.datasource.spi.DatasourceReferenceDdlReader;
 import com.onedata.portal.service.datasource.spi.DatasourceSqlDialect;
+import com.onedata.portal.service.permission.NativePermissionAdapter;
 import com.onedata.portal.util.JdbcUrlParts;
 import com.onedata.portal.util.PostgresqlMetadataSql;
 import java.sql.Connection;
@@ -170,4 +171,8 @@ public class PostgresqlAdapter implements DatasourceAdapter, DatasourceReference
         return ddl.toString();
     }
 
+    @Override
+    public NativePermissionAdapter permissions() {
+        return new PostgresqlPermissionAdapter();
+    }
 }

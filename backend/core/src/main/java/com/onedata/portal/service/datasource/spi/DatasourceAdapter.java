@@ -3,6 +3,7 @@ package com.onedata.portal.service.datasource.spi;
 import com.onedata.portal.service.datasource.model.ConnectionConfig;
 import com.onedata.portal.service.datasource.model.DatasourceDescriptor;
 import com.onedata.portal.service.datasource.model.JdbcConnectionSpec;
+import com.onedata.portal.service.permission.NativePermissionAdapter;
 import java.sql.Connection;
 import java.sql.SQLException;
 
@@ -28,4 +29,9 @@ public interface DatasourceAdapter {
     DatasourceMetadataReader metadata();
 
     DatasourceSqlDialect dialect();
+
+    /** A new native permission adapter for this engine; engines without one do not support it. */
+    default NativePermissionAdapter permissions() {
+        throw new IllegalArgumentException("不支持该数据源权限管理");
+    }
 }
