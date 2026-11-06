@@ -100,11 +100,16 @@ public final class NativePermissionAdapter {
     }
 
     public String createRole(String name) {
-        return "CREATE ROLE " + role(name) + (postgres() ? " NOLOGIN" : "");
+        return "CREATE ROLE " + declaredRole(name) + (postgres() ? " NOLOGIN" : "");
     }
 
     public String dropRole(String name) {
-        return "DROP ROLE " + role(name);
+        return "DROP ROLE " + declaredRole(name);
+    }
+
+    /** Doris parses CREATE/DROP ROLE names as identifiers, but GRANT ... ROLE as string literals. */
+    private String declaredRole(String name) {
+        return doris() ? identifier(name) : role(name);
     }
 
     public String membership(String name, Identity user, boolean grant) {

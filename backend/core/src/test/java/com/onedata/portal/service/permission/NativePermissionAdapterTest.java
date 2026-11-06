@@ -12,6 +12,8 @@ class NativePermissionAdapterTest {
         for(String action:Arrays.asList("INSERT","UPDATE","DELETE","GRANT"))assertThrows(IllegalArgumentException.class,()->doris.nativeActions(action,"TABLE"));
         assertEquals("GRANT LOAD_PRIV ON `internal`.`sales`.`orders` TO ROLE 'odw_role'",doris.grantSql("odw_role",new Atom("TABLE","sales","orders","LOAD_PRIV"),true));
         assertEquals("GRANT 'odw_role' TO 'alice'@'%'",doris.membership("odw_role",new Identity("alice","%"),true));
+        assertEquals("CREATE ROLE `odw_role`",doris.createRole("odw_role"));
+        assertEquals("DROP ROLE `odw_role`",doris.dropRole("odw_role"));
     }
     @Test void postgresOwnershipIsNotMappedToGrantAlterOrDrop() {
         NativePermissionAdapter pg=NativePermissionAdapter.forType("POSTGRESQL");

@@ -27,7 +27,7 @@
 - **成员部分授权后的角色删除关联（2026-11-04 用户要求精简）**：既有成员失败统一ERROR并刷新页面，不再预写新旧角色并集。若原生GRANT成功而后续失败，新角色可能尚未计入平台memberCount，ERROR状态本身不会阻止该角色删除。当前需先核对授权记录并恢复成员，再删除角色；若后续要自动保护，需另行确定简洁规则。本轮按用户选择不增加保护机制。关联[当前设计](design/2026-11-03-backend-mcp-auth-consolidation-design.md#pr评审后契约修正2026-11-04)与[报告](reports/2026-11-04-backend-pr-review-fixes.md)。
 
 
-- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。此前Docker Hub超时已在后续评审修复中解决，正式Dockerfile构建通过；当前剩余为Doris真实环境验证。来源：[建号报告](reports/2026-11-04-managed-database-accounts-validation.md)、[评审修复报告](reports/2026-11-04-backend-pr-review-fixes.md)。
+- **托管数据库登录的部署验收（2026-11-04）**：MySQL8／PG16真实自动建号、重试、权限核验及移除已通过；Doris只有SQL契约，需真实环境补验创建／默认角色／撤销／删除。2026-11-05 用户在Doris上创建角色失败（`CREATE ROLE 'odw_…'` 报 STRING LITERAL，Expected IDENTIFIER）：Doris 2.1／3.0语法中 CREATE／DROP ROLE 要求标识符，GRANT … TO ROLE 与授予用户角色要求字符串，已改为反引号标识符（PR修复），仍需真实Doris回归建角色→授权→分配成员→删除。此前Docker Hub超时已在后续评审修复中解决，正式Dockerfile构建通过；当前剩余为Doris真实环境验证。来源：[建号报告](reports/2026-11-04-managed-database-accounts-validation.md)、[评审修复报告](reports/2026-11-04-backend-pr-review-fixes.md)。
 
 
 - **本轮后端收敛的外部完整链路覆盖（2026-11-03）**：真实 MySQL、Dolphin 3.2.2 与全部 23 个 HTTP MCP handler 已验证；本机当前没有可调用的独立 DataAgent 8900 服务或 Doris 实例，本轮未复跑真实模型最终消息和 PostgreSQL/Doris 权限、DDL 全流程。需在独立 DataAgent 完成 MCP URL/Schema 刷新后验证完整问答及消息持久化，在 PostgreSQL/Doris 环境复跑原生权限与 DDL；生产快照升级、生产代理拓扑也需部署环境验收。没有将这些路径计为本轮通过。来源：[实施报告](reports/2026-11-03-backend-consolidation-validation.md)，关联[主计划](plans/2026-11-03-backend-mcp-auth-consolidation-plan.md)。
