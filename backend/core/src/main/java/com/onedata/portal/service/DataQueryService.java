@@ -1650,7 +1650,7 @@ public class DataQueryService {
 
     private static final java.util.regex.Pattern DENIED_TABLE =
             java.util.regex.Pattern.compile(
-                    "(?i)(?:for table|for relation|permission denied for (?:table|relation|schema))\\s+'?\"?([\\w.$-]+)");
+                    "(?i)(?:for table|for relation|permission denied for (?:table|relation|schema))\\s+'?\"?(?:default_cluster:)?([\\w.$-]+)");
 
     /** MySQL 1142/1143/1044 and PostgreSQL 42501 mean the subject lacks a grant. */
     static boolean isPermissionDenied(SQLException e) {
@@ -1666,7 +1666,10 @@ public class DataQueryService {
         return false;
     }
 
-    /** Names the table but not the native account or host from the driver message. */
+    /**
+     * Names the table but not the native account or host from the driver message. Doris 2.0 reports
+     * {@code for table 'default_cluster:db.t'}; the cluster prefix is not part of the name.
+     */
     static String permissionMessage(SQLException e) {
         var matcher = DENIED_TABLE.matcher(String.valueOf(e.getMessage()));
         String table = matcher.find() ? "表 " + matcher.group(1) + " " : "所查询的对象";
