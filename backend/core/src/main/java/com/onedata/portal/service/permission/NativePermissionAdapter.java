@@ -548,7 +548,7 @@ public final class NativePermissionAdapter {
             }
             for (Map<String, Object> r : rows(c, sql)) {
                 r.remove("password");
-                result.add(withoutCluster(r.toString()));
+                result.add(doris() ? withoutCluster(r.toString()) : r.toString());
             }
         }
         return result;
