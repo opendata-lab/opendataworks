@@ -1641,7 +1641,35 @@ public class DataQueryService {
                 }
             }
         } catch (SQLException e) {
+            if (isPermissionDenied(e)) {
+                throw new IllegalArgumentException(permissionMessage(e), e);
+            }
             throw new IllegalArgumentException("主体数据库查询失败", e);
         }
+    }
+
+    private static final java.util.regex.Pattern DENIED_TABLE =
+            java.util.regex.Pattern.compile(
+                    "(?i)(?:for table|for relation|permission denied for (?:table|relation|schema))\\s+'?\"?([\\w.$-]+)");
+
+    /** MySQL 1142/1143/1044 and PostgreSQL 42501 mean the subject lacks a grant. */
+    static boolean isPermissionDenied(SQLException e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            if (t instanceof SQLException s
+                    && ("42501".equals(s.getSQLState())
+                            || s.getErrorCode() == 1142
+                            || s.getErrorCode() == 1143
+                            || s.getErrorCode() == 1044)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Names the table but not the native account or host from the driver message. */
+    static String permissionMessage(SQLException e) {
+        var matcher = DENIED_TABLE.matcher(String.valueOf(e.getMessage()));
+        String table = matcher.find() ? "表 " + matcher.group(1) + " " : "所查询的对象";
+        return "没有读取权限：" + table + "未授权给当前身份，请联系数据源管理员授权";
     }
 }
