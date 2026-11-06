@@ -69,6 +69,20 @@
 - 数据查询页对 PostgreSQL 实际执行 analyze/execute 的 HTTP 冒烟（含风险确认、取消、超时）和浏览器手工验证。
 - DataAgent 旧接口只接受 database 名，多源同名 schema（如 `public`）可能定位冲突；当前定稿仍保留该接口并拒绝歧义，本轮不扩展；后续需单独设计数据源 ID 契约，不能重新依赖已删除的范围配置消歧。
 
+### 统一 SQL 执行路径（网页查询、MCP、表数据预览）
+
+- **现状（2026-11-06 核实）**：同一 `DataQueryService` 里有两套执行代码，表预览（`DorisConnectionService.previewTableData`）是第三套。网页查询（`/v1/data-query/execute` → `executeQuery`/`executeStatement`）与 MCP `odw_query_readonly`（`readQuery`/`executeReadOnlyRows`）的差异：
+  - 权限拒绝：网页直接返回驱动原文，**会泄露托管登录名与内部 IP**（Doris 2.0.15 实测：`denied to user 'default_cluster:odw_m_9_…'@'172.30.80.1'`）；MCP 只返回「没有读取权限：表 …」。
+  - 读取结果：网页自写循环、无大小上限；MCP 用 `BoundedJdbcRows`（128 KiB 完整行预算）。
+  - 连接：网页读写连接、无流式读取；MCP 只读连接、流式读取（PostgreSQL fetchSize 100，MySQL/Doris 流式）。
+  - 服务账号代用户查询时的 `EXPLAIN` 交集检查：仅 MCP 执行（`checkReadAccess`）。
+  - 查询历史 `result_preview`：网页写 `{columns, rows}`（`QueryPreview`，正式前端从未读取，仅 demo mock 使用），MCP 写行数组；`execution_account` 一处为 `user@host`、一处为账号名。
+  - 网页 `splitStatements` 不识别反引号与反斜杠转义；`SqlQueryRequest.clusterId` 注释为可空，但 `DorisConnectionService.resolveCluster` 为空时直接报错。
+- **要做**：一个执行器供三处共用，负责以调用者自己的数据库登录打开连接、语句设置（只读时流式读取，仅限单个只读结果集）、服务账号的 `EXPLAIN` 交集检查、`BoundedJdbcRows` 读行、错误映射（权限拒绝统一为脱敏提示）、查询历史写入（统一行数组格式）。各自保留：网页的多语句、高危语句强确认与停止；MCP 的单语句只读与响应格式；对外 HTTP/MCP 契约不变；删除重复代码与 `QueryPreview`。
+- **已确认的决定（2026-11-06 用户）**：网页结果上限 1 MiB（MCP 保持 128 KiB）；MCP 非权限错误改为返回去掉登录名与主机的数据库错误原文，便于智能体自行修正 SQL；表数据预览在同一次改动中迁到该执行器。
+- **注意**：属于中等改动，先写设计与计划文档；保持现有不变量：SQL 原样执行、只靠驱动限制行数与超时、每次以调用者自己的托管登录执行并由数据库按权限中心下发的授权判定、服务账号代用户时保留 `EXPLAIN` 交集、MCP 只读。
+- **来源**：2026-11-06 用户提出统一网页与 MCP 的 SQL 执行；Gemini 4 Argon 设计稿与 Claude 核实记录见 `~/.agents/handoffs/2026-11-06-gemini-odw-unified-sql-execution-design/`（`result.md`、`notes.md`，仓库外）。
+
 ### 数据源适配器架构（剩余事项）
 
 - **现状**（2026-10-26）：阶段一至三、Java 阶段四、能力目录和额外连接字段已实施，已完成部分移至文末。见 [设计](design/2026-10-22-datasource-adapter-design.md)、[计划](plans/2026-10-22-datasource-adapter-plan.md)、[验证报告](reports/2026-10-25-datasource-adapter-verification.md)。
