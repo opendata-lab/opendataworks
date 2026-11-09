@@ -72,28 +72,6 @@ public class DatasourceSubjectAccessService {
         return String.valueOf(user.getId());
     }
 
-    public SysUser resolveUser(String identity) {
-        int separator = identity == null ? -1 : identity.indexOf(':');
-        if (separator <= 0 || separator == identity.length() - 1) {
-            throw new IllegalArgumentException("缺少有效的用户标识");
-        }
-        String source = identity.substring(0, separator);
-        String subject = identity.substring(separator + 1);
-        LambdaQueryWrapper<SysUser> query = new LambdaQueryWrapper<>();
-        // 来源前缀决定同一查询使用的标识字段；不按用户名猜测 OAuth 身份。
-        boolean local = "local".equals(source);
-        query.eq(local ? SysUser::getUsername : SysUser::getExternalId, subject);
-        if (local) {
-            query.eq(SysUser::getAuthSource, "local");
-        } else {
-            query.eq(SysUser::getAuthSource, source);
-        }
-        SysUser user = userMapper.selectOne(query);
-        requireEnabled(user);
-        if (user.isServiceAccount()) throw new IllegalArgumentException("代用户身份必须为普通用户");
-        return user;
-    }
-
     private void validateSubject(String type, String id) {
         if (!"USER".equals(type) && !"SERVICE".equals(type))
             throw new IllegalArgumentException("主体类型必须为USER或SERVICE");
@@ -180,8 +158,7 @@ public class DatasourceSubjectAccessService {
                 java.util.List.of(
                         sourceId,
                         p.getSubjectId(),
-                        p.getAccountType(),
-                        java.util.Objects.toString(p.getDelegatedUserKey(), "")),
+                        p.getAccountType()),
                 () -> loadVisibleColumns(sourceId));
     }
 
@@ -199,17 +176,7 @@ public class DatasourceSubjectAccessService {
                         identity.getUserId(),
                         null,
                         true)) {
-            Map<String, Set<String>> result = enumerate(reader, agent);
-            if (identity.getDelegatedUserKey() == null) return result;
-            SysUser user = resolveUser(identity.getDelegatedUserKey());
-            try (Connection person =
-                    open(sourceId, "USER", String.valueOf(user.getId()), null, true)) {
-                Map<String, Set<String>> visible = enumerate(reader, person);
-                result.keySet().retainAll(visible.keySet());
-                result.forEach(
-                        (restrictedKey, columns) -> columns.retainAll(visible.get(restrictedKey)));
-            }
-            return result;
+            return enumerate(reader, agent);
         } catch (SQLException | IllegalArgumentException e) {
             // 无映射/不可连接的源不出现在模型的目录中；实际查询仍返回明确拒绝原因。
             return new LinkedHashMap<>();
@@ -225,26 +192,6 @@ public class DatasourceSubjectAccessService {
         return namespace + "\u0000" + table;
     }
 
-    public record ReadAccessIdentity(String userId, String account) {}
-
-    public ReadAccessIdentity checkReadAccess(
-            Long sourceId, String database, String sql, int timeout) {
-        CurrentPrincipal p = PrincipalContextHolder.require();
-        if (p.getAccountType() != CurrentPrincipal.AccountType.SERVICE
-                || p.getDelegatedUserKey() == null) return null;
-        SysUser user = resolveUser(p.getDelegatedUserKey());
-        try (Connection c = open(sourceId, "USER", String.valueOf(user.getId()), database, true);
-                java.sql.Statement st = c.createStatement()) {
-            st.setQueryTimeout(timeout);
-            try (java.sql.ResultSet ignored = st.executeQuery("EXPLAIN " + sql)) {}
-            return new ReadAccessIdentity(
-                    String.valueOf(user.getId()),
-                    require(sourceId, "USER", String.valueOf(user.getId())).getUsername());
-        } catch (SQLException e) {
-            throw new IllegalArgumentException("用户数据库权限检查失败", e);
-        }
-    }
-
     public String fetchTableDdl(
             com.onedata.portal.dto.DatasourceResolutionDto ds,
             String database,
@@ -256,11 +203,6 @@ public class DatasourceSubjectAccessService {
                 instanceof
                 com.onedata.portal.service.datasource.spi.DatasourceReferenceDdlReader reader))
             throw new IllegalArgumentException("数据源不支持参考结构读取");
-        checkReadAccess(
-                ds.getClusterId(),
-                database,
-                adapter.dialect().defaultQuery(database, table, 1),
-                timeout);
         try (Connection c = openPrincipalConnection(ds.getClusterId(), database, true)) {
             return reader.referenceDdl(c, database, table, timeout);
         } catch (SQLException e) {
@@ -313,12 +255,6 @@ public class DatasourceSubjectAccessService {
                 response.getClusterId(),
                 com.onedata.auth.context.PrincipalContextHolder.require().getAccountType().name(),
                 com.onedata.auth.context.PrincipalContextHolder.require().getUserId());
-        CurrentPrincipal principal = PrincipalContextHolder.require();
-        if (principal.getAccountType() == CurrentPrincipal.AccountType.SERVICE
-                && principal.getDelegatedUserKey() != null) {
-            SysUser delegate = resolveUser(principal.getDelegatedUserKey());
-            require(clusterId, "USER", String.valueOf(delegate.getId()));
-        }
         return response;
     }
 

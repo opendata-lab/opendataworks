@@ -155,12 +155,12 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 升级前备份平台库和 DataAgent 会话库（DataAgent 侧为 Alembic `20261026_000029`），检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
 
 1. DBA 为每个数据源配置一次授权管理连接；平台在首次分配角色时自动创建人的账号和服务账号登录。V55起可用角色中心管理托管授权并核验成员原生权限；账号已有直接授权仍由DBA核对。Doris 使用 `Select_priv`，不依赖驱动只读事务。
-2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。门户内嵌问数时由门户上报当前用户（`/auth/me` 的 `agentUserId`），DataAgent 以该用户执行，不再要求单独登录 DataAgent；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
+2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。门户内嵌问数时由门户上报当前用户（`/auth/me` 的 `agentUserId`），DataAgent 用它关联会话，不再要求单独登录 DataAgent；通过 MCP 查数的范围只由智能体的服务账号决定；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
 3. 管理员在数据源页「权限配置 → 成员」选择人（平台 `sys_user.id`）或服务账号（同为平台 `sys_user.id`，V57后不接受外部agent_id），分配角色，平台自动创建并核验数据库登录；既有手工映射保留。读接口不回传密码，编辑留空保留密码。数据源原账号只用于采集和运维，不用于主体查询；人的目录、查询、写入和结构编辑均由其受限账号执行。
-4. MCP 内置于 Java 后端 `/api/mcp/`（也支持 `/api/mcp`），外部仅使用 `Authorization: Bearer <服务账号Token>`。全部 23 个工具可用；物理 DDL 使用 SERVICE 自身数据库映射，用户头只用于只读权限交集。按部署填写 `ODW_HTTP_ALLOWED_ORIGINS` 与受信代理 IP，MCP 默认只允许私网访问。
-5. 服务令牌和数据库密码不能注入模型 Bash 环境。DataAgent通过普通HTTP MCP配置的Authorization Bearer服务账号Token访问；MCP添加独立内部转发凭据，DataAgent后端可填写用户身份头。无用户头按服务账号自身权限，有用户头严格取两个数据库账号交集。删除旧数据范围配置及范围头。
+4. MCP 内置于 Java 后端 `/api/mcp/`（也支持 `/api/mcp`），外部仅使用 `Authorization: Bearer <服务账号Token>`。全部 23 个工具可用；目录、只读查询与物理 DDL 都使用 SERVICE 自身数据库映射；用户头只记审计。按部署填写 `ODW_HTTP_ALLOWED_ORIGINS` 与受信代理 IP，MCP 默认只允许私网访问。
+5. 服务令牌和数据库密码不能注入模型 Bash 环境。DataAgent通过普通HTTP MCP配置的Authorization Bearer服务账号Token访问；平台只按该服务账号自身权限查询；DataAgent后端填写的用户、智能体身份头只写入查询历史。删除旧数据范围配置及范围头。
 
-PostgreSQL 16 支持仅视图 SELECT 的 EXPLAIN；MySQL 8.0.45 即使有视图 SELECT、SHOW VIEW，EXPLAIN 仍可能要求底表权限，代人问数严格拒绝，不做回退。交集是对象级，DBA 不应给智能体授予依赖当前用户/RLS/SECURITY DEFINER 的敏感对象。Doris EXPLAIN 和视图权限需在内网验证。
+智能体查询以服务账号身份执行，DBA 不应给问数服务账号授予依赖当前用户/RLS/SECURITY DEFINER 的敏感对象，也不应授予写权限。
 
 同名 namespace 位于多个数据源时，现有按 database 定位的 agent API 会拒绝歧义；需使用不同 namespace 名称。详见[设计](../docs/design/2026-10-26-dataagent-datasource-identity-design.md)和[验证报告](../docs/reports/2026-10-26-dataagent-datasource-identity-verification.md)。
 
@@ -228,10 +228,10 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
    在 DataAgent「Widget 接入」中登记站点 `opendataworks-portal`，允许来源填门户的访问地址（如 `https://portal.example.com`）。
    门户 widget 以该站点身份上报当前用户：本地登录为 `local:<用户名>`，第三方登录为 `<来源>:<external_id>`；DataAgent 按此用户选择数据库账号。
    注意：这个用户标识来自浏览器，登录门户的用户可以篡改它冒充他人，按冒充对象的数据库账号权限查数。只在可信内网使用，并保证 DataAgent 的 8900 端口不对外暴露（风险已记入 `docs/TODO.md`）。
-3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页按用途分配最小权限角色（问数仅需只读），平台自动创建受限数据库账号。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8080/api/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
+3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页按用途分配最小权限角色（问数仅需只读），平台自动创建受限数据库账号。MCP 只按该 Token 授权：使用该智能体的所有人看到同一范围，需要不同范围时为每个智能体各建一个服务账号，并在 DataAgent 中为每个范围配置一条 MCP 记录。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8080/api/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
 4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
    在门户「配置管理 → 智能助手」把「智能问数助手」选为这个智能体；未选择时，门户问数页会提示先配置，不会自动挑选。
-5. 平台根据服务Token识别服务账号，不查询外部助手目录、不信任调用方agent_id。无用户头时按服务账号自身权限查询；代人问数时可提供`X-Agent-User-Id: local:alice`等原有标识，并要求该普通用户的源内映射，查询范围取双方交集。可信用户委托仍延期，未签名用户头不构成可信人身份认证。
+5. 平台根据服务Token识别服务账号，只按该服务账号自身的权限查询，不查询外部助手目录。调用方上报的`X-Agent-Id`、`X-Agent-User-Id`未经认证，只写入查询历史供审计，不收窄也不扩大权限；谁可以使用哪个智能体由DataAgent（智能体可见范围、Widget站点登记）控制。按人隔离留待OAuth访问令牌模式（见`docs/TODO.md`）。
 6. DataAgent侧应使用普通可编辑的HTTP MCP记录（configured），管理员更新MCP地址、Authorization头和提示词中的工具名。本机旧portal种子仍标记为plugin，需由DataAgent运维备份并转为configured后再编辑；不要通过平台访问外部助手目录或修改DataAgent源码来鉴别服务账号。
 
 服务账号Token由平台管理，可到期或单独撤销，账号停用后所有Token失效；两边跨机器时后端 8080 端口的 MCP 入口需通过内网对 DataAgent 主机可达，门户不代理此入口。

@@ -36,7 +36,7 @@
 
 
 - **平台用户与服务账号功能权限模型（RBAC）**（2026-11-03 用户决策登记）：在尚未设计平台级用户功能权限的前提下，23 个 MCP 工具（含工作流/任务查询、SQL 分析、表设计、草稿编辑及执行时重新预检的发布/上线）对已通过认证的服务账号保持可用，不再硬编码拦截为 403（数据源原生库/表/列权限与物理 DDL 映射账号校验仍严格生效）。后续需独立设计平台级功能权限体系（涵盖门户用户与服务账号对工作流、任务、建表、元数据修改等平台资源与 MCP 工具动作的细粒度授权与审计）。关联：[主收敛设计 §2.2](design/2026-11-03-backend-mcp-auth-consolidation-design.md#22-非目标与待办边界out-of-scope)、[历史验证报告](reports/2026-11-03-dataagent-widget-question-verification.md)、[设计11](design/2026-10-26-dataagent-datasource-identity-design.md#service-accounts)。
-- **PG／Doris服务Token真实回归**（2026-11-02验证范围）：本轮服务账号Bearer到MCP与原生库的完整验收使用MySQL；PG此前原生角色／问数已验收，但新SERVICE身份与Token链路未在本轮重新建立真实PG环境，Doris仍无实例。需在对应环境复跑服务独立查询、可选人交集、视图、撤销和只读拒绝；当前不将SQL契约及MySQL结果记作这些引擎的真实验收。[报告](reports/2026-11-02-service-accounts-verification.md)。
+- **PG／Doris服务Token真实回归**（2026-11-02验证范围）：本轮服务账号Bearer到MCP与原生库的完整验收使用MySQL；PG此前原生角色／问数已验收，但新SERVICE身份与Token链路未在本轮重新建立真实PG环境，Doris仍无实例。需在对应环境复跑服务账号查询、视图、撤销和只读拒绝（2026-11-09 起 MCP 不再做人交集）；当前不将SQL契约及MySQL结果记作这些引擎的真实验收。[报告](reports/2026-11-02-service-accounts-verification.md)。
 
 用户管理和源内多角色中心已实现并完成本机验收，结果移至「已完成」。当前模型以[设计第10节](design/2026-10-26-dataagent-datasource-identity-design.md#implementation-contract)为准，历史单角色／共享角色账号草案不适用。
 
@@ -50,7 +50,7 @@
 - **MySQL原生角色的转义库名限制（2026-11-01真实库发现）**：MySQL8.0.45／partial_revokes=OFF下，含`_`／`%`的转义库级ROLE授权存在官方Bug110582；不转义会越权，补当前表不能保证未来对象。生产预览明确拒绝该组合，保留表／视图级授权；不改全局安全配置、不静默展开为当前表。后续在修复版本及partial_revokes=ON隔离环境验证后扩展能力，见[设计10.5](design/2026-10-26-dataagent-datasource-identity-design.md#105-实测mysql库名通配符限制2026-11-01)。
 
 
-- **MySQL 仅视图权限**（来源：2026-10-27 真实 MySQL 8.0.45 HTTP 权限矩阵）：人的账号只有视图 SELECT / SHOW VIEW 而无底表 SELECT 时，EXPLAIN 拒绝，代人问数也拒绝；PostgreSQL 16 同场景通过。本轮严格使用 EXPLAIN，不增加回退或自动扩权。若业务必须只授权视图，需要另行评估方案；[设计](design/2026-10-26-dataagent-datasource-identity-design.md#3-代人问数的-explain-检查)、[报告](reports/2026-10-26-dataagent-datasource-identity-verification.md)。
+- **MySQL 仅视图权限**（来源：2026-10-27 真实 MySQL 8.0.45 HTTP 权限矩阵；2026-11-09 起 MCP 不再做代人 EXPLAIN，此项只剩人在门户内的查询）：人的账号只有视图 SELECT / SHOW VIEW 而无底表 SELECT 时，EXPLAIN 拒绝，代人问数也拒绝；PostgreSQL 16 同场景通过。本轮严格使用 EXPLAIN，不增加回退或自动扩权。若业务必须只授权视图，需要另行评估方案；[设计](design/2026-10-26-dataagent-datasource-identity-design.md#3-代人问数的-explain-检查)、[报告](reports/2026-10-26-dataagent-datasource-identity-verification.md)。
 - **Doris 内网验证**（来源：2026-10-26 决策，2026-10-27 环境延续）：本机没有 Doris；需验证 EXPLAIN 对无权对象拒绝、仅视图授权、Select_priv 只读隔离，以及 `information_schema.columns` 只返回账号有权限的字段（元数据交集依赖这一点）。保持 applyReadOnly 空实现，不增加 LIMIT 0 或引擎禁用分支。真实第三方 OAuth 提供方与浏览器完整操作也未接入本机验证；目前覆盖带来源前缀的 Java HTTP 用户解析和本地真实登录问数。见上述报告。
 
 ### PostgreSQL 数据源的后续支持
@@ -75,12 +75,12 @@
   - 权限拒绝：网页直接返回驱动原文，**会泄露托管登录名与内部 IP**（Doris 2.0.15 实测：`denied to user 'default_cluster:odw_m_9_…'@'172.30.80.1'`）；MCP 只返回「没有读取权限：表 …」。
   - 读取结果：网页自写循环、无大小上限；MCP 用 `BoundedJdbcRows`（128 KiB 完整行预算）。
   - 连接：网页读写连接、无流式读取；MCP 只读连接、流式读取（PostgreSQL fetchSize 100，MySQL/Doris 流式）。
-  - 服务账号代用户查询时的 `EXPLAIN` 交集检查：仅 MCP 执行（`checkReadAccess`）。
+  - （2026-11-09 已删除）服务账号代用户的 `EXPLAIN` 交集检查，见[服务令牌模式设计](design/2026-11-09-mcp-service-token-mode-design.md)。
   - 查询历史 `result_preview`：网页写 `{columns, rows}`（`QueryPreview`，正式前端从未读取，仅 demo mock 使用），MCP 写行数组；`execution_account` 一处为 `user@host`、一处为账号名。
   - 网页 `splitStatements` 不识别反引号与反斜杠转义；`SqlQueryRequest.clusterId` 注释为可空，但 `DorisConnectionService.resolveCluster` 为空时直接报错。
-- **要做**：一个执行器供三处共用，负责以调用者自己的数据库登录打开连接、语句设置（只读时流式读取，仅限单个只读结果集）、服务账号的 `EXPLAIN` 交集检查、`BoundedJdbcRows` 读行、错误映射（权限拒绝统一为脱敏提示）、查询历史写入（统一行数组格式）。各自保留：网页的多语句、高危语句强确认与停止；MCP 的单语句只读与响应格式；对外 HTTP/MCP 契约不变；删除重复代码与 `QueryPreview`。
+- **要做**：一个执行器供三处共用，负责以调用者自己的数据库登录打开连接、语句设置（只读时流式读取，仅限单个只读结果集）、`BoundedJdbcRows` 读行、错误映射（权限拒绝统一为脱敏提示）、查询历史写入（统一行数组格式）。各自保留：网页的多语句、高危语句强确认与停止；MCP 的单语句只读与响应格式；对外 HTTP/MCP 契约不变；删除重复代码与 `QueryPreview`。
 - **已确认的决定（2026-11-06 用户）**：网页结果上限 1 MiB（MCP 保持 128 KiB）；MCP 非权限错误改为返回去掉登录名与主机的数据库错误原文，便于智能体自行修正 SQL；表数据预览在同一次改动中迁到该执行器。
-- **注意**：属于中等改动，先写设计与计划文档；保持现有不变量：SQL 原样执行、只靠驱动限制行数与超时、每次以调用者自己的托管登录执行并由数据库按权限中心下发的授权判定、服务账号代用户时保留 `EXPLAIN` 交集、MCP 只读。
+- **注意**：属于中等改动，先写设计与计划文档；保持现有不变量：SQL 原样执行、只靠驱动限制行数与超时、每次以调用者自己的托管登录执行并由数据库按权限中心下发的授权判定、MCP 只读。
 - **来源**：2026-11-06 用户提出统一网页与 MCP 的 SQL 执行；Gemini 4 Argon 设计稿与 Claude 核实记录见 `~/.agents/handoffs/2026-11-06-gemini-odw-unified-sql-execution-design/`（`result.md`、`notes.md`，仓库外）。
 
 ### 数据源适配器架构（剩余事项）
@@ -116,13 +116,14 @@
 
 ## 门户内嵌问数的用户身份
 
-- **现有链路验证（2026-11-01）**：管理员及临时普通用户真实登录／目录／SQL通过；固定测试用户＋现有智能体的MCP查询、越权拒绝和真实模型对话通过，已完成订单12单／668.90与直接SQL一致。[本轮报告](reports/2026-11-01-current-identity-smoke.md)。不关闭下方可信身份待办；该项是新功能实施前的历史冒烟，新功能验收另见已完成项。
-
-- **延期范围与本轮选择（2026-11-01历史选择，2026-11-02更新）**：服务账号Bearer Token与明确服务模式本轮已实现，可信自然人委托仍未实施。以下保留历史冒烟依据：用户要求先把当前实现跑通，允许固定测试用户或智能体身份。现有Java和DataAgent实际要求用户＋智能体两种身份，因此本轮优先复用会话用户与智能体，必要时仅在本机测试请求显式指定现有测试用户，不增加智能体独立执行或全局写死用户分支。后续实现参考[Aily自定义MCP签名身份](https://aily.feishu.cn/hc/1u7kleqg_73ahi33a)：MCP连接凭证识别调用方，后端生成并签名的每次请求上下文识别用户，校验智能体绑定、issuer/audience/有效期；门户→DataAgent也必须先验证用户来源，独立登录通过统一登录或明确账号绑定接入，不能按同名用户自动认领。凭证不交给模型，权限每次实时计算；普通用户、管理员及同一智能体跨用户不串权的真实对话验收随该项补齐。[设计9.15](design/2026-10-26-dataagent-datasource-identity-design.md#identity-local-smoke)、[计划第5节](plans/2026-10-26-dataagent-datasource-identity-plan.md#identity-local-smoke-plan)。目前尚未实现，不能将本机固定身份问答通过作为可信身份验收。
-
-- **浏览器上报的用户可被冒充**（2026-10-27 拆分复核时决定先简单化）：门户 widget 把 `/auth/me` 的 `agentUserId` 作为 `X-DataAgent-User-Id` 发给 DataAgent，DataAgent 以此选择数据库账号。登录门户的用户可在浏览器中改成他人标识，按他人的数据库账号权限查数；能直连 DataAgent 8900 端口的人也能伪造。需要改为由门户可信地提供身份；2026-10-29 统一权限设计已选定短期签名身份断言与 DataAgent 验签，不再同时规划 nginx auth_request 后备路径。该修复已按用户2026-11-01要求延期，并非本轮本机功能验收前置；生产可信委托仍需实施[统一权限中心设计](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)的交付前提，尚未实施。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
+- **OAuth 访问令牌模式**（2026-11-09 用户决定）：MCP 现只按服务账号 Token 授权，使用同一智能体的所有人看到同一范围（[服务令牌模式设计](design/2026-11-09-mcp-service-token-mode-design.md)）。需要按人隔离时，调用方改为传入用户本人的 OAuth 访问令牌，平台验证后以该用户为主体按其角色授权；前提是平台与 DataAgent 接入统一登录。取代原「签名身份断言／可信自然人委托」方案（[原设计 9.9](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)）。
+- **DataAgent 会话归属仍依赖宿主上报的用户**（2026-10-27 发现，2026-11-09 更新）：门户 widget 上报的 `agentUserId` 可在浏览器中改写。改为服务令牌模式后它不再影响平台数据权限，但 DataAgent 仍用它区分会话与历史记录，改写后可能看到他人的问数会话。需要由门户可信地提供身份（例如签名断言或统一登录），属于 DataAgent 与门户的接入问题。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
 
 ## 已完成
+
+### MCP 只按服务账号 Token 授权（2026-11-09）
+
+- 平台不再按 `X-Agent-User-Id` 收窄 MCP 访问，上报的智能体与用户只写入查询历史；「浏览器上报的用户可冒充他人查数」对平台数据访问不再成立，原「延期范围与本轮选择」中的可信委托改由上方 OAuth 访问令牌模式承接。见[设计](design/2026-11-09-mcp-service-token-mode-design.md)、[计划](plans/2026-11-09-mcp-service-token-mode-plan.md)。
 
 ### 数据源列表数据权限列（2026-11-05）
 

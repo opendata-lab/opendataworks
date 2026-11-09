@@ -42,8 +42,7 @@ public final class PrincipalContextHolder {
 
     private static boolean same(CurrentPrincipal a, CurrentPrincipal b) {
         return a.getSubjectId().equals(b.getSubjectId())
-                && a.getAccountType() == b.getAccountType()
-                && Objects.equals(a.getDelegatedUserKey(), b.getDelegatedUserKey());
+                && a.getAccountType() == b.getAccountType();
     }
 
     public static <T> T runWith(CurrentPrincipal p, Supplier<T> action) {

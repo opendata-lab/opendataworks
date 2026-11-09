@@ -24,6 +24,8 @@
 
 ## 2. 各路径用哪个账号
 
+> 2026-11-09：MCP 访问已改为只按服务账号 Token 授权，本节中「代人问数」「按 `X-Agent-User-Id` 取交集」的规则不再适用于 MCP，见[服务令牌模式设计](2026-11-09-mcp-service-token-mode-design.md)。人在门户内的查询规则不变。
+
 | 场景 | 账号 |
 | --- | --- |
 | 人在 Data Studio 查询、写入、结构编辑、浏览目录 | 人映射的账号；能看到什么、能不能写，由该账号决定 |
@@ -34,6 +36,8 @@
 Data Studio 目录用人的账号实时列出可见库表，平台已同步的元数据只用来补充展示信息，不显示该账号看不到的对象。
 
 ## 3. 代人问数的 EXPLAIN 检查
+
+> 2026-11-09：MCP 访问已改为只按服务账号 Token 授权，本节中「代人问数」「按 `X-Agent-User-Id` 取交集」的规则不再适用于 MCP，见[服务令牌模式设计](2026-11-09-mcp-service-token-mode-design.md)。人在门户内的查询规则不变。
 
 EXPLAIN 不带 ANALYZE，用于数据库对象权限检查；保留数据库原生错误语义，不执行回退查询。
 
@@ -57,6 +61,8 @@ EXPLAIN 不带 ANALYZE，用于数据库对象权限检查；保留数据库原�
 - 额外开销是一次建连加一次 EXPLAIN。
 
 ## 4. 身份传递
+
+> 2026-11-09：MCP 访问已改为只按服务账号 Token 授权，本节中「代人问数」「按 `X-Agent-User-Id` 取交集」的规则不再适用于 MCP，见[服务令牌模式设计](2026-11-09-mcp-service-token-mode-design.md)。人在门户内的查询规则不变。
 
 - 支持本地登录和第三方 OAuth 两种方式。DataAgent 后续独立部署，保留自己的登录和会话。
 - 用户标识带来源前缀，沿用 DataAgent 现有的 `auth_user_id` 格式：本地登录为 `local:<用户名>`，第三方 OAuth 为 `<provider>:<sub>`。平台按前缀找 `sys_user`：`local:` 对应 `auth_source = local` 且 `username` 相同的用户；OAuth 对应 `external_id` 相同的 OAuth 用户。找不到就拒绝。
@@ -219,6 +225,8 @@ PostgreSQL 的现有所有权只作为独立来源回读，页面注明“所有
 平台内移除成员／停用用户后新请求不再选到角色账号。已运行SQL和已返回结果不保证收回。角色账号改权后，新连接服从原生权限；现有连接缓存与撤权生效行为逐引擎验收。删除自定义角色须先移除／明确重分配成员、处理平台托管的原生授权，再删除平台定义，不删除数据库账号；保留记录。内置角色不允许删除。
 
 ### 9.8 查询、数据开发与智能问数
+
+> 2026-11-09：MCP 访问已改为只按服务账号 Token 授权，本节中「代人问数」「按 `X-Agent-User-Id` 取交集」的规则不再适用于 MCP，见[服务令牌模式设计](2026-11-09-mcp-service-token-mode-design.md)。人在门户内的查询规则不变。
 
 | 入口 | 规则 |
 | --- | --- |
@@ -420,6 +428,8 @@ V57为已有AGENT绑定按旧ID去重创建SERVICE账号（确定性svc_legacy_�
 导航及页面名改账号管理，列表有类型筛选和类型列；新建先选类型，普通用户沿用登录字段，SERVICE仅名称／用途／状态。创建SERVICE成功后可进入管理Token。服务账号没有重置密码和管理员选项，详情可管理Token（列表、新建、一次展示／复制、过期和撤销反馈）。源内“授权智能体”改“授权服务账号”，选择启用平台SERVICE，复用多角色／绑定数据库账号，不请求nl2sqlApi.listAgents；普通授权只选择USER。
 
 ### 11.3 Token执行链路
+
+> 2026-11-09：MCP 访问已改为只按服务账号 Token 授权，本节中「代人问数」「按 `X-Agent-User-Id` 取交集」的规则不再适用于 MCP，见[服务令牌模式设计](2026-11-09-mcp-service-token-mode-design.md)。人在门户内的查询规则不变。
 
 外部应用→MCP Authorization: Bearer <服务Token>→Java agent API。MCP不查询DataAgent；前门要求格式完整的Bearer凭据，不再比较共享前门Token；每次MCP HTTP请求经Java只读身份核验端点验证有效Token，避免仅初始化鉴权或返回空搜索掩盖失效。MCP转发原Bearer和可选X-Agent-User-Id；忽略外部X-Agent-Id／X-Agent-Operator。MCP→Java仍用独立内部服务Token与私网门禁识别受信转发服务；它只认证传输来源，不能替代服务账号凭据。
 

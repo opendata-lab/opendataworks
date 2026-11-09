@@ -81,6 +81,7 @@ class HttpAuthenticationFilterTest {
         var req = request("/mcp/");
         req.addHeader("Authorization", "Bearer machine");
         req.addHeader("X-Agent-User-Id", "local:admin");
+        req.addHeader("X-Agent-Id", "agent_sales");
         var res = new MockHttpServletResponse();
         filter.doFilter(
                 req,
@@ -90,8 +91,12 @@ class HttpAuthenticationFilterTest {
                             CurrentPrincipal.AccountType.SERVICE,
                             PrincipalContextHolder.require().getAccountType());
                     assertFalse(PrincipalContextHolder.require().isAdmin());
+                    // The reported user cannot raise the token's access; it is audit data only.
+                    assertEquals("7", PrincipalContextHolder.require().getUserId());
                     assertEquals(
-                            "local:admin", PrincipalContextHolder.require().getDelegatedUserKey());
+                            "local:admin", PrincipalContextHolder.require().getReportedUserId());
+                    assertEquals(
+                            "agent_sales", PrincipalContextHolder.require().getReportedAgentId());
                     assertSame(
                             PrincipalContextHolder.require(),
                             req.getAttribute(HttpAuthenticationFilter.PRINCIPAL_ATTRIBUTE));

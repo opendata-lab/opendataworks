@@ -45,6 +45,12 @@ public class DataQueryHistory {
 
     private String executionAccount;
 
+    /** X-Agent-Id reported by a service-token caller; unverified, audit only. */
+    private String reportedAgentId;
+
+    /** X-Agent-User-Id reported by a service-token caller; unverified, audit only. */
+    private String reportedUserId;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime executedAt;
 }

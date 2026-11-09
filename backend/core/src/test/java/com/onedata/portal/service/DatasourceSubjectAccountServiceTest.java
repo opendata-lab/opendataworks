@@ -74,36 +74,6 @@ class DatasourceSubjectAccessServiceTest {
     }
 
     @Test
-    void localAndOauthUsePrefixSelectedIdentifierField() {
-        for (String identity : new String[] {"local:alice", "oidc:subject:123"}) {
-            SysUser user = user();
-            when(users.selectOne(any())).thenReturn(user);
-            assertEquals(17L, service.resolveUser(identity).getId());
-        }
-        ArgumentCaptor<LambdaQueryWrapper<SysUser>> captor =
-                ArgumentCaptor.forClass(LambdaQueryWrapper.class);
-        verify(users, org.mockito.Mockito.times(2)).selectOne(captor.capture());
-        String local = captor.getAllValues().get(0).getSqlSegment();
-        String oauth = captor.getAllValues().get(1).getSqlSegment();
-        assertTrue(local.contains("username"));
-        assertTrue(local.contains("auth_source"));
-        assertTrue(oauth.contains("external_id"));
-        assertTrue(
-                captor.getAllValues().get(1).getParamNameValuePairs().containsValue("subject:123"));
-    }
-
-    @Test
-    void rejectsInvalidUnknownAndDisabledUsers() {
-        assertThrows(IllegalArgumentException.class, () -> service.resolveUser("alice"));
-        assertThrows(IllegalArgumentException.class, () -> service.resolveUser("local:"));
-        assertThrows(IllegalArgumentException.class, () -> service.resolveUser("oidc:unknown"));
-        SysUser disabled = user();
-        disabled.setEnabled(false);
-        when(users.selectOne(any())).thenReturn(disabled);
-        assertThrows(IllegalArgumentException.class, () -> service.resolveUser("local:alice"));
-    }
-
-    @Test
     void studioUsesPlatformIdAndRejectsAnonymous() {
         when(users.selectById("17")).thenReturn(user());
         PrincipalContextHolder.setContext(new CurrentPrincipal("17", "alice", "admin", "local"));
@@ -189,36 +159,25 @@ class DatasourceSubjectAccessServiceTest {
     }
 
     @Test
-    void resolvingDatasourceRejectsMissingDisabledOrUnmappedDelegates() {
+    void reportedUserNeverAffectsServiceTokenAccess() {
         DorisCluster source = new DorisCluster();
         source.setId(1L);
         source.setSourceType("MYSQL");
         when(clusters.selectById(1L)).thenReturn(source);
-        when(accounts.selectOne(any())).thenReturn(new DatasourceSubjectAccount());
-        PrincipalContextHolder.setContext(CurrentPrincipal.service(19L, "local:alice"));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.resolveClusterDatasource(1L, "demo", null, "test"));
-        SysUser delegate = user();
-        delegate.setEnabled(false);
-        when(users.selectOne(any())).thenReturn(delegate);
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.resolveClusterDatasource(1L, "demo", null, "test"));
-        delegate.setEnabled(true);
-        when(users.selectById(17L)).thenReturn(delegate);
         when(accounts.selectOne(any()))
                 .thenAnswer(
                         call -> {
                             LambdaQueryWrapper<?> query = call.getArgument(0);
                             query.getSqlSegment();
-                            return query.getParamNameValuePairs().containsValue("17")
-                                    ? null
-                                    : new DatasourceSubjectAccount();
+                            return query.getParamNameValuePairs().containsValue("19")
+                                    ? new DatasourceSubjectAccount()
+                                    : null;
                         });
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> service.resolveClusterDatasource(1L, "demo", null, "test"));
+        for (String reported : new String[] {null, "local:alice", "local:admin", "oa:unknown"}) {
+            PrincipalContextHolder.setContext(CurrentPrincipal.service(19L, "agent_x", reported));
+            assertEquals(1L, service.resolveClusterDatasource(1L, "demo", null, "test").getClusterId());
+        }
+        verify(users, org.mockito.Mockito.never()).selectOne(any());
         verifyNoInteractions(factory);
     }
 }
