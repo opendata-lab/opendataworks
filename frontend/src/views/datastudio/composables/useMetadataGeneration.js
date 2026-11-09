@@ -44,25 +44,12 @@ const TABLE_ATTRIBUTE_META = [
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
-// 建话题必须带 agent_id：省略时后端回落到 DEFAULT_AGENT_ID，若其可见范围不含匿名调用，
-// 会返回 400 "agent not found"。使用哪个助手由「管理中心 / 智能助手」显式配置，
-// 不在代码里隐式挑选；这里只校验该助手当前确实可用（助手目录与建话题共用同一套可见性过滤）。
+// 建话题必须带 agent_id：使用「管理中心 / 智能助手」显式配置的 metadataAgentId。
 const resolveAgentId = async () => {
-  const [settings, agents] = await Promise.all([
-    settingsApi.getAgentSettings().catch(() => ({})),
-    nl2sqlApi.listAgents().catch(() => [])
-  ])
-
+  const settings = await settingsApi.getAgentSettings().catch(() => ({}))
   const configured = String(settings?.metadataAgentId || '').trim()
   if (!configured) {
     throw new Error('尚未配置智能元数据使用的助手，请前往「管理中心 / 智能助手」选择')
-  }
-
-  const available = (Array.isArray(agents) ? agents : [])
-    .map((item) => String(item?.agent_id || '').trim())
-    .filter(Boolean)
-  if (available.length && !available.includes(configured)) {
-    throw new Error(`配置的助手 ${configured} 当前不可用，请前往「管理中心 / 智能助手」重新选择`)
   }
   return configured
 }

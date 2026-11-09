@@ -121,22 +121,13 @@ describe('useMetadataGeneration agent 解析', () => {
     expect(elMessageMock.error).toHaveBeenCalledWith(expect.stringContaining('尚未配置'))
   })
 
-  it('配置的助手已不在可用清单时提示重新选择', async () => {
-    settingsApiMock.getAgentSettings.mockResolvedValue({ metadataAgentId: 'agent_removed' })
+  it('无需请求助手清单，直接使用已配置的助手', async () => {
+    settingsApiMock.getAgentSettings.mockResolvedValue({ metadataAgentId: 'agent_biz' })
     const { generateMetadata } = useMetadataGeneration(buildDeps())
 
     await generateMetadata('t1')
 
-    expect(nl2sqlApiMock.createTopic).not.toHaveBeenCalled()
-    expect(elMessageMock.error).toHaveBeenCalledWith(expect.stringContaining('agent_removed'))
-  })
-
-  it('助手目录暂时取不到时不阻断，仍用已配置的助手', async () => {
-    nl2sqlApiMock.listAgents.mockRejectedValue(new Error('boom'))
-    const { generateMetadata } = useMetadataGeneration(buildDeps())
-
-    await generateMetadata('t1')
-
+    expect(nl2sqlApiMock.listAgents).not.toHaveBeenCalled()
     expect(nl2sqlApiMock.createTopic).toHaveBeenCalledWith(expect.objectContaining({ agent_id: 'agent_biz' }))
   })
 
