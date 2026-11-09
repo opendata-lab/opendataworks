@@ -71,11 +71,13 @@ public final class HttpAuthenticationFilter extends OncePerRequestFilter {
             String bearer = bearer(req.getHeader("Authorization"));
             try {
                 String id = tokens.authenticate(bearer);
-                String delegate = req.getHeader("X-Agent-User-Id");
+                // The token alone decides access. Reported agent/user are unverified and only
+                // recorded in the query audit.
                 principal =
                         CurrentPrincipal.service(
                                 Long.valueOf(id),
-                                delegate == null || delegate.isBlank() ? null : delegate.trim());
+                                reported(req.getHeader("X-Agent-Id"), 191),
+                                reported(req.getHeader("X-Agent-User-Id"), 255));
             } catch (IllegalArgumentException e) {
                 reject(res, 401, "服务账号Token无效、已过期或账号已停用");
                 return;
@@ -118,6 +120,12 @@ public final class HttpAuthenticationFilter extends OncePerRequestFilter {
                                     ? ""
                                     : ":" + request.getServerPort());
         return origin.equals(request.getScheme() + "://" + host);
+    }
+
+    private static String reported(String header, int max) {
+        if (header == null || header.isBlank()) return null;
+        String value = header.trim();
+        return value.length() > max ? value.substring(0, max) : value;
     }
 
     private String bearer(String header) {

@@ -2,7 +2,10 @@ package com.onedata.auth.context;
 
 import lombok.Getter;
 
-/** Immutable authenticated subject. Delegated identity only narrows read access. */
+/**
+ * Immutable authenticated subject. A service-token caller may report which agent and which user it
+ * acts for; those values are stored for audit only and never take part in authorization.
+ */
 @Getter
 public final class CurrentPrincipal {
     public static final String ROLE_ADMIN = "admin",
@@ -23,7 +26,7 @@ public final class CurrentPrincipal {
     private final Long subjectId;
     private final AccountType accountType;
     private final AuthenticationMethod authenticationMethod;
-    private final String username, role, authSource, delegatedUserKey;
+    private final String username, role, authSource, reportedAgentId, reportedUserId;
     private final Integer sessionVersion;
 
     public CurrentPrincipal(String id, String username, String role, String source) {
@@ -40,6 +43,7 @@ public final class CurrentPrincipal {
                 role,
                 source,
                 version,
+                null,
                 null);
     }
 
@@ -51,7 +55,8 @@ public final class CurrentPrincipal {
             String role,
             String source,
             Integer version,
-            String delegate) {
+            String reportedAgentId,
+            String reportedUserId) {
         this.subjectId = java.util.Objects.requireNonNull(id);
         this.accountType = java.util.Objects.requireNonNull(type);
         this.authenticationMethod = java.util.Objects.requireNonNull(method);
@@ -59,10 +64,16 @@ public final class CurrentPrincipal {
         this.role = type == AccountType.USER ? role : null;
         this.authSource = source;
         this.sessionVersion = version;
-        this.delegatedUserKey = delegate;
+        this.reportedAgentId = reportedAgentId;
+        this.reportedUserId = reportedUserId;
     }
 
-    public static CurrentPrincipal service(Long id, String delegate) {
+    public static CurrentPrincipal service(Long id) {
+        return service(id, null, null);
+    }
+
+    /** The reported agent and user are unverified caller claims kept for the query audit. */
+    public static CurrentPrincipal service(Long id, String reportedAgentId, String reportedUserId) {
         return new CurrentPrincipal(
                 id,
                 AccountType.SERVICE,
@@ -71,7 +82,8 @@ public final class CurrentPrincipal {
                 null,
                 "service",
                 null,
-                delegate);
+                reportedAgentId,
+                reportedUserId);
     }
 
     public String getUserId() {

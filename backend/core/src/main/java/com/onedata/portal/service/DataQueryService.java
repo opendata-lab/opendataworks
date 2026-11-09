@@ -1375,11 +1375,9 @@ public class DataQueryService {
         history.setClusterName(datasource.getClusterName());
         history.setDatabaseName(database);
         history.setSqlText(sql);
-        history.setExecutedBy(
-                execution.checkIdentity() == null ? null : execution.checkIdentity().userId());
         history.setAgentId(PrincipalContextHolder.getCurrentUserId());
-        history.setCheckAccount(
-                execution.checkIdentity() == null ? null : execution.checkIdentity().account());
+        history.setReportedAgentId(PrincipalContextHolder.require().getReportedAgentId());
+        history.setReportedUserId(PrincipalContextHolder.require().getReportedUserId());
         history.setExecutionAccount(
                 datasourceAccess
                         .require(
@@ -1610,14 +1608,11 @@ public class DataQueryService {
             List<Map<String, Object>> rows,
             boolean hasMore,
             boolean truncated,
-            int durationMs,
-            DatasourceSubjectAccessService.ReadAccessIdentity checkIdentity) {}
+            int durationMs) {}
 
     private ReadExecutionResult executeReadOnlyRows(
             DatasourceResolutionDto ds, String sql, int limit, int timeout) {
         long start = System.currentTimeMillis();
-        var checkIdentity =
-                datasourceAccess.checkReadAccess(ds.getClusterId(), ds.getDatabase(), sql, timeout);
         try (Connection c =
                 datasourceAccess.openPrincipalConnection(
                         ds.getClusterId(), ds.getDatabase(), true)) {
@@ -1636,8 +1631,7 @@ public class DataQueryService {
                             read.rows(),
                             read.hasMore(),
                             read.truncated(),
-                            (int) (System.currentTimeMillis() - start),
-                            checkIdentity);
+                            (int) (System.currentTimeMillis() - start));
                 }
             }
         } catch (SQLException e) {

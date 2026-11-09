@@ -2,10 +2,14 @@ package com.onedata.portal.service;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -133,7 +137,7 @@ class DataQueryServiceTest {
     }
 
     @Test
-    void delegatedReadAuditRecordsResolvedUserAndExplainAccountWithServiceExecutor()
+    void serviceTokenReadRunsAsServiceAccountAndAuditsReportedCaller()
             throws Exception {
         var access = mock(DatasourceSubjectAccessService.class);
         var histories = mock(DataQueryHistoryMapper.class);
@@ -143,10 +147,6 @@ class DataQueryServiceTest {
         ds.setEngine("mysql");
         ds.setSourceType("MYSQL");
         when(access.resolveDatasource("demo", null)).thenReturn(ds);
-        when(access.checkReadAccess(1L, "demo", "SELECT 1", 30))
-                .thenReturn(
-                        new DatasourceSubjectAccessService.ReadAccessIdentity(
-                                "17", "alice_native"));
         var serviceAccount = new com.onedata.portal.entity.DatasourceSubjectAccount();
         serviceAccount.setUsername("service_native");
         when(access.require(1L, "SERVICE", "19")).thenReturn(serviceAccount);
@@ -168,15 +168,22 @@ class DataQueryServiceTest {
         var request = new com.onedata.portal.dto.ReadOnlyQueryRequest();
         request.setDatabase("demo");
         request.setSql("SELECT 1");
-        PrincipalContextHolder.setContext(CurrentPrincipal.service(19L, "local:alice"));
+        PrincipalContextHolder.setContext(
+                CurrentPrincipal.service(19L, "agent_sales", "local:alice"));
         try {
             queries.readQuery(request);
             var captured = ArgumentCaptor.forClass(DataQueryHistory.class);
             verify(histories).insert(captured.capture());
-            assertEquals("17", captured.getValue().getExecutedBy());
-            assertEquals("alice_native", captured.getValue().getCheckAccount());
+            assertNull(captured.getValue().getExecutedBy());
+            assertNull(captured.getValue().getCheckAccount());
             assertEquals("19", captured.getValue().getAgentId());
             assertEquals("service_native", captured.getValue().getExecutionAccount());
+            assertEquals("agent_sales", captured.getValue().getReportedAgentId());
+            assertEquals("local:alice", captured.getValue().getReportedUserId());
+            // Only the service account's own connection is opened: no per-person check.
+            verify(access).openPrincipalConnection(1L, "demo", true);
+            verify(access, org.mockito.Mockito.never())
+                    .open(any(), eq("USER"), any(), any(), anyBoolean());
         } finally {
             PrincipalContextHolder.clear();
         }

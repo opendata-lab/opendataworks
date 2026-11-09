@@ -18,7 +18,7 @@
 │ (backend/)          │  │ opendataagent 仓库      │
 │ 元数据/调度/血缘 API │  └───────┬────────────────┘
 └────────▲───────────┘          │ HTTP MCP + 服务账号Bearer Token
-         │ Java agent API       │ 可选X-Agent-User-Id；服务身份由Token解析
+         │ Java agent API       │ 权限只看服务账号Token；上报头仅审计
 ┌────────┴───────────┐          │
 │ ODW MCP Server      │◄─────────┘
 │ odw-mcp-server/     │
@@ -44,7 +44,7 @@
 3. **调度下发**：Portal 通过 OpenAPI 直接创建/更新工作流、节点、调度计划 → DolphinScheduler 执行。
 4. **执行反馈**：Portal 通过 OpenAPI 查询实例状态/日志 → 写入 `task_execution_log`，并刷新血缘/统计。
 5. **巡检治理**：`inspection_rule` 定义命名/Owner/统计规则 → 定期生成 `inspection_record` + `inspection_issue` → 前端提示整改。
-6. **智能问数**：主前端加载 `DataAgentWidget`，问答请求经门户 nginx 转发到 DataAgent；DataAgent 调用 `odw-mcp-server` 的 `odw_*` 工具，平台按人和智能体映射的数据库账号执行并取交集。
+6. **智能问数**：主前端加载 `DataAgentWidget`，问答请求经门户 nginx 转发到 DataAgent；DataAgent 调用 `odw-mcp-server` 的 `odw_*` 工具，平台只按该智能体服务账号映射的数据库账号授权和执行，调用方上报的用户只记审计。
 
 ## 运行态观察点
 

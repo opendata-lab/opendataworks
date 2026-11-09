@@ -42,7 +42,7 @@ class McpContractTest {
                         workflows,
                         publish,
                         mock(WorkflowScheduleService.class));
-        PrincipalContextHolder.setContext(CurrentPrincipal.service(7L, "local:admin"));
+        PrincipalContextHolder.setContext(CurrentPrincipal.service(7L, "agent_x", "local:admin"));
     }
 
     @AfterEach
