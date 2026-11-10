@@ -6,6 +6,26 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-10
+
+### Added
+- 数据源原生权限中心：按数据源管理角色，表格式授权矩阵（库／Schema、表、视图），预览 SQL 后生效；成员分配角色时才在该数据源创建托管登录；支持 MySQL 8、PostgreSQL、Doris 2.0。Schema 授权逐行平铺，可逐个修改。
+- 平台账号与服务账号：账号管理区分普通用户与服务账号，服务账号可签发／撤销 Token；一个账号跨全部数据源的访问可集中查看；成员实际权限可回读诊断。
+- 数据源列表新增「数据权限」列（成员数、角色数、失败数），点击直达权限配置。
+- 内置 MCP（`/api/mcp/`）：后端合并为 core / api / mcp-server / app 四模块，MCP 不再单独部署。
+- Data Studio 改为编辑器式工作区；工作流新鲜度检查纳入读取表。
+- 「管理中心 / 智能助手」直接填写助手 ID，不再请求 DataAgent 助手目录。
+
+### Changed
+- **行为变更**：MCP 只按服务账号 Token 授权。`X-Agent-User-Id`／`X-Agent-Id` 只作为未认证的上报值写入查询历史（`reported_agent_id`／`reported_user_id`，迁移 V59），不再按人收窄范围；依赖按人收窄的部署升级后看到的是服务账号的完整范围。
+- **部署变更**：DataAgent 源码与运行时迁往独立仓库 [opendataagent](https://github.com/opendata-lab/opendataagent)；本仓库发布包移除 Redis 与 Opik。
+- 统一认证：门户与 MCP 共用一套主体与认证过滤。
+
+### Fixed
+- 数据库拒绝读取时提示「无权限」并给出表名（含 Doris 2.0 `default_cluster:` 前缀）。
+- Doris 2.0 建／删角色使用标识符引用，授权与身份回读正确处理集群前缀和空格分隔权限。
+- 查询结果的日期时间按 `java.time` 返回，不再受 JVM 时区偏移影响。
+
 ## [1.5.0] - 2026-09-08
 
 ### Added

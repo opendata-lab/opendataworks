@@ -41,7 +41,7 @@ services:
 
   # 后端服务
   backend:
-    image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.5.0}
+    image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:1.6.0}
     container_name: opendataworks-backend
     logging: *default-logging
     restart: always
@@ -74,7 +74,7 @@ services:
 
   # 前端服务
   frontend:
-    image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:1.5.0}
+    image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:1.6.0}
     container_name: opendataworks-frontend
     logging: *default-logging
     restart: always
