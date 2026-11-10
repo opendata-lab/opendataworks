@@ -761,6 +761,26 @@ describe('DatasourcePermissionCenter 组件测试', () => {
     expect(wrapper.find('[data-testid="preview-sql"]').text()).toContain('GRANT SELECT')
   })
 
+  it('Schema 授权平铺每个 Schema 一行，可逐个修改，不用下拉切换', async () => {
+    permissionsApiMock.previewRoleGrants.mockResolvedValueOnce({ previewId: 'P', sql: [], warnings: [] })
+    const wrapper = await mountCenter()
+    await wrapper.find('[data-testid="tab-roles"]').trigger('click')
+    await wrapper.find('[data-testid="resource-type-SCHEMA"]').trigger('click')
+    expect(wrapper.find('[aria-label="选择数据库"]').exists()).toBe(false)
+    const publicQuery = wrapper.find('[data-testid="grant-check-public-QUERY"]')
+    const crmQuery = wrapper.find('[data-testid="grant-check-crm-QUERY"]')
+    expect(publicQuery.element.checked).toBe(true)
+    expect(crmQuery.element.checked).toBe(false)
+    await crmQuery.setValue(true)
+    await publicQuery.setValue(false)
+    await wrapper.find('[data-testid="preview-grants-btn"]').trigger('click')
+    await flushPromises()
+    const { grants } = permissionsApiMock.previewRoleGrants.mock.calls[0][2]
+    expect(grants.filter((g) => g.resourceType === 'SCHEMA')).toEqual([
+      { resourceType: 'SCHEMA', database: 'crm', tableName: '', actions: ['QUERY'] },
+    ])
+  })
+
   it('关闭并重开同一数据源时，迟到的资源、记录及预览不能覆盖新页面', async () => {
     const wrapper = await mountCenter()
     let resolveResources, resolveOperations, resolvePreview
