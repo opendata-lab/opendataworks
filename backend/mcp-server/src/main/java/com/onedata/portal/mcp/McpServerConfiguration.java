@@ -36,7 +36,7 @@ public class McpServerConfiguration {
                                                 Map.of("principal", principal));
                                     })
                             .build();
-            var server = McpServer.sync(transport).serverInfo("opendataworks", "1.5.0");
+            var server = McpServer.sync(transport).serverInfo("opendataworks", "1.6.0");
             for (var definition : schemas.tools()) {
                 String name = definition.path("name").asText();
                 boolean read = definition.path("readOnly").asBoolean();

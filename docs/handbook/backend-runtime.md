@@ -15,7 +15,7 @@ export SPRING_DATASOURCE_PASSWORD=opendataworks123
 # 权限管理凭据使用持久的 32 字节 Base64 密钥；重启时继续使用同一个值
 export ODW_CREDENTIAL_KEY='<持久保存的32字节随机密钥Base64>'
 export ODW_HTTP_ALLOWED_ORIGINS='http://localhost:3000,http://127.0.0.1:3000'
-java -jar backend/app/target/opendataworks-app-1.5.0.jar --server.port=8082
+java -jar backend/app/target/opendataworks-app-1.6.0.jar --server.port=8082
 ```
 
 另开终端，在仓库根目录启动前端：
