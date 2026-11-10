@@ -49,7 +49,7 @@ const resolveAgentId = async () => {
   const settings = await settingsApi.getAgentSettings().catch(() => ({}))
   const configured = String(settings?.metadataAgentId || '').trim()
   if (!configured) {
-    throw new Error('尚未配置智能元数据使用的助手，请前往「管理中心 / 智能助手」选择')
+    throw new Error('尚未配置智能元数据使用的助手，请前往「管理中心 / 智能助手」填写助手 ID')
   }
   return configured
 }

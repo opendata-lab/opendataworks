@@ -118,6 +118,8 @@
 
 - **OAuth 访问令牌模式**（2026-11-09 用户决定）：MCP 现只按服务账号 Token 授权，使用同一智能体的所有人看到同一范围（[服务令牌模式设计](design/2026-11-09-mcp-service-token-mode-design.md)）。需要按人隔离时，调用方改为传入用户本人的 OAuth 访问令牌，平台验证后以该用户为主体按其角色授权；前提是平台与 DataAgent 接入统一登录。取代原「签名身份断言／可信自然人委托」方案（[原设计 9.9](design/2026-10-26-dataagent-datasource-identity-design.md#trusted-identity)）。
 - **DataAgent 会话归属仍依赖宿主上报的用户**（2026-10-27 发现，2026-11-09 更新）：门户 widget 上报的 `agentUserId` 可在浏览器中改写。改为服务令牌模式后它不再影响平台数据权限，但 DataAgent 仍用它区分会话与历史记录，改写后可能看到他人的问数会话。需要由门户可信地提供身份（例如签名断言或统一登录），属于 DataAgent 与门户的接入问题。见[拆分设计](design/2026-09-14-dataagent-opendataworks-decoupling-design.md)第 5 节。
+- **用户看不到智能体代其执行的查询历史**（2026-11-10 评审 PR #511 发现）：服务令牌模式下 MCP 查询历史的 `executed_by` 为空，只写 `reported_user_id`（未认证）；查询历史列表对非管理员按 `executed_by` 过滤（`DataQueryService` 查询历史分页），所以普通用户看不到智能体替自己跑的查询，只有管理员可见。需决定是否按 `reported_user_id` 展示（它可被调用方改写，只能作展示，不能当作归属依据），或等 OAuth 访问令牌模式落地后以真实主体记录。见[服务令牌模式设计](design/2026-11-09-mcp-service-token-mode-design.md)。
+- **助手 ID 手填后不做校验**（2026-11-10 评审 PR #512 发现）：「管理中心 / 智能助手」改为直接填写助手 ID、不再请求 DataAgent 助手目录，非空即显示「已配置」；ID 写错时要到实际使用（智能元数据建话题、问数悬浮窗）才由 DataAgent 报 agent not found。若需要提前发现，可在保存时由后端向 DataAgent 校验一次（不在浏览器跨服务调用）。
 
 ## 已完成
 

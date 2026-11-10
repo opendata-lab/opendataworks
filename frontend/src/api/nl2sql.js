@@ -43,12 +43,7 @@ export function nl2sqlErrorMessage(error, fallback = '请求失败') {
 }
 
 export const nl2sqlApi = {
-  // 当前调用方可见的助手目录（可见性过滤与建话题一致）
-  listAgents() {
-    return nl2sqlClient.get('/dataagent/agents')
-  },
-
-  // 创建话题；agent_id 必须来自 listAgents 的结果
+  // 创建话题；agent_id 来自「管理中心 / 智能助手」中配置的助手 ID
   createTopic(payload = {}) {
     return nl2sqlClient.post('/nl2sql/topics', payload)
   },

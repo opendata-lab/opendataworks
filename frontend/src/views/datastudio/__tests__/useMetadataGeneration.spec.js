@@ -3,7 +3,6 @@ import { reactive, ref } from 'vue'
 
 const { nl2sqlApiMock, settingsApiMock, elMessageMock, tableApiMock, domainApiMock } = vi.hoisted(() => ({
   nl2sqlApiMock: {
-    listAgents: vi.fn(),
     createTopic: vi.fn(),
     deliverMessage: vi.fn(),
     getTask: vi.fn(),
@@ -87,7 +86,6 @@ describe('useMetadataGeneration agent 解析', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     settingsApiMock.getAgentSettings.mockResolvedValue({ metadataAgentId: 'agent_biz' })
-    nl2sqlApiMock.listAgents.mockResolvedValue([{ agent_id: 'agent_biz' }, { agent_id: 'agent_default' }])
     nl2sqlApiMock.createTopic.mockResolvedValue({ topic_id: 'tp1' })
     nl2sqlApiMock.deliverMessage.mockResolvedValue({ task_id: 'tk1' })
     nl2sqlApiMock.getTask.mockResolvedValue({ task_status: 'finished' })
@@ -127,7 +125,6 @@ describe('useMetadataGeneration agent 解析', () => {
 
     await generateMetadata('t1')
 
-    expect(nl2sqlApiMock.listAgents).not.toHaveBeenCalled()
     expect(nl2sqlApiMock.createTopic).toHaveBeenCalledWith(expect.objectContaining({ agent_id: 'agent_biz' }))
   })
 
