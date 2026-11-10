@@ -45,9 +45,9 @@ export function loadDataAgentWidgetScript() {
   return window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
 }
 
-export const QUERY_AGENT_MISSING_MESSAGE = '尚未配置智能问数助手，请在「管理中心 → 智能助手」中选择'
+export const QUERY_AGENT_MISSING_MESSAGE = '尚未配置智能问数助手，请在「管理中心 → 智能助手」中填写助手 ID'
 
-// 门户问数使用的助手由管理员在「智能助手」设置中选择；DataAgent 没有固定的平台助手 ID。
+// 门户问数使用的助手由管理员在「智能助手」设置中填写；DataAgent 没有固定的平台助手 ID。
 export async function loadQueryAgentId() {
   const settings = await settingsApi.getAgentSettings()
   const agentId = String(settings?.queryAgentId || '').trim()
@@ -58,7 +58,7 @@ export async function loadQueryAgentId() {
 // 门户在 DataAgent「Widget 接入」中登记的站点标识，管理员需把门户来源加入该站点的允许来源。
 export const PORTAL_WIDGET_SITE_ID = 'opendataworks-portal'
 
-// 门户内嵌时由门户上报当前用户（local:<用户名> 或 <来源>:<external_id>），DataAgent 据此选择数据库账号。
+// 门户内嵌时由门户上报当前用户（local:<用户名> 或 <来源>:<external_id>），仅供 DataAgent 展示与审计；ODW 的 MCP 只按服务账号令牌授权，不据此收窄数据权限。
 export function portalWidgetIdentity() {
   const userId = String(useAuthStore().currentUser?.agentUserId || '').trim()
   return userId ? { websiteId: PORTAL_WIDGET_SITE_ID, userId } : { websiteId: PORTAL_WIDGET_SITE_ID }
