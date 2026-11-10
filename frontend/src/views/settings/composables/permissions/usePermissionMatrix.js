@@ -152,8 +152,9 @@ export function usePermissionMatrix({
       const dbs = resourcesState.databases?.length
         ? resourcesState.databases
         : schemaObjs.map((o) => o.database).filter(Boolean)
-      const filteredDbs = db ? dbs.filter((d) => d === db) : dbs
-      rows = filteredDbs.map((d) => ({
+      // Every schema is its own row so each can be granted on its own; the schema picker only
+      // scopes the table and view tabs.
+      rows = dbs.map((d) => ({
         rowKey: makeGrantKey('SCHEMA', d, ''),
         resourceType: 'SCHEMA',
         database: d,

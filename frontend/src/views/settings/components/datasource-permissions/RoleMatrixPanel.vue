@@ -145,7 +145,7 @@
 
           <div class="list-toolbar resource-filter-bar">
             <div class="filter-controls">
-              <label class="inline-select-label">
+              <label v-if="currentResourceType !== 'SCHEMA'" class="inline-select-label">
                 <span>{{ isPostgresEngine ? 'Schema' : '数据库' }}</span>
                 <el-select
                   v-model="selectedDatabase"
@@ -167,7 +167,7 @@
               <el-input
                 v-model="resourceSearch"
                 clearable
-                placeholder="搜索资源名称"
+                :placeholder="currentResourceType === 'SCHEMA' ? (isPostgresEngine ? '搜索 Schema' : '搜索数据库') : '搜索资源名称'"
                 aria-label="搜索资源"
                 class="resource-search-input"
               />
