@@ -1,6 +1,62 @@
 const DEMO_CLUSTER_ID = 1
 const DEMO_DATABASE = 'opendataworks'
 
+const createCapability = (supported, reason = '') => ({ supported, reason })
+
+const dorisTypeDefinition = {
+  schemaVersion: 1,
+  type: 'DORIS',
+  label: 'Doris',
+  defaultPort: 9030,
+  namespaceLabel: '数据库',
+  identifierQuote: '`',
+  editorDialect: 'mysql',
+  iconUrl: '/datasource-icons/doris.svg',
+  connectionFields: [
+    { key: 'feHost', label: '地址', control: 'text', required: true, defaultValue: '', help: '' },
+    { key: 'fePort', label: '端口', control: 'number', required: true, defaultValue: 9030, help: '' },
+    { key: 'databaseName', label: '连接数据库', control: 'text', required: false, defaultValue: '', help: '可选' },
+    { key: 'username', label: '用户名', control: 'text', required: true, defaultValue: '', help: '' },
+    { key: 'password', label: '密码', control: 'password', required: false, defaultValue: '', help: '编辑时留空表示不修改' }
+  ],
+  capabilities: {
+    catalog: createCapability(true),
+    query: createCapability(true),
+    preview: createCapability(true),
+    statistics: createCapability(true),
+    freshnessColumn: createCapability(true),
+    freshnessCustomSql: createCapability(true),
+    ddlExport: createCapability(true),
+    structureEdit: createCapability(true),
+    partitions: createCapability(true),
+    distribution: createCapability(true),
+    replication: createCapability(true),
+    backup: createCapability(true),
+    engineProperties: createCapability(true),
+    freshnessMetadata: createCapability(true),
+    existingPrimaryKeyEdit: createCapability(false, '暂不支持在线修改已有字段的主键'),
+    newPrimaryKeyEdit: createCapability(false, '此引擎不支持在线修改主键列'),
+    tabletInspection: createCapability(true),
+    auditAccess: createCapability(true)
+  },
+  driverClass: 'com.mysql.cj.jdbc.Driver',
+  agentEngine: 'doris',
+  driverStatus: 'AVAILABLE'
+}
+
+const buildDemoCluster = () => ({
+  id: DEMO_CLUSTER_ID,
+  clusterName: '演示 Doris 连接',
+  sourceType: 'DORIS',
+  feHost: 'demo-doris.local',
+  fePort: 9030,
+  isDefault: 1,
+  status: 'active',
+  typeDefinition: clone(dorisTypeDefinition)
+})
+
+const quoteIdentifier = (identifier) => `\`${String(identifier).replace(/`/g, '``')}\``
+
 const baseTableFields = {
   1232: [
     { id: 21001, fieldName: 'member_id', fieldType: 'BIGINT', fieldComment: '会员 ID', isNullable: 0, isPrimary: 1, fieldOrder: 1, defaultValue: '' },
@@ -2276,6 +2332,13 @@ export const demoAdapter = async (config) => {
     return createResponse(config, { webuiUrl: '' })
   }
 
+  if (method === 'get' && pathname === '/v1/settings/agent') {
+    return createResponse(config, {
+      metadataAgentId: 'agent_default',
+      queryAgentId: 'agent_default'
+    })
+  }
+
   if (method === 'get' && pathname === '/v1/dashboard/statistics') {
     return createResponse(config, handleDashboardStatistics(params))
   }
@@ -2324,33 +2387,32 @@ export const demoAdapter = async (config) => {
       : createRejectedResponse(config, '执行记录不存在', 404)
   }
 
+  if (method === 'get' && pathname === '/v1/datasource-types') {
+    return createResponse(config, [clone(dorisTypeDefinition)])
+  }
+
   if (method === 'get' && pathname === '/v1/doris-clusters') {
-    return createResponse(config, [
-      {
-        id: DEMO_CLUSTER_ID,
-        clusterName: '演示 Doris 连接',
-        sourceType: 'DORIS',
-        feHost: 'demo-doris.local',
-        fePort: 9030,
-        isDefault: 1,
-        status: 'active'
-      }
-    ])
+    return createResponse(config, [buildDemoCluster()])
   }
 
   if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+$/)) {
     const clusterId = Number(pathname.split('/').pop())
     return clusterId === DEMO_CLUSTER_ID
-      ? createResponse(config, {
-          id: DEMO_CLUSTER_ID,
-          clusterName: '演示 Doris 连接',
-          sourceType: 'DORIS',
-          feHost: 'demo-doris.local',
-          fePort: 9030,
-          isDefault: 1,
-          status: 'active'
-        })
+      ? createResponse(config, buildDemoCluster())
       : createRejectedResponse(config, '数据源不存在', 404)
+  }
+
+  if (method === 'get' && pathname.match(/^\/v1\/doris-clusters\/\d+\/default-query$/)) {
+    const clusterId = Number(pathname.split('/')[3])
+    if (clusterId !== DEMO_CLUSTER_ID) {
+      return createRejectedResponse(config, '数据源不存在', 404)
+    }
+    const database = String(params.database || '').trim()
+    const tableName = String(params.tableName || '').trim()
+    if (!database || !tableName) {
+      return createRejectedResponse(config, '请提供数据库与表名', 400)
+    }
+    return createResponse(config, `SELECT *\nFROM ${quoteIdentifier(database)}.${quoteIdentifier(tableName)}\nLIMIT 200;`)
   }
 
   if (method === 'post' && pathname.match(/^\/v1\/doris-clusters\/\d+\/test$/)) {

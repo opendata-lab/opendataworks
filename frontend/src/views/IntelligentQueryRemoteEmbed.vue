@@ -1,13 +1,22 @@
 <template>
   <div class="dataagent-embed-page">
-    <div id="odw-dataagent-inline-widget" class="dataagent-inline-widget"></div>
-    <div v-if="errorText" class="dataagent-embed-error">{{ errorText }}</div>
+    <div v-if="isDemoMode" class="dataagent-embed-demo" role="status">
+      <div class="dataagent-embed-demo-title">演示环境暂未接入智能问数助手</div>
+      <div class="dataagent-embed-demo-desc">
+        DataAgent 已拆分为独立服务；当前为静态演示环境，未挂载远程助手脚本。如需体验完整智能问数能力，请在完整部署环境中配置 DataAgent 服务与智能助手 ID。
+      </div>
+    </div>
+    <template v-else>
+      <div id="odw-dataagent-inline-widget" class="dataagent-inline-widget"></div>
+      <div v-if="errorText" class="dataagent-embed-error">{{ errorText }}</div>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { isDemoMode } from '@/demo/runtime'
 import { QUERY_AGENT_MISSING_MESSAGE, loadDataAgentWidgetScript, loadQueryAgentId, portalWidgetIdentity } from '@/utils/dataagentWidgetLoader'
 
 const INLINE_CONTAINER_ID = 'odw-dataagent-inline-widget'
@@ -18,6 +27,7 @@ let widgetController = null
 let unmounted = false
 
 const installInlineWidget = async () => {
+  if (isDemoMode) return
   try {
     const [widget, agentId] = await Promise.all([loadDataAgentWidgetScript(), loadQueryAgentId()])
     if (unmounted) return
@@ -48,7 +58,9 @@ watch(() => route.query.topicId, (topicId) => {
 })
 
 onMounted(() => {
-  void installInlineWidget()
+  if (!isDemoMode) {
+    void installInlineWidget()
+  }
 })
 
 onBeforeUnmount(() => {
@@ -63,6 +75,29 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 0;
   overflow: hidden;
+}
+
+.dataagent-embed-demo {
+  margin: 16px;
+  max-width: 560px;
+  padding: 16px 20px;
+  border: 1px solid var(--odw-border, #e2e8f0);
+  border-radius: var(--odw-radius-md, 8px);
+  background: var(--odw-bg-card, #ffffff);
+  color: var(--odw-text-primary, #1a202c);
+}
+
+.dataagent-embed-demo-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.dataagent-embed-demo-desc {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--odw-text-secondary, #718096);
 }
 
 .dataagent-inline-widget {
