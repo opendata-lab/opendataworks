@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { validateDefinitions } from '@/utils/datasourceTypes'
 import { demoAdapter } from '../mockServer'
 
 const request = async (method, url, options = {}) => {
@@ -103,6 +104,54 @@ describe('demoAdapter DataStudio endpoints', () => {
     })).resolves.toMatchObject({
       code: 200,
       data: expect.objectContaining({ ddl: expect.any(String) })
+    })
+  })
+
+  it('provides Doris typeDefinition, datasource types, default-query, and agent settings', async () => {
+    const types = await request('get', '/v1/datasource-types')
+    expect(types.code).toBe(200)
+    expect(validateDefinitions(types.data)).toEqual([
+      expect.objectContaining({
+        type: 'DORIS',
+        label: 'Doris',
+        namespaceLabel: '数据库',
+        editorDialect: 'mysql',
+        capabilities: expect.objectContaining({
+          ddlExport: expect.objectContaining({ supported: true }),
+          engineProperties: expect.objectContaining({ supported: true })
+        })
+      })
+    ])
+
+    const clusters = await request('get', '/v1/doris-clusters')
+    expect(clusters.data).toEqual([
+      expect.objectContaining({
+        id: 1,
+        sourceType: 'DORIS',
+        typeDefinition: expect.objectContaining({
+          type: 'DORIS',
+          label: 'Doris',
+          namespaceLabel: '数据库'
+        })
+      })
+    ])
+
+    const cluster = await request('get', '/v1/doris-clusters/1')
+    expect(cluster.data.typeDefinition).toEqual(types.data[0])
+
+    await expect(request('get', '/v1/doris-clusters/1/default-query', {
+      params: { database: 'opendataworks', tableName: 'demo_order_detail' }
+    })).resolves.toMatchObject({
+      code: 200,
+      data: 'SELECT *\nFROM `opendataworks`.`demo_order_detail`\nLIMIT 200;'
+    })
+
+    await expect(request('get', '/v1/settings/agent')).resolves.toMatchObject({
+      code: 200,
+      data: {
+        metadataAgentId: 'agent_default',
+        queryAgentId: 'agent_default'
+      }
     })
   })
 })

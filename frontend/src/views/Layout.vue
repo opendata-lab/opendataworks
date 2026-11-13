@@ -65,7 +65,7 @@
     <el-main>
       <header class="portal-page-header">
         <h1>{{ pageTitle }}</h1>
-        <AiAssistantTrigger :prompts="assistantPrompts" />
+        <AiAssistantTrigger v-if="!isDemoMode" :prompts="assistantPrompts" />
       </header>
       <div class="portal-page-content"><router-view /></div>
     </el-main>
@@ -239,6 +239,7 @@ const widgetLayoutStyle = computed(() => {
 })
 
 const installFloatingWidget = () => {
+  if (isDemoMode) return Promise.resolve(null)
   if (_widgetInstallPromise) return _widgetInstallPromise
   _widgetInstallPromise = (async () => {
     const [widget, agentId] = await Promise.all([loadDataAgentWidgetScript(), loadQueryAgentId()])
@@ -274,6 +275,7 @@ const installFloatingWidget = () => {
 provide(FLOATING_WIDGET_KEY, {
   isOpen: readonly(floatingWidgetOpen),
   open: async (draft) => {
+    if (isDemoMode) return null
     const controller = await installFloatingWidget()
     if (_layoutUnmounted) throw new Error('页面已关闭')
     controller.open({ draft })
@@ -288,9 +290,11 @@ onMounted(() => {
       .map((item) => item.target)
       .filter((path) => path !== route.fullPath)
   )
-  void installFloatingWidget().catch((error) => {
-    console.warn('[OpenDataWorks] failed to install DataAgent widget:', error)
-  })
+  if (!isDemoMode) {
+    void installFloatingWidget().catch((error) => {
+      console.warn('[OpenDataWorks] failed to install DataAgent widget:', error)
+    })
+  }
 })
 onBeforeUnmount(() => {
   _layoutUnmounted = true

@@ -93,4 +93,20 @@ describe('IntelligentQueryRemoteEmbed', () => {
     expect(wrapper.text()).toContain('尚未配置智能问数助手')
     wrapper.unmount()
   })
+
+  it('shows a demo notice without loading remote widget assets in demo mode', async () => {
+    vi.resetModules()
+    vi.doMock('@/demo/runtime', () => ({ isDemoMode: true }))
+    const { default: DemoEmbed } = await import('../IntelligentQueryRemoteEmbed.vue')
+    const wrapper = mount(DemoEmbed)
+    await flushPromises()
+
+    expect(document.querySelector('[data-odw-dataagent-widget-script]')).toBeNull()
+    expect(getAgentSettings).not.toHaveBeenCalled()
+    expect(wrapper.find('.dataagent-embed-demo').text()).toContain('演示环境暂未接入智能问数助手')
+    expect(wrapper.find('.dataagent-embed-error').exists()).toBe(false)
+    wrapper.unmount()
+    vi.doUnmock('@/demo/runtime')
+    vi.resetModules()
+  })
 })
