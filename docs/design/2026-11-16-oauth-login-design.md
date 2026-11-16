@@ -1,0 +1,106 @@
+# OAuth 登录（Spring Security OAuth2 Client 标准方式）
+
+- 日期：2026-11-16。状态：已确认（2026-11-16 用户决定：采用 Java 标准方式，不自定义配置格式）
+- 范围：`backend/`（core、api、app）、`frontend/`、`deploy/`
+- 规模：中（跨前后端 + 新依赖 + 部署配置）
+- 取代：[2026-05-30 可配置 OAuth 登录设计](2026-05-30-configurable-oauth-login-design.md) 中的 OAuth 部分（`sys_oauth_config` 表、管理员界面配置、自定义字段）。本地密码登录、会话 JWT、Filter 仍以原设计与[认证手册](../handbook/authentication.md)为准。
+- 实施见[计划](../plans/2026-11-16-oauth-login-plan.md)。
+
+## 1. 现状
+
+- 本地密码登录已上线：`sys_user`（bcrypt、失败锁定）、HS256 会话 JWT 写入 HttpOnly Cookie `odw_session`，`HttpAuthenticationFilter`（最高优先级）默认拦截，`AuthenticationRoutePolicy` 决定公开路径。
+- OAuth 未实现。`sys_user` 已有 `auth_source`、`external_id`（`uk_sys_user_external` 唯一），`AuthController.agentUserId` 已按 `<auth_source>:<external_id>` 生成第三方用户的智能体用户标识。
+- DataAgent、OntoFoundry 用外置 Python 配置与钩子；本仓库后端是 Java，不运行 Python。
+
+## 2. 决定
+
+| 编号 | 决定 |
+|---|---|
+| OA-01 | 使用 Spring Security OAuth2 Client（`spring-boot-starter-oauth2-client`，版本由 Spring Boot 3.5.7 管理），配置为 Spring Boot 标准属性 `spring.security.oauth2.client.registration.*` / `provider.*`，不定义 ODW 自有配置键。授权码流程、`state`、PKCE、OIDC 发现与 `id_token` 验签均由框架完成。 |
+| OA-02 | 配置写在宿主机 `deploy/docker/backend/application.yml`，只读挂载到 `/app/config/application.yml`（后端工作目录 `/app`，Spring Boot 默认加载 `./config/application.yml`）。不新增环境变量。修改需重启后端。 |
+| OA-03 | 用户标识取框架给出的主体名：OIDC 为 `sub`；纯 OAuth2 为 `user-name-attribute` 指定的顶层属性。不支持嵌套或包装结构的用户信息（标准 `user-name-attribute` 只取顶层键）。 |
+| OA-04 | 本地账号保持 `sys_user`。首次 OAuth 登录自动建用户，角色 `user`；管理员在用户管理中提升角色。不做角色映射。 |
+| OA-05 | 支持框架允许的多个 registration；registration id 即 `auth_source` 与用户标识前缀。 |
+| OA-06 | 登录成功后由 ODW 签发现有 `odw_session` 会话 JWT；Spring Security 只负责 OAuth2 登录两个端点，不接管其他请求的鉴权。 |
+
+## 3. 配置
+
+```yaml
+# deploy/docker/backend/application.yml（宿主机管理，只读挂载；默认全部注释 = 仅密码登录）
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          sso:                                   # registration id：auth_source 与用户标识前缀
+            client-name: SSO                     # 登录按钮“通过 SSO 登录”
+            client-id: your-client-id
+            client-secret: your-client-secret
+            client-authentication-method: client_secret_basic   # 或 client_secret_post
+            authorization-grant-type: authorization_code
+            redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+            scope: openid,profile,email
+        provider:
+          sso:
+            issuer-uri: https://sso.example.com          # OIDC：其余端点自动发现
+            # 非 OIDC 时改为显式端点：
+            # authorization-uri: https://sso.example.com/oauth/authorize
+            # token-uri: https://sso.example.com/oauth/token
+            # user-info-uri: https://sso.example.com/oauth/userinfo
+            # user-info-authentication-method: header    # header | form | query
+            # user-name-attribute: sub
+```
+
+- 回调地址（在 IdP 登记）：`https://<域名>/api/login/oauth2/code/<registration id>`（context-path `/api`，`{baseUrl}` 已含）。反向代理须传 `X-Forwarded-Proto`/`Host`，后端设 `server.forward-headers-strategy: framework`，否则 `{baseUrl}` 会是内网地址。
+- 发起地址：`/api/oauth2/authorization/<registration id>`（框架默认）。
+- registration id 不区分大小写不能为 `local`（与本地账号来源冲突），启动校验，失败即启动失败。
+- `client-secret` 只在该文件，不进日志、不经接口返回。
+
+## 4. 流程
+
+1. 登录页 `GET /api/auth/options` → `{"localLogin":true,"oauth":[{"id":"sso","name":"SSO"}]}`（未配置为 `[]`），公开。
+2. 用户点按钮：前端把登录后要回到的站内路径存入 `sessionStorage`（键 `odw_login_redirect`），浏览器跳 `/api/oauth2/authorization/sso`。
+3. 框架生成 `state`（OIDC 另含 `nonce`、PKCE 按框架默认），授权请求暂存于 HTTP 会话（框架默认 `HttpSessionOAuth2AuthorizationRequestRepository`），302 到 IdP。
+4. IdP 回调 `/api/login/oauth2/code/sso`，框架校验 `state`、换令牌、取用户信息（OIDC 校验 `id_token`）。
+5. 成功处理器（ODW）：按第 5 节建立或更新用户 → 签发 `odw_session`（与密码登录同一方法与 Cookie 属性）→ 使 HTTP 会话失效（不保留 Spring 的登录态）→ 302 到 `/login?oauth=success`。
+6. 前端登录页看到 `oauth=success`：`fetchMe()`，读取并清除 `odw_login_redirect`（只接受以单个 `/` 开头的站内路径，否则 `/`），跳转。
+7. 失败处理器（框架抛出的 `OAuth2AuthenticationException`、用户停用等）：使 HTTP 会话失效，302 到 `/login?error=<代码>`：`oauth_account_disabled`（停用或已删除）、`oauth_denied`（IdP 返回 `access_denied`）、其余 `oauth_failed`。日志记录 registration id 与异常类型和 OAuth 错误码，不记录令牌与 `code`。
+
+多实例部署时，授权请求存于单实例 HTTP 会话，需会话粘滞；当前 Compose 为单后端实例。
+
+## 5. 用户
+
+| 列 | OAuth 用户 |
+|---|---|
+| `username` | `<registration id>:<sub>`（唯一，不与本地用户名冲突，列长 128；超长则登录失败 `oauth_failed`） |
+| `auth_source` | registration id |
+| `external_id` | `sub`（OIDC `getSubject()`；OAuth2 `OAuth2User.getName()`） |
+| `nickname` | 每次登录刷新：依次取属性 `preferred_username`、`name`、`nickname`，均无则 `sub` |
+| `email` | 每次登录刷新：属性 `email`（字符串时） |
+| `role` | 新建时 `user`，此后不改 |
+| `password_hash` | `NULL`（现有逻辑已拒绝其密码登录、改密与重置） |
+| `account_type` | `USER` |
+
+按 `(auth_source, external_id)` 查找，包含已软删除行（`SysUser.deleted` 为 `@TableLogic`，需显式 SQL）。不存在则插入；并发首登撞唯一键时重查一次。已删除或 `enabled=0` 拒绝登录。成功后更新 `last_login_at`。
+
+智能体用户标识 `agentUserId` 为 `<registration id>:<sub>`；与 DataAgent 一致的前提是 registration id 等于 DataAgent 的 provider `name`（区分大小写）。修改已有部署的 registration id 等于更换身份命名空间，原 OAuth 用户再次登录会成为新用户。
+
+## 6. 与现有鉴权的关系
+
+- `HttpAuthenticationFilter` 先于 Spring Security 执行；`AuthenticationRoutePolicy` 把 `/auth/options`、`/oauth2/authorization/**`、`/login/oauth2/code/**` 设为 PUBLIC。
+- ODW 定义唯一的 `SecurityFilterChain`：只匹配上述两个 OAuth2 端点（`securityMatcher`），`oauth2Login` 配置成功与失败处理器；关闭 CSRF、表单登录、HTTP Basic、登出。其余请求不进入 Spring Security，鉴权行为不变。
+- 未配置任何 registration 时 Spring Boot 不创建 `ClientRegistrationRepository`，该过滤链不启用 `oauth2Login`，两个端点返回 404。
+- 排除 `UserDetailsServiceAutoConfiguration`，避免生成默认用户与密码日志。
+
+## 7. 前端
+
+- 登录页按 `/auth/options` 渲染：密码表单始终显示；有 OAuth 时显示分隔线“或”与每个 registration 一个按钮“通过 {name} 登录”。
+- `route.query.error` 存在时在表单上方显示 `el-alert`（error）：`oauth_denied` 已取消授权；`oauth_account_disabled` 账号已停用，请联系管理员；其余“第三方登录失败，请重试或联系管理员”。
+- 用户菜单“修改密码”仅对 `authSource === 'local'` 显示。
+- 演示模式 mock：`/auth/options` 返回 `oauth: []`。
+
+## 8. 不包含
+
+- 包装或嵌套结构的用户信息、从令牌响应取用户标识、角色映射（均需自定义扩展，按用户决定不做）。
+- 刷新令牌、单点登出、Python 钩子、DataAgent 侧改动。
+- 多实例无粘滞会话下的授权请求存储。
