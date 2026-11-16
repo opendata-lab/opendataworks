@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
-import { createPinia } from 'pinia'
+import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { useAuthStore } from '@/stores/auth'
 
 const routeState = vi.hoisted(() => ({
   path: '/intelligent-query'
@@ -166,6 +167,60 @@ describe('Layout', () => {
     const assistant = wrapper.find('.portal-page-header .ai-assistant-trigger')
     expect(assistant.exists()).toBe(Boolean(prompt))
     if (prompt) expect(assistant.attributes('aria-label')).toContain(prompt)
+    wrapper.unmount()
+  })
+
+  it('shows changePassword menu item and local widget userId only for local accounts', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useAuthStore().currentUser = { username: 'alice', nickname: 'Alice', authSource: 'local' }
+    const installWidget = vi.fn(() => ({ destroy: vi.fn(), on: vi.fn(), getPanelLayout: () => ({ side: null, reservedWidth: 0 }) }))
+    window.DataAgentWidget = { installWidget }
+
+    const wrapper = mount(Layout, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          ...stubs,
+          'el-dropdown': { template: '<div class="dropdown-stub"><slot /><slot name="dropdown" /></div>' },
+          'el-dropdown-menu': { template: '<div class="dropdown-menu-stub"><slot /></div>' },
+          'el-dropdown-item': { props: ['command'], template: '<button :data-command="command"><slot /></button>' },
+          'el-dialog': { template: '<div />' }
+        }
+      }
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(wrapper.find('[data-command="changePassword"]').exists()).toBe(true)
+    expect(wrapper.find('[data-command="logout"]').exists()).toBe(true)
+    expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({ userId: 'local:alice' }))
+    wrapper.unmount()
+  })
+
+  it('hides changePassword menu item and uses OAuth username as widget userId for OAuth accounts', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    useAuthStore().currentUser = { username: 'sso:u-42', nickname: 'Bob', authSource: 'sso' }
+    const installWidget = vi.fn(() => ({ destroy: vi.fn(), on: vi.fn(), getPanelLayout: () => ({ side: null, reservedWidth: 0 }) }))
+    window.DataAgentWidget = { installWidget }
+
+    const wrapper = mount(Layout, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          ...stubs,
+          'el-dropdown': { template: '<div class="dropdown-stub"><slot /><slot name="dropdown" /></div>' },
+          'el-dropdown-menu': { template: '<div class="dropdown-menu-stub"><slot /></div>' },
+          'el-dropdown-item': { props: ['command'], template: '<button :data-command="command"><slot /></button>' },
+          'el-dialog': { template: '<div />' }
+        }
+      }
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(wrapper.find('[data-command="changePassword"]').exists()).toBe(false)
+    expect(wrapper.find('[data-command="logout"]').exists()).toBe(true)
+    expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({ userId: 'sso:u-42' }))
     wrapper.unmount()
   })
 })

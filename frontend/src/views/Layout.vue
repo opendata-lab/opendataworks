@@ -37,8 +37,8 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="changePassword">修改密码</el-dropdown-item>
-                <el-dropdown-item command="logout" divided>退出登录</el-dropdown-item>
+                <el-dropdown-item v-if="isLocalAuth" command="changePassword">修改密码</el-dropdown-item>
+                <el-dropdown-item command="logout" :divided="isLocalAuth">退出登录</el-dropdown-item>
               </el-dropdown-menu>
             </template>
           </el-dropdown>
@@ -121,6 +121,7 @@ const dataStudioPrompts = ['帮我编写数据查询 SQL', '帮我分析数据�
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
+const isLocalAuth = computed(() => authStore.currentUser?.authSource === 'local')
 
 const passwordDialogVisible = ref(false)
 const passwordSubmitting = ref(false)
@@ -157,7 +158,7 @@ const handleUserCommand = async (command) => {
     router.replace('/login')
     return
   }
-  if (command === 'changePassword') {
+  if (command === 'changePassword' && isLocalAuth.value) {
     passwordForm.oldPassword = ''
     passwordForm.newPassword = ''
     passwordForm.confirmPassword = ''

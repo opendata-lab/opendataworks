@@ -40,3 +40,23 @@ export const createUnauthorizedRedirect = ({ router, authStore }) => {
       })
   }
 }
+
+/**
+ * 净化登录后回跳的站内路径：仅接受单个 '/' 开头的站内路径，
+ * 拒绝协议相对路径（'//'）、反斜杠路径（'/\'）、控制字符以及 '/login' 自身。
+ */
+export const sanitizeRedirect = (target) => {
+  if (typeof target !== 'string') return '/'
+  const value = target.trim()
+  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
+    return '/'
+  }
+  if (/[\r\n\t]/.test(value)) {
+    return '/'
+  }
+  const pathOnly = value.split(/[?#]/)[0]
+  if (pathOnly === '/login' || pathOnly.startsWith('/login/')) {
+    return '/'
+  }
+  return value
+}

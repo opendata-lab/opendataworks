@@ -1,7 +1,7 @@
 import { it, expect, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAdmin: true, currentUser: { username: 'admin' } }) }))
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAdmin: true, currentUser: { username: 'admin', authSource: 'local' } }) }))
 vi.mock('@/demo/runtime', () => ({ isDemoMode: false }))
 vi.mock('@/router/routeWarmup', () => ({ preloadRouteComponents: vi.fn(), scheduleRouteWarmup: vi.fn() }))
 vi.mock('@/utils/dataagentWidgetLoader', () => ({
