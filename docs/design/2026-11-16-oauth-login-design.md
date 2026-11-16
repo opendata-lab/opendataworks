@@ -23,7 +23,7 @@
 | OA-04 | 本地账号保持 `sys_user`。首次 OAuth 登录自动建用户，角色 `user`；管理员在用户管理中提升角色。不做角色映射。 |
 | OA-05 | 支持框架允许的多个 registration；registration id 即 `auth_source` 与用户标识前缀。 |
 | OA-06 | 登录成功后由 ODW 签发现有 `odw_session` 会话 JWT；Spring Security 只负责 OAuth2 登录两个端点，不接管其他请求的鉴权。 |
-| OA-07 | 删除 `agentUserId`（2026-11-16 用户决定）：`/auth/me` 不再返回，门户内嵌 DataAgent widget 只上报 `websiteId`，不再上报 `userId`。影响：DataAgent 中门户内嵌的会话不再关联到平台用户（按匿名访客处理），`deploy/README.md` 相应说明删除。 |
+| OA-07 | 删除后端 `agentUserId`（2026-11-16 用户决定）：`/auth/me` 不再返回该字段。门户内嵌 DataAgent widget 仍上报当前用户，不按匿名访客处理：前端按 `/auth/me` 已有的 `username` 与 `authSource` 生成 `userId`，本地用户 `local:<用户名>`，OAuth 用户即用户名 `<registration id>:<sub>`，与 DataAgent 直接登录时的用户标识一致（前提是 registration id 与 DataAgent provider `name` 相同）。 |
 
 ## 3. 配置
 
