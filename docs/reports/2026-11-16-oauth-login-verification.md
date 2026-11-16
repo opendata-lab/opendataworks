@@ -30,8 +30,21 @@
 | 未配置 OAuth | options `oauth: []`；`/api/oauth2/authorization/sso` 404；密码登录正常；无 Spring 默认生成密码日志 |
 | 日志 | 不含授权码、访问令牌、`client_secret` |
 
+## 真实 OIDC 与浏览器（Keycloak 26.0.7 + Playwright Chromium）
+
+环境：本地 Keycloak（realm `odw`，机密客户端 `client_secret_basic`），后端用 `issuer-uri: http://localhost:18180/realms/odw` 启动（发现文档在启动时取到），前端 Vite 开发服务器（`/api` 代理到后端），`redirect-uri` 为浏览器地址 `http://localhost:3000/api/login/oauth2/code/keycloak`。
+
+| 场景 | 结果 |
+|---|---|
+| 未登录打开 `/workflows` | 跳到 `/login?redirect=/workflows`，显示“或”与“通过 Keycloak 登录” |
+| 点击按钮 → Keycloak 登录 alice | 回到 `/workflows`；页头显示 `alice`；`/auth/me` 为 `keycloak:<Keycloak sub>`、`role=user`；邮箱写入（OIDC `id_token` 验签路径） |
+| OAuth 用户的用户菜单 | 不显示“修改密码” |
+| bob 首次登录后被停用，再次登录 | 回到 `/login?error=oauth_account_disabled`，提示“账号已停用，请联系管理员” |
+| 浏览器密码登录 admin，打开 `/lineage` | 回到 `/lineage`，页头“管理员” |
+| 页面 JS 错误 | 无 |
+
 ## 未覆盖
 
-- 真实 OIDC 提供方（`issuer-uri` 发现、`id_token` 验签）与真实 SSO：本机无 OIDC IdP，记入 `docs/TODO.md`。
-- 浏览器内完整点击流程（登录页按钮、`sessionStorage` 回跳、错误提示）只由组件测试覆盖；Compose 实际挂载 `/app/config/application.yml` 未在容器中运行。记入 `docs/TODO.md`。
+- 真实 SSO：未用现场身份提供方验证。按设计只支持顶层用户标识（OIDC `sub` 或顶层 `user-name-attribute`），包装结构的自研用户信息接口不能登录。
+- Compose 容器内 `/app/config/application.yml` 挂载未实际运行（jar 在工作目录 `config/` 下加载同一文件已验证）。
 - OAuth 用户直接调用 `/api/auth/password` 返回“用户不存在”（既有逻辑，界面已隐藏入口），文案不准确，未改。

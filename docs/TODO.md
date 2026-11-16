@@ -114,7 +114,7 @@
 
 - **primaryKeyControls单测并发超时**（2026-11-02服务账号最终复核发现）：全量`vitest run`时`primaryKeyControls.spec.js`的「synced=1 applies row-specific primary edit permissions」用时17.8秒超时失败，单独运行5项全过（单项0.7～2.3秒）。需定位挂载开销或等待逻辑，降低用例耗时或拆分，避免全量回归偶发失败；不放宽全局超时掩盖。来源：[本轮报告](reports/2026-11-02-service-accounts-verification.md)。
 
-- **OAuth 登录：真实 OIDC 与浏览器全流程未验证**（2026-11-16 OAuth 登录验证发现）：本地端到端只用纯 OAuth2 假 IdP（显式端点）跑通，未覆盖 `issuer-uri` 发现与 `id_token` 验签、真实 SSO、浏览器内点击登录与回跳、Compose 容器内 `/app/config/application.yml` 挂载。需要在有 OIDC 提供方（如本地 Keycloak）的环境按[验证报告](reports/2026-11-16-oauth-login-verification.md)补跑。
+- **OAuth 登录：现场 SSO 与容器挂载未验证**（2026-11-16 OAuth 登录验证发现）：本地已用 Keycloak（OIDC、`issuer-uri`、`id_token`）与 Playwright 浏览器全流程验证通过；尚未用现场身份提供方验证，也未在 Compose 容器中实际挂载 `/app/config/application.yml` 运行。现场 SSO 的用户信息若是包装结构（如 `{"code":0,"data":{"uid":...}}`），按设计（只用标准配置）不能登录，需先确认其格式。见[验证报告](reports/2026-11-16-oauth-login-verification.md)。
 
 - **OAuth 用户调用改密接口提示不准确**（2026-11-16 OAuth 登录验证发现）：OAuth 用户无密码，直接调用 `/api/auth/password` 返回“用户不存在”（`SysUserService.changePassword` 对无密码账号的既有文案）。界面已对非本地用户隐藏“修改密码”，可改为“第三方账号请在身份提供方修改密码”。见[验证报告](reports/2026-11-16-oauth-login-verification.md)。
 
