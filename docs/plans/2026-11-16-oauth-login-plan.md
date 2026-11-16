@@ -1,11 +1,11 @@
 # OAuth 登录实施计划
 
-设计见 [OAuth 登录](../design/2026-11-16-oauth-login-design.md)。涉及后端 core/api/app、前端、部署。新增依赖 `spring-boot-starter-oauth2-client`；一个索引迁移 `V60`。
+设计见 [OAuth 登录](../design/2026-11-16-oauth-login-design.md)。涉及后端 core/api/app、前端、部署。新增依赖 `spring-boot-starter-oauth2-client`；一个删列迁移 `V60`。
 
 ## 任务
 
-1. **依赖与迁移**：`backend/app/pom.xml` 加 `spring-boot-starter-oauth2-client` 与测试范围 `spring-security-test`（版本由 Boot BOM 管理）。`backend/app/src/main/resources/db/migration/V60__sys_user_source_external_key.sql`：删 `uk_sys_user_external`，`external_id` 改 `VARCHAR(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL`，加 `uk_sys_user_source_external (auth_source, external_id)`（设计第 5 节）。本机 Maven 缓存没有该依赖，首次构建需联网（不加 `-o`）。
-2. **用户开通**（core，`com.onedata.auth.user`）：`SysUserMapper` 加含软删除行的 `(auth_source, external_id)` 查询；`OAuthUserProvisioner.provision(registrationId, sub, nickname, email)` → `SysUser`，按设计第 5 节（新建、刷新、停用/删除拒绝、唯一键冲突重查一次、长度校验、昵称截断与邮箱置空）；拒绝时抛带错误码的领域异常。只依赖 mapper，不依赖 Spring Security。
+1. **依赖与迁移**：`backend/app/pom.xml` 加 `spring-boot-starter-oauth2-client` 与测试范围 `spring-security-test`（版本由 Boot BOM 管理）。`backend/app/src/main/resources/db/migration/V60__drop_sys_user_external_id.sql`：删索引 `uk_sys_user_external`、`idx_external_id`，删列 `external_id`（设计第 5 节）。`SysUser` 去掉 `externalId`；`AuthController.agentUserId` 对非本地用户返回 `username`，更新 `AuthControllerAgentUserIdTest`；`frontend/src/utils/dataagentWidgetLoader.js:61` 注释改为 `<来源>:<sub>`。本机 Maven 缓存没有该依赖，首次构建需联网（不加 `-o`）。
+2. **用户开通**（core，`com.onedata.auth.user`）：`SysUserMapper` 加含软删除行的按 `username` 查询；`OAuthUserProvisioner.provision(registrationId, sub, nickname, email)` → `SysUser`，按设计第 5 节（新建、刷新、停用/删除拒绝、`auth_source` 不符或用户名大小写不同则拒绝、唯一键冲突重查一次、长度校验、昵称截断与邮箱置空）；拒绝时抛带错误码的领域异常。只依赖 mapper，不依赖 Spring Security。
 3. **Spring Security 装配**（app，`com.onedata.portal.security`）：
    - `OAuthLoginSecurityConfiguration`：始终存在的 `SecurityFilterChain`（设计第 6 节）；`ObjectProvider<ClientRegistrationRepository>` 存在时启用 `oauth2Login`；启动校验 registration id（设计第 3 节规则）。
    - 用户服务包装：委托框架默认 `OidcUserService` / `DefaultOAuth2UserService`，取 registration id 与主体（`OidcUser.getSubject()` / `OAuth2User.getName()`，属性取显示名与邮箱）调用开通；领域拒绝转为 `OAuth2AuthenticationException`（错误码 `oauth_account_disabled` / `oauth_failed`）。开通后的 `sys_user.id` 放进返回主体的属性，供成功处理器签发会话。
@@ -26,7 +26,7 @@
   - `OAuthLoginSecurityTest`：不用 `@WebMvcTest`（主类带 `@MapperScan`，`HttpAuthenticationConfiguration` 依赖数据库服务），也不用连 MySQL 的 `@SpringBootTest`；用嵌套 `@SpringBootConfiguration` 只装配 `OAuthLoginSecurityConfiguration`、Security 与 OAuth2 Client 自动配置、`HttpAuthenticationFilter`（依赖用 Mockito 替身），用 MockMvc 走真实过滤器：`/oauth2/authorization/sso` 302 到 IdP 且带 `state`；回调用本地 JDK `HttpServer` 假 IdP（显式端点，非 OIDC）完成换令牌与 userinfo，验证写 `odw_session`、会话失效、302 `/login?oauth=success`；停用用户 302 `oauth_account_disabled`；未知 id 302 `oauth_failed`；未配置 registration 时 404；registration id 规则启动失败；其他路径不受 Spring Security 影响。
   - `AuthenticationRoutePolicy` 公开路径测试；`AuthController` options 测试；密码登录相关既有测试仍通过。
   - 命令：`mvn -q -pl core,api,app -am test -Dtest='*OAuth*,*AuthController*,*RoutePolicy*,*JwtService*,SysUserServiceTest' -Dsurefire.failIfNoSpecifiedTests=false`，再 `mvn -q -pl app -am compile`。
-- 迁移：在本机 `mysql:8` 容器跑 `V44`、`V54`、`V60` 相关语句，确认索引替换成功、大小写不同的 `external_id` 可共存。
+- 迁移：在本机 `mysql:8` 容器按顺序跑 `V44`、`V54`、`V60` 中涉及 `sys_user` 的语句，确认删列与删索引成功。
 - 前端：`nvm use` 后运行 LoginView、Layout 相关 vitest 与 `npm run build`。
 - 部署：`pytest tests/test_deploy_config_contract.py`。
 - 端到端：本地 MySQL + 后端 + 本地 OIDC IdP 走完登录 → `/api/auth/me`，写入 `docs/reports/`；跑不了则在 `docs/TODO.md` 记录。

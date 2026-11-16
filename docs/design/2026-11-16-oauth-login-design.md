@@ -2,7 +2,7 @@
 
 - 日期：2026-11-16。状态：已确认（2026-11-16 用户决定：采用 Java 标准方式，不自定义配置格式）
 - 范围：`backend/`（core、api、app）、`frontend/`、`deploy/`
-- 规模：中（跨前后端 + 新依赖 + 部署配置 + 一个索引迁移）
+- 规模：中（跨前后端 + 新依赖 + 部署配置 + 一个删列迁移）
 - 评审：2026-11-16 Gemini 设计评审，结论见 `~/.agents/handoffs/2026-11-16-gemini-odw-oauth-design-review/notes.md`；采纳的修改已并入本文
 - 取代：[2026-05-30 可配置 OAuth 登录设计](2026-05-30-configurable-oauth-login-design.md) 中的 OAuth 部分（`sys_oauth_config` 表、管理员界面配置、自定义字段）。本地密码登录、会话 JWT、Filter 仍以原设计与[认证手册](../handbook/authentication.md)为准。
 - 实施见[计划](../plans/2026-11-16-oauth-login-plan.md)。
@@ -10,7 +10,7 @@
 ## 1. 现状
 
 - 本地密码登录已上线：`sys_user`（bcrypt、失败锁定）、HS256 会话 JWT 写入 HttpOnly Cookie `odw_session`，`HttpAuthenticationFilter`（最高优先级）默认拦截，`AuthenticationRoutePolicy` 决定公开路径。
-- OAuth 未实现。`sys_user` 已有 `auth_source`、`external_id`（`uk_sys_user_external` 唯一），`AuthController.agentUserId` 已按 `<auth_source>:<external_id>` 生成第三方用户的智能体用户标识。
+- OAuth 未实现。`sys_user` 有 `auth_source` 与从未被写入的 `external_id`（`uk_sys_user_external` 唯一）；`AuthController.agentUserId` 对第三方用户按 `<auth_source>:<external_id>` 生成智能体用户标识，`external_id` 别处无人读取。
 - DataAgent、OntoFoundry 用外置 Python 配置与钩子；本仓库后端是 Java，不运行 Python。
 
 ## 2. 决定
@@ -74,20 +74,19 @@ spring:
 
 | 列 | OAuth 用户 |
 |---|---|
-| `username` | `<registration id>:<sub>`（唯一，不与本地用户名冲突，列长 128；超长则登录失败 `oauth_failed`） |
+| `username` | `<registration id>:<sub>`，即 OAuth 用户的唯一身份（`uk_username`）；`sub` 为 OIDC `getSubject()` 或 OAuth2 `OAuth2User.getName()`。列长 128，超长则登录失败 `oauth_failed` |
 | `auth_source` | registration id |
-| `external_id` | `sub`（OIDC `getSubject()`；OAuth2 `OAuth2User.getName()`） |
 | `nickname` | 每次登录刷新：依次取属性 `preferred_username`、`name`、`nickname`，均无则 `sub`；超过 128 字符截断 |
 | `email` | 每次登录刷新：属性 `email`（字符串且不超过 128 字符时，否则置空） |
 | `role` | 新建时 `user`，此后不改 |
 | `password_hash` | `NULL`（现有逻辑已拒绝其密码登录、改密与重置） |
 | `account_type` | `USER` |
 
-按 `(auth_source, external_id)` 精确查找（Java 侧再用 `equals` 比较），包含已软删除行（`SysUser.deleted` 为 `@TableLogic`，需显式 SQL）。
+按 `username` 查找，包含已软删除行（`SysUser.deleted` 为 `@TableLogic`，需显式 SQL）；找到的行还须 `auth_source` 等于 registration id 且 `username` 在 Java 侧 `equals` 完全相同，否则登录失败 `oauth_failed`（服务器默认 `utf8mb4_unicode_ci` 不区分大小写，防止大小写不同的 `sub` 或同名本地账号被当成同一用户）。不存在则插入；并发首登撞唯一键时重查一次。已删除或 `enabled=0` 拒绝登录。成功后更新 `last_login_at`。
 
-迁移 `V60`：唯一键 `uk_sys_user_external (external_id)` 改为 `uk_sys_user_source_external (auth_source, external_id)`，`external_id` 改为 `utf8mb4_bin`。原因：仅按 `external_id` 唯一时，两个 registration 出现相同 `sub` 会让后者永远无法登录；服务器默认 `utf8mb4_unicode_ci` 不区分大小写，大小写不同的 `sub` 会被当成同一用户（2026-11-16 设计评审发现）。不存在则插入；并发首登撞唯一键时重查一次。已删除或 `enabled=0` 拒绝登录。成功后更新 `last_login_at`。
+不使用 `external_id`（2026-11-16 用户决定）。迁移 `V60` 删除 `sys_user.external_id` 列及其索引 `idx_external_id`、`uk_sys_user_external`，实体 `SysUser` 去掉该字段。OAuth 从未上线，该列没有写入路径，删除不丢数据。
 
-智能体用户标识 `agentUserId` 为 `<registration id>:<sub>`；与 DataAgent 一致的前提是 registration id 等于 DataAgent 的 provider `name`（区分大小写）。修改已有部署的 registration id 等于更换身份命名空间，原 OAuth 用户再次登录会成为新用户。
+智能体用户标识 `agentUserId`：本地用户 `local:<用户名>` 不变，OAuth 用户直接取 `username`（即 `<registration id>:<sub>`）；与 DataAgent 一致的前提是 registration id 等于 DataAgent 的 provider `name`（区分大小写）。修改已有部署的 registration id 等于更换身份命名空间，原 OAuth 用户再次登录会成为新用户。
 
 ## 6. 与现有鉴权的关系
 
