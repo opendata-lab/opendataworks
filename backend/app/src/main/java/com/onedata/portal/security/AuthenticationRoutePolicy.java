@@ -12,6 +12,9 @@ public final class AuthenticationRoutePolicy {
             return Route.SERVICE;
         if (path.equals("/auth/login")
                 || path.equals("/auth/logout")
+                || path.equals("/auth/options")
+                || path.startsWith("/oauth2/authorization/")
+                || path.startsWith("/login/oauth2/code/")
                 || path.equals("/v1/health")
                 || path.startsWith("/v1/health/")
                 || path.equals("/actuator/health")

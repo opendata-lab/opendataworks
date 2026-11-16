@@ -6,14 +6,12 @@ import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.time.LocalDateTime;
+
 import lombok.Data;
 
+import java.time.LocalDateTime;
 
-
-/**
- * 平台本地用户
- */
+/** 平台本地用户 */
 @Data
 @TableName("sys_user")
 public class SysUser {
@@ -28,7 +26,9 @@ public class SysUser {
     private String description;
 
     @JsonIgnore
-    public boolean isServiceAccount() { return "SERVICE".equals(accountType); }
+    public boolean isServiceAccount() {
+        return "SERVICE".equals(accountType);
+    }
 
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     @lombok.ToString.Exclude
@@ -44,10 +44,7 @@ public class SysUser {
 
     private String authSource;
 
-    private String externalId;
-
-    @JsonIgnore
-    private Integer sessionVersion;
+    @JsonIgnore private Integer sessionVersion;
 
     private Integer failedAttempts;
 
@@ -59,6 +56,5 @@ public class SysUser {
 
     private LocalDateTime updatedAt;
 
-    @TableLogic
-    private Integer deleted;
+    @TableLogic private Integer deleted;
 }
