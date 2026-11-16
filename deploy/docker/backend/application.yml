@@ -1,0 +1,27 @@
+# Spring Boot 外部配置（只读挂载到容器内 /app/config/application.yml；默认全部注释 = 仅密码登录）。
+# 需要启用 OAuth 登录时取消注释并按实际 IdP 填写，保存后重启后端生效（不通过环境变量注入）。
+# registration id 仅限 1~32 位，以字母或数字开头，仅含字母、数字、.、_、-（不含 :），
+# 且不区分大小写不能为 local、service、anonymous；建议与 DataAgent provider name 保持一致。
+#
+# spring:
+#   security:
+#     oauth2:
+#       client:
+#         registration:
+#           sso:                                   # registration id：auth_source 与用户标识前缀
+#             client-name: SSO                     # 登录按钮“通过 SSO 登录”
+#             client-id: your-client-id
+#             client-secret: your-client-secret
+#             client-authentication-method: client_secret_basic   # 或 client_secret_post
+#             authorization-grant-type: authorization_code
+#             redirect-uri: https://odw.example.com/api/login/oauth2/code/sso   # 写绝对地址，不用 {baseUrl}
+#             scope: openid,profile,email
+#         provider:
+#           sso:
+#             issuer-uri: https://sso.example.com          # OIDC：其余端点自动发现（启动时请求；不可达则改下方显式端点）
+#             # 非 OIDC 时改为显式端点：
+#             # authorization-uri: https://sso.example.com/oauth/authorize
+#             # token-uri: https://sso.example.com/oauth/token
+#             # user-info-uri: https://sso.example.com/oauth/userinfo
+#             # user-info-authentication-method: header    # header | form | query
+#             # user-name-attribute: sub

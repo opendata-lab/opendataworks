@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createUnauthorizedRedirect, handleUnauthorized, setUnauthorizedHandler } from '../authRedirect'
+import { createUnauthorizedRedirect, handleUnauthorized, sanitizeRedirect, setUnauthorizedHandler } from '../authRedirect'
 
 const createContext = (path = '/datastudio', fullPath = '/datastudio?tableId=7') => {
   let resolvePending
@@ -75,5 +75,32 @@ describe('handleUnauthorized', () => {
     handleUnauthorized()
 
     expect(handler).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('sanitizeRedirect', () => {
+  it('keeps single-slash internal paths with query and hash', () => {
+    expect(sanitizeRedirect('/')).toBe('/')
+    expect(sanitizeRedirect('/datastudio?tableId=7')).toBe('/datastudio?tableId=7')
+    expect(sanitizeRedirect('/workflows/1#top')).toBe('/workflows/1#top')
+    expect(sanitizeRedirect('  /domains  ')).toBe('/domains')
+  })
+
+  it('rejects external, protocol-relative, backslash, control-char, and /login targets', () => {
+    for (const target of [
+      null,
+      undefined,
+      '',
+      'https://evil.com',
+      'http://evil.com/datastudio',
+      '//evil.com',
+      '/\\evil.com',
+      '/login',
+      '/login?oauth=success',
+      '/login/callback',
+      '/datastudio\n/evil'
+    ]) {
+      expect(sanitizeRedirect(target)).toBe('/')
+    }
   })
 })

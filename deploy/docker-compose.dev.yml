@@ -58,6 +58,7 @@ services:
       start_period: 60s
     volumes:
       - backend-logs:/app/logs
+      - ./docker/backend/application.yml:/app/config/application.yml:ro
 
   # 前端服务
   frontend:

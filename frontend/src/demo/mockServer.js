@@ -2328,6 +2328,13 @@ export const demoAdapter = async (config) => {
 
   const { method, pathname, params, body } = parseRequestUrl(config)
 
+  if (method === 'get' && pathname === '/auth/options') {
+    return createResponse(config, {
+      localLogin: true,
+      oauth: []
+    })
+  }
+
   if (method === 'get' && pathname === '/v1/tasks/config/dolphin-webui') {
     return createResponse(config, { webuiUrl: '' })
   }

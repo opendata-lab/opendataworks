@@ -108,3 +108,15 @@ def test_portal_proxy_does_not_turn_public_mcp_clients_into_private_peers():
     assert re.search(r"location\s+=\s+/api/mcp\s*\{\s*return 404;\s*\}", config)
     assert re.search(r"location\s+\^~\s+/api/mcp/\s*\{\s*return 404;\s*\}", config)
     assert re.search(r"(?m)^    location /api/ \{", config)
+
+
+def test_backend_mounts_oauth_application_config(render):
+    backend = render()["backend"]
+    mounts = [
+        volume for volume in backend["volumes"]
+        if volume.get("target") == "/app/config/application.yml"
+    ]
+    assert len(mounts) == 1
+    assert mounts[0].get("read_only") is True
+    assert mounts[0].get("source", "").endswith("docker/backend/application.yml")
+    assert (ROOT / "deploy/docker/backend/application.yml").is_file()

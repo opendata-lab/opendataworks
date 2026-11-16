@@ -1,6 +1,16 @@
 import request from '@/utils/request'
 
 export const authApi = {
+    // 登录方式配置（未登录时可访问）
+    options() {
+        return request({
+            url: '/auth/options',
+            method: 'get',
+            skipErrorMessage: true,
+            skipAuthRedirect: true
+        })
+    },
+
     // 用户名密码登录
     login(data) {
         return request({

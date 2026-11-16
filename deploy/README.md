@@ -11,7 +11,8 @@ JWT 密钥和共享服务令牌即可。密码须与实际 MySQL 用户一致；
 | 配置位置 | 内容 |
 | --- | --- |
 | `.env` | 凭据、镜像和必要部署选择 |
-| Compose | 固定服务接线、共享令牌映射 |
+| Compose | 固定服务接线、只读挂载配置 |
+| `docker/backend/application.yml` | 后端 Spring Boot 外部配置（OAuth2 Client 提供方；默认全部注释） |
 | `docker/nginx/frontend.conf` | 门户 nginx（宿主机挂载），含 DataAgent 转发示例 |
 | 代码默认 | 调度扫描、缓存/池、超时等策略 |
 
@@ -155,7 +156,7 @@ DataX 同步任务以 DolphinScheduler 的 `DATAX` 任务节点执行（见 `doc
 升级前备份平台库和 DataAgent 会话库（DataAgent 侧为 Alembic `20261026_000029`），检查并人工清理 `sys_user.external_id` 的非空重复值（V54 加唯一约束），停服务后执行两库迁移并整套发布。旧三表及旧权限接口直接删除，不迁移旧授权；没有映射即拒绝，没有默认账号兜底。回滚必须停服务并同时恢复两库备份和旧程序，不能仅回滚镜像。
 
 1. DBA 为每个数据源配置一次授权管理连接；平台在首次分配角色时自动创建人的账号和服务账号登录。V55起可用角色中心管理托管授权并核验成员原生权限；账号已有直接授权仍由DBA核对。Doris 使用 `Select_priv`，不依赖驱动只读事务。
-2. 开启平台认证，关闭 `AUTH_ANONYMOUS_ENABLED`；DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源，平台 `sys_user.external_id` 对应 sub。找不到或已停用用户即拒绝。门户内嵌问数时由门户上报当前用户（`/auth/me` 的 `agentUserId`），DataAgent 用它关联会话，不再要求单独登录 DataAgent；通过 MCP 查数的范围只由智能体的服务账号决定；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
+2. 开启平台认证，DataAgent 设置 `AUTH_ENABLED=True`。本地登录时两边用户名相同；OAuth 两边接相同身份源（建议将 ODW registration id 与 DataAgent provider `name` 设为一致），平台 OAuth 用户在 `sys_user.username` 以 `<registration id>:<sub>` 标识（`V60` 已删除 `sys_user.external_id`）。找不到或已停用用户即拒绝。门户内嵌问数时由前端根据 `/auth/me` 的 `username` 与 `authSource` 生成 `userId` 上报当前用户（本地 `local:<用户名>`，OAuth 即 `<registration id>:<sub>`；`/auth/me` 不再返回 `agentUserId`），DataAgent 用它关联会话，不再要求单独登录 DataAgent；通过 MCP 查数的范围只由智能体的服务账号决定；DataAgent 独立前端仍用它自己的登录。认证关闭时的匿名聊天不能访问数据库。
 3. 管理员在数据源页「权限配置 → 成员」选择人（平台 `sys_user.id`）或服务账号（同为平台 `sys_user.id`，V57后不接受外部agent_id），分配角色，平台自动创建并核验数据库登录；既有手工映射保留。读接口不回传密码，编辑留空保留密码。数据源原账号只用于采集和运维，不用于主体查询；人的目录、查询、写入和结构编辑均由其受限账号执行。
 4. MCP 内置于 Java 后端 `/api/mcp/`（也支持 `/api/mcp`），外部仅使用 `Authorization: Bearer <服务账号Token>`。全部 23 个工具可用；目录、只读查询与物理 DDL 都使用 SERVICE 自身数据库映射；用户头只记审计。按部署填写 `ODW_HTTP_ALLOWED_ORIGINS` 与受信代理 IP，MCP 默认只允许私网访问。
 5. 服务令牌和数据库密码不能注入模型 Bash 环境。DataAgent通过普通HTTP MCP配置的Authorization Bearer服务账号Token访问；平台只按该服务账号自身权限查询；DataAgent后端填写的用户、智能体身份头只写入查询历史。删除旧数据范围配置及范围头。
@@ -226,7 +227,7 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
    迁移需在升级本目录之前读取旧容器的 Skill 挂载；完成后再升级本目录，并用 `up -d --remove-orphans` 清掉旧的 `opendataworks-dataagent-*` 容器。
 2. 门户内嵌 widget：编辑 `docker/nginx/frontend.conf`，把 DataAgent 转发段中的 `<DataAgent 主机>` 改成实际地址并取消注释，重启 `frontend`。未接入 DataAgent 时保持注释，门户其他功能不受影响。
    在 DataAgent「Widget 接入」中登记站点 `opendataworks-portal`，允许来源填门户的访问地址（如 `https://portal.example.com`）。
-   门户 widget 以该站点身份上报当前用户：本地登录为 `local:<用户名>`，第三方登录为 `<来源>:<external_id>`；DataAgent 按此用户选择数据库账号。
+   门户 widget 以该站点身份上报当前用户：本地登录为 `local:<用户名>`，第三方登录为用户名 `<registration id>:<sub>`（前端按 `/auth/me` 的 `username` 与 `authSource` 生成，不再使用 `external_id`）；DataAgent 按此用户选择数据库账号。
    注意：这个用户标识来自浏览器，登录门户的用户可以篡改它冒充他人，按冒充对象的数据库账号权限查数。只在可信内网使用，并保证 DataAgent 的 8900 端口不对外暴露（风险已记入 `docs/TODO.md`）。
 3. 在OpenDataWorks「管理中心 → 账号管理」创建服务账号、生成Token，并在数据源权限页按用途分配最小权限角色（问数仅需只读），平台自动创建受限数据库账号。MCP 只按该 Token 授权：使用该智能体的所有人看到同一范围，需要不同范围时为每个智能体各建一个服务账号，并在 DataAgent 中为每个范围配置一条 MCP 记录。DataAgent或其他外部应用配置普通HTTP MCP，URL为`http://<OpenDataWorks 主机>:8080/api/mcp/`，header为`Authorization: Bearer <服务账号Token>`。工具名`odw_*`不变，凭据只存调用方安全配置，不放提示词或模型环境。
 4. 用 DataAgent 已有的 Skill 导入功能导入并启用本仓库 `odw-skills/` 下所需目录；新建智能体并绑定 MCP 与 Skills。
@@ -241,3 +242,13 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
 给新成员分配角色自动创建独立原生登录，管理连接须有 CREATE USER／CREATEROLE、角色管理和所选对象授权能力。生成密码用 ODW_CREDENTIAL_KEY 加密保存，原有 DBA 映射不改密、不认领为托管账号。保留密钥；移除成员仅删除平台创建且已核验所有权的登录，PG对象依赖会明确阻止删除，不级联删业务数据。回退前先核对并处理新托管映射／登录，旧后端不能使用这些加密密码。
 
 门户 Nginx 默认拒绝 `/api/mcp` 及子路径，避免将公网客户端经 Docker 桥接地址误判为私网；外部 MCP 使用独立受限的后端入口。
+
+## 配置 OAuth 单点登录
+
+OAuth2 / OIDC 使用 Spring Boot 标准属性配置，不通过 `.env` 环境变量注入：
+
+1. 编辑 `deploy/docker/backend/application.yml`（只读挂载到容器 `/app/config/application.yml`，默认全部注释即仅保留本地密码登录），取消注释并填写 `spring.security.oauth2.client.registration.<id>.*` 与 `provider.<id>.*`（完整字段与规则见 [认证手册](../docs/handbook/authentication.md)）。
+2. 在身份提供方（IdP）登记回调地址：`https://<浏览器访问的域名>/api/login/oauth2/code/<registration id>`，并将同一绝对地址写入 `redirect-uri`（不要使用 `{baseUrl}`，后端不启用 `server.forward-headers-strategy`）。
+3. `registration id` 仅限 1～32 位，以字母或数字开头，仅含字母、数字、`.`、`_`、`-`（不含 `:`），且不区分大小写不可为 `local`、`service`、`anonymous`。建议与 DataAgent 中的 provider `name` 一致；修改已有部署的 id 等于切换用户命名空间。
+4. 使用 `issuer-uri` 时 Spring Boot 会在启动阶段请求 IdP 发现文档，IdP 不可达会导致后端无法启动；如 IdP 可用性无保障，请改写显式 `authorization-uri` / `token-uri` / `user-info-uri` / `user-name-attribute`。
+5. 修改后执行 `scripts/restart.sh` 重启 `backend` 生效。回退只需注释 `spring.security.oauth2.client` 并重启 `backend`（已建 OAuth 用户保留在 `sys_user`）。

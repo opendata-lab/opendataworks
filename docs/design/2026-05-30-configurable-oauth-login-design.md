@@ -1,5 +1,8 @@
 # 可配置 OAuth 登录与统一身份认证设计
 
+> [!NOTE]
+> 本文中的 OAuth 登录设计（`sys_oauth_config` 表、管理员界面配置、自定义字段与 `external_id`）已被 [2026-11-16 OAuth 登录设计](2026-11-16-oauth-login-design.md) 取代；本地密码登录、会话 JWT 与当前鉴权结构以该新设计与 [认证手册](../handbook/authentication.md) 为准。
+
 - 日期: 2026-05-30
 - 状态: 草案 (Draft)
 - 范围: `backend/`、`frontend/`,身份契约预留 `dataagent/dataagent-backend/`

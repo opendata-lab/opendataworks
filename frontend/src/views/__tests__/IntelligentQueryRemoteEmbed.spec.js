@@ -21,7 +21,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
     routeState.query = {}
     getAgentSettings.mockReset().mockResolvedValue({ queryAgentId: 'agent_query' })
     setActivePinia(createPinia())
-    useAuthStore().currentUser = { username: 'alice', agentUserId: 'local:alice' }
+    useAuthStore().currentUser = { username: 'alice', authSource: 'local' }
   })
 
   it('loads the remote DataAgent widget script and installs inline mode into the page container', async () => {
@@ -51,6 +51,22 @@ describe('IntelligentQueryRemoteEmbed', () => {
 
     wrapper.unmount()
     expect(destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('passes OAuth username directly as widget userId', async () => {
+    useAuthStore().currentUser = { username: 'sso:u-42', authSource: 'sso' }
+    const destroy = vi.fn()
+    const installWidget = vi.fn(() => ({ destroy }))
+    window.DataAgentWidget = { installWidget }
+    const wrapper = mount(IntelligentQueryRemoteEmbed)
+    await flushPromises()
+
+    expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({
+      websiteId: 'opendataworks-portal',
+      userId: 'sso:u-42'
+    }))
+
+    wrapper.unmount()
   })
 
   it('opens the transferred topic and follows changes to the menu route', async () => {

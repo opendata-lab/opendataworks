@@ -1,10 +1,33 @@
-import { afterEach, expect, it, vi } from 'vitest'
-import { loadDataAgentWidgetScript } from '../dataagentWidgetLoader'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { useAuthStore } from '@/stores/auth'
+import { loadDataAgentWidgetScript, portalWidgetIdentity } from '../dataagentWidgetLoader'
+
+beforeEach(() => {
+  setActivePinia(createPinia())
+})
 
 afterEach(() => {
   document.querySelectorAll('[data-odw-dataagent-widget-script]').forEach(el => el.remove())
   delete window.DataAgentWidget
   delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
+})
+
+it('builds widget userId for local, OAuth, and unauthenticated states', () => {
+  const authStore = useAuthStore()
+  expect(portalWidgetIdentity()).toEqual({ websiteId: 'opendataworks-portal' })
+
+  authStore.currentUser = { username: 'alice', authSource: 'local' }
+  expect(portalWidgetIdentity()).toEqual({
+    websiteId: 'opendataworks-portal',
+    userId: 'local:alice'
+  })
+
+  authStore.currentUser = { username: 'sso:u-42', authSource: 'sso' }
+  expect(portalWidgetIdentity()).toEqual({
+    websiteId: 'opendataworks-portal',
+    userId: 'sso:u-42'
+  })
 })
 
 it('shares concurrent loads and allows a new user attempt after an error', async () => {

@@ -154,6 +154,9 @@ rm -f "$PACKAGED_DEPLOY_DIR/.env"
 if [[ ! -f "$PACKAGED_DEPLOY_DIR/.env.example" ]]; then
     die "deploy/.env.example is required for the offline package"
 fi
+if [[ ! -f "$PACKAGED_DEPLOY_DIR/docker/backend/application.yml" ]]; then
+    die "deploy/docker/backend/application.yml is required for the offline package"
+fi
 
 rewrite_offline_env_file() {
     local env_file="$1"

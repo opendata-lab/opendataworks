@@ -31,6 +31,16 @@ public class HttpAuthenticationConfiguration {
     }
 
     @Bean
+    SessionCookieIssuer sessionCookieIssuer(JwtService j, OdwAuthProperties p) {
+        return new SessionCookieIssuer(j, p);
+    }
+
+    @Bean
+    OAuthUserProvisioner oAuthUserProvisioner(SysUserMapper m) {
+        return new OAuthUserProvisioner(m);
+    }
+
+    @Bean
     AuthorizationAspect authorizationAspect() {
         return new AuthorizationAspect();
     }

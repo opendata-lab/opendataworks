@@ -1,10 +1,9 @@
 package com.onedata.auth.web;
 
-import com.onedata.auth.autoconfigure.OdwAuthProperties;
 import com.onedata.auth.context.CurrentPrincipal;
 import com.onedata.auth.context.PrincipalContextHolder;
 import com.onedata.auth.exception.UnauthorizedException;
-import com.onedata.auth.jwt.JwtService;
+import com.onedata.auth.jwt.SessionCookieIssuer;
 import com.onedata.auth.user.SysUser;
 import com.onedata.auth.user.SysUserService;
 import com.onedata.portal.dto.Result;
@@ -33,8 +32,7 @@ import java.util.Map;
 public class AuthController {
 
     private final SysUserService sysUserService;
-    private final JwtService jwtService;
-    private final OdwAuthProperties properties;
+    private final SessionCookieIssuer sessionCookieIssuer;
 
     @Data
     public static class LoginRequest {
@@ -52,24 +50,15 @@ public class AuthController {
     public Result<Map<String, Object>> login(
             @RequestBody LoginRequest request, HttpServletResponse response) {
         SysUser user = sysUserService.login(request.getUsername(), request.getPassword());
-        CurrentPrincipal context =
-                new CurrentPrincipal(
-                        String.valueOf(user.getId()),
-                        user.getUsername(),
-                        user.getRole(),
-                        user.getAuthSource(),
-                        user.getSessionVersion());
-        String token = jwtService.issue(context);
-        response.addHeader(
-                HttpHeaders.SET_COOKIE,
-                buildSessionCookie(token, properties.getJwt().getTtl().getSeconds()));
+        CurrentPrincipal context = SessionCookieIssuer.toPrincipal(user);
+        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookieIssuer.issueCookie(context));
         log.info("User logged in: {}", user.getUsername());
         return Result.success(toUserInfo(context, user));
     }
 
     @PostMapping("/logout")
     public Result<Void> logout(HttpServletResponse response) {
-        response.addHeader(HttpHeaders.SET_COOKIE, buildSessionCookie("", 0));
+        response.addHeader(HttpHeaders.SET_COOKIE, sessionCookieIssuer.clearCookie());
         return Result.success();
     }
 
@@ -118,39 +107,6 @@ public class AuthController {
         info.put("nickname", nickname != null ? nickname : context.getUsername());
         info.put("role", context.getRole());
         info.put("authSource", context.getAuthSource());
-        info.put("agentUserId", agentUserId(context, user));
         return info;
-    }
-
-    /**
-     * 门户内嵌 DataAgent 时上报的用户标识，与 agent API 解析主体的规则一致： 本地登录为 {@code local:<用户名>}，第三方登录为 {@code
-     * <来源>:<external_id>}。
-     */
-    static String agentUserId(CurrentPrincipal context, SysUser user) {
-        String source = context.getAuthSource();
-        if (source == null
-                || source.isEmpty()
-                || CurrentPrincipal.AUTH_SOURCE_LOCAL.equals(source)) {
-            return "local:" + context.getUsername();
-        }
-        String externalId = user != null ? user.getExternalId() : null;
-        return externalId == null || externalId.isEmpty() ? "" : source + ":" + externalId;
-    }
-
-    private String buildSessionCookie(String value, long maxAgeSeconds) {
-        OdwAuthProperties.Session session = properties.getSession();
-        StringBuilder cookie =
-                new StringBuilder()
-                        .append(session.getCookieName())
-                        .append('=')
-                        .append(value)
-                        .append("; Path=/; HttpOnly; Max-Age=")
-                        .append(maxAgeSeconds)
-                        .append("; SameSite=")
-                        .append(session.getSameSite());
-        if (session.isSecure()) {
-            cookie.append("; Secure");
-        }
-        return cookie.toString();
     }
 }
