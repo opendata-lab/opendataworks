@@ -1,5 +1,8 @@
 # 可配置 OAuth 登录与统一身份认证 实施计划
 
+> [!NOTE]
+> 本文中的 OAuth 登录实施项已被 [2026-11-16 OAuth 登录实施计划](2026-11-16-oauth-login-plan.md)（配套设计：[OAuth 登录设计](../design/2026-11-16-oauth-login-design.md)）取代；本地登录与当前鉴权实现以代码和 [认证手册](../handbook/authentication.md) 为准。
+
 - 日期: 2026-05-30
 - 配套设计:
   - `docs/design/2026-05-30-configurable-oauth-login-design.md`(登录流程/表/接口业务细节)
