@@ -10,7 +10,7 @@
 ## 1. 现状
 
 - 本地密码登录已上线：`sys_user`（bcrypt、失败锁定）、HS256 会话 JWT 写入 HttpOnly Cookie `odw_session`，`HttpAuthenticationFilter`（最高优先级）默认拦截，`AuthenticationRoutePolicy` 决定公开路径。
-- OAuth 未实现。`sys_user` 有 `auth_source` 与从未被写入的 `external_id`（`uk_sys_user_external` 唯一）；`AuthController.agentUserId` 对第三方用户按 `<auth_source>:<external_id>` 生成智能体用户标识，`external_id` 别处无人读取。
+- OAuth 未实现。`sys_user` 有 `auth_source` 与从未被写入的 `external_id`（`uk_sys_user_external` 唯一）；`external_id` 只被 `AuthController.agentUserId` 读取。`agentUserId` 由 `/auth/me` 返回，门户内嵌 DataAgent widget 时作为 `userId` 上报。
 - DataAgent、OntoFoundry 用外置 Python 配置与钩子；本仓库后端是 Java，不运行 Python。
 
 ## 2. 决定
@@ -23,6 +23,7 @@
 | OA-04 | 本地账号保持 `sys_user`。首次 OAuth 登录自动建用户，角色 `user`；管理员在用户管理中提升角色。不做角色映射。 |
 | OA-05 | 支持框架允许的多个 registration；registration id 即 `auth_source` 与用户标识前缀。 |
 | OA-06 | 登录成功后由 ODW 签发现有 `odw_session` 会话 JWT；Spring Security 只负责 OAuth2 登录两个端点，不接管其他请求的鉴权。 |
+| OA-07 | 删除 `agentUserId`（2026-11-16 用户决定）：`/auth/me` 不再返回，门户内嵌 DataAgent widget 只上报 `websiteId`，不再上报 `userId`。影响：DataAgent 中门户内嵌的会话不再关联到平台用户（按匿名访客处理），`deploy/README.md` 相应说明删除。 |
 
 ## 3. 配置
 
@@ -86,7 +87,7 @@ spring:
 
 不使用 `external_id`（2026-11-16 用户决定）。迁移 `V60` 删除 `sys_user.external_id` 列及其索引 `idx_external_id`、`uk_sys_user_external`，实体 `SysUser` 去掉该字段。OAuth 从未上线，该列没有写入路径，删除不丢数据。
 
-智能体用户标识 `agentUserId`：本地用户 `local:<用户名>` 不变，OAuth 用户直接取 `username`（即 `<registration id>:<sub>`）；与 DataAgent 一致的前提是 registration id 等于 DataAgent 的 provider `name`（区分大小写）。修改已有部署的 registration id 等于更换身份命名空间，原 OAuth 用户再次登录会成为新用户。
+registration id 宜与 DataAgent 的 provider `name` 相同，便于两边对照同一用户。修改已有部署的 registration id 等于更换身份命名空间，原 OAuth 用户再次登录会成为新用户。
 
 ## 6. 与现有鉴权的关系
 
