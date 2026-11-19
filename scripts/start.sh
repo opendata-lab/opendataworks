@@ -70,7 +70,7 @@ echo "🚀 启动 OpenDataWorks 服务..."
 echo ""
 
 
-# 预建日志收集目录（log-collector sidecar 把各服务日志实时写到这里）。
+# 预建日志目录（后端把单行 JSON 日志写到 logs/opendataworks-backend/）。
 # 先建好宿主机目录，避免 Docker 以 root 自动创建后产生属主困惑。
 mkdir -p "$DEPLOY_DIR/logs" 2>/dev/null || true
 

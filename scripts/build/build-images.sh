@@ -32,7 +32,6 @@ echo ""
 FRONTEND_IMAGE="opendataworks-frontend:latest"
 BACKEND_IMAGE="opendataworks-backend:latest"
 MYSQL_IMAGE="mysql:8.0"
-LOG_COLLECTOR_IMAGE="docker:27.5.1-cli"
 
 # 创建输出目录
 OUTPUT_DIR="$REPO_ROOT/deploy/docker-images"
@@ -53,7 +52,7 @@ echo "✅ 后端镜像构建完成"
 echo ""
 
 echo "📦 步骤 3/3: 拉取 MySQL 与日志收集运行时镜像..."
-for image in $MYSQL_IMAGE $LOG_COLLECTOR_IMAGE; do
+for image in $MYSQL_IMAGE; do
     $CONTAINER_CMD pull --platform linux/amd64 "$image"
 done
 echo "✅ 运行时镜像拉取完成"
@@ -65,7 +64,6 @@ ALL_IMAGES=(
     "$FRONTEND_IMAGE"
     "$BACKEND_IMAGE"
     "$MYSQL_IMAGE"
-    "$LOG_COLLECTOR_IMAGE"
 )
 if [ "$CONTAINER_CMD" = "podman" ]; then
     $CONTAINER_CMD save --multi-image-archive -o "$OUTPUT_DIR/all-images.tar" "${ALL_IMAGES[@]}"
@@ -87,7 +85,6 @@ echo "镜像清单："
 echo "  ✓ $FRONTEND_IMAGE"
 echo "  ✓ $BACKEND_IMAGE"
 echo "  ✓ $MYSQL_IMAGE"
-echo "  ✓ $LOG_COLLECTOR_IMAGE"
 echo ""
 echo "📝 下一步："
 echo "  1. 将 $OUTPUT_DIR/ 目录下的所有 tar 文件传输到内网服务器"

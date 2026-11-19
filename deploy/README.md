@@ -205,11 +205,11 @@ docker-compose -f docker-compose.prod.yml logs -f backend
 
 #### 宿主机日志文件（方便排障/打包带走）
 
-- **服务日志（实时落盘）**：`log-collector` sidecar 自动把各服务日志实时写到包目录
-  `deploy/logs/<container>.log`，打开目录即可查看，无需敲命令。
-  - 默认只覆盖应用服务 `backend`。
-  - 不收集 mysql 基础设施与 nginx 前端；如需增减，在 `deploy/.env` 设置 `LOG_COLLECTOR_CONTAINERS`（空格分隔容器名）。
-  - 收集器使用 `docker:27.5.1-cli` 镜像（离线包已包含），只读挂载 docker socket（`DOCKER_SOCKET`）。
+- **后端日志**：写在 `deploy/logs/opendataworks-backend/`（[日志统一标准](../docs/design/2026-11-19-logging-standard-design.md)）。
+  - `app.log` 每行一条 JSON，时间为 UTC；每天 UTC 零点轮转为 `app.log.YYYY-MM-DD.0.gz`，保留 30 天。
+  - 每个请求有 `request_id`，响应头 `X-Request-ID` 返回同值；查找：`zgrep '"request_id":"<值>"' deploy/logs/opendataworks-backend/app.log*`。
+  - 级别由 `ODW_LOG_LEVEL` 控制（`com.onedata.portal` 包），默认 `info`；排查 SQL 时临时设为 `debug`。
+  - MySQL 与前端只用 Docker 日志（每个容器最多约 30 MB），需要时用下面的脚本导出。原 `log-collector` 服务已移除；升级后执行一次 `docker rm -f opendataworks-log-collector` 停掉旧容器（Compose 不会自动删除它）。旧的 `deploy/logs/opendataworks-backend.log` 不再追加，可自行归档或删除。
 - **一键汇总/导出**：
   ```bash
   scripts/dump-logs.sh

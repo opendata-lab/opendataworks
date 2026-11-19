@@ -52,7 +52,7 @@
 | --- | --- | --- | --- |
 | MySQL | 3306（prod compose）/ 3316（dev compose） | `mysqladmin ping` | Docker 卷 `mysql-data` 或 `/var/lib/mysql` |
 | Redis | 6379 | `redis-cli ping` | 容器日志 |
-| Backend | 8080 | `/api/v1/health` | `docker volume backend-logs` 或 `backend/logs/` |
+| Backend | 8080 | `/api/v1/health` | `deploy/logs/opendataworks-backend/app.log`（单行 JSON，按天轮转） |
 | DolphinScheduler | 12345 (示例) | `/dolphinscheduler` 登录页或 OpenAPI `/projects` | 外部集群日志 |
 | Frontend | 80（容器）/ 8081（compose）/ 3000（Vite dev） | `/`、`/intelligent-query` | Nginx 日志或 `frontend/dist` |
 | ODW MCP Server | 8801 | `/health` | 容器日志或 `odw-mcp-server/` |
