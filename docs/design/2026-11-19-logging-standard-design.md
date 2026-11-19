@@ -91,6 +91,7 @@ ELK、Loki、OpenTelemetry 等日志收集与检索系统；日志收集容器�
 
 - `config/logging/StandardJsonLogFormatter`：实现 Spring Boot 的 `StructuredLogFormatter<ILoggingEvent>`，输出标准字段；时间按 UTC 格式化，不改变 JVM 时区（镜像为 `Asia/Shanghai`，Jackson 日期序列化等依赖它）。MDC 和 SLF4J 键值对中只取标准字段，消息与堆栈先脱敏、截断到 8 KB。
 - `config/logging/RequestLoggingFilter`：最外层 Servlet 过滤器，处理 `X-Request-ID`（写 MDC `request_id`、响应头返回），请求结束记一条完成日志（`method`、`path`、`status_code`、`duration_ms`），跳过 `/api/v1/health`。
+- `config/RestClientConfiguration`：调用 DolphinScheduler 的 `RestClient` 加请求拦截器，每次请求时从 MDC 读出 `request_id` 并带上 `X-Request-ID`。
 - `application.yml`：控制台和文件都用上面的格式类；只有设置 `LOGGING_FILE_NAME` 时写文件；滚动文件名 `${LOG_FILE}.%d{yyyy-MM-dd,UTC}.%i.gz`，`max-history: 30`，单日超过 1 GB 时当天再切分；`com.onedata.portal` 默认级别改为 `info`，由 `ODW_LOG_LEVEL` 覆盖。
 
 ### 3.2 部署

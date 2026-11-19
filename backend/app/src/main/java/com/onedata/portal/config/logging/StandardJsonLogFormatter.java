@@ -37,9 +37,12 @@ public class StandardJsonLogFormatter implements StructuredLogFormatter<ILogging
     private static final Set<String> FIELDS = Set.of(
             "request_id", "task_id", "run_id", "topic_id", "error_code",
             "method", "path", "status_code", "duration_ms");
+    /** Any key naming a secret (access_token, client_secret, "password", ...); "tokens" (usage counts) is not one. */
+    private static final String SECRET_KEY =
+            "[A-Za-z0-9_\\-]*(?:password|passwd|secret|token(?!s)|api[_-]?key|access[_-]?key|credential)[A-Za-z0-9_\\-]*";
     private static final List<Map.Entry<Pattern, String>> SECRETS = List.of(
-            Map.entry(Pattern.compile("(?i)\\b(bearer)\\s+[A-Za-z0-9_.\\-+/=]+"), "$1 ***"),
-            Map.entry(Pattern.compile("(?i)\\b(password|passwd|secret|token|api[_-]?key|access[_-]?key)(\"?\\s*[:=]\\s*\"?)[^\\s\"',;&]+"), "$1$2***"),
+            Map.entry(Pattern.compile("(?i)\\b(bearer|basic)\\s+[A-Za-z0-9_.\\-+/=]+"), "$1 ***"),
+            Map.entry(Pattern.compile("(?i)(['\"]?" + SECRET_KEY + "['\"]?\\s*[:=]\\s*['\"]?)[^\\s'\",;&}]+"), "$1***"),
             Map.entry(Pattern.compile("(://[^/\\s:@]+):[^/\\s@]+@"), "$1:***@"));
 
     private final ObjectMapper mapper = new ObjectMapper();

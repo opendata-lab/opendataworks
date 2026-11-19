@@ -25,8 +25,8 @@ import java.util.regex.Pattern;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class RequestLoggingFilter extends OncePerRequestFilter {
 
-    static final String HEADER = "X-Request-ID";
-    static final String MDC_KEY = "request_id";
+    public static final String HEADER = "X-Request-ID";
+    public static final String MDC_KEY = "request_id";
     private static final Pattern VALID_ID = Pattern.compile("^[A-Za-z0-9_-]{1,64}$");
     private static final String HEALTH_PATH = "/api/v1/health";
     private static final Logger log = LoggerFactory.getLogger("com.onedata.portal.request");

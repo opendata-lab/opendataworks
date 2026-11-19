@@ -56,8 +56,12 @@ class StandardJsonLogFormatterTest {
 
     @Test
     void redactsCredentialsAndCapsLength() {
-        String text = StandardJsonLogFormatter.redact("Bearer abc.def token: t-1 jdbc:mysql://u:pw@db:3306/x");
-        assertThat(text).doesNotContain("abc.def").doesNotContain("t-1").doesNotContain(":pw@");
+        String text = StandardJsonLogFormatter.redact("Bearer abc.def token: t-1 jdbc:mysql://u:pw@db:3306/x"
+                + " access_token=s1 client_secret=s2 {'password': 's3'} Authorization: Basic s4"
+                + " https://dolphin.invalid/x?access_token=s5&y=1");
+        assertThat(text).doesNotContain("abc.def").doesNotContain("t-1").doesNotContain(":pw@")
+                .doesNotContain("s1").doesNotContain("s2").doesNotContain("s3").doesNotContain("s4").doesNotContain("s5");
+        assertThat(StandardJsonLogFormatter.redact("max_tokens=4096")).isEqualTo("max_tokens=4096");
         assertThat(StandardJsonLogFormatter.redact("x".repeat(20_000)).length()).isLessThan(8_300);
     }
 }
