@@ -1,11 +1,11 @@
-# 统一容器日志驱动：json-file + 轮转。
-# 所有服务日志稳定落在宿主机 docker 数据目录、容器重启不丢，单服务最多保留 20m*5=100MB，
-# 避免默认无轮转把磁盘撑爆。导出成宿主机包目录文件见 scripts/dump-logs.sh。
+# Docker 自身的日志只作 `docker compose logs` 的临时缓冲；历史日志在
+# ./logs/<服务>/（单行 JSON，每天轮转，保留 30 天），见
+# docs/design/2026-11-19-logging-standard-design.md。
 x-default-logging: &default-logging
   driver: json-file
   options:
-    max-size: "20m"
-    max-file: "5"
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # DataAgent 不在本 Compose 中，由 opendataagent 仓库的 deploy/docker-compose.yml 单独部署；
@@ -55,6 +55,9 @@ services:
       ODW_HTTP_REQUIRE_PRIVATE_NETWORK: ${ODW_HTTP_REQUIRE_PRIVATE_NETWORK:-true}
       ODW_HTTP_TRUSTED_PROXIES: ${ODW_HTTP_TRUSTED_PROXIES:-}
       ODW_CREDENTIAL_KEY: ${ODW_CREDENTIAL_KEY:-}
+      # 单行 JSON 日志写到挂载的 logs/，每天 UTC 零点轮转、保留 30 天
+      LOGGING_FILE_NAME: /var/log/opendataworks-backend/app.log
+      ODW_LOG_LEVEL: ${ODW_LOG_LEVEL:-info}
     # DolphinScheduler 不包含在本 Compose 中，配置请在系统管理界面进行
     ports:
       - "8080:8080"
@@ -70,7 +73,7 @@ services:
       retries: 3
       start_period: 60s
     volumes:
-      - backend-logs:/app/logs
+      - ./logs/opendataworks-backend:/var/log/opendataworks-backend
       - ./docker/backend/application.yml:/app/config/application.yml:ro
 
   # 前端服务
@@ -96,42 +99,6 @@ services:
       retries: 3
 
 
-  # 日志收集 sidecar：用 docker CLI 镜像只读挂 docker socket，
-  # 对每个目标容器实时 `docker logs --follow` 写到宿主机 deploy/logs/<container>.log。
-  # 只收集应用服务（backend），无需改业务镜像、无各服务挂卷权限问题。
-  # 不收集 mysql 基础设施与 nginx 前端；如需可在 .env 用 LOG_COLLECTOR_CONTAINERS 增减。
-  log-collector:
-    image: ${LOG_COLLECTOR_IMAGE:-docker:27.5.1-cli}
-    container_name: opendataworks-log-collector
-    logging: *default-logging
-    restart: always
-    user: "0:0"
-    environment:
-      # 目标容器列表（仅应用服务），可在 .env 覆盖 LOG_COLLECTOR_CONTAINERS 增减
-      LOG_COLLECTOR_CONTAINERS: ${LOG_COLLECTOR_CONTAINERS:-opendataworks-backend}
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -u
-        mkdir -p /logs
-        echo "[log-collector] following: $$LOG_COLLECTOR_CONTAINERS"
-        for c in $$LOG_COLLECTOR_CONTAINERS; do
-          (
-            while true; do
-              # --tail 0：仅从挂接点起的新日志，避免重连后重复回灌历史。
-              # 历史完整日志由 json-file 轮转与 scripts/dump-logs.sh 兜底。
-              docker logs --follow --timestamps --tail 0 "$$c" >> "/logs/$$c.log" 2>>"/logs/_collector.err" || true
-              sleep 3
-            done
-          ) &
-        done
-        wait
-    networks:
-      - opendataworks-network
-    volumes:
-      - ./logs:/logs
-      - ${DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
-
 networks:
   opendataworks-network:
     driver: bridge
@@ -143,6 +110,4 @@ networks:
 
 volumes:
   mysql-data:
-    driver: local
-  backend-logs:
     driver: local

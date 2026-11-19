@@ -67,10 +67,23 @@ mybatis-plus:
 
 # DolphinScheduler 配置由数据库 dolphin_config 表管理，可在系统管理界面配置
 
-# 日志配置
+# 日志配置（docs/design/2026-11-19-logging-standard-design.md）：
+# 控制台与文件均为单行 JSON；只有设置了 LOGGING_FILE_NAME（Compose 设为
+# /var/log/opendataworks-backend/app.log）时才写文件，每天 UTC 零点轮转、gzip、保留 30 天。
 logging:
+  structured:
+    format:
+      console: com.onedata.portal.config.logging.StandardJsonLogFormatter
+      file: com.onedata.portal.config.logging.StandardJsonLogFormatter
+  logback:
+    rollingpolicy:
+      file-name-pattern: "${LOG_FILE}.%d{yyyy-MM-dd,UTC}.%i.gz"
+      max-history: 30
+      # 按天切分；单日超过该大小时同一天再切出 .1、.2
+      max-file-size: 1GB
   level:
-    com.onedata.portal: debug
+    root: info
+    com.onedata.portal: ${ODW_LOG_LEVEL:info}
     org.springframework.web: info
 
 # core 身份领域配置；HTTP 入口策略在 app 装配

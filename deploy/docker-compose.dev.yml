@@ -1,8 +1,17 @@
+# Docker 自身的日志只作 `docker compose logs` 的临时缓冲；历史日志在
+# ./logs/<服务>/，见 docs/design/2026-11-19-logging-standard-design.md。
+x-default-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   # DataAgent 不在本 Compose 中，由 opendataagent 仓库的 deploy/docker-compose.yml 单独部署；
   # 门户内嵌 widget 所需的转发写在 ./docker/nginx/frontend.conf，按实际地址启用。
   # MySQL 数据库
   mysql:
+    logging: *default-logging
     image: mysql:8.0
     pull_policy: always
     container_name: opendataworks-mysql
@@ -30,6 +39,7 @@ services:
 
   # 后端服务
   backend:
+    logging: *default-logging
     image: ${OPENDATAWORKS_BACKEND_IMAGE:-mikefan2019/opendataworks-backend:latest}
     pull_policy: always
     container_name: opendataworks-backend
@@ -44,6 +54,9 @@ services:
       ODW_HTTP_REQUIRE_PRIVATE_NETWORK: ${ODW_HTTP_REQUIRE_PRIVATE_NETWORK:-true}
       ODW_HTTP_TRUSTED_PROXIES: ${ODW_HTTP_TRUSTED_PROXIES:-}
       ODW_CREDENTIAL_KEY: ${ODW_CREDENTIAL_KEY:-}
+      # 单行 JSON 日志写到挂载的 logs/，每天 UTC 零点轮转、保留 30 天
+      LOGGING_FILE_NAME: /var/log/opendataworks-backend/app.log
+      ODW_LOG_LEVEL: ${ODW_LOG_LEVEL:-info}
     # DolphinScheduler 不包含在本 Compose 中，配置请在系统管理界面进行
     ports:
       - "8080:8080"
@@ -57,11 +70,12 @@ services:
       retries: 3
       start_period: 60s
     volumes:
-      - backend-logs:/app/logs
+      - ./logs/opendataworks-backend:/var/log/opendataworks-backend
       - ./docker/backend/application.yml:/app/config/application.yml:ro
 
   # 前端服务
   frontend:
+    logging: *default-logging
     image: ${OPENDATAWORKS_FRONTEND_IMAGE:-mikefan2019/opendataworks-frontend:latest}
     pull_policy: always
     container_name: opendataworks-frontend
@@ -83,6 +97,4 @@ services:
 
 volumes:
   mysql-data:
-    driver: local
-  backend-logs:
     driver: local
