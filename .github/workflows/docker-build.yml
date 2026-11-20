@@ -40,7 +40,7 @@ jobs:
             image: opendataworks-backend
             context: .
             dockerfile: ./backend/Dockerfile
-            build_args: ""
+            build_args: "MAVEN_CENTRAL_MIRROR=https://maven-central.storage-download.googleapis.com/maven2/"
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
