@@ -1,12 +1,52 @@
 # 后端构建镜像
-FROM --platform=$BUILDPLATFORM maven:3.8-openjdk-17 AS builder
+FROM --platform=$BUILDPLATFORM maven:3.9-eclipse-temurin-17 AS builder
 
 WORKDIR /app
 
-# Build the reactor once; retain downloaded dependencies across local/CI builds.
+# Optional Maven Central mirror for CI (falls back to Central; unset for local builds).
+ARG MAVEN_CENTRAL_MIRROR=""
+RUN if [ -n "$MAVEN_CENTRAL_MIRROR" ]; then \
+        mkdir -p /root/.m2 && \
+        printf '%s\n' \
+            '<settings>' \
+            '  <profiles>' \
+            '    <profile>' \
+            '      <id>central-mirror</id>' \
+            '      <repositories>' \
+            '        <repository>' \
+            '          <id>central-mirror</id>' \
+            '          <url>'"$MAVEN_CENTRAL_MIRROR"'</url>' \
+            '          <releases><enabled>true</enabled></releases>' \
+            '          <snapshots><enabled>false</enabled></snapshots>' \
+            '        </repository>' \
+            '      </repositories>' \
+            '      <pluginRepositories>' \
+            '        <pluginRepository>' \
+            '          <id>central-mirror</id>' \
+            '          <url>'"$MAVEN_CENTRAL_MIRROR"'</url>' \
+            '          <releases><enabled>true</enabled></releases>' \
+            '          <snapshots><enabled>false</enabled></snapshots>' \
+            '        </pluginRepository>' \
+            '      </pluginRepositories>' \
+            '    </profile>' \
+            '  </profiles>' \
+            '  <activeProfiles>' \
+            '    <activeProfile>central-mirror</activeProfile>' \
+            '  </activeProfiles>' \
+            '</settings>' > /root/.m2/settings.xml; \
+    fi
+
+# Cache dependencies and build plugins in a BuildKit layer (cache mounts are not exported to GHA cache).
+COPY backend/pom.xml ./backend/pom.xml
+COPY backend/core/pom.xml ./backend/core/pom.xml
+COPY backend/api/pom.xml ./backend/api/pom.xml
+COPY backend/mcp-server/pom.xml ./backend/mcp-server/pom.xml
+COPY backend/app/pom.xml ./backend/app/pom.xml
+RUN mvn -B -ntp -f backend/pom.xml package -Dmaven.test.skip=true -Dspring-boot.repackage.skip=true \
+    && rm -rf backend/*/target
+
 COPY backend ./backend
-RUN --mount=type=cache,target=/root/.m2 \
-    mvn -B -ntp -f backend/pom.xml package -Dmaven.test.skip=true
+RUN mvn -B -ntp -f backend/pom.xml package -Dmaven.test.skip=true
 
 # 生产运行镜像
 FROM eclipse-temurin:17-jre-jammy
