@@ -45,7 +45,7 @@ describe('IntelligentQueryRemoteEmbed', () => {
       containerId: 'odw-dataagent-inline-widget',
       agentId: 'agent_query',
       websiteId: 'opendataworks-portal',
-      userId: 'local:alice',
+      userId: 'alice',
       apiBaseUrl: ''
     }))
 

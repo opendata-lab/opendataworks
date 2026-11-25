@@ -170,7 +170,7 @@ describe('Layout', () => {
     wrapper.unmount()
   })
 
-  it('shows changePassword menu item and local widget userId only for local accounts', async () => {
+  it('shows changePassword menu item and sends plain widget userId for local accounts', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     useAuthStore().currentUser = { username: 'alice', nickname: 'Alice', authSource: 'local' }
@@ -193,7 +193,7 @@ describe('Layout', () => {
 
     expect(wrapper.find('[data-command="changePassword"]').exists()).toBe(true)
     expect(wrapper.find('[data-command="logout"]').exists()).toBe(true)
-    expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({ userId: 'local:alice' }))
+    expect(installWidget).toHaveBeenCalledWith(expect.objectContaining({ userId: 'alice' }))
     wrapper.unmount()
   })
 
