@@ -12,7 +12,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** OAuth 用户首次自动建号与每次登录资料刷新 */
+/** OAuth 用户首次自动建号与每次登录资料刷新（昵称只在为空时填） */
 @RequiredArgsConstructor
 public class OAuthUserProvisioner {
 
@@ -110,6 +110,7 @@ public class OAuthUserProvisioner {
                 throw new OAuthProvisioningException(
                         ERROR_OAUTH_FAILED, "OAuth identity points to a missing user");
             }
+            requireActive(bound);
             renameLegacyUsername(bound, registrationId, subject, preferredUsername);
             return refreshLogin(bound, nickname, email, now);
         }
@@ -186,12 +187,18 @@ public class OAuthUserProvisioner {
 
     private SysUser refreshLogin(SysUser user, String nickname, String email, LocalDateTime now) {
         requireActive(user);
+        // Like DataAgent: the IdP name only fills an empty nickname, never overwrites one.
+        String keptNickname =
+                user.getNickname() == null || user.getNickname().isBlank()
+                        ? nickname
+                        : user.getNickname();
         int updated =
-                sysUserMapper.updateOAuthLoginProfile(user.getId(), nickname, email, now, now);
+                sysUserMapper.updateOAuthLoginProfile(
+                        user.getId(), keptNickname, email, now, now);
         if (updated != 1) {
             throw new OAuthProvisioningException(ERROR_ACCOUNT_DISABLED, "账号已停用");
         }
-        user.setNickname(nickname);
+        user.setNickname(keptNickname);
         user.setEmail(email);
         user.setLastLoginAt(now);
         user.setUpdatedAt(now);

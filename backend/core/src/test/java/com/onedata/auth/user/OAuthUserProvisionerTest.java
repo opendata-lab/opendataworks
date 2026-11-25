@@ -88,13 +88,13 @@ class OAuthUserProvisionerTest {
     }
 
     @Test
-    void boundIdentityRefreshesProfileWithoutChangingRoleOrName() {
+    void boundIdentityKeepsNicknameAndRefreshesEmailWithoutChangingRoleOrName() {
         SysUser existing = activeUser(11L, "alice", "sso", "admin");
         existing.setNickname("Old Name");
         when(sysUserMapper.findUserIdByIdentity("sso", "u-100")).thenReturn(11L);
         when(sysUserMapper.findAllById(11L)).thenReturn(existing);
         when(sysUserMapper.updateOAuthLoginProfile(
-                        eq(11L), eq("New Name"), eq("new@example.com"), any(), any()))
+                        eq(11L), eq("Old Name"), eq("new@example.com"), any(), any()))
                 .thenReturn(1);
 
         SysUser result =
@@ -102,7 +102,8 @@ class OAuthUserProvisionerTest {
 
         assertEquals("admin", result.getRole());
         assertEquals("alice", result.getUsername());
-        assertEquals("New Name", result.getNickname());
+        assertEquals("Old Name", result.getNickname());
+        assertEquals("new@example.com", result.getEmail());
         verify(sysUserMapper, never()).insert(any());
         verify(sysUserMapper, never()).renameUser(any(), any());
         verify(sysUserMapper, never()).insertIdentity(any(), any(), any());
@@ -143,14 +144,16 @@ class OAuthUserProvisionerTest {
     @Test
     void unboundIdentityBindsTheSameNamedAccount() {
         SysUser local = activeUser(5L, "alice", "local", "admin");
+        local.setNickname("爱丽丝");
         when(sysUserMapper.findUserIdByIdentity("sso", "u-100")).thenReturn(null);
         when(sysUserMapper.findAllByUsername("alice")).thenReturn(local);
-        when(sysUserMapper.updateOAuthLoginProfile(eq(5L), any(), any(), any(), any()))
+        when(sysUserMapper.updateOAuthLoginProfile(eq(5L), eq("爱丽丝"), any(), any(), any()))
                 .thenReturn(1);
 
         SysUser result = provisioner.provision("sso", "u-100", "alice", "Alice", null);
 
         assertEquals(5L, result.getId());
+        assertEquals("爱丽丝", result.getNickname());
         assertEquals("local", result.getAuthSource());
         verify(sysUserMapper).insertIdentity("sso", "u-100", 5L);
         verify(sysUserMapper, never()).insert(any());
@@ -183,6 +186,17 @@ class OAuthUserProvisionerTest {
                         () -> provisioner.provision("sso", "u-disabled", "bob", "Bob", null));
         assertEquals(OAuthUserProvisioner.ERROR_ACCOUNT_DISABLED, disabledEx.getErrorCode());
 
+        SysUser disabledLegacy = activeUser(16L, "sso:u-old", "sso", "user");
+        disabledLegacy.setEnabled(false);
+        when(sysUserMapper.findUserIdByIdentity("sso", "u-old")).thenReturn(16L);
+        when(sysUserMapper.findAllById(16L)).thenReturn(disabledLegacy);
+        OAuthProvisioningException legacyEx =
+                assertThrows(
+                        OAuthProvisioningException.class,
+                        () -> provisioner.provision("sso", "u-old", "dave", "Dave", null));
+        assertEquals(OAuthUserProvisioner.ERROR_ACCOUNT_DISABLED, legacyEx.getErrorCode());
+        verify(sysUserMapper, never()).renameUser(any(), any());
+
         SysUser deleted = activeUser(14L, "carol", "local", "user");
         deleted.setDeleted(1);
         when(sysUserMapper.findUserIdByIdentity("sso", "u-deleted")).thenReturn(null);
@@ -209,6 +223,7 @@ class OAuthUserProvisionerTest {
         when(sysUserMapper.updateOAuthLoginProfile(
                         eq(15L), eq("n".repeat(128)), isNull(), any(), any()))
                 .thenReturn(1);
+        existing.setNickname(null);
         SysUser truncated = provisioner.provision("sso", "sub-1", null, "n".repeat(150), "");
         assertEquals(128, truncated.getNickname().length());
     }

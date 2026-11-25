@@ -117,7 +117,7 @@ spring:
 - 用户名 `sys_user.username` 取顶层属性 `preferred_username`，缺省为 `sub`，须为 1-128 位英文、数字或 `. _ @ + -` 且以字母或数字开头（与 DataAgent 相同），否则登录失败 `oauth_failed`。外部身份 `(registration id, sub)` 记在 `sys_user_identity`（`V61`）。首次登录时已有同名普通账号（含本地账号）即绑定，否则新建；服务账号不绑定。`V61` 之前创建的 `<registration id>:<sub>` 账号在下次登录时改为新用户名（新名被占用时保留旧名）。**只接入用户名不可由用户自改的可信 IdP**：`preferred_username` 与已有账号同名即登录该账号。
 - 新建账号的 `auth_source` 为 `<registration id>`（绑定到已有本地账号时不变）；`account_type` 为 `USER`；`password_hash` 为 `NULL`（本地密码登录、修改密码与管理员重置密码接口均拒绝 OAuth 账号）。
 - `role` 仅在首次登录新建时写入 `user`，之后每次登录保持数据库内现有角色不变（由管理员在「账号管理」提升）。
-- `nickname` 每次登录刷新：依次取顶层属性 `preferred_username`、`name`、`nickname`，均无有效非空字符串时回退到 `sub`，超过 128 字符截断。
+- `nickname` 只在账号昵称为空时填写，已有昵称不被 IdP 覆盖（与 DataAgent 一致）；取值依次为顶层属性 `preferred_username`、`name`、`nickname`，均无有效非空字符串时回退到 `sub`，超过 128 字符截断。
 - `email` 每次登录刷新：仅当顶层属性 `email` 为非空字符串且长度不超过 128 字符时写入，否则置空（`NULL`）。
 - 已停用（`enabled=0`）或已软删除（`deleted=1`）账号拒绝登录为 `oauth_account_disabled`。并发首次登录撞唯一键时整体重来一次。成功登录后更新 `last_login_at`。
 
