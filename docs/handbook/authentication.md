@@ -108,18 +108,18 @@ spring:
 - **必须填写绝对 `redirect-uri`**：形式为 `https://<浏览器访问的域名>/api/login/oauth2/code/<registration id>`，并在 IdP 原样登记。不要使用 `{baseUrl}`，也**禁止启用 `server.forward-headers-strategy`**（启用转发头策略会无条件信任 `X-Forwarded-For`，从而绕过 `/mcp` 的私网来源校验）。
 - **`registration id` 校验规则（启动即校验，失败阻止启动）**：长度 1～32 位（匹配 `sys_user.auth_source` 列长 `VARCHAR(32)`），必须以字母或数字开头，仅允许字母、数字、`.`、`_`、`-`（不含 `:`）；不区分大小写不可为 `local`、`service`、`anonymous`。
 - **`issuer-uri` 启动依赖**：配置 `issuer-uri` 时 Spring Boot 会在启动阶段请求 IdP 的 OIDC 发现文档；如果 IdP 此时不可达，整个后端（包括本地密码登录）都会启动失败。IdP 启动期可用性无法保证时，请改为显式配置 `authorization-uri`、`token-uri`、`user-info-uri` 与 `user-name-attribute`。
-- **与 DataAgent provider 同名建议**：门户内嵌 DataAgent widget 时，前端按 `/auth/me` 的 `username` 与 `authSource` 生成 `userId`（本地账号为 `local:<用户名>`，OAuth 账号直接为 `<registration id>:<sub>`）。将 ODW 的 `registration id` 设为与 DataAgent 侧相同 IdP provider 的 `name` 一致，两边即可对应同一用户标识。
-- **修改 `registration id` 的影响**：改变已有部署的 `registration id` 等价于更换用户身份命名空间，原 OAuth 用户再次登录会被视为新用户并创建新记录。
+- **与 DataAgent 的用户名一致**：OAuth 用户名与 DataAgent 规则相同（取 `preferred_username`，缺省为 `sub`）。门户内嵌 DataAgent widget 直接上报 `/auth/me` 的 `username`，DataAgent 对应同名账号，两边会话共用。
+- **修改 `registration id` 的影响**：身份按 `(registration id, sub)` 绑定；改名后原 OAuth 用户再次登录会按用户名重新绑定到原账号。
 - **`client-secret` 安全**：仅留在 `deploy/docker/backend/application.yml`，不进日志，也不经 `/api/auth/options` 等接口返回。
 
 ### 用户建号与刷新规则
 
-- 唯一用户名 `sys_user.username` 为 `<registration id>:<sub>`（最长 128 字符，超出则登录失败 `oauth_failed`）。`sub` 取自 OIDC 的 `OidcUser.getSubject()` 或纯 OAuth2 的 `OAuth2User.getName()`。`V60` 迁移已移除 `sys_user.external_id`。
-- `auth_source` 为 `<registration id>`；`account_type` 为 `USER`；`password_hash` 为 `NULL`（本地密码登录、修改密码与管理员重置密码接口均拒绝 OAuth 账号）。
+- 用户名 `sys_user.username` 取顶层属性 `preferred_username`，缺省为 `sub`，须为 1-128 位英文、数字或 `. _ @ + -` 且以字母或数字开头（与 DataAgent 相同），否则登录失败 `oauth_failed`。外部身份 `(registration id, sub)` 记在 `sys_user_identity`（`V61`）。首次登录时已有同名普通账号（含本地账号）即绑定，否则新建；服务账号不绑定。`V61` 之前创建的 `<registration id>:<sub>` 账号在下次登录时改为新用户名（新名被占用时保留旧名）。**只接入用户名不可由用户自改的可信 IdP**：`preferred_username` 与已有账号同名即登录该账号。
+- 新建账号的 `auth_source` 为 `<registration id>`（绑定到已有本地账号时不变）；`account_type` 为 `USER`；`password_hash` 为 `NULL`（本地密码登录、修改密码与管理员重置密码接口均拒绝 OAuth 账号）。
 - `role` 仅在首次登录新建时写入 `user`，之后每次登录保持数据库内现有角色不变（由管理员在「账号管理」提升）。
 - `nickname` 每次登录刷新：依次取顶层属性 `preferred_username`、`name`、`nickname`，均无有效非空字符串时回退到 `sub`，超过 128 字符截断。
 - `email` 每次登录刷新：仅当顶层属性 `email` 为非空字符串且长度不超过 128 字符时写入，否则置空（`NULL`）。
-- 查重与防串号：按 `username` 查询包含已软删除行，并在 Java 侧校验 `auth_source` 等于当前 `registration id`、`username` 精确区分大小写 `equals` 一致且非服务账号，否则拒绝为 `oauth_failed`（防止 MySQL `utf8mb4_unicode_ci` 不区分大小写导致不同 `sub` 或同名本地账号碰撞）。已停用（`enabled=0`）或已软删除（`deleted=1`）账号拒绝登录为 `oauth_account_disabled`。并发首次登录撞唯一键时重查一次并按同一规则校验刷新。成功登录后更新 `last_login_at`。
+- 已停用（`enabled=0`）或已软删除（`deleted=1`）账号拒绝登录为 `oauth_account_disabled`。并发首次登录撞唯一键时整体重来一次。成功登录后更新 `last_login_at`。
 
 ### 错误代码与提示
 
@@ -145,7 +145,7 @@ JWT claims（HS256，密钥 `AUTH_JWT_SECRET`）：
 | claim | 含义 |
 |---|---|
 | `sub` | 平台用户 ID（`sys_user.id`） |
-| `username` | 用户名（本地用户或 `<registration id>:<sub>`） |
+| `username` | 用户名（本地用户名，或 OAuth 用户的 `preferred_username` / `sub`） |
 | `role` | `admin` / `user` |
 | `auth_source` | `local` 或 OAuth `<registration id>` |
 | `session_version` | 会话版本号（改密、停用、软删除时递增，立即使旧 Cookie 失效） |

@@ -13,14 +13,14 @@ afterEach(() => {
   delete window.__ODW_DATAAGENT_WIDGET_SCRIPT_PROMISE__
 })
 
-it('builds widget userId for local, OAuth, and unauthenticated states', () => {
+it('sends the signed-in username unchanged as widget userId', () => {
   const authStore = useAuthStore()
   expect(portalWidgetIdentity()).toEqual({ websiteId: 'opendataworks-portal' })
 
   authStore.currentUser = { username: 'alice', authSource: 'local' }
   expect(portalWidgetIdentity()).toEqual({
     websiteId: 'opendataworks-portal',
-    userId: 'local:alice'
+    userId: 'alice'
   })
 
   authStore.currentUser = { username: 'sso:u-42', authSource: 'sso' }

@@ -21,9 +21,10 @@
 | OA-02 | 配置写在宿主机 `deploy/docker/backend/application.yml`，只读挂载到 `/app/config/application.yml`（后端工作目录 `/app`，Spring Boot 默认加载 `./config/application.yml`）。不新增环境变量。修改需重启后端。 |
 | OA-03 | 用户标识取框架给出的主体名：OIDC 为 `sub`；纯 OAuth2 为 `user-name-attribute` 指定的顶层属性。不支持嵌套或包装结构的用户信息（标准 `user-name-attribute` 只取顶层键）。 |
 | OA-04 | 本地账号保持 `sys_user`。首次 OAuth 登录自动建用户，角色 `user`；管理员在用户管理中提升角色。不做角色映射。 |
-| OA-05 | 支持框架允许的多个 registration；registration id 即 `auth_source` 与用户标识前缀。 |
+| OA-05 | 支持框架允许的多个 registration；registration id 即新建 OAuth 账号的 `auth_source`，并与 `sub` 一起记在 `sys_user_identity`（OA-08）。 |
 | OA-06 | 登录成功后由 ODW 签发现有 `odw_session` 会话 JWT；Spring Security 只负责 OAuth2 登录两个端点，不接管其他请求的鉴权。 |
-| OA-07 | 删除后端 `agentUserId`（2026-11-16 用户决定）：`/auth/me` 不再返回该字段。门户内嵌 DataAgent widget 仍上报当前用户，不按匿名访客处理：前端按 `/auth/me` 已有的 `username` 与 `authSource` 生成 `userId`，本地用户 `local:<用户名>`，OAuth 用户即用户名 `<registration id>:<sub>`，与 DataAgent 直接登录时的用户标识一致（前提是 registration id 与 DataAgent provider `name` 相同）。 |
+| OA-07 | 删除后端 `agentUserId`（2026-11-16 用户决定）：`/auth/me` 不再返回该字段。门户内嵌 DataAgent widget 直接上报 `/auth/me` 的 `username`（2026-11-25 起不再拼 `local:` 前缀），DataAgent 把它对应到同名账号。 |
+| OA-08 | **OAuth 用户名与 DataAgent 对齐（2026-11-25 用户决定）**：用户名改为普通用户名，取 IdP 的 `preferred_username`，缺省为 `sub`，规则与 DataAgent 相同（1-128 位英文、数字或 `. _ @ + -`，以字母或数字开头，否则登录失败 `oauth_failed`）。外部身份 `(registration id, sub)` 记在新表 `sys_user_identity`（迁移 `V61`）。首次登录时已有同名账号（含本地账号，不含服务账号）即绑定该账号，否则新建。门户 widget 因此对 SSO 用户也上报与 DataAgent 相同的用户名，两边会话共用。**已接受的风险**：IdP 的 `preferred_username` 决定绑定到哪个已有账号，与本地账号同名（如 `admin`）即获得该账号，只能接入可信 IdP（用户名不可由用户自改）。 |
 
 ## 3. 配置
 
@@ -75,19 +76,25 @@ spring:
 
 | 列 | OAuth 用户 |
 |---|---|
-| `username` | `<registration id>:<sub>`，即 OAuth 用户的唯一身份（`uk_username`）；`sub` 为 OIDC `getSubject()` 或 OAuth2 `OAuth2User.getName()`。列长 128，超长则登录失败 `oauth_failed` |
-| `auth_source` | registration id |
+| `username` | 普通用户名：`preferred_username`，缺省为 `sub`（OA-08）。`sub` 为 OIDC `getSubject()` 或 OAuth2 `OAuth2User.getName()` |
+| `auth_source` | 新建时为 registration id；绑定到已有本地账号时保持原值 |
 | `nickname` | 每次登录刷新：依次取属性 `preferred_username`、`name`、`nickname`，均无则 `sub`；超过 128 字符截断 |
 | `email` | 每次登录刷新：属性 `email`（字符串且不超过 128 字符时，否则置空） |
 | `role` | 新建时 `user`，此后不改 |
-| `password_hash` | `NULL`（现有逻辑已拒绝其密码登录、改密与重置） |
+| `password_hash` | 新建时 `NULL`（现有逻辑已拒绝其密码登录、改密与重置） |
 | `account_type` | `USER` |
 
-按 `username` 查找，包含已软删除行（`SysUser.deleted` 为 `@TableLogic`，需显式 SQL）；找到的行还须 `auth_source` 等于 registration id 且 `username` 在 Java 侧 `equals` 完全相同，否则登录失败 `oauth_failed`（服务器默认 `utf8mb4_unicode_ci` 不区分大小写，防止大小写不同的 `sub` 或同名本地账号被当成同一用户）。不存在则插入；并发首登撞唯一键时重查一次。已删除或 `enabled=0` 拒绝登录。成功后更新 `last_login_at`。
+外部身份表 `sys_user_identity(registration_id, subject, user_id)`，`(registration_id, subject)` 唯一。登录顺序（`OAuthUserProvisioner`，与 DataAgent `link_or_register` 相同）：
 
-不使用 `external_id`（2026-11-16 用户决定）。迁移 `V60` 删除 `sys_user.external_id` 列及其索引 `idx_external_id`、`uk_sys_user_external`，实体 `SysUser` 去掉该字段。OAuth 从未上线，该列没有写入路径，删除不丢数据。
+1. 按 `(registration id, sub)` 找到绑定账号：刷新资料后登录。账号用户名仍是旧格式 `<registration id>:<sub>` 且新用户名空闲时，顺带改为新用户名。
+2. 未绑定：按新用户名查 `sys_user`（含已软删除行）。存在且为普通账号即写入绑定；服务账号拒绝 `oauth_failed`。
+3. 不存在则新建账号并写入绑定。并发首登撞唯一键时整体重来一次。
 
-registration id 宜与 DataAgent 的 provider `name` 相同，便于两边对照同一用户。修改已有部署的 registration id 等于更换身份命名空间，原 OAuth 用户再次登录会成为新用户。
+已删除或 `enabled=0` 拒绝登录 `oauth_account_disabled`。成功后更新 `last_login_at`。MySQL 默认排序规则不区分大小写，`preferred_username` 与已有账号仅大小写不同也视为同名（与 DataAgent 一致）。
+
+迁移 `V61` 建表，并为已有 `<registration id>:<sub>` 账号补登绑定；用户名在其下次 SSO 登录时改为新用户名（新名被占用则保留旧名）。账号 ID 不变，数据源授权按 ID 关联不受影响；按用户名记录的历史字段（如创建人）保留旧值。
+
+不使用 `external_id`（2026-11-16 用户决定，`V60` 已删除）。修改已有部署的 registration id 后，原 OAuth 用户再次登录会按用户名重新绑定到原账号。
 
 ## 6. 与现有鉴权的关系
 

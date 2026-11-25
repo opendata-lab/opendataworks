@@ -24,6 +24,28 @@ public interface SysUserMapper extends BaseMapper<SysUser> {
             "SELECT * FROM sys_user WHERE username=#{username} LIMIT 1")
     SysUser findAllByUsername(@Param("username") String username);
 
+    @org.apache.ibatis.annotations.Select("SELECT * FROM sys_user WHERE id=#{id} LIMIT 1")
+    SysUser findAllById(@Param("id") Long id);
+
+    @org.apache.ibatis.annotations.Select(
+            "SELECT user_id FROM sys_user_identity WHERE registration_id=#{registrationId}"
+                    + " AND subject=#{subject} LIMIT 1")
+    Long findUserIdByIdentity(
+            @Param("registrationId") String registrationId, @Param("subject") String subject);
+
+    @org.apache.ibatis.annotations.Insert(
+            "INSERT INTO sys_user_identity (registration_id, subject, user_id)"
+                    + " VALUES (#{registrationId}, #{subject}, #{userId})")
+    int insertIdentity(
+            @Param("registrationId") String registrationId,
+            @Param("subject") String subject,
+            @Param("userId") Long userId);
+
+    @Update(
+            "UPDATE sys_user SET username=#{username}, updated_at=CURRENT_TIMESTAMP"
+                    + " WHERE id=#{id} AND deleted=0")
+    int renameUser(@Param("id") Long id, @Param("username") String username);
+
     @Update(
             "UPDATE sys_user SET nickname=#{nickname}, email=#{email},"
                     + " last_login_at=#{lastLoginAt}, updated_at=#{updatedAt}"

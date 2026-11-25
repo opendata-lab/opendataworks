@@ -58,17 +58,10 @@ export async function loadQueryAgentId() {
 // 门户在 DataAgent「Widget 接入」中登记的站点标识，管理员需把门户来源加入该站点的允许来源。
 export const PORTAL_WIDGET_SITE_ID = 'opendataworks-portal'
 
-// 门户内嵌时由门户上报当前用户（本地用户 local:<用户名>，OAuth 用户即用户名 <registration id>:<sub>），仅供 DataAgent 展示与审计；ODW 的 MCP 只按服务账号令牌授权，不据此收窄数据权限。
+// 门户内嵌时直接上报 /auth/me 的 username（OAuth 用户名与 DataAgent 同规则，见 OAuth 登录设计 OA-08），
+// DataAgent 对已登记站点且来源在白名单内的请求，把它对应到同名账号（无站点访问密钥，仅限可信内网）；
+// ODW 的 MCP 只按服务账号令牌授权，不据此收窄数据权限。
 export function portalWidgetIdentity() {
-  const user = useAuthStore().currentUser
-  const username = String(user?.username || '').trim()
-  if (!username) {
-    return { websiteId: PORTAL_WIDGET_SITE_ID }
-  }
-  const authSource = String(user?.authSource || '').trim()
-  const userId =
-    !authSource || authSource.toLowerCase() === 'local'
-      ? `local:${username}`
-      : username
-  return { websiteId: PORTAL_WIDGET_SITE_ID, userId }
+  const username = String(useAuthStore().currentUser?.username || '').trim()
+  return username ? { websiteId: PORTAL_WIDGET_SITE_ID, userId: username } : { websiteId: PORTAL_WIDGET_SITE_ID }
 }
