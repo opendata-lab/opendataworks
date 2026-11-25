@@ -175,7 +175,8 @@ class OAuthLoginSecurityTest {
                                 // 3. Happy path callback -> provisions user, sets odw_session,
                                 // invalidates HTTP session, 302 /login?oauth=success
                                 reset(mapper);
-                                when(mapper.findAllByUsername("sso:u-100")).thenReturn(null);
+                                when(mapper.findUserIdByIdentity(any(), any())).thenReturn(null);
+                                when(mapper.findAllByUsername("Alice")).thenReturn(null);
                                 when(mapper.insert(any(SysUser.class)))
                                         .thenAnswer(
                                                 call -> {
@@ -206,7 +207,7 @@ class OAuthLoginSecurityTest {
                                 CurrentPrincipal principal = jwtService.verify(token);
                                 assertNotNull(principal);
                                 assertEquals("42", principal.getUserId());
-                                assertEquals("sso:u-100", principal.getUsername());
+                                assertEquals("Alice", principal.getUsername());
                                 assertEquals("sso", principal.getAuthSource());
                                 assertEquals("user", principal.getRole());
 
@@ -228,12 +229,13 @@ class OAuthLoginSecurityTest {
                                 userInfoJson.set("{\"sub\":\"u-disabled\",\"name\":\"Disabled\"}");
                                 SysUser disabledUser = new SysUser();
                                 disabledUser.setId(77L);
-                                disabledUser.setUsername("sso:u-disabled");
+                                disabledUser.setUsername("u-disabled");
                                 disabledUser.setAuthSource("sso");
                                 disabledUser.setEnabled(false);
                                 disabledUser.setDeleted(0);
                                 reset(mapper);
-                                when(mapper.findAllByUsername("sso:u-disabled"))
+                                when(mapper.findUserIdByIdentity(any(), any())).thenReturn(null);
+                                when(mapper.findAllByUsername("u-disabled"))
                                         .thenReturn(disabledUser);
 
                                 AuthAttempt disabledAttempt = startAuth(mvc);
@@ -396,7 +398,8 @@ class OAuthLoginSecurityTest {
                                 Instant.now().plusSeconds(60)),
                         idToken);
         when(delegate.loadUser(request)).thenReturn(delegateUser);
-        when(mapper.findAllByUsername("corp:oidc-9")).thenReturn(null);
+        when(mapper.findUserIdByIdentity(any(), any())).thenReturn(null);
+        when(mapper.findAllByUsername("oidc-9")).thenReturn(null);
         when(mapper.insert(any(SysUser.class)))
                 .thenAnswer(
                         call -> {
@@ -407,16 +410,16 @@ class OAuthLoginSecurityTest {
 
         OidcUser wrapped = services.oidcUserService().loadUser(request);
         assertEquals(88L, wrapped.<Long>getAttribute(OAuthUserServices.ATTR_USER_ID));
-        assertEquals("corp:oidc-9", wrapped.getAttribute(OAuthUserServices.ATTR_USERNAME));
+        assertEquals("oidc-9", wrapped.getAttribute(OAuthUserServices.ATTR_USERNAME));
         assertEquals("oidc-9", wrapped.getSubject());
 
         SysUser disabled = new SysUser();
         disabled.setId(88L);
-        disabled.setUsername("corp:oidc-9");
+        disabled.setUsername("oidc-9");
         disabled.setAuthSource("corp");
         disabled.setEnabled(false);
         disabled.setDeleted(0);
-        when(mapper.findAllByUsername("corp:oidc-9")).thenReturn(disabled);
+        when(mapper.findAllByUsername("oidc-9")).thenReturn(disabled);
 
         OAuth2AuthenticationException ex =
                 assertThrows(

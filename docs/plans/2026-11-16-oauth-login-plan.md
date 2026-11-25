@@ -34,3 +34,17 @@
 ## 发布与回退
 
 发布说明：配置 OAuth 需编辑 `deploy/docker/backend/application.yml` 并重启后端，在 IdP 登记回调 `https://<域名>/api/login/oauth2/code/<registration id>`。回退：注释掉 `spring.security.oauth2.client` 重启即恢复仅密码登录；已建 OAuth 用户保留在 `sys_user`。
+
+## OA-08：OAuth 用户名与 DataAgent 对齐（2026-11-25）
+
+设计见 [OA-08 与第 5 节](../design/2026-11-16-oauth-login-design.md#5-用户)。与 opendata-lab/opendataagent#63 一起上线。
+
+任务：
+1. 迁移 `V61__sys_user_identity.sql`：建 `sys_user_identity`，为已有 `<registration id>:<sub>` 账号补登绑定。
+2. `SysUserMapper` 加 `findAllById`、`findUserIdByIdentity`、`insertIdentity`、`renameUser`。
+3. `OAuthUserProvisioner.provision(registrationId, sub, preferredUsername, nickname, email)`：按身份 → 同名账号绑定 → 新建的顺序；旧格式用户名登录时改名；用户名规则与 DataAgent 相同。`OAuthUserServices` 传入 `preferred_username`。
+4. 门户 `portalWidgetIdentity()` 直接上报 `username`；更新 `docs/handbook/authentication.md`、`deploy/README.md`、`docs/TODO.md`。
+
+验证：`OAuthUserProvisionerTest`（Mockito + DuckDB 跑身份查询与 `V61` 回填）、`OAuthLoginSecurityTest`；本机 `mysql:8.0` 依次执行 `V44` 与 `V61`，确认回填与唯一键；前端 vitest 与 `npm run build`。
+
+发布：先备份 `sys_user`，随后端发布自动执行 `V61`。回退：恢复旧程序后删除 `sys_user_identity` 表即可，已改名的账号在旧程序下会被当作新 OAuth 用户（旧程序按 `<registration id>:<sub>` 查找），所以回退须同时恢复 `sys_user` 备份。

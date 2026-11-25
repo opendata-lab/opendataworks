@@ -76,7 +76,8 @@ final class OAuthUserServices {
         String nickname = resolveNickname(attributes, sub);
         String email = resolveEmail(attributes);
         try {
-            return provisioner.provision(registrationId, sub, nickname, email);
+            return provisioner.provision(
+                    registrationId, sub, resolvePreferredUsername(attributes), nickname, email);
         } catch (OAuthProvisioningException e) {
             throw new OAuth2AuthenticationException(
                     new OAuth2Error(e.getErrorCode(), e.getMessage(), null), e.getMessage(), e);
@@ -86,6 +87,11 @@ final class OAuthUserServices {
                     "OAuth user provisioning failed",
                     e);
         }
+    }
+
+    static String resolvePreferredUsername(Map<String, Object> attributes) {
+        Object value = attributes == null ? null : attributes.get("preferred_username");
+        return value instanceof String str ? str : null;
     }
 
     static String resolveNickname(Map<String, Object> attributes, String sub) {

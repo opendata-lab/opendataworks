@@ -58,7 +58,7 @@ export async function loadQueryAgentId() {
 // 门户在 DataAgent「Widget 接入」中登记的站点标识，管理员需把门户来源加入该站点的允许来源。
 export const PORTAL_WIDGET_SITE_ID = 'opendataworks-portal'
 
-// 门户内嵌时直接上报 /auth/me 的 username（本地用户即用户名，OAuth 用户为 <registration id>:<sub>），
+// 门户内嵌时直接上报 /auth/me 的 username（OAuth 用户名与 DataAgent 同规则，见 OAuth 登录设计 OA-08），
 // DataAgent 对已登记站点且来源在白名单内的请求，把它对应到同名账号（无站点访问密钥，仅限可信内网）；
 // ODW 的 MCP 只按服务账号令牌授权，不据此收窄数据权限。
 export function portalWidgetIdentity() {
