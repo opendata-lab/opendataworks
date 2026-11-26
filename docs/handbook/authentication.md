@@ -76,7 +76,7 @@ Filter 匹配去掉 context-path `/api` 后的 servlet path：
 
 ### 配置方式与示例
 
-OAuth 提供方直接写在宿主机 `deploy/docker/backend/application.yml`，Compose 将其只读挂载到容器 `/app/config/application.yml`（后端工作目录 `/app`，Spring Boot 自动加载 `./config/application.yml`），不通过环境变量注入；修改后需重启后端生效。默认全部注释即仅开启密码登录：
+OAuth 提供方直接写在宿主机 `deploy/docker/backend/application.yml`（现场配置：首次启动由同名 `.example` 生成，升级不覆盖），Compose 将其只读挂载到容器 `/app/config/application.yml`（后端工作目录 `/app`，Spring Boot 自动加载 `./config/application.yml`），不通过环境变量注入；修改后需重启后端生效。默认全部注释即仅开启密码登录：
 
 ```yaml
 spring:

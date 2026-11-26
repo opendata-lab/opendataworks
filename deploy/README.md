@@ -12,8 +12,10 @@ JWT 密钥和共享服务令牌即可。密码须与实际 MySQL 用户一致；
 | --- | --- |
 | `.env` | 凭据、镜像和必要部署选择 |
 | Compose | 固定服务接线、只读挂载配置 |
-| `docker/backend/application.yml` | 后端 Spring Boot 外部配置（OAuth2 Client 提供方；默认全部注释） |
-| `docker/nginx/frontend.conf` | 门户 nginx（宿主机挂载），含 DataAgent 转发示例 |
+| `docker/backend/application.yml` | 后端 Spring Boot 外部配置（OAuth2 Client 提供方；模板默认全部注释）。现场配置，见下方说明 |
+| `docker/nginx/frontend.conf` | 门户 nginx（宿主机挂载），含 DataAgent 转发示例。现场配置，见下方说明 |
+
+**现场配置不随升级覆盖**：仓库和离线包只带 `docker/nginx/frontend.conf.example` 与 `docker/backend/application.yml.example`；`scripts/start.sh`（离线包的 `load-package-and-start.sh` 也经由它）首次启动时缺哪个就从 `.example` 复制哪个，之后在现场修改。把新离线包同步到已有部署目录时，已有的 `frontend.conf`、`application.yml` 与 `.env` 一样保持不变。代价是模板的新改动不会自动进入现场：升级说明提到这两个模板有变化时，对照 `.example` 手工合并。
 | 代码默认 | 调度扫描、缓存/池、超时等策略 |
 
 生产网络默认 `10.71.0.0/24`、网关 `10.71.0.1`，遇到 VPN/宿主网段冲突再修改；
@@ -225,7 +227,7 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
 
 1. 按 opendataagent 的 `deploy/README.md` 部署 DataAgent。从旧版本（DataAgent 跟随本目录部署）升级时，按其中“从 OpenDataWorks 内置部署迁移”导出旧 `dataagent` 库和 Skill 卷；本目录升级不会删除这些数据。
    迁移需在升级本目录之前读取旧容器的 Skill 挂载；完成后再升级本目录，并用 `up -d --remove-orphans` 清掉旧的 `opendataworks-dataagent-*` 容器。
-2. 门户内嵌 widget：编辑 `docker/nginx/frontend.conf`，把 DataAgent 转发段中的 `<DataAgent 主机>` 改成实际地址并取消注释，重启 `frontend`。未接入 DataAgent 时保持注释，门户其他功能不受影响。
+2. 门户内嵌 widget：编辑 `docker/nginx/frontend.conf`（首次启动由 `.example` 生成），把 DataAgent 转发段中的 `<DataAgent 主机>` 改成实际地址并取消注释，重启 `frontend`。未接入 DataAgent 时保持注释，门户其他功能不受影响。
    在 DataAgent「Widget 接入」中登记站点 `opendataworks-portal`，允许来源（`allowed_origins`）填门户的访问地址（如 `https://portal.example.com`），无需配置访问密钥。
    DataAgent 信任「已登记站点 + Origin 白名单 + 纯用户名」：门户前端直接发送 `/auth/me` 的 `username`（不再拼 `local:` 前缀；SSO 用户名与 DataAgent 同规则），DataAgent 绑定或自动注册同名账号，并使门户与 DataAgent 网页共用同一套个人会话。
    注意：因为没有站点访问密钥，浏览器或任何能访问 DataAgent API 的内网调用方都可为已登记站点宣称任意用户名（仅影响 DataAgent 会话归属，不影响 ODW MCP 的服务账号数据权限）。只在可信内网使用，并保证 DataAgent 的 8900 端口不对外暴露（风险已记入 `docs/TODO.md`）。
@@ -247,7 +249,7 @@ DataAgent 镜像由 [opendataagent](https://github.com/opendata-lab/opendataagen
 
 OAuth2 / OIDC 使用 Spring Boot 标准属性配置，不通过 `.env` 环境变量注入：
 
-1. 编辑 `deploy/docker/backend/application.yml`（只读挂载到容器 `/app/config/application.yml`，默认全部注释即仅保留本地密码登录），取消注释并填写 `spring.security.oauth2.client.registration.<id>.*` 与 `provider.<id>.*`（完整字段与规则见 [认证手册](../docs/handbook/authentication.md)）。
+1. 编辑 `deploy/docker/backend/application.yml`（首次启动由 `.example` 生成，升级不覆盖；只读挂载到容器 `/app/config/application.yml`，默认全部注释即仅保留本地密码登录），取消注释并填写 `spring.security.oauth2.client.registration.<id>.*` 与 `provider.<id>.*`（完整字段与规则见 [认证手册](../docs/handbook/authentication.md)）。
 2. 在身份提供方（IdP）登记回调地址：`https://<浏览器访问的域名>/api/login/oauth2/code/<registration id>`，并将同一绝对地址写入 `redirect-uri`（不要使用 `{baseUrl}`，后端不启用 `server.forward-headers-strategy`）。
 3. `registration id` 仅限 1～32 位，以字母或数字开头，仅含字母、数字、`.`、`_`、`-`（不含 `:`），且不区分大小写不可为 `local`、`service`、`anonymous`。建议与 DataAgent 中的 provider `name` 一致；修改已有部署的 id 等于切换用户命名空间。
 4. 使用 `issuer-uri` 时 Spring Boot 会在启动阶段请求 IdP 发现文档，IdP 不可达会导致后端无法启动；如 IdP 可用性无保障，请改写显式 `authorization-uri` / `token-uri` / `user-info-uri` / `user-name-attribute`。

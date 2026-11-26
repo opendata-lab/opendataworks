@@ -15,6 +15,8 @@ ENV_FILE="$DEPLOY_DIR/.env"
 
 # shellcheck source=/dev/null
 source "$LIB_DIR/container-runtime.sh"
+# shellcheck source=/dev/null
+source "$LIB_DIR/site-config.sh"
 
 if ! detect_compose_cmd; then
     echo "❌ 错误: 未找到可用的 compose 命令（docker-compose、docker compose、podman compose、podman-compose）"
@@ -25,6 +27,8 @@ echo "========================================="
 echo "  OpenDataWorks 重启脚本"
 echo "========================================="
 echo ""
+
+ensure_site_configs "$DEPLOY_DIR" || exit 1
 
 echo "🔄 重启 OpenDataWorks 服务..."
 pushd "$DEPLOY_DIR" >/dev/null

@@ -122,11 +122,13 @@ mkdir -p "$PACKAGED_DEPLOY_DIR"
 mkdir -p "$PACKAGED_SCRIPTS_DIR"
 mkdir -p "$DEPLOY_IMAGE_DIR"
 
-# 1. 复制 deploy/ 下的内容（排除运行时 .env、预置镜像 tar 与评测专用的 opik 目录）
+# 1. 复制 deploy/ 下的内容（排除运行时 .env、现场配置、预置镜像 tar 与评测专用的 opik 目录；现场配置只带 .example）
 log "Copying deploy/ content to package deploy/"
 tar -C "$REPO_ROOT/deploy" \
     --exclude='./.env' \
     --exclude='.env' \
+    --exclude='./docker/nginx/frontend.conf' \
+    --exclude='./docker/backend/application.yml' \
     --exclude='docker-images/*.tar' \
     --exclude='opik' \
     --exclude='./opik' \
@@ -154,9 +156,14 @@ rm -f "$PACKAGED_DEPLOY_DIR/.env"
 if [[ ! -f "$PACKAGED_DEPLOY_DIR/.env.example" ]]; then
     die "deploy/.env.example is required for the offline package"
 fi
-if [[ ! -f "$PACKAGED_DEPLOY_DIR/docker/backend/application.yml" ]]; then
-    die "deploy/docker/backend/application.yml is required for the offline package"
-fi
+for site_config in docker/backend/application.yml docker/nginx/frontend.conf; do
+    if [[ -e "$PACKAGED_DEPLOY_DIR/$site_config" ]]; then
+        die "deploy/$site_config must not be packaged; it belongs to the target server"
+    fi
+    if [[ ! -f "$PACKAGED_DEPLOY_DIR/$site_config.example" ]]; then
+        die "deploy/$site_config.example is required for the offline package"
+    fi
+done
 
 rewrite_offline_env_file() {
     local env_file="$1"
