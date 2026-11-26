@@ -187,11 +187,13 @@ public class OAuthUserProvisioner {
 
     private SysUser refreshLogin(SysUser user, String nickname, String email, LocalDateTime now) {
         requireActive(user);
-        // Like DataAgent: the IdP name only fills an empty nickname, never overwrites one.
+        // Like DataAgent: the IdP name fills a nickname that is unset (empty, or the
+        // username given by default), never one the user or an admin chose.
+        String current = user.getNickname();
         String keptNickname =
-                user.getNickname() == null || user.getNickname().isBlank()
+                current == null || current.isBlank() || current.equals(user.getUsername())
                         ? nickname
-                        : user.getNickname();
+                        : current;
         int updated =
                 sysUserMapper.updateOAuthLoginProfile(
                         user.getId(), keptNickname, email, now, now);

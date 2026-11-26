@@ -110,6 +110,20 @@ class OAuthUserProvisionerTest {
     }
 
     @Test
+    void nicknameEqualToTheUsernameIsUnsetAndGetsTheIdpName() {
+        SysUser existing = activeUser(17L, "zhangsan", "sso", "user");
+        existing.setNickname("zhangsan");
+        when(sysUserMapper.findUserIdByIdentity("sso", "u-17")).thenReturn(17L);
+        when(sysUserMapper.findAllById(17L)).thenReturn(existing);
+        when(sysUserMapper.updateOAuthLoginProfile(eq(17L), eq("张三"), any(), any(), any()))
+                .thenReturn(1);
+
+        SysUser result = provisioner.provision("sso", "u-17", "zhangsan", "张三", null);
+
+        assertEquals("张三", result.getNickname());
+    }
+
+    @Test
     void legacyPrefixedUsernameIsRenamedWhenTheNewNameIsFree() {
         SysUser legacy = activeUser(12L, "sso:u-100", "sso", "user");
         when(sysUserMapper.findUserIdByIdentity("sso", "u-100")).thenReturn(12L);
