@@ -99,3 +99,7 @@ website/.vitepress/cache/
 # local smoke in AGENTS.md points it at the repository — so a smoke run must not
 # be able to leave committable directories behind.
 /topic_*/
+
+# 现场配置：首次启动由同名 .example 生成，升级不覆盖
+deploy/docker/nginx/frontend.conf
+deploy/docker/backend/application.yml

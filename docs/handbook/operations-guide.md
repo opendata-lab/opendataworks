@@ -88,7 +88,7 @@ server {
 | 组件 | 文件 | 说明 |
 | --- | --- | --- |
 | Backend | `application.yml` | DB、Dolphin/Dinky、日志、CORS |
-| Frontend | `deploy/docker/nginx/frontend.conf` | 宿主机挂载的门户 nginx：反向代理 `/api/` 至 `backend:8080/api/`；DataAgent 的 `/dataagent/widget/`、`/api/v1/dataagent/`、`/api/v1/nl2sql-admin/`、`/api/v1/nl2sql/` 转发以注释示例给出，接入 DataAgent 时填实际地址启用 |
+| Frontend | `deploy/docker/nginx/frontend.conf` | 宿主机挂载的门户 nginx（现场配置：首次启动由 `.example` 生成，升级不覆盖）：反向代理 `/api/` 至 `backend:8080/api/`；DataAgent 的 `/dataagent/widget/`、`/api/v1/dataagent/`、`/api/v1/nl2sql/` 转发以注释示例给出，接入 DataAgent 时填实际地址启用（`/api/v1/nl2sql-admin/` 门户用不到，保持注释） |
 | Compose | `deploy/docker-compose.prod.yml` | 镜像/tag/端口/卷 |
 
 ## 滚动/重启

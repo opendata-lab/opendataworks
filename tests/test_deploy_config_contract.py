@@ -104,7 +104,7 @@ def test_mysql_probe_uses_the_container_password_after_customization(render, tmp
 
 
 def test_portal_proxy_does_not_turn_public_mcp_clients_into_private_peers():
-    config = (ROOT / "deploy/docker/nginx/frontend.conf").read_text()
+    config = (ROOT / "deploy/docker/nginx/frontend.conf.example").read_text()
     assert re.search(r"location\s+=\s+/api/mcp\s*\{\s*return 404;\s*\}", config)
     assert re.search(r"location\s+\^~\s+/api/mcp/\s*\{\s*return 404;\s*\}", config)
     assert re.search(r"(?m)^    location /api/ \{", config)
@@ -119,4 +119,27 @@ def test_backend_mounts_oauth_application_config(render):
     assert len(mounts) == 1
     assert mounts[0].get("read_only") is True
     assert mounts[0].get("source", "").endswith("docker/backend/application.yml")
-    assert (ROOT / "deploy/docker/backend/application.yml").is_file()
+    assert (ROOT / "deploy/docker/backend/application.yml.example").is_file()
+
+
+def test_site_configs_are_created_from_templates_and_never_overwritten(tmp_path):
+    """frontend.conf / application.yml belong to the server: templates only, copied once."""
+    for rel in ("docker/nginx/frontend.conf", "docker/backend/application.yml"):
+        assert (ROOT / "deploy" / f"{rel}.example").is_file()
+        assert not (ROOT / "deploy" / rel).exists() or subprocess.run(
+            ["git", "check-ignore", "-q", f"deploy/{rel}"], cwd=ROOT).returncode == 0
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / f"{rel}.example").write_text("template\n")
+    (tmp_path / "docker/nginx/frontend.conf").write_text("site edit\n")
+
+    lib = ROOT / "scripts/lib/site-config.sh"
+    subprocess.run(["bash", "-c", f'source "{lib}" && ensure_site_configs "{tmp_path}"'], check=True)
+
+    assert (tmp_path / "docker/nginx/frontend.conf").read_text() == "site edit\n"
+    assert (tmp_path / "docker/backend/application.yml").read_text() == "template\n"
+
+
+def test_offline_package_ships_only_site_config_templates():
+    script = (ROOT / "scripts/create-offline-package.sh").read_text()
+    assert "--exclude='./docker/nginx/frontend.conf'" in script
+    assert "--exclude='./docker/backend/application.yml'" in script

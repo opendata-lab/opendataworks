@@ -16,6 +16,8 @@ ENV_EXAMPLE="$DEPLOY_DIR/.env.example"
 
 # shellcheck source=/dev/null
 source "$LIB_DIR/container-runtime.sh"
+# shellcheck source=/dev/null
+source "$LIB_DIR/site-config.sh"
 
 if [ ! -f "$COMPOSE_FILE" ]; then
     echo "❌ 错误: 未找到 $COMPOSE_FILE"
@@ -73,6 +75,9 @@ echo ""
 # 预建日志目录（后端把单行 JSON 日志写到 logs/opendataworks-backend/）。
 # 先建好宿主机目录，避免 Docker 以 root 自动创建后产生属主困惑。
 mkdir -p "$DEPLOY_DIR/logs" 2>/dev/null || true
+
+# 现场配置不存在时从模板生成（compose 绑定挂载缺文件会被 Docker 建成目录）。
+ensure_site_configs "$DEPLOY_DIR" || exit 1
 
 # 启动服务
 pushd "$DEPLOY_DIR" >/dev/null
