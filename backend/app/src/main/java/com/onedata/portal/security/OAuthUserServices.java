@@ -36,9 +36,7 @@ final class OAuthUserServices {
     static final String ATTR_SESSION_VERSION =
             OAuthUserServices.class.getName() + ".sessionVersion";
 
-    // The username is preferred_username, so the display name prefers the shown name (e.g. 张三).
-    private static final List<String> NICKNAME_KEYS =
-            List.of("name", "nickname", "preferred_username");
+
 
     private final OAuthUserProvisioner provisioner;
     private final OAuth2UserService<OAuth2UserRequest, OAuth2User> delegateOAuth2Service;
@@ -95,13 +93,16 @@ final class OAuthUserServices {
         return value instanceof String str ? str : null;
     }
 
+    /**
+     * Same split as DataAgent's OAUTH_USER_INFO: sub = identity, preferred_username = username,
+     * the OIDC standard claim {@code name} = display name (e.g. 张三). Without a name the display
+     * name is the username.
+     */
     static String resolveNickname(Map<String, Object> attributes, String sub) {
-        if (attributes != null) {
-            for (String key : NICKNAME_KEYS) {
-                Object value = attributes.get(key);
-                if (value instanceof String str && !str.isBlank()) {
-                    return str.trim();
-                }
+        for (String key : List.of("name", "preferred_username")) {
+            Object value = attributes == null ? null : attributes.get(key);
+            if (value instanceof String str && !str.isBlank()) {
+                return str.trim();
             }
         }
         return sub;

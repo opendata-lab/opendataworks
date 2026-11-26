@@ -459,7 +459,7 @@ class OAuthLoginSecurityTest {
                         Map.of("preferred_username", "zhangsan", "name", "张三", "nickname", "Nick"),
                         "sub-1"));
         assertEquals(
-                "Nick",
+                "zhangsan",
                 OAuthUserServices.resolveNickname(
                         Map.of("preferred_username", "zhangsan", "name", " ", "nickname", "Nick"),
                         "sub-1"));
