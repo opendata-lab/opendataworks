@@ -454,19 +454,19 @@ class OAuthLoginSecurityTest {
     @Test
     void resolvesNicknameFallbackOrderAndRejectsInvalidEmailAttributes() {
         assertEquals(
-                "pref",
+                "张三",
                 OAuthUserServices.resolveNickname(
-                        Map.of("preferred_username", "pref", "name", "Name", "nickname", "Nick"),
-                        "sub-1"));
-        assertEquals(
-                "Name",
-                OAuthUserServices.resolveNickname(
-                        Map.of("preferred_username", " ", "name", "Name", "nickname", "Nick"),
+                        Map.of("preferred_username", "zhangsan", "name", "张三", "nickname", "Nick"),
                         "sub-1"));
         assertEquals(
                 "Nick",
                 OAuthUserServices.resolveNickname(
-                        Map.of("name", 123, "nickname", "Nick"), "sub-1"));
+                        Map.of("preferred_username", "zhangsan", "name", " ", "nickname", "Nick"),
+                        "sub-1"));
+        assertEquals(
+                "zhangsan",
+                OAuthUserServices.resolveNickname(
+                        Map.of("name", 123, "preferred_username", "zhangsan"), "sub-1"));
         assertEquals("sub-1", OAuthUserServices.resolveNickname(Map.of(), "sub-1"));
 
         assertEquals(

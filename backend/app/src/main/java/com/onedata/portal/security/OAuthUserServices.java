@@ -36,8 +36,9 @@ final class OAuthUserServices {
     static final String ATTR_SESSION_VERSION =
             OAuthUserServices.class.getName() + ".sessionVersion";
 
+    // The username is preferred_username, so the display name prefers the shown name (e.g. 张三).
     private static final List<String> NICKNAME_KEYS =
-            List.of("preferred_username", "name", "nickname");
+            List.of("name", "nickname", "preferred_username");
 
     private final OAuthUserProvisioner provisioner;
     private final OAuth2UserService<OAuth2UserRequest, OAuth2User> delegateOAuth2Service;

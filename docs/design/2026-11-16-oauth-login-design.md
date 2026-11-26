@@ -78,7 +78,7 @@ spring:
 |---|---|
 | `username` | 普通用户名：`preferred_username`，缺省为 `sub`（OA-08）。`sub` 为 OIDC `getSubject()` 或 OAuth2 `OAuth2User.getName()` |
 | `auth_source` | 新建时为 registration id；绑定到已有本地账号时保持原值 |
-| `nickname` | 只在账号昵称为空时填写（与 DataAgent 一致，2026-11-25 起；绑定本地账号时不覆盖其昵称）：依次取属性 `preferred_username`、`name`、`nickname`，均无则 `sub`；超过 128 字符截断 |
+| `nickname` | 只在账号昵称为空或等于用户名时填写（与 DataAgent 一致，2026-11-26 起；绑定本地账号时不覆盖其昵称）：依次取属性 `name`、`nickname`、`preferred_username`（用户名取 `preferred_username`，显示名优先取中文名 `name`），均无则 `sub`；超过 128 字符截断 |
 | `email` | 每次登录刷新：属性 `email`（字符串且不超过 128 字符时，否则置空） |
 | `role` | 新建时 `user`，此后不改 |
 | `password_hash` | 新建时 `NULL`（现有逻辑已拒绝其密码登录、改密与重置） |
