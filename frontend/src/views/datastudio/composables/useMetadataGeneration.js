@@ -294,8 +294,7 @@ export function useMetadataGeneration({
       const submitted = await nl2sqlApi.deliverMessage({
         topic_id: topicId,
         content: prompt,
-        agent_id: agentId,
-        execution_mode: 'background'
+        agent_id: agentId
       })
       const taskId = submitted?.task_id || submitted?.taskId
       if (!taskId) throw new Error('发起生成任务失败')
