@@ -5,8 +5,8 @@
 ## 源码运行
 
 ```bash
-# JAVA_HOME 指向 JDK 17；Maven 3.8+ 在 PATH 中
-mvn -B -ntp -f backend/pom.xml -DskipTests package
+# JAVA_HOME 指向 JDK 17；Maven 由 backend/mvnw 固定为 3.9.11，无需另装
+backend/mvnw -B -ntp -f backend/pom.xml -DskipTests package
 
 # 与 deploy/.env.example 使用相同的数据库环境变量
 export SPRING_DATASOURCE_URL='jdbc:mysql://localhost:3306/opendataworks?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai'
@@ -41,7 +41,7 @@ MCP Streamable HTTP 地址为 `http://127.0.0.1:8082/api/mcp/`，无尾斜杠的
 ## 验证
 
 ```bash
-mvn -B -ntp -f backend/pom.xml \
+backend/mvnw -B -ntp -f backend/pom.xml \
   -Dtest='*Test,!*IntegrationTest' -Dsurefire.failIfNoSpecifiedTests=false test
 
 export NVM_DIR="$HOME/.nvm"

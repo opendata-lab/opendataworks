@@ -134,4 +134,4 @@ OpenDataWorks is licensed under the [GNU General Public License v3.0 only](LICEN
 
 [![Star History Chart](https://api.star-history.com/svg?repos=opendata-lab/opendataworks&type=Date)](https://star-history.com/#opendata-lab/opendataworks&Date)
 
-The backend uses Java 17 and Spring Boot 3.5. Build its four modules with `mvn -f backend/pom.xml package`; run `backend/app/target/opendataworks-app-1.6.0.jar`. MCP is built into `/api/mcp/`. See [local runtime instructions](docs/handbook/backend-runtime.md).
+The backend uses Java 17 and Spring Boot 3.5. Build its four modules with the Maven Wrapper, `backend/mvnw -f backend/pom.xml package` (it pins Maven 3.9.11; only JDK 17 via `JAVA_HOME` is needed); run `backend/app/target/opendataworks-app-1.6.0.jar`. MCP is built into `/api/mcp/`. See [local runtime instructions](docs/handbook/backend-runtime.md).
