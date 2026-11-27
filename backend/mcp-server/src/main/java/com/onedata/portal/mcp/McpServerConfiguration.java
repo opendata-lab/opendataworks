@@ -43,6 +43,7 @@ public class McpServerConfiguration {
                 var tool =
                         McpSchema.Tool.builder()
                                 .name(name)
+                                .title(definition.path("title").asText())
                                 .description(definition.path("description").asText())
                                 .inputSchema(
                                         McpJsonDefaults.getMapper(),

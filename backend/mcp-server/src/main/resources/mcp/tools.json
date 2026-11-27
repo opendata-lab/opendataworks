@@ -1,6 +1,7 @@
 [
   {
     "name": "odw_search_tables",
+    "title": "搜索数据表",
     "description": "Search OpenDataWorks tables by database, table name, or comment keyword.",
     "readOnly": true,
     "destructive": false,
@@ -37,6 +38,7 @@
   },
   {
     "name": "odw_get_lineage",
+    "title": "查看表血缘",
     "description": "Get lineage information for a table by table name or table id.",
     "readOnly": true,
     "destructive": false,
@@ -84,6 +86,7 @@
   },
   {
     "name": "odw_resolve_datasource",
+    "title": "定位数据源",
     "description": "Resolve datasource summary and routing metadata for a database.",
     "readOnly": true,
     "destructive": false,
@@ -116,6 +119,7 @@
   },
   {
     "name": "odw_export_metadata",
+    "title": "导出元数据",
     "description": "Export metadata rows for tables, lineage, or datasource records.",
     "readOnly": true,
     "destructive": false,
@@ -148,6 +152,7 @@
   },
   {
     "name": "odw_get_table_ddl",
+    "title": "查看建表语句",
     "description": "Get live table DDL together with OpenDataWorks metadata summary.",
     "readOnly": true,
     "destructive": false,
@@ -190,6 +195,7 @@
   },
   {
     "name": "odw_query_readonly",
+    "title": "查询数据",
     "description": "Execute a single read-only SQL query through the backend read-only query path.",
     "readOnly": true,
     "destructive": false,
@@ -242,6 +248,7 @@
   },
   {
     "name": "odw_preview_create_table",
+    "title": "预览建表",
     "description": "Preview a new target table: returns the generated table name and normalized CREATE TABLE DDL without creating anything. Follow the data-dev skill DDL standards; use before odw_create_table.",
     "readOnly": true,
     "destructive": false,
@@ -389,6 +396,7 @@
   },
   {
     "name": "odw_create_table",
+    "title": "创建数据表",
     "description": "Create a new target table: persist metadata and execute the DDL on the engine (Doris). High-risk and irreversible; requires dorisClusterId to execute. Preview first with odw_preview_create_table.",
     "readOnly": false,
     "destructive": true,
@@ -537,6 +545,7 @@
   },
   {
     "name": "odw_update_table_metadata",
+    "title": "更新表元数据",
     "description": "Complete the metadata of an existing table: table comment, controlled attributes (layer / business-domain / data-domain), per-field comments, and the data-freshness contract. Locate the table by tableId (preferred) or database + table. Discover weak/missing metadata first with odw_search_tables / odw_export_metadata, then read context with odw_get_table_ddl. Controlled values outside the platform lists are dropped server-side; freshness loadedAtField must be a real column. Each section is applied independently and the result lists applied / skipped / failed.",
     "readOnly": false,
     "destructive": false,
@@ -689,6 +698,7 @@
   },
   {
     "name": "odw_create_task",
+    "title": "创建任务",
     "description": "Create a draft data-development task (e.g. a SQL task). Both inputTableIds and outputTableIds must be provided explicitly; pass [] for no inputs, and at least one output id.",
     "readOnly": false,
     "destructive": false,
@@ -803,6 +813,7 @@
   },
   {
     "name": "odw_update_task",
+    "title": "更新任务",
     "description": "Update a draft task definition. Lineage lists are full replacements: omit a side to keep its existing lineage, pass a full array to replace it. Never pass a partial list — omitted table ids are deleted.",
     "readOnly": false,
     "destructive": false,
@@ -920,6 +931,7 @@
   },
   {
     "name": "odw_get_task",
+    "title": "查看任务",
     "description": "Get a task's detail by id.",
     "readOnly": true,
     "destructive": false,
@@ -943,6 +955,7 @@
   },
   {
     "name": "odw_list_tasks",
+    "title": "列出任务",
     "description": "List tasks with optional keyword/status filters.",
     "readOnly": true,
     "destructive": false,
@@ -975,6 +988,7 @@
   },
   {
     "name": "odw_create_workflow",
+    "title": "创建工作流",
     "description": "Create a draft workflow with its task bindings and edges.",
     "readOnly": false,
     "destructive": false,
@@ -1045,6 +1059,7 @@
   },
   {
     "name": "odw_update_workflow",
+    "title": "更新工作流",
     "description": "Update a draft workflow's structure.",
     "readOnly": false,
     "destructive": false,
@@ -1120,6 +1135,7 @@
   },
   {
     "name": "odw_get_workflow",
+    "title": "查看工作流",
     "description": "Get a workflow's detail (tasks, edges, latest instance).",
     "readOnly": true,
     "destructive": false,
@@ -1143,6 +1159,7 @@
   },
   {
     "name": "odw_list_workflows",
+    "title": "列出工作流",
     "description": "List workflows with optional keyword/status filters.",
     "readOnly": true,
     "destructive": false,
@@ -1175,6 +1192,7 @@
   },
   {
     "name": "odw_preview_publish",
+    "title": "预览发布",
     "description": "Preview publish validation, runtime differences, warnings, and whether confirmation is required. Publishing always runs validation again.",
     "readOnly": true,
     "destructive": false,
@@ -1198,6 +1216,7 @@
   },
   {
     "name": "odw_publish_workflow",
+    "title": "发布工作流",
     "description": "Deploy, bring online, or take offline a workflow in DolphinScheduler. Preview first and obtain user confirmation. Set confirmDiff=true only after accepting the displayed differences; execution reruns validation.",
     "readOnly": false,
     "destructive": true,
@@ -1236,6 +1255,7 @@
   },
   {
     "name": "odw_upsert_schedule",
+    "title": "保存调度",
     "description": "Create or update a workflow's schedule configuration (cron/timezone/etc.).",
     "readOnly": false,
     "destructive": false,
@@ -1302,6 +1322,7 @@
   },
   {
     "name": "odw_workflow_schedule_online",
+    "title": "启用调度",
     "description": "Enable the workflow cron schedule after user confirmation. Execution runs the current publish and schedule checks again.",
     "readOnly": false,
     "destructive": true,
@@ -1325,6 +1346,7 @@
   },
   {
     "name": "odw_workflow_schedule_offline",
+    "title": "停用调度",
     "description": "Disable a workflow's schedule.",
     "readOnly": false,
     "destructive": false,
@@ -1348,6 +1370,7 @@
   },
   {
     "name": "odw_analyze_sql",
+    "title": "分析语句",
     "description": "Analyze a SQL statement: input/output tables, operation type, and warnings (for SQL polish and lineage).",
     "readOnly": true,
     "destructive": false,
