@@ -51,10 +51,15 @@ class McpContractTest {
     }
 
     @Test
-    void registersExactly23FlatInlineSchemasWithCamelCaseInputs() {
+    void registersExactly23TitledFlatSchemasWithCamelCaseInputs() {
         Set<String> names = new HashSet<>();
+        Set<String> titles = new HashSet<>();
         for (JsonNode tool : schemas.tools()) {
-            assertTrue(names.add(tool.path("name").asText()));
+            String name = tool.path("name").asText();
+            String title = tool.path("title").asText();
+            assertTrue(names.add(name));
+            assertTrue(title.matches("\\p{IsHan}{2,6}"), name);
+            assertTrue(titles.add(title), name);
             assertFalse(tool.path("description").asText().isBlank());
             assertFalse(tool.path("description").asText().contains("preview_token"));
             assertFalse(tool.get("inputSchema").path("properties").has("params"));

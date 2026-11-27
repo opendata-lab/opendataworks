@@ -23,7 +23,9 @@ def test_skill_recipes_use_current_publish_and_argument_contract():
 def test_tool_schemas_register_all_tools_without_legacy_wrapper():
     tools = json.loads((ROOT / 'backend/mcp-server/src/main/resources/mcp/tools.json').read_text())
     assert len({tool['name'] for tool in tools}) == 23
+    assert len({tool['title'] for tool in tools}) == len(tools)
     for tool in tools:
+        assert re.fullmatch(r'[一-龯]{2,6}', tool['title']), tool['name']
         schema = tool['inputSchema']
         assert schema['additionalProperties'] is False
         assert 'params' not in schema['properties']

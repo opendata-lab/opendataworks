@@ -243,31 +243,31 @@ graph TD
 
 3. **23 个工具完整清单与领域服务调用映射（全部对已认证服务账号开放可用）**：
 
-| 分类 | 工具名称 | `readOnlyHint` | `destructiveHint` | `idempotentHint` | 顶层扁平入参字段（均含可选 `description`） | 直接调用的 `core` 领域服务方法 |
-|---|---|---|---|---|---|---|
-| 只读探查与问数 | `odw_search_tables` | `true` | `false` | `true` | `database?`, `table?`, `keyword?`, `tableLimit?=12` | `DataTableQueryService.inspectTables(...)` |
-| 只读探查与问数 | `odw_get_lineage` | `true` | `false` | `true` | `table?`, `dbName?`, `tableId?`, `depth?`（Schema `anyOf` 约束 `table` 与 `tableId` 至少其一） | `LineageService.inspectLineage(...)` |
-| 只读探查与问数 | `odw_resolve_datasource` | `true` | `false` | `true` | `database`, `preferredEngine?` | `DatasourceSubjectAccessService.resolveDatabaseDatasource(...)` |
-| 只读探查与问数 | `odw_export_metadata` | `true` | `false` | `true` | `kind` (`tables`/`lineage`/`datasource`), `database?` | `DataTableQueryService.exportMetadata(...)` |
-| 只读探查与问数 | `odw_get_table_ddl` | `true` | `false` | `true` | `database?`, `table?`, `tableId?`（Schema `anyOf` 约束 `tableId` 或 `database+table`） | `DataTableQueryService.inspectTableDdl(...)` |
-| 只读探查与问数 | `odw_query_readonly` | `true` | `false` | `true` | `database`, `sql`, `preferredEngine?`, `limit?=1000`, `timeoutSeconds?=30` | `DataQueryService.executeReadOnlyQuery(...)`（含 128KiB 行预算 + 512KiB 工具结果预算） |
-| 只读探查与预览 | `odw_analyze_sql` | `true` | `false` | `true` | `sql`, `database?`, `clusterId?` | `DataQueryService.analyzeQuery(...)` |
-| 只读探查与预览 | `odw_preview_create_table` | `true` | `false` | `true` | `dbName`, `columns`, `layer?`, `businessDomain?`, `dataDomain?`, `customIdentifier?`, `statisticsCycle?`, `updateType?`, `tableComment?`, `owner?`, `tableModel?`, `bucketNum?`, `replicaNum?`, `partitionColumn?`, `distributionColumns?`, `keyColumns?`, `dorisClusterId?`, `syncToDoris?`, `dorisDdl?` | `TableCreateService.preview(...)` |
-| 只读探查与预览 | `odw_get_task` | `true` | `false` | `true` | `taskId` | `DataTaskService.getTaskOrThrow(...)` |
-| 只读探查与预览 | `odw_list_tasks` | `true` | `false` | `true` | `keyword?`, `status?`, `limit?=50` | `DataTaskService.listTasks(...)` |
-| 只读探查与预览 | `odw_get_workflow` | `true` | `false` | `true` | `workflowId` | `WorkflowService.getDetail(...)` |
-| 只读探查与预览 | `odw_list_workflows` | `true` | `false` | `true` | `keyword?`, `status?`, `limit?=50` | `WorkflowService.list(...)` |
-| 只读探查与预览 | `odw_preview_publish` | `true` | `false` | `true` | `workflowId` | `WorkflowPublishService.previewPublish(...)`（只读差异与预检） |
-| 草稿级写工具 | `odw_update_table_metadata` | `false` | `false` | `false` | `tableId?`, `database?`, `table?`, `tableComment?`, `attributes?`, `fields?`, `freshness?` | `DataTableService.completeMetadata(...)`（若同步物理注释则走主体连接） |
-| 草稿级写工具 | `odw_create_task` | `false` | `false` | `false` | `task`, `inputTableIds`, `outputTableIds` (`minItems: 1`) | `DataTaskService.createFromDefinition(...)` |
-| 草稿级写工具 | `odw_update_task` | `false` | `false` | `false` | `taskId`, `task`, `inputTableIds?`, `outputTableIds?` (`minItems: 1`) | `DataTaskService.updateFromDefinition(...)` |
-| 草稿级写工具 | `odw_create_workflow` | `false` | `false` | `false` | `workflow` | `WorkflowService.createWorkflow(...)` |
-| 草稿级写工具 | `odw_update_workflow` | `false` | `false` | `false` | `workflowId`, `workflow` | `WorkflowService.updateWorkflow(...)` |
-| 草稿级写工具 | `odw_upsert_schedule` | `false` | `false` | `false` | `workflowId`, `schedule`（Schema 排除 `enabled`） | `WorkflowScheduleService.upsertSchedule(...)` |
-| 草稿级写工具 | `odw_workflow_schedule_offline` | `false` | `false` | `false` | `workflowId` | `WorkflowScheduleService.offlineSchedule(...)` |
-| 高危写工具 | `odw_create_table` | `false` | `true` | `false` | 同 `odw_preview_create_table`（`dorisClusterId` 必填） | `TableCreateService.create(...)`（物理建表强制走主体连接 `openPrincipalConnection`） |
-| 高危写工具 | `odw_publish_workflow` | `false` | `true` | `false` | `workflowId`, `operation` (`deploy`/`online`/`offline`), `confirmDiff?=false`（deploy 的差异确认） | `WorkflowPublishService.publish(...)`（执行时重新校验当前状态） |
-| 高危写工具 | `odw_workflow_schedule_online` | `false` | `true` | `false` | `workflowId` | `WorkflowScheduleService.onlineSchedule(...)`（校验当前工作流与调度状态） |
+| 分类 | 工具名称 | 显示标题 | `readOnlyHint` | `destructiveHint` | `idempotentHint` | 顶层扁平入参字段（均含可选 `description`） | 直接调用的 `core` 领域服务方法 |
+|---|---|---|---|---|---|---|---|
+| 只读探查与问数 | `odw_search_tables` | 搜索数据表 | `true` | `false` | `true` | `database?`, `table?`, `keyword?`, `tableLimit?=12` | `DataTableQueryService.inspectTables(...)` |
+| 只读探查与问数 | `odw_get_lineage` | 查看表血缘 | `true` | `false` | `true` | `table?`, `dbName?`, `tableId?`, `depth?`（Schema `anyOf` 约束 `table` 与 `tableId` 至少其一） | `LineageService.inspectLineage(...)` |
+| 只读探查与问数 | `odw_resolve_datasource` | 定位数据源 | `true` | `false` | `true` | `database`, `preferredEngine?` | `DatasourceSubjectAccessService.resolveDatabaseDatasource(...)` |
+| 只读探查与问数 | `odw_export_metadata` | 导出元数据 | `true` | `false` | `true` | `kind` (`tables`/`lineage`/`datasource`), `database?` | `DataTableQueryService.exportMetadata(...)` |
+| 只读探查与问数 | `odw_get_table_ddl` | 查看建表语句 | `true` | `false` | `true` | `database?`, `table?`, `tableId?`（Schema `anyOf` 约束 `tableId` 或 `database+table`） | `DataTableQueryService.inspectTableDdl(...)` |
+| 只读探查与问数 | `odw_query_readonly` | 查询数据 | `true` | `false` | `true` | `database`, `sql`, `preferredEngine?`, `limit?=1000`, `timeoutSeconds?=30` | `DataQueryService.executeReadOnlyQuery(...)`（含 128KiB 行预算 + 512KiB 工具结果预算） |
+| 只读探查与预览 | `odw_analyze_sql` | 分析语句 | `true` | `false` | `true` | `sql`, `database?`, `clusterId?` | `DataQueryService.analyzeQuery(...)` |
+| 只读探查与预览 | `odw_preview_create_table` | 预览建表 | `true` | `false` | `true` | `dbName`, `columns`, `layer?`, `businessDomain?`, `dataDomain?`, `customIdentifier?`, `statisticsCycle?`, `updateType?`, `tableComment?`, `owner?`, `tableModel?`, `bucketNum?`, `replicaNum?`, `partitionColumn?`, `distributionColumns?`, `keyColumns?`, `dorisClusterId?`, `syncToDoris?`, `dorisDdl?` | `TableCreateService.preview(...)` |
+| 只读探查与预览 | `odw_get_task` | 查看任务 | `true` | `false` | `true` | `taskId` | `DataTaskService.getTaskOrThrow(...)` |
+| 只读探查与预览 | `odw_list_tasks` | 列出任务 | `true` | `false` | `true` | `keyword?`, `status?`, `limit?=50` | `DataTaskService.listTasks(...)` |
+| 只读探查与预览 | `odw_get_workflow` | 查看工作流 | `true` | `false` | `true` | `workflowId` | `WorkflowService.getDetail(...)` |
+| 只读探查与预览 | `odw_list_workflows` | 列出工作流 | `true` | `false` | `true` | `keyword?`, `status?`, `limit?=50` | `WorkflowService.list(...)` |
+| 只读探查与预览 | `odw_preview_publish` | 预览发布 | `true` | `false` | `true` | `workflowId` | `WorkflowPublishService.previewPublish(...)`（只读差异与预检） |
+| 草稿级写工具 | `odw_update_table_metadata` | 更新表元数据 | `false` | `false` | `false` | `tableId?`, `database?`, `table?`, `tableComment?`, `attributes?`, `fields?`, `freshness?` | `DataTableService.completeMetadata(...)`（若同步物理注释则走主体连接） |
+| 草稿级写工具 | `odw_create_task` | 创建任务 | `false` | `false` | `false` | `task`, `inputTableIds`, `outputTableIds` (`minItems: 1`) | `DataTaskService.createFromDefinition(...)` |
+| 草稿级写工具 | `odw_update_task` | 更新任务 | `false` | `false` | `false` | `taskId`, `task`, `inputTableIds?`, `outputTableIds?` (`minItems: 1`) | `DataTaskService.updateFromDefinition(...)` |
+| 草稿级写工具 | `odw_create_workflow` | 创建工作流 | `false` | `false` | `false` | `workflow` | `WorkflowService.createWorkflow(...)` |
+| 草稿级写工具 | `odw_update_workflow` | 更新工作流 | `false` | `false` | `false` | `workflowId`, `workflow` | `WorkflowService.updateWorkflow(...)` |
+| 草稿级写工具 | `odw_upsert_schedule` | 保存调度 | `false` | `false` | `false` | `workflowId`, `schedule`（Schema 排除 `enabled`） | `WorkflowScheduleService.upsertSchedule(...)` |
+| 草稿级写工具 | `odw_workflow_schedule_offline` | 停用调度 | `false` | `false` | `false` | `workflowId` | `WorkflowScheduleService.offlineSchedule(...)` |
+| 高危写工具 | `odw_create_table` | 创建数据表 | `false` | `true` | `false` | 同 `odw_preview_create_table`（`dorisClusterId` 必填） | `TableCreateService.create(...)`（物理建表强制走主体连接 `openPrincipalConnection`） |
+| 高危写工具 | `odw_publish_workflow` | 发布工作流 | `false` | `true` | `false` | `workflowId`, `operation` (`deploy`/`online`/`offline`), `confirmDiff?=false`（deploy 的差异确认） | `WorkflowPublishService.publish(...)`（执行时重新校验当前状态） |
+| 高危写工具 | `odw_workflow_schedule_online` | 启用调度 | `false` | `true` | `false` | `workflowId` | `WorkflowScheduleService.onlineSchedule(...)`（校验当前工作流与调度状态） |
 
 ---
 
